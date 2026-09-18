@@ -1,10 +1,11 @@
 // Single bot session (BOTSVC_DESIGN §3.2): login, family join/leave-on-low-activity, payment-tier
 // bootstrap, SLG city actions (§3.2 slg_action), and — this increment — ranked matchmaking + battle
 // over a real gateway+gameserver WS connection driven by @nw/engine's AISystem (§1 B3, §8).
+import { BUILD_QUEUE_SLOTS, RESOURCE_TYPES, buildCost, buildGateReason } from '@nw/shared';
 import { MetaClient } from './metaClient';
 import { SocialClient } from './socialClient';
 import { CommercialClient } from './commercialClient';
-import { WorldClient, type BuildingKey } from './worldClient';
+import { WorldClient, type BuildingKey, type PlayerWorldView } from './worldClient';
 import { playRankedMatch } from './battleSession';
 import type { BotIdentity } from './pool';
 
@@ -47,6 +48,29 @@ const WORLD_MAP_VIEW_MAX_RADIUS = 40;
  */
 const SIEGE_SCAN_RADIUS = WORLD_MAP_VIEW_MAX_RADIUS;
 
+/**
+ * Wall-clock floor between two SLG upkeep passes *for one bot*, independent of how the scheduler is
+ * tuned. `tickSlg()` used to act on every upkeep pass it was handed, so its rate was a side effect of
+ * `tickMs × upkeepRotations` (5s × 3 = one pass per bot per 15s) — two knobs that exist to shape the
+ * scheduler's CPU burst, not to say how often a bot should touch the world. This decouples them: the
+ * scheduler may visit a bot as often as it likes; the bot itself acts at most this often.
+ */
+export const DEFAULT_SLG_INTERVAL_MS = 45_000;
+
+/**
+ * Hard ceiling on how stale the resource snapshot behind the upgrade decision may get. In the default
+ * configuration this never fires — a siege tick refreshes the snapshot every SIEGE_TICK_INTERVAL SLG
+ * ticks (5 × 45s = 225s) for free, out of the `/world/me` it was fetching anyway. It is the backstop
+ * for a configuration where that no longer holds, so that a bot which currently affords nothing still
+ * re-checks eventually instead of going quiet forever.
+ */
+const SLG_SNAPSHOT_TTL_MS = 5 * 60_000;
+
+/** Per-bot SLG pacing (see DEFAULT_SLG_INTERVAL_MS); injected so tests can drive ticks without waiting. */
+export interface SlgOptions {
+  intervalMs: number;
+}
+
 /** Empty deck = server assigns defaultPvpDeck (RoomCreate.deck contract) — bots don't build loadouts. */
 const BOT_DECK: string[] = [];
 /** Mid-curve difficulty (AISystem.ts DIFFICULTY, L1-L10) — bots aren't meant to feel unbeatable or free wins. */
@@ -69,6 +93,11 @@ export class BotSession {
   private worldId: string | undefined;
   private slgTick = 0;
   private buildRotation = 0;
+  /** Earliest wall-clock time this bot may act in the world again (DEFAULT_SLG_INTERVAL_MS). */
+  private nextSlgAt = 0;
+  /** Last `/world/me` this session saw, used to decide what it can afford before asking the server. */
+  private slgSnapshot: PlayerWorldView | undefined;
+  private slgSnapshotAt = 0;
   private battling = false;
   /** Set while a battle is in flight (runBattle) — logout() aborts it instead of leaving the match
    *  running to completion against an account the fleet no longer tracks as online (2026-08-04 fix). */
@@ -81,6 +110,7 @@ export class BotSession {
     private readonly commercial: CommercialClient,
     private readonly world: WorldClient,
     private readonly battle: BattleOptions,
+    private readonly slg: SlgOptions = { intervalMs: DEFAULT_SLG_INTERVAL_MS },
   ) {}
 
   async login(): Promise<void> {
@@ -192,33 +222,101 @@ export class BotSession {
 
   /**
    * One tick of SLG upkeep (§3.2 slg_action): join the active season's world on first tick, then
-   * either upgrade the next building in rotation or — every SIEGE_TICK_INTERVAL ticks — march a
+   * either upgrade a building it can actually pay for or — every SIEGE_TICK_INTERVAL ticks — march a
    * minority of troops on a nearby occupied tile. No auction/social calls here (B8).
+   *
+   * Rate-limited per bot (DEFAULT_SLG_INTERVAL_MS) rather than acting on every upkeep pass handed to
+   * it: the scheduler's pass cadence is tuned for its own CPU burst shape, and letting it double as
+   * "how busy a bot is in the world" made every retune of one silently retune the other.
    */
   async tickSlg(): Promise<void> {
     if (!this.token) return;
+    const now = Date.now();
+    if (now < this.nextSlgAt) return;
+    this.nextSlgAt = now + this.slg.intervalMs;
     if (!this.worldId) {
       const { season } = await this.world.getActiveSeason();
       const joined = await this.world.joinSeason(this.token, season);
       if (!joined.worldId) return;
       this.worldId = joined.worldId;
+      this.noteSnapshot(joined, now);
     }
     this.slgTick++;
     if (this.slgTick % SIEGE_TICK_INTERVAL === 0 && (await this.trySiege())) return;
     await this.upgradeNextBuilding();
   }
 
+  /**
+   * Upgrade one building — but only one this bot can actually pay for.
+   *
+   * Until 2026-09-17 this fired the next key in a blind round-robin every single tick and let the
+   * server reject it, which on live s2-0 meant **629,382 consecutive failures in 29 hours**
+   * (`POST /world/build/upgrade` at 6/s, 64% of worldsvc's entire request volume, none of it ever
+   * succeeding). A bot's base footprint covers exactly one resource tile, so it produces exactly one
+   * of the five resources, while every entry in BUILD_COST_BASE costs paper and/or graphite plus, at
+   * the higher keys, sticker/metal — so the overwhelming majority of bots can never afford anything,
+   * forever. Nobody saw it because Scheduler.runUpkeep swallowed the rejection whole (fixed there too).
+   *
+   * This mirrors worldsvc's own validation (CityBuildingsService.upgradeBuilding) from the shared
+   * constants rather than guessing, exactly as a real client greys out an unaffordable row instead of
+   * posting it. The server stays authoritative: the mirror can only ever make the bot ask for LESS
+   * than it is entitled to, because the snapshot's settled `resources` only grow with time.
+   */
   private async upgradeNextBuilding(): Promise<void> {
     if (!this.token || !this.worldId) return;
-    const key = P1_BUILDING_KEYS[this.buildRotation % P1_BUILDING_KEYS.length]!;
-    this.buildRotation++;
-    await this.world.upgradeBuilding(this.token, this.worldId, key);
+    const me = await this.slgMe();
+    const key = me && this.affordableBuilding(me);
+    if (!key) return;
+    const after = await this.world.upgradeBuilding(this.token, this.worldId, key);
+    // The spend has happened either way, so a response we can't read must not leave the pre-spend
+    // snapshot in place — that would have the bot ask for a second upgrade on money it no longer has.
+    if (after) this.noteSnapshot(after, Date.now());
+    else this.slgSnapshot = undefined;
+  }
+
+  /**
+   * First key in the rotation this bot can pay for right now, or null. Scanning from the rotation
+   * cursor (rather than always from `desk`) keeps the round-robin's spread-out feel for a bot rich
+   * enough to have a choice, while a bot with exactly one affordable key still finds it every time.
+   */
+  private affordableBuilding(me: PlayerWorldView): BuildingKey | null {
+    const queue = me.buildQueue ?? [];
+    if (queue.length >= BUILD_QUEUE_SLOTS) return null; // 'Build queue is full'
+    const buildings = me.buildings ?? { desk: 1 };
+    const resources = me.resources ?? {};
+    for (let i = 0; i < P1_BUILDING_KEYS.length; i++) {
+      const key = P1_BUILDING_KEYS[(this.buildRotation + i) % P1_BUILDING_KEYS.length]!;
+      const toLevel = (buildings[key] ?? 0) + queue.filter((e) => e.key === key).length + 1;
+      if (buildGateReason(buildings, key, toLevel)) continue; // desk gate / max level
+      const cost = buildCost(key, toLevel);
+      if (RESOURCE_TYPES.some((rt) => (resources[rt] ?? 0) < (cost[rt] ?? 0))) continue;
+      this.buildRotation = this.buildRotation + i + 1;
+      return key;
+    }
+    return null;
+  }
+
+  /** The resource snapshot the upgrade decision reads, refreshed only when it has gone stale. */
+  private async slgMe(): Promise<PlayerWorldView | undefined> {
+    if (!this.token || !this.worldId) return undefined;
+    const now = Date.now();
+    if (this.slgSnapshot && now - this.slgSnapshotAt < SLG_SNAPSHOT_TTL_MS) return this.slgSnapshot;
+    this.noteSnapshot(await this.world.getWorldMe(this.token, this.worldId), now);
+    return this.slgSnapshot;
+  }
+
+  private noteSnapshot(me: PlayerWorldView, at: number): void {
+    this.slgSnapshot = me;
+    this.slgSnapshotAt = at;
   }
 
   /** Returns true if a march was actually started (so the caller skips the upgrade this tick). */
   private async trySiege(): Promise<boolean> {
     if (!this.token || !this.worldId) return false;
     const me = await this.world.getWorldMe(this.token, this.worldId);
+    // Free refresh for the upgrade decision's snapshot — this is the same `/world/me` it would
+    // otherwise have to fetch itself, and at the default cadence it is the ONLY one either needs.
+    this.noteSnapshot(me, Date.now());
     const base = this.world.baseCoords(me);
     if (!base || !me.troops) return false;
     const { tiles } = await this.world.getWorldMapSparse(

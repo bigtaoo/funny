@@ -47,8 +47,9 @@ describe('ink-icon art on disk (pack_tab_icons.cjs, inks: [active])', () => {
     // `userPlus`/`power`/`penWrite`/`megaphone`/`sheets`/`enter`/`eraser`), the ones the
     // button-icon rollout had to leave label-only because nothing in the set meant them + batch 12's
     // `promote`/`demote`, the family roster's role-toggle direction marks (one mirror pair, drawn
-    // once and flipped). A 69th needs a doc entry, not a silent add.
-    expect(OWN_ART.length).toBe(68);
+    // once and flipped) + batch 13's `flame`, team stamina's own glyph, which the team picker's stat
+    // chip had been borrowing `hourglassMd` for. A 70th needs a doc entry, not a silent add.
+    expect(OWN_ART.length).toBe(69);
     for (const kind of OWN_ART) {
       expect(fs.existsSync(path.join(ASSET_DIR, `${kind}_active.png`)), `${kind}_active.png`).toBe(true);
       // The other three inks would be ~130 PNGs nobody draws — and baking them is the shape of the

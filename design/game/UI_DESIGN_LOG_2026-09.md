@@ -1196,3 +1196,132 @@ Daily 另外三个 tab、拍卖行的 `mine`/`bids` 两个 tab 全没审过。
 | 视口 | 站数 | skipped | blank | findings |
 |---|---|---|---|---|
 | narrow-360x640-de | 45 | 0 | 0 | 1（`daily+weekly`，见 55.4.2；**本轮两站在这个视口上都是干净的**） |
+
+---
+
+## 56. 设置页收尾两件小事：几何读数退回原生壳、法律链接按量出来的宽度并排（2026-09-17）
+
+**起因**：用户对着 1920×911 的浏览器截图圈了两处——底部那行 `inner 1920x911 | screen 1920x1080 | dpr 1 | env 0/0/0/0 | vv 1920x911@0 | browser` 该去掉了；右下角 `法律条款` 那一小块「太挤了，要不要排一行」。
+
+### 56.1 读数：不是删掉，是退回它唯一有用的地方
+
+那两行是 ADR-088 加的，而 ADR-088 的真机验收**至今没做**（现有 TestFlight 包仍是 `contentInset:'always'`，见记忆里那条开放项），所以整条删掉等于把验收口径也删了。
+
+判据现成就在代码里：`viewportVerdict()` 对非原生壳一律返回 `browser`——**它在浏览器里本来就不下结论**，因为标签页/地址栏吃掉视口是合法的。也就是说这一行对网页玩家既看不懂、又什么都证明不了。于是 `drawViewportDiagnostics` 改成 `if (!geom || !geom.nativeShell) return;`：
+
+- 浏览器 / 微信（微信本来就不实现 `getViewportGeometry`）→ 一行不画；
+- Capacitor 壳 → 一字不改，`inset-eaten` → `env-reported` 那套验收照旧。
+
+### 56.2 链接：一行还是两行，让宽度说了算
+
+`法律条款` 底下原本是固定两行（`· 隐私政策` / `· 用户协议`），紧挨着上面的「重看新手教学」按钮和下面那两行读数，横屏里三者挤在 0.845h–1.0h 这段 ~130 设计 px 里。读数撤走之后这段空出来一截，才有得排。
+
+**没有无条件排成一行**：右栏是 `0.56w`…`0.94w`，横屏 ~730 设计 px（三种语言都放得下），竖屏只有 ~410，而德语 `· Datenschutzerklärung · Nutzungsbedingungen` 要 ~620。所以按**量出来的宽度**决定（同 §53.1 的判据）：放得下就并排一行，放不下就维持原来的两行，并且两种排法各有自己的纵向分寸——并排那份把省下的一行还给「按钮↔标题」和「标题↔链接」两个间距（横屏实测 24/16/22 px 的留白），堆叠那份保持原有分数不动，因为它在原生壳里下面还得让出读数的两行。
+
+点击热区跟着改：堆叠时仍然是「至少 0.3w 宽」（一个刚好等于 `Terms` 字形宽度的热区在手机上点不中），并排时只能占自己的字宽 + 半个间距，否则两个热区互相吞——`用户协议` 会打开隐私政策。
+
+### 56.3 一个必须先解决的门禁问题：headless 的 `measureText` 会把分支钉死
+
+`test/ui` 的 PIXI 桩（`test/harness/pixiHeadless.ts`）的 `measureText` 是**字符数 × 7px、跟字号无关**（§48 开头就记过这件事）。于是任何「按测出来的宽度分支」的布局，在 UI 层里每个字符串都只有真实宽度的三分之一，分支被永远钉在「放得下」那一侧——德语竖屏那条根本测不到。
+
+修法是给宽度一个**由字符串本身推出来的下界**：`render/pixiText.ts` 新增 `monospaceWidth(text, fontSize)`（等宽字体下按格子数算：拉丁 `MONO_CELL.latin` em、全角 1 em），布局取 `Math.max(text.width, monospaceWidth(...))`——真浏览器里测量值当家，headless 里估算值兜底，两边的分支都真的会走。
+
+### 56.4 怎么核的
+
+真 Chrome（`localhost:9390`，worktree 自己的 dev server）逐个看过：横屏 1920×911 中/英/德三种语言都并排一行、`法律条款` 与按钮之间有明显留白、底部读数消失；把 `innerWidth/innerHeight` 改写成 480×900 再派发 `resize` 得到竖屏排布——中文并排、英语与德语堆叠两行，与宽度判据一致。并排那行左右两个链接各点一次，分别打开 `/privacy.html` 与 `/terms.html`。
+
+门禁：`test/ui/settingsLegalLinks.ui.ts`（新增「宽就并排/窄就堆叠」「并排时点谁是谁」三例，重叠断言改成「两轴任一不相交」）、`test/ui/settingsViewportDiagnostics.ui.ts`（新增「浏览器里一行不画」，原有八例全部仍以原生壳几何跑）。`test:ui` 272 文件 / 2697 例全绿，`tsc --noEmit` 干净。
+
+### 56.5 补门禁（2026-09-17，用户追问"有测试可以加吗"）
+
+§56 落地时只有场景层的用例，三处没人守：`monospaceWidth` 自己、它那两个常数、以及"一行还是两行都别出栏"。补完三份，每份都做了变异验证。
+
+**① `test/monospaceWidth.test.ts`（13 例，纯函数层）**：拉丁 0.6→按常数计的格子宽、CJK 全角、线性、空串、各类全角边界（假名、CJK 标点、全角拉丁、谚文）、以及**代理对只算一格**。最后这条顺带修了个真 bug：原来的字符类只覆盖 BMP，`𠀋` 这种扩展区汉字会被算成**两个拉丁格**（1.2 em），改成带 `u` 标志 + `\u{20000}-\u{3FFFD}`。
+
+**② `test/browser/textMetrics.spec.ts` 新增一例：`MONO_CELL` 必须夹住真实字距。** 这一例当场推翻了 §56.3 写下的数字——**Chrome 在本机把 `'monospace'` 解析成 Consolas，字距是 0.5498 em，不是 0.6**。也就是说那个"下界"在唯一被验过的运行时上**高估了 9%**：`Math.max` 里估算值会盖过真实测量，浏览器就会拿猜的数排版而不是拿它量得到的宽度。常数下调到 **0.54**（DejaVu Sans Mono / Menlo 约 0.602，0.54 是这三者的地板），断言两头都卡：不得高于实测（否则不是下界），也不得低于实测的 1/1.25（否则就退化成 `chars*7` 那种"三分之一"的假估计）。
+
+**这一例本身是被另一个 bug 挡住才跑出来的**：`textMetrics.spec.ts` 原先用 `page.evaluate(probeTextMetrics.toString())` 把探针序列化进页面，而探针闭包引用模块级的 `PROBE_STRINGS`/`PROBE_SIZES` 和两个 helper —— 页面里全 undefined，**整个 spec 一直是红的、没人知道**（opt-in 的 `test:browser`，CI 那条又长期 `continue-on-error`）。正确形状早就写在 `entries/web-e2e.ts` 的 `handle.textMetrics` 上，spec 从没跟上。改成走 `__nwE2E.textMetrics()` 之后两例都绿。教训记进 [`client-testing.md`](../../claudedocs/client-testing.md)。
+
+**③ `settingsLegalLinks.ui.ts` 再加 6 例（3 语言 × 横竖）：无论落在哪个分支，字形和点击热区都不许越过 0.94w 那条栏边。** 这补的是横屏德语——竖屏巡检（`portraitLayout.spec.ts`）的德语行全是竖屏，横屏那几个视口清一色 `locale: 'en'`，所以最长的那对标签在最窄的那一栏里，谁也没量过。
+
+**变异验证**：`oneRow` 钉死成 `true` → 5 例红（含新加的 en/de 竖屏出栏）；把 `Math.max(text.width, monospaceWidth(...))` 退回只读 `text.width` → 3 例红（德语竖屏当场排成一行）。
+
+---
+
+## 57. 反馈面板：发完就关，确认交给 toast（2026-09-17）
+
+**起因**：用户看着反馈面板的截图问——「玩家发送完反馈后，这个页面直接关闭，然后一个弹窗提示感谢您的反馈，用户点确认关掉，是不是更好？」
+
+**答一半做一半**。关面板：对，比原来好。原行为是 2026-08-04 落地时的有意决定（见 [`UI_DESIGN_SCENES.md`](UI_DESIGN_SCENES.md) §4.1.1），
+成功后留在原地、清空输入框、在按钮上方写一行绿色「已收到，谢谢」，理由是「反馈没有一张工单的模型，可以连着发第二条」。
+这个理由不划算：连发是极少数情况（重开面板只要一次点击），代价却落在常见情况上——面板原样杵着，唯一变化是一行小字，
+玩家视线在按钮上，看不见就会再点一次 Send，而且要离开还得再点一次 Close，一件事两次点击。
+
+**「感谢弹窗 + 确定按钮」没做**：它说的话和 toast 一字不差，却多一层遮罩和一次点击。
+确认按钮的意义是「需要你做个决定」或者「这条信息重要到必须挡住你」，「我们收到了」两样都不占。
+
+**改动**（三处，都是往既有形状上靠）：
+
+| 位置 | 改了什么 |
+|---|---|
+| `client/src/ui/dialogs/FeedbackDialog.ts` | `submit()` 成功分支：清空输入框 + 写绿字 → `closeInput()` + `cb.onClose()`；`submitting` 只在 catch 里复位（成功后留 `true`，挡住关闭前的第二次点击）——与 `AppealDialog.submit()` 逐行同形 |
+| `client/src/app.ts` | 反馈 sink 的 `onSubmit` 由裸转发改成包装：`await core.submitFeedback!(text)` 之后 `showToastMessage(t('feedback.sent'), 'success')`，与上面 appeal sink 里 `appeal.submitted` 那行写法相同 |
+| `i18n/locales/{en,zh,de}.ts` | `feedback.sent` 从「已收到，谢谢！」加重为「感谢反馈，我们已经收到，会尽量处理。」（EN/DE 同步）——它现在是屏幕上唯一的确认 |
+
+**失败路径故意不对称**：仍然不关面板、红字提示、保留已输入文字。玩家刚打完一段话、提交又失败，正是最不能丢那段话的时刻。
+
+**文案长度**核对过：新串 EN 55 / DE 57 字符，与既有 toast 同一量级（`reconnect.gone` 53、德语 `common.syncFailed` 66），
+`GlobalToast.show()` 本来就带 `wordWrap + breakWords` 的宽度帽（2026-08-03 那条修的就是它），窄屏折行不会冲出画面。
+
+**测试**：
+
+- 新增 `client/test/ui/feedbackSubmitOutcome.ui.ts`（12 例）：横竖屏各测「提交 trim 后的文字 + `onClose` 恰好一次」「不留内联确认（statusLabel 为空）」「顺手关掉平台输入框」「失败留在原地 + 红字」「失败后重试不从空白开始」，另加在途二次点击只发一次、纯空白不发网络请求。**临时把旧成功分支贴回去验证过 9/12 先红**。
+- 新增 `client/test/feedbackSuccessToast.test.ts`（3 例）：源码扫描 `app.ts`——toast 必须在 `await` 之后（先弹就是在确认一件可能还会失败的事）、键是 `feedback.sent`、与 appeal 那条保持同一写法。弹窗自己不知道 toast 的存在，而 `app.ts` 没有端到端单测入口（同 `appTickerDialogWiring.test.ts` 的理由）。
+- 改 `client/test/ui/dialogModalInputGate.ui.ts` 两例：原先断言「成功后面板仍开着」，按新行为改写。2026-08-10 那条回归（关闭键把大厅导航走了）意义不变，而且成功路径现在根本没有那次 Close 点击。
+
+**验证**：`npm run typecheck`、`npx vitest run`（3778 例）、`npm run test:ui`（2705 例）、`npm run build:web` 全过；
+真 Chrome 跑了一遍（worktree dev server 9190 → 本地 8088 的 docker 后端，已登录账号 LimeMutt）：输入 → Send → 面板消失 → 大厅上浮出绿色 toast，文字白底绿条读得清。
+
+## 58. 选队弹窗：队伍行的「兵力 / 体力」从词换成图标（2026-09-17）
+
+**起因**：用户圈出占地选队弹窗里 `Team 1 · Troops 2525 · Stamina 100` 那一行问——「这些信息，team、troop、stamina 用图标显示吧」。
+
+**他圈的那一行本来就是坏的，不只是啰嗦**。`btnH` 是 84，四列时 `btnW` 是 210，标签按 `FS.title`（32）折行——
+那串字在英文下是**三行**，装得下两行，所以第三行被切掉了（截图里 `Stamina` 的 `100` 只剩上半截）。
+更要紧的是：五行里 `Troops`/`Stamina` 两个词**一字不差地重复了五遍**，真正有差别的恰恰是被切掉的数字。
+所以换图标不是省地方，是把地方从重复的词挪给唯一有信息的那部分。
+
+**做法**：给弹窗按钮加第二行——`ModalButton.stats`，一串 `[字形][数字]` chip，画在标签下方，整块（标签 + chip 行）在按钮里居中。
+
+| 位置 | 改了什么 |
+|---|---|
+| `WorldMapPanels/modalLine.ts` | 新增 `ModalButtonStat`（`{icon, text}`）与 `ModalButton.stats?`。`text` 只放数字，量的名字由字形承担 |
+| `WorldMapPanels/core.ts` | `buildStatRow()` 把一行 chip 铺成**一个容器**（整组缩放，同 `buttonLabel.ts` 的约定），`showModal` 把它排在标签下方；`btnH` 在有 stats 的弹窗里**加高** `statBlockH`，`labelBoxH()` 让前置字形门禁仍按标签真实可用高度判断 |
+| `worldmap/net/march.ts` | 选队行的 label 退回**只剩队伍名**，兵力/体力走 `stats`：`unit` + 数字、`flame` + 数字（当天先借 `hourglassMd`，同日换成自己的火苗，见下方追加） |
+| `WorldMapPanels/statRow.ts`（新） | chip 行的几何 + `buildStatRow`。core.ts 加上 chip 行后到 504 行、撞上 500 行门禁，按拆分优先级第一档（form① 自由函数）拆出去，回到 457 行。`statFont()`/`statBlockH()` 是**函数不是常量**——`FS.*` 是 getter，模块级常量会被钉在未抬升的字号表上 |
+
+**字形是借的，不是新画的**（零新美术）：`unit` 在这张地图上已经是「兵力」（地块驻军行、派兵弹窗的可用兵力），
+`hourglassMd` 已经是「按墙上时钟恢复的量」（占领倒计时、城池每小时恢复）。**这条是使用边界**：
+只有玩家在同一屏已经见过的字形才能替换掉词，否则那不叫图标化，叫猜谜（与 §53 状态标签同一条判据）。
+前置的 `swords` 保留——它说的是「这是一支能出征的队伍」，和 chip 里的量不是一回事。
+
+**两个数被实拍推着改了两次**：
+
+- chip 字号先用 `FS.small`，在 1568 宽的窗口里量到约 10 CSS px——名字 32px、数字 10px，
+  而数字才是玩家要横向比较的东西。改 `FS.label`（24），仍明显从属于名字。
+- 加大之后两行（38 + 6 + 30 = 74）挤在 84 的按钮里，名字和数字各距手绘边框 4px 上下。
+  于是**按钮加高**而不是把字缩回去——按钮长高一点没关系（§50.12 的既有拍板），弹窗自己按 `btnH` 算高度，跟着长。
+
+**同日追加：体力这枚字形是借的，已约好还**。用户看完就问「体力的图标一直都是漏斗吗」——沙漏在这一屏上已经是**三层「时间」**（HUD 的加速 buff 剩余、弹窗的占领/围攻倒计时、商城加速道具三档），而体力是「还能下几次令」的预算，同一字形让 `100` 读成时长。（保护盾不是沙漏，是批 10 的伞；用户记的方向对、道具记错了一个。）库内 109 枚里没有能借的：闪电=`atkspd`、弹簧=`binding`、心=`hp`、箭=武器语言（批 8 给 `range` 写过定论）、齿轮=`settings`、钥匙=`key`、油灯=`umbrella`、液体=`ink`、脚印=`footsteps`。**用户拍板出一张新图：火苗（`flame`）**，并把判定线放宽为「在最小尺寸分不清无所谓，大部分情况适用即可」——判断表、prompt、接线与验收口径在 [`tab-icon-art-prompts-batch13.md`](../product/tab-icon-art-prompts-batch13.md)，**同日就出图并接线完成，一版过**（96×128 = 1.33:1，两个火尖 + 切口 + 内凹底沿连 26px 都还在，比这条放宽的判定线要求的更好）。另存档了一个非字形方案（体力真身是离散的 6 次，回 `◼◼◼◼◻◻` 比任何字形都准），未推进。
+
+**测试**：新增 `client/test/ui/worldMapModalBtnStats.ui.ts`（4 例，headless PIXI）：两个数字画在标签下方且在按钮内、按传入顺序、各自左边有自己的字形；
+标签 + chip 整块居中（标签让出正中）；没有 stats 的按钮**还在正中**（老版面一字不动）；chip 行超出列宽时整组缩放而不是溢出（用 11 位数字迫出缩放，并按缩放后的间距反推非空测）。
+「chip 行的高度记在标签预算上」这条**没法在这个 harness 里钉**——它的 stub 2D context 对任何字号都报每行约 10px，
+84 的按钮永远用不完高度，去掉预算这条也会绿；写在文件头当已知缺口，改由真字体实拍覆盖。
+另改两处既有选队测试（`worldMapOccupyTeamPicker` / `worldMapTeamStaminaPicker`）：它们原来在 label 里找 `Troops 2160`/`Stamina 100`，现在读 `stats` 里对应字形的数字。
+
+**验证**：`npm run typecheck`、`npx vitest run`（3791 例）、`npm run test:ui`（2719 例）、`npm run check:filelength`、`npm run build:web` 全过。
+真 Chrome 看了三个尺寸（dev server 9190 → 本地 8088）：桌面 1568×744、竖屏 390×844 dpr2、横屏手机 844×390。
+五行全部单行放下、无裁切，数字与两枚字形在 dpr2 竖屏上清楚可读；横屏手机上字号下限把 chip 抬到接近名字大小，正是想要的降级方向。
+**弹窗是用 hash 路由的临时 harness 起的**（`#pickerdemo`，用真 `WorldMapPanels` + 手搓 ctx 调真 `showModal`，提交前删掉）——
+本机 docker 账号（LimeMutt）在世界地图上一支队伍都没有，走真实入口只会弹「尚无队伍」。

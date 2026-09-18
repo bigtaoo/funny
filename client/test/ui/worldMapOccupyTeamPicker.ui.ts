@@ -88,6 +88,13 @@ function buildHarness(opts: {
   return { ctx, net, showModal, showToast, showDeployDialog, startMarch, getMarches, getOccupations, getSiegeHolds, getStationed, getMe };
 }
 
+/**
+ * A row's stat chips (ModalButton.stats) as `{ glyph: figure }` — the troops/stamina figures, which
+ * live beside a glyph rather than inside the label since 2026-09-17 (see march.ts).
+ */
+const statsOf = (b: { stats?: { icon: string; text: string }[] }): Record<string, string> =>
+  Object.fromEntries((b.stats ?? []).map((s) => [s.icon, s.text]));
+
 /** A promise whose resolution is controlled from the test — lets us freeze startMarch mid-flight. */
 function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void } {
   let resolve!: (v: T) => void;
@@ -115,14 +122,15 @@ describe('WorldMapNet.showTeamPicker — occupy uses the team picker (§4.2)', (
       cardState: { c1: { currentTroops: 1200 }, c2: { currentTroops: 960 } },
     });
     await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'occupy');
-    const labels = (showModal.mock.calls[0][1] as { label: string }[]).map((b) => b.label);
-    const teamLabel = labels.find((l) => l.startsWith('Cards'))!;
-    expect(teamLabel).toContain(t('world.team.committed').replace('{n}', '2160'));
+    const buttons = showModal.mock.calls[0][1] as { label: string; stats?: { icon: string; text: string }[] }[];
+    const row = buttons.find((b) => b.label.startsWith('Cards'))!;
+    expect(statsOf(row).unit).toBe('2160');
   });
 
   // Regression (2026-08-01): persistTeam() always saves name: '' (v1 has no custom-naming UI — see
   // DefenseEditorScene/data.ts), so the picker must fall back to the live slot name derived from the
-  // team's `t{n}` id instead of rendering a blank name (label collapsing to just "· Troops NNNN").
+  // team's `t{n}` id instead of rendering a blank row label (the whole label IS the name now, so a
+  // blank one would leave a row with nothing but two figures under it).
   it('a team with an empty (unnamed) slot falls back to its live "Team {n}" slot name', async () => {
     const { net, showModal } = buildHarness({
       teams: [{ id: 't3', name: '', army: [{ cardInstanceId: 'c1' }] }],

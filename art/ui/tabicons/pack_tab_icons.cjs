@@ -318,6 +318,15 @@ const JOBS = [
   { src: 'tabicon_promote.png',            name: 'promote', inks: ['active'] },
   { src: 'tabicon_demote.png',             name: 'demote', inks: ['active'] },
 
+  // Batch 13 (design/product/tab-icon-art-prompts-batch13.md): team stamina's own glyph. The picker's
+  // stat chip was borrowing `hourglassMd`, which on that same screen already means "how much TIME is
+  // left" three times over (the speedup buff row, the occupy/siege countdowns, the shop's speedup
+  // tiers) — while stamina is a budget of orders, not a duration. Two UNEVEN tongues with a notch
+  // between them and a curved-in base, because a solid single-tongue flame is `play`'s triangle and
+  // `lead`'s cone; the shape is carried entirely by the outline, since an inner core is the first
+  // thing to vanish at chip size (batch 9's `camp` v1 lesson).
+  { src: 'tabicon_flame.png',              name: 'flame', inks: ['active'] },
+
   // Check-in calendar focal cue (design/product/checkin-focus-cue-art.md, 2026-09-05). Like `back`,
   // these are NOT tab icons — they are page content drawn beside/behind one calendar cell, in the
   // one green ink that cell is drawn in, so they take a single opt-in ink instead of the tab triple.

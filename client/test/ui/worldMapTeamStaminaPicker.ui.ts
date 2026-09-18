@@ -95,6 +95,16 @@ function buildHarness(opts: {
 
 const labelsOf = (showModal: ReturnType<typeof vi.fn>): string[] =>
   (showModal.mock.calls[0]![1] as { label: string }[]).map((b) => b.label);
+/**
+ * The stamina figure on the row whose label starts with `name`. Since 2026-09-17 the figure is a
+ * `[glyph][number]` chip under the name (`ModalButton.stats`, glyph `flame`) rather than a
+ * `Stamina {n}` phrase inside the label — see net/march.ts for why.
+ */
+const staminaOn = (showModal: ReturnType<typeof vi.fn>, name: string): string | undefined => {
+  const buttons = showModal.mock.calls[0]![1] as { label: string; stats?: { icon: string; text: string }[] }[];
+  const row = buttons.find((b) => b.label.startsWith(name));
+  return row?.stats?.find((s) => s.icon === 'flame')?.text;
+};
 const headOf = (showModal: ReturnType<typeof vi.fn>): string[] =>
   (showModal.mock.calls[0]![0] as ModalLine[]).map(modalLineText);
 
@@ -105,8 +115,7 @@ describe('showTeamPicker — team stamina gate (§4.6)', () => {
   it('a team with no stamina state reads as FULL and is offered with the full figure', async () => {
     const { net, showModal } = buildHarness();
     await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'occupy');
-    const row = labelsOf(showModal).find((l) => l.startsWith('Alpha'))!;
-    expect(row).toContain(t('world.team.stamina').replace('{n}', String(SLG_TEAM_STAMINA_MAX)));
+    expect(staminaOn(showModal, 'Alpha')).toBe(String(SLG_TEAM_STAMINA_MAX));
   });
 
   it('an exhausted team is omitted entirely, and the head names stamina — not "go distribute troops"', async () => {
@@ -137,9 +146,8 @@ describe('showTeamPicker — team stamina gate (§4.6)', () => {
       teamState: { t1: { stamina: 0, staminaAt: NOW - 20 * 60_000 } },
     });
     await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'occupy');
-    const row = labelsOf(showModal).find((l) => l.startsWith('Alpha'));
-    expect(row).toBeTruthy();
-    expect(row).toContain(t('world.team.stamina').replace('{n}', '20'));
+    expect(labelsOf(showModal).some((l) => l.startsWith('Alpha'))).toBe(true);
+    expect(staminaOn(showModal, 'Alpha')).toBe('20');
   });
 
   it('a rested team is still offered alongside a tired one, and only the tired one drops out', async () => {

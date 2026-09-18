@@ -31,7 +31,7 @@ vi.mock('@capacitor/core', () => ({
 
 initI18n('en');
 
-interface Node { text: string; top: number; bottom: number }
+interface Node { text: string; top: number; bottom: number; left: number; right: number }
 
 function collect(root: PIXI.Container): Node[] {
   const out: Node[] = [];
@@ -39,7 +39,7 @@ function collect(root: PIXI.Container): Node[] {
     for (const ch of n.children) {
       if (ch instanceof PIXI.Text) {
         const b = ch.getBounds();
-        out.push({ text: ch.text, top: b.y, bottom: b.y + b.height });
+        out.push({ text: ch.text, top: b.y, bottom: b.y + b.height, left: b.x, right: b.x + b.width });
         continue;
       }
       if (ch instanceof PIXI.Container) walk(ch);
@@ -131,8 +131,13 @@ describe('SettingsScene — legal links', () => {
       const del = find(nodes, t('settings.deleteAccount'));
 
       expect(terms.bottom, 'legal links run off the bottom of the screen').toBeLessThan(layout.designHeight);
+      expect(terms.right, 'legal links run off the right edge').toBeLessThanOrEqual(layout.designWidth);
       expect(legal.bottom, 'section label overlaps its own first link').toBeLessThanOrEqual(privacy.top + 1);
-      expect(privacy.bottom, 'the two links overlap each other').toBeLessThanOrEqual(terms.top + 1);
+      // The pair is laid out side by side where the column is wide enough and stacked where it is
+      // not (measured per render, not per orientation), so the invariant is "disjoint", on whichever
+      // axis this viewport chose.
+      const disjoint = privacy.bottom <= terms.top + 1 || privacy.right <= terms.left;
+      expect(disjoint, 'the two links overlap each other').toBe(true);
       // Same band as the delete button, different column — the check that matters is that the
       // links are not sitting on top of the tutorial button above them.
       const help = find(nodes, t('settings.replayTutorial'));
@@ -140,6 +145,89 @@ describe('SettingsScene — legal links', () => {
       expect(del.top).toBeGreaterThan(0); // the account column drew, i.e. this shape is comparable
     },
   );
+});
+
+/** The hit under a design-space point, the way a tap resolves one. */
+function hitAt(s: SettingsScene, x: number, y: number): (() => void) | undefined {
+  return s.hits.find((h) => h.rect.x <= x && x <= h.rect.x + h.rect.w && h.rect.y <= y && y <= h.rect.y + h.rect.h)?.fn;
+}
+
+describe('SettingsScene — legal links, one row or two', () => {
+  it('puts the pair on one row where the column is wide enough', () => {
+    const nodes = collect(sceneOn(createLayout(1280, 800)).container);
+    const privacy = find(nodes, '· ' + t('consent.privacyPolicy'));
+    const terms = find(nodes, '· ' + t('consent.terms'));
+    expect(terms.left, 'the links share a row but overlap').toBeGreaterThanOrEqual(privacy.right);
+    expect(Math.abs(privacy.top - terms.top), 'the links are not on the same row').toBeLessThan(2);
+  });
+
+  // 0.56w…0.94w of a 1080-wide portrait design rect is ~410 design px; the German pair alone is
+  // ~620. This is the case that stops "put them on one line" from being unconditional.
+  it('stacks them where the pair does not fit (portrait, de)', () => {
+    setLocale('de');
+    const layout = createLayout(412, 915);
+    const nodes = collect(sceneOn(layout).container);
+    const privacy = find(nodes, '· ' + t('consent.privacyPolicy'));
+    const terms = find(nodes, '· ' + t('consent.terms'));
+    expect(privacy.bottom).toBeLessThanOrEqual(terms.top + 1);
+    expect(terms.right).toBeLessThanOrEqual(layout.designWidth);
+  });
+
+  // Side by side, the tap targets can no longer be padded out to 0.3w each — they would swallow
+  // their neighbour, and the Terms link would open the privacy policy.
+  it('keeps a tap on each link on that link when they share a row', () => {
+    const s = sceneOn(createLayout(1280, 800));
+    const nodes = collect(s.container);
+    const privacy = find(nodes, '· ' + t('consent.privacyPolicy'));
+    const terms = find(nodes, '· ' + t('consent.terms'));
+    const midY = (privacy.top + privacy.bottom) / 2;
+    // Mid-glyph, not the left edge: `getBounds` includes makeText's CJK anti-clip padding, so a
+    // text's own left edge sits a few px OUTSIDE the tap rect that was built from its origin.
+    const calls = withWindow(() => {
+      hitAt(s, (privacy.left + privacy.right) / 2, midY)!();
+      hitAt(s, (terms.left + terms.right) / 2, midY)!();
+    });
+    expect(calls).toEqual([
+      ['/privacy.html', '_blank', 'noopener'],
+      ['/terms.html', '_blank', 'noopener'],
+    ]);
+  });
+
+  /**
+   * The failure mode a one-row layout adds: whichever branch a locale lands in, nothing may leave
+   * the right-hand column. The links have no wrapping and no shrink-to-fit — a pair that is one
+   * character too wide simply runs past the page edge, and the tap rect (text width plus half the
+   * gap) runs past it further than the glyphs do.
+   *
+   * Landscape is the interesting shape here and the one the portrait sweep
+   * (`test/browser/portraitLayout.spec.ts`) does NOT cover in German: its landscape viewports are
+   * all `locale: 'en'`, while the German rows are portrait-only.
+   */
+  it.each([
+    ['zh', 1280, 800], ['en', 1280, 800], ['de', 1280, 800],
+    ['zh', 412, 915], ['en', 412, 915], ['de', 412, 915],
+  ] as const)('keeps links and tap targets inside the column in %s (%ix%i)', (locale, vw, vh) => {
+    setLocale(locale as Locale);
+    const layout = createLayout(vw, vh);
+    const s = sceneOn(layout);
+    const nodes = collect(s.container);
+    const links = [find(nodes, '· ' + t('consent.privacyPolicy')), find(nodes, '· ' + t('consent.terms'))];
+    // The same edge `drawLegal` measures against: the column runs to 0.94w.
+    const columnRight = layout.designWidth * 0.94;
+
+    for (const link of links) {
+      expect(link.right, `"${link.text}" runs past the column`).toBeLessThanOrEqual(columnRight);
+      const rect = s.hits.find((h) => {
+        const midY = (link.top + link.bottom) / 2;
+        return h.rect.y <= midY && midY <= h.rect.y + h.rect.h
+          && h.rect.x <= link.right && link.left <= h.rect.x + h.rect.w
+          && h.rect.x > layout.designWidth * 0.5;
+      })?.rect;
+      expect(rect, `no tap rect on "${link.text}"`).toBeDefined();
+      expect(rect!.x + rect!.w, `the tap target for "${link.text}" runs off the design rect`)
+        .toBeLessThanOrEqual(layout.designWidth);
+    }
+  });
 });
 
 describe('SettingsScene — where the legal links point', () => {

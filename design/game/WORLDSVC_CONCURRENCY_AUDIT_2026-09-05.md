@@ -869,3 +869,140 @@ p50 21.2 → 15.3ms（−28%），**p99 555 → 568ms（纹丝不动）**。并�
 - 门禁 `worldsvc/test/getme-territory-mirror.e2e.test.ts` 四条，第一条才是这次改动的验收条件：
   **`getMe` 期间 `tiles.countDocuments` 被调用 0 次**。只断言「数字对不对」对旧代码同样会绿——
   旧代码返回的数字也是对的，它只是每次都花一次往返去算。
+
+---
+
+## 十一、2026-09-17 复测：尾巴还在，但「一两个玩家也不顺畅」有了完整的因果链
+
+用户报告「即使只有一两个玩家，SLG 体验也不太顺畅」。这一节是那次复测，以及它挖出来的两件事。
+前提：§九/§十 的四个 commit 已于 2026-09-16 部署（容器 uptime 29h）。
+
+### 11.1 四组读数（线上，5 分钟心跳 × 6 轮）
+
+| 路由 | p50 | p90 | p99 |
+|---|---|---|---|
+| `POST /world/march` | 119–220 | **706–827** | 841–954 |
+| `GET /world/me` | 33–38 | 117–358 | 579–786 |
+| `GET /world/map/sparse` | 20–22 | 153–527 | 682–774 |
+| `POST /world/build/upgrade` | 13–17 | 31–51 | 299–679 |
+
+三条排除项，都是**先排除再解释**：
+
+- **不是 CPU**：`vmstat` 75% idle、`wa=0`；`docker stats` 全部容器加起来不到一核。
+  （`uptime` 的 load average 长期 4.x 在这台 2 vCPU 上**不能当 CPU 饱和读**——`%Cpu(s) id=75` 才是。）
+- **不是事件循环**：`loopLagMs` p50 20.2 / max 76–98ms，整轮没有停顿。§一那把刀仍然按住。
+- **不是慢查询**：容器内 600 次裸 `ping`（20/s × 30s）得 p50 7 / p90 11 / p99 37 / **max 795**，
+  600 次里只有 **4 次** 超过 100ms。对比 §九 那轮的 `ping p99 590`，**停顿从"每秒一次"变成"稀疏"**
+  （§十的往返削减 + `SIEGE_SCAN_RADIUS` 那个 fall-through bug 修掉，都在减 ops/sec），但**没有消失**。
+
+### 11.2 那张表可以由一个乘法完全解释
+
+把 11.1 的两个事实放在一起：单次操作撞上停顿的概率约 **0.7%**，一次停顿约 **0.7 秒**。
+于是 **一条路由的 p90/p99 ≈ 它串行发出的往返次数 × 这个命中率**：
+
+- `getMe` 现在 **2 次**串行往返（§十）→ 约 1.3% 撞上 → 只在 **p99** 露头，实测 700–786ms ✓
+- `startMarch` 读代码是**十几个串行波次**（`playerWorld.findOne` → `resolveMarchTeam` → `[fromTile, payoff]`
+  → `validateMarchTarget` 内 2~4 次 → `computeMarchPath` → `marches.insertOne` → 两次 `playerWorld.updateOne`
+  → `visionObservers`）→ 约 10% 撞上 → **p90 就是 706–827ms** ✓
+
+这跟 §9.4 的模型是同一个式子，只是现在两端的数都量到了。**玩家的体感是这样来的**：
+点一次「出征」典型 200ms，但**每十次里有一次要等一秒**——说不上卡，就是不跟手。
+所以「一两个玩家也不顺畅」不需要任何并发解释，它跟在线人数无关。
+
+**两条杠杆，顺序不能反**：
+1. **Atlas 升到专用层**——唯一能一次性把那 0.7% 归零的动作，要花钱、等用户拍板（§9.5 已记）。
+2. **削 `startMarch` 的串行波次**——在 M0 上，p90 按波次数线性下降。§阶段 2 当初只做掉了
+   socialsvc 成员集合缓存和 `getMap` 那四个并发读，`startMarch` 自己的波次一条都没动。
+
+### 11.3 顺手挖出的：worldsvc 64% 的请求量是一个必然失败的循环
+
+`POST /world/build/upgrade` 在 29 小时里被调用 **629,382** 次（6.0/s），是 worldsvc 请求量的第一名，
+**而它一次都没有成功过**。全部来自 botsvc 的 100 个在线 bot。
+判据、机制（bot 只产一种资源，而没有任何建筑吃 `ink`）、为什么几个月没人发现（`.catch(() => undefined)`）
+以及修法与门禁，都记在 [`BOTSVC_DESIGN.md`](BOTSVC_DESIGN.md) §8 的 2026-09-17 条。
+
+这里只记它对本文档的意义：**11.1 那 0.7% 的停顿命中率不是天生的，它是我们自己的 ops/sec 买来的**，
+而其中最大的一笔是废的。这也是 §9.5 第二条「降总 ops/sec」里那句「bot 的 tick 节奏本身也是个旋钮」
+的第一次真正兑现——但兑现的方式不是把旋钮往下拧，是**发现那些请求本来就不该发出去**。
+
+### 11.4 落地：`startMarch` 的串行波次 13 → 6（2026-09-17）
+
+按 11.2 的模型动第二条杠杆。**一个团队 `occupy` 派发的波次账**（波次 = 一次串行的 Mongo 往返；
+括号里是同一波内并发的条数）：
+
+| # | 改前 | 改后 |
+|---|---|---|
+| 1 | `playerWorld.findOne` | `playerWorld.findOne` |
+| 2 | `resolveMarchTeam`（内部 5 并发） | **`resolveMarchTeam` + 两个端点格 + `sectPayoff`（一批）** |
+| 3 | `[fromTile, sectPayoff]` | `isConnectedToSectTerritory` |
+| 4 | `tiles.findOne(toTid)`（在 `validateMarchTarget` 里） | **`computeMarchPath`：渡口 + 敌方基地 + 阻挡（一批）** |
+| 5 | `isConnectedToSectTerritory` | `marches.insertOne` |
+| 6 | `computeMarchPath`：渡口扫描 | **`playerWorld.updateOne`（扣兵 + 扣体力，同一条写）** |
+| 7 | `computeMarchPath`：`tiles.findOne(toTid)` **（第二次读目标格）** | — |
+| 8 | `computeMarchPath`：敌方基地扫描 | — |
+| 9 | `computeMarchPath`：阻挡建筑扫描 | — |
+| 10 | `marches.insertOne` | — |
+| 11 | `playerWorld.updateOne`（扣兵） | — |
+| 12 | `playerWorld.updateOne`（扣体力） | — |
+| 13 | `visionObservers`（推送给别人用） | **移出响应路径** |
+
+**四刀，每一刀的理由不同：**
+
+1. **开场三波合一。** 队伍解析、两个端点格、宗门加成三件事互不依赖，串行只是因为它们**按检查读到的顺序被写下来**。
+   端点格现在一条 `_id: {$in: [from, to]}` 拿两格。
+   ⚠️ `fromTile` 是**按调用方请求的坐标投机读**的：只有 ADR-051 P3c 的就地再派发会改写起点，
+   而它同时也是**唯一跳过起点归属检查**的分支——所以这份投机读恰好只在它正确的时候被用到。
+   为防「以后又有第二种改写起点的路径」静默走错，非再派发分支加了一条 `fromTid !== requestedFromTid` 的内部断言。
+2. **`computeMarchPath` 四波合一。** 三个障碍扫描本来就独立，第四个（敌方基地）之所以卡在链条中间，
+   是因为它用 `ownerId: {$nin: [自己, 攻城目标的主人]}` **把目标格的答案写进了查询条件**。
+   那个依赖不是必须的：同一个排除完全可以在返回的行上做。改成 `$ne: 自己` + JS 里过掉攻城目标的主人后，
+   四条一起发。代价是同一个 legBox 里多回来几行投影，**在共享层 Atlas 上这个交换极度一边倒**——
+   一波要付整条停顿尾巴，几行投影什么都不付。顺带 `destTile` 由 `startMarch` 传进来，第二次读目标格直接消失。
+3. **扣兵与扣体力合成一条写。** 两者都打同一份 `playerWorld`、互不需要对方的结果。
+   **而且合并后更正确**：体力原来是在扣兵的 `troops: {$gte}` 守卫**可能已经落空**之后单独写的，
+   而失败回滚不退体力——一次因兵力不足被拒的派发照样扣掉一点体力。合进去之后守卫同时管住两者。
+   （卡牌队 / 就地再派发不扣兵池，那两条路径的体力写照样是独立的一条、照样不带守卫、照样不 bump `rev`。）
+4. **反向视野扇出移出响应路径。** 它是**给别人**的推送，且派发此时已经落库——它查到什么都改不了正在返回的东西。
+   旁边的两条（给自己的 `pushMarch`、`under_attack` 警告）本来就是 fire-and-forget，它是那个例外。
+   失败现在**打日志**而不是吞掉（理由见 `BOTSVC_DESIGN.md` §8 的 2026-09-17 条）。
+
+**门禁 `worldsvc/test/startmarch-roundtrips.test.ts`（5 例）——它守的是成本，而行为测试对成本完全瞎**：
+`combatMarch-command-branch-gaps.test.ts` 无论这些读是串行还是并发都一样绿。
+
+两条写门禁时才想清楚的：
+- **「并发」不能用全局峰值并发度断言。** 第一版断言「整个 `startMarch` 期间峰值 in-flight > 1」，
+  结果把开场三波改回串行**它照旧全绿**——因为 `computeMarchPath` 自己那一批把峰值撑住了。
+  改成**按名字断言两两重叠**（`endpointTiles` 与 `sectPayoff`、`endpointTiles` 与 `teamBusy.march`），
+  并且用**事件计数器而不是时钟**记区间：没有时长可抖，也没法让一个「查得快」的串行看起来像并发。
+- **「没有被 await」只有一种不会误绿的写法**：让 `visionObservers` 返回一个**永不 resolve** 的 promise，
+  `startMarch` 仍然返回。按时间断言的版本会在查询恰好很快时变绿，而那正是它必须报红的情形。
+
+五个变异全部按预期变红（两个端点格改回两次 `findOne` / 开场批改回串行 / 路径计算重新自己读目标格 /
+体力拆回第二条写 / 把视野扇出改回 `await`），且每次只红该红的那条。
+
+**顺带发现的、这一轮没做的**：`validateMarchTarget` 的 attack 分支里 `friendlyAccountIds` 与
+`isConnectedToSectTerritory` 仍是两波，它们也互不依赖。**故意没合**：这两个读夹在一串有序的 throw 之间
+（`ALLY_TILE` → `PROTECTED` → `TERRITORY_NOT_CONNECTED`），提前发第二个读就必须接住它的 rejection，
+否则前面的 throw 会留下一条未处理的 promise。收益一波，风险是一类很难看见的 bug——留给专门做它的人。
+
+### 11.5 补了两条门禁：这一轮唯一的语义改写，和投机读最尖的那条边
+
+§11.4 写完后回头看，两个地方**有代码没有判据**：
+
+- **`computeMarchPath` 的 `$nin` → 行上过滤是整轮唯一的语义改写**，而它**一条测试都没有**：
+  现有的行为套件全都把 `tiles.find` 打成空游标（因为改前 production 只走 `findOne`），
+  所以敌方基地扫描一行都不返回、那个过滤器从来没被执行过。
+  新文件 `worldsvc/test/computeMarchPath-obstacle-scan.test.ts`（5 例）给扫描喂真实行、断言 `blockedBaseKeys`
+  这个集合本身：攻城目标主人**在同一 legBox 里的另一座城**必须不挡路（这正是旧 `$nin` 表达的东西）、
+  无关敌人必须挡、目标不是基地时全都挡、自己的主城 footprint 永不挡、以及 `destTileDoc` 传了就不再读 / 不传照旧读
+  且豁免结论一致（后者守的是**别的调用方**——回城行军、驻扎再派发——不会悄悄开始绕一座它本可落地的城）。
+  变异「去掉那个豁免」当场红 2 例。
+- **投机读最尖的那条边没有用例**：ADR-051 P3c 就地再派发的起点会被改写到队伍所站的野外格，
+  而那格**常常是中立甚至敌方的地**。批量读取的那格因此**不是**真实起点，必须不被采信。
+  `startmarch-roundtrips.test.ts` 加了一例：请求起点那格属于陌生人 + 队伍停在别处 → 派发成功，
+  且落库的 `fromTile` 是野外那格。变异「把 `if (!idleRedispatch)` 改成无条件检查」当场红。
+  （原有的 `combatMarch-command-branch-gaps.test.ts` 那例只覆盖「起点格没有文档」，覆盖不到「有文档且属于别人」。）
+
+**两处仍然不在本地可验**：真实收益要看线上心跳里 `POST /world/march` 那一行的 p90
+（本机 Mongo 没有那只令牌桶，§10.3 同理），而 11.3 的 bot 修复同时在降总 ops/sec，
+所以**下一轮读数是两件事的合力，不要单独归因给任何一件**。

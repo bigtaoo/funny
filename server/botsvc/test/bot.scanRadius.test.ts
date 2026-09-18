@@ -51,9 +51,9 @@ function serverFaithfulWorld(enemyAt: { x: number; y: number }, cap = worldsvcVi
   );
   Object.assign(world, {
     getActiveSeason: vi.fn().mockResolvedValue({ season: 3 }),
-    joinSeason: vi.fn().mockResolvedValue({ joined: true, worldId: 's3-0' }),
-    upgradeBuilding: vi.fn().mockResolvedValue(undefined),
-    getWorldMe: vi.fn().mockResolvedValue({ joined: true, troops: 100, mainBaseTile: `s3-0:${BASE.x}:${BASE.y}` }),
+    joinSeason: vi.fn().mockImplementation(async () => solventMe({ worldId: 's3-0' })),
+    upgradeBuilding: vi.fn().mockImplementation(async () => solventMe()),
+    getWorldMe: vi.fn().mockImplementation(async () => solventMe()),
     getWorldMapSparse,
     startMarchAttack: vi.fn().mockResolvedValue(undefined),
   });
@@ -61,6 +61,19 @@ function serverFaithfulWorld(enemyAt: { x: number; y: number }, cap = worldsvcVi
     getWorldMapSparse: typeof getWorldMapSparse;
     startMarchAttack: ReturnType<typeof vi.fn>;
     upgradeBuilding: ReturnType<typeof vi.fn>;
+  };
+}
+
+/** A solvent `/world/me`: tickSlg only posts an upgrade it believes will succeed (see bot.test.ts). */
+function solventMe(over: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    joined: true,
+    troops: 100,
+    mainBaseTile: `s3-0:${BASE.x}:${BASE.y}`,
+    buildings: { desk: 1 },
+    buildQueue: [],
+    resources: { ink: 1e9, paper: 1e9, graphite: 1e9, metal: 1e9, sticker: 1e9 },
+    ...over,
   };
 }
 
@@ -76,7 +89,7 @@ function fakeCommercial(): any {
 
 /** Run the five ticks it takes to reach one siege-interval tick (SIEGE_TICK_INTERVAL = 5). */
 async function runToSiegeTick(world: WorldClient): Promise<void> {
-  const session = new BotSession(identity, fakeMeta(), fakeSocial(), fakeCommercial(), world, battleOpts);
+  const session = new BotSession(identity, fakeMeta(), fakeSocial(), fakeCommercial(), world, battleOpts, { intervalMs: 0 });
   await session.login();
   for (let i = 0; i < 5; i++) await session.tickSlg();
 }

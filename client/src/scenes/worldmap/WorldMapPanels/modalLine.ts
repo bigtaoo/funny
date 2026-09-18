@@ -30,12 +30,39 @@ export type ModalGlyph = IconKind | { res: ResourceType };
 /** One information line of a modal: bare text, or text with a leading glyph. */
 export type ModalLine = string | { text: string; icon?: ModalGlyph };
 
+/**
+ * One `[glyph][number]` chip of a button's stat row. The glyph carries the QUANTITY'S NAME, which is
+ * why there is no text for it: the word is what made the team picker's rows unreadable (see
+ * {@link ModalButton.stats}).
+ */
+export interface ModalButtonStat {
+  icon: IconKind;
+  /** The bare figure — `'2525'`, not `'Troops 2525'`. */
+  text: string;
+}
+
 /** One modal button. `icon` is `IconKind`-only on purpose — see the resource-motif note above. */
 export interface ModalButton {
   label: string;
   action: () => void;
   disabled?: boolean;
   icon?: IconKind;
+  /**
+   * A second line inside the button: small `[glyph][number]` chips under the label, for a row the
+   * player picks by COMPARING figures across buttons (the team picker, §4.2/§4.6).
+   *
+   * Those rows used to spell every figure out in the label — `Team 1 · Troops 2525 · Stamina 100`,
+   * which at `FS.title` in a 210px column is three wrapped lines in a 84px button, i.e. clipped,
+   * and two thirds of the ink was the same two words repeated on all five rows. As chips the words
+   * become glyphs, the figures stay full-size, and the row fits.
+   *
+   * Only for figures whose glyph the player can read without being told — either one this screen has
+   * already established (`unit` is a troop count on the tile menus too) or one drawn for the purpose
+   * (`flame` for stamina, batch 13). An icon that has to be decoded is worse than the word it
+   * replaced, and a BORROWED one can be worse still: stamina spent a day on `hourglassMd`, which on
+   * that same screen means "how much time is left" three times over.
+   */
+  stats?: ModalButtonStat[];
 }
 
 /** The text of a modal line, whichever of the two forms it is written in. */

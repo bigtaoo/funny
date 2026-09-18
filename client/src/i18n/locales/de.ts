@@ -1573,7 +1573,7 @@ export const de: Record<TranslationKey, string> = {
   'feedback.placeholder': 'Dein Feedback eingeben…',
   'feedback.submit': 'Senden',
   'feedback.close': 'Schließen',
-  'feedback.sent': 'Angekommen, danke!',
+  'feedback.sent': 'Danke — dein Feedback ist angekommen, wir sehen es uns an.',
   'feedback.err.empty': 'Bitte etwas eingeben',
   'feedback.err.failed': 'Übermittlung fehlgeschlagen, später erneut versuchen',
 

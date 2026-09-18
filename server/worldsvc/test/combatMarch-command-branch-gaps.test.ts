@@ -101,7 +101,13 @@ function fakeCore(o: WorldOpts = {}) {
     },
     tiles: {
       findOne: vi.fn(async (f: { _id: string }) => tilesById.get(f._id) ?? null),
-      find: vi.fn(() => cursor([])),
+      // Honours `_id: {$in: [...]}` against the same map `findOne` reads (2026-09-17). It used to return
+      // an empty cursor unconditionally, which was invisible while startMarch only ever reached `tiles`
+      // through `findOne` — the moment it batched both endpoints into one `find`, every case in this file
+      // lost its origin tile and failed TILE_NOT_OWNED. A double that models one method of a collection
+      // and lies about the rest is a trap for the next person who changes which method production calls.
+      find: vi.fn((f?: { _id?: { $in?: string[] } }) =>
+        cursor((f?._id?.$in ?? []).map((id) => tilesById.get(id)).filter((t): t is TileDoc => !!t))),
     },
     marches: {
       findOne: vi.fn(async () => o.busyMarch ?? null),
@@ -577,6 +583,25 @@ describe('startMarch — team stamina (SLG_DESIGN §4.6)', () => {
     });
   }
 
+  /**
+   * The whole playerWorld write that carries the stamina charge, or undefined if there was none.
+   *
+   * 2026-09-17: the charge no longer always has a write to itself — on the flat-troop path it rides
+   * inside the same guarded update as the pool debit (one wave instead of two). So a case asking
+   * "was stamina actually charged?" must look at the FILTER as well: a charge folded into a write
+   * whose `troops: {$gte}` guard missed never landed.
+   */
+  function staminaCall(): { filter: Record<string, unknown>; update: Record<string, unknown> } | undefined {
+    const calls = (ctx.cols.playerWorld.updateOne as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    for (const c of calls) {
+      const update = c[1] as { $set?: Record<string, unknown> } | undefined;
+      if (update?.$set && 'teamState.t1.stamina' in update.$set) {
+        return { filter: c[0] as Record<string, unknown>, update: update as Record<string, unknown> };
+      }
+    }
+    return undefined;
+  }
+
   /** The `$set` payload of the stamina write, or undefined if playerWorld was never written for it. */
   function staminaWrite(): Record<string, unknown> | undefined {
     const calls = (ctx.cols.playerWorld.updateOne as unknown as { mock: { calls: unknown[][] } }).mock.calls;
@@ -629,15 +654,20 @@ describe('startMarch — team stamina (SLG_DESIGN §4.6)', () => {
     expect(staminaWrite()).toBeUndefined();
   });
 
-  it('a dispatch that fails to commit costs nothing — the charge lands after the pool debit', async () => {
+  it('a dispatch that fails to commit costs nothing — the charge shares the pool debit guard', async () => {
     // deductMatched: 0 → the pool guard misses, startMarch rolls the march back and throws NO_TROOPS.
+    // 2026-09-17: this got STRICTER rather than weaker. The charge used to be a second write issued
+    // after the debit, so "costs nothing" rested on the throw happening first; now it is inside the
+    // debit's own `troops: {$gte}` guard, so a missed debit cannot charge stamina even in principle.
     const s = withStamina({ stamina: SLG_TEAM_STAMINA_MAX, staminaAt: NOW }, { deductMatched: 0 });
     await expectSlg(
       s.startMarch(W, ACC, FROM.x, FROM.y, TO.x, TO.y, 'occupy', 600, 't1'),
       ErrorCode.NO_TROOPS,
     );
     expect(ctx.cols.marches.deleteOne).toHaveBeenCalledTimes(1);
-    expect(staminaWrite()).toBeUndefined();
+    const call = staminaCall();
+    expect(call?.filter).toMatchObject({ troops: { $gte: expect.any(Number) } }); // guarded, and the guard missed
+    expect(ctx.cols.playerWorld.updateOne).toHaveBeenCalledTimes(1); // no unguarded second write followed
   });
 
   it('an idle re-dispatch is charged too — standing in the field is not a free order', async () => {
@@ -665,21 +695,41 @@ describe('startMarch — team stamina (SLG_DESIGN §4.6)', () => {
     expect(staminaWrite()).toBeUndefined();
   });
 
-  it('the charge writes ONLY the two scoped team keys — no rev bump, nothing else touched', async () => {
-    // Two claims the source spells out and nothing asserted. (1) `rev` is deliberately left alone: it is a
-    // pure optimistic lock, and bumping it from a write nobody guards on would invalidate other writers'
-    // guards for free. (2) Both keys are dotted paths under THIS team's subdocument, so the write commutes
-    // with every other playerWorld writer — a scheduler settle landing in the same window, or the defence
-    // side's `teamState.{id}.injuredUntil`. A `$set: { teamState }` on the whole map would silently clobber
-    // the other four teams' state, and would still satisfy every other case in this block.
+  it('the charge only ever writes the two scoped team keys — never the whole teamState map', async () => {
+    // Both keys are dotted paths under THIS team's subdocument, so the write commutes with every other
+    // playerWorld writer — a scheduler settle landing in the same window, or the defence side's
+    // `teamState.{id}.injuredUntil`. A `$set: { teamState }` on the whole map would silently clobber the
+    // other four teams' state, and would still satisfy every other case in this block.
     const s = withStamina({ stamina: SLG_TEAM_STAMINA_MAX, staminaAt: NOW });
     await s.startMarch(W, ACC, FROM.x, FROM.y, TO.x, TO.y, 'occupy', 0, 't1');
-    const calls = (ctx.cols.playerWorld.updateOne as unknown as { mock: { calls: unknown[][] } }).mock.calls;
-    const call = calls.find((c) => 'teamState.t1.stamina' in (((c[1] as { $set?: Record<string, unknown> })?.$set) ?? {}))!;
-    expect(Object.keys(call[1] as Record<string, unknown>)).toEqual(['$set']); // no $inc, no rev
-    expect(Object.keys((call[1] as { $set: Record<string, unknown> }).$set).sort())
-      .toEqual(['teamState.t1.stamina', 'teamState.t1.staminaAt']);
-    expect(call[0]).toEqual({ _id: expect.anything() }); // no rev guard either — the write is unconditional
+    expect(Object.keys(staminaWrite()!).sort()).toEqual(['teamState.t1.stamina', 'teamState.t1.staminaAt']);
+  });
+
+  it('a flat-troop team dispatch spends ONE playerWorld write, not two', async () => {
+    // The pool debit and the stamina charge target the same document and are both unconditional on
+    // anything the other needs, so they used to be two serial waves for no reason. On a shared-tier
+    // Atlas a wave is what costs (WORLDSVC_CONCURRENCY_AUDIT_2026-09-05.md §11.2), not the bytes.
+    const s = withStamina({ stamina: SLG_TEAM_STAMINA_MAX, staminaAt: NOW });
+    await s.startMarch(W, ACC, FROM.x, FROM.y, TO.x, TO.y, 'occupy', 600, 't1');
+    expect(ctx.cols.playerWorld.updateOne).toHaveBeenCalledTimes(1);
+    const call = staminaCall()!;
+    expect(call.update).toHaveProperty('$inc'); // the debit and the charge are the same write
+    expect(call.filter).toMatchObject({ troops: { $gte: expect.any(Number) } });
+  });
+
+  it('a standalone charge (no pool debit to ride on) still bumps no rev and takes no guard', async () => {
+    // The card-army path deducts no pool troops, so the charge is still a write of its own — and there
+    // `rev` must stay alone: it is a pure optimistic lock, and bumping it from a write nobody guards on
+    // would invalidate other writers' guards for free. (On the flat path above, `rev` is bumped because
+    // `troops` genuinely changed, which is a different claim.)
+    const s = build({
+      pw: playerWorld({ teams: [flatTeam({ army: [{ cardInstanceId: 'c1', col: 0, row: 0 }] })], cardState: { c1: { currentTroops: 700 } } } as unknown as Partial<PlayerWorldDoc>),
+      tiles: occupyTiles,
+    });
+    await s.startMarch(W, ACC, FROM.x, FROM.y, TO.x, TO.y, 'occupy', 0, 't1');
+    const call = staminaCall()!;
+    expect(Object.keys(call.update)).toEqual(['$set']); // no $inc, no rev
+    expect(call.filter).toEqual({ _id: expect.anything() }); // unconditional
   });
 
   it('a busy team still reports TEAM_BUSY, not TEAM_EXHAUSTED, when both would block', async () => {

@@ -100,6 +100,15 @@ describe('SettingsScene — viewport diagnostics', () => {
     expect(readout(sceneOn(createLayout(390, 844), null))).toEqual([]);
   });
 
+  // In a browser this row is debug text in front of every player, and `viewportVerdict` answers the
+  // literal word `browser` — it makes no claim there, because tabs and a URL bar eat viewport
+  // legitimately. The shell is the only place the numbers decide anything.
+  it('draws nothing in a browser, where the verdict makes no claim', () => {
+    const browser: ViewportGeometry = { ...EATEN, nativeShell: false };
+    expect(readout(sceneOn(createLayout(1920, 1080), browser))).toEqual([]);
+    expect(readout(sceneOn(createLayout(390, 844), browser))).toEqual([]);
+  });
+
   it.each([[390, 844], [412, 915], [800, 1280]])('fits under the legal links in portrait (%ix%i)', (w, h) => {
     const layout = createLayout(w, h);
     const s = sceneOn(layout);

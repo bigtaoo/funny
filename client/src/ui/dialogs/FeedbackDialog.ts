@@ -6,9 +6,15 @@
  * caret-blink unified field treatment (see `ui/inputDisplay.ts`, SettingsScene's rename field) since
  * feedback is a longer, multi-line note, not a one-shot reason string.
  *
- * Unlike AppealDialog, a successful submit does NOT close the dialog — it clears the input and shows an
- * inline "received, thanks" confirmation, so the player can send another note without reopening the panel
- * (feedback has no "one open ticket" model, unlike an appeal).
+ * A successful submit closes the dialog and the "received, thanks" confirmation is a GlobalToast raised by
+ * app.ts's onSubmit wrapper — exactly AppealDialog's shape. It used to stay open with an inline status line
+ * instead, so the player could send a second note without reopening the panel; that traded a rare case
+ * (nobody sends two notes in a row) for a confusing common one: the panel sat there unchanged apart from
+ * one small line the player's eye — parked on the buttons — often missed, so "did it send?" got answered by
+ * pressing Send again, and dismissing the panel still cost a second tap on Close (2026-09-17 bug report).
+ * A blocking "thanks" modal with a confirm button was considered and rejected: it says exactly what the
+ * toast says and charges a tap for it. The failure path is unchanged and still does NOT close — the panel
+ * keeps the typed text so a rate-limited or offline retry does not start from a blank field.
  */
 import * as PIXI from 'pixi.js-legacy';
 import { makeText } from '../../render/pixiText';
@@ -118,20 +124,15 @@ export class FeedbackDialog implements Scene {
     this.statusLabel.text = '';
     try {
       await this.cb.onSubmit(text);
-      // Stays open (unlike AppealDialog's onClose) — feedback allows repeated submissions. Clear
-      // the live field too (not just the mirrored feedbackText) — the old hidden-<input> version
-      // left the DOM value untouched here, so the next keystroke re-read the just-submitted text
-      // out of the input and merged it with whatever was typed next.
-      this.feedbackText = '';
-      this.textInput?.setValue('');
-      this.refreshLabel();
-      this.statusLabel.style.fill = C.green;
-      this.statusLabel.text = t('feedback.sent');
+      // Close on success (see the class note). `submitting` deliberately stays true — same as
+      // AppealDialog — so a second tap landing between this line and the teardown cannot send the
+      // note twice; the dialog is destroyed either way.
+      this.closeInput();
+      this.cb.onClose();
     } catch {
+      this.submitting = false;
       this.statusLabel.style.fill = C.red;
       this.statusLabel.text = t('feedback.err.failed');
-    } finally {
-      this.submitting = false;
     }
   }
 

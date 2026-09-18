@@ -31,7 +31,10 @@ interface FakeSession {
 }
 
 /** Minimal stand-in exposing only the surface Scheduler drives; login() flips it online. */
-function fakeSession(id: number, hooks: Partial<Record<'onFamily', () => Promise<void>>> = {}): FakeSession {
+function fakeSession(
+  id: number,
+  hooks: Partial<Record<'onFamily' | 'onSlg', () => Promise<void>>> = {},
+): FakeSession {
   const rec: FakeSession = { session: null as unknown as BotSession, familyCalls: 0, slgCalls: 0, battleCalls: 0 };
   const obj = {
     id,
@@ -48,6 +51,7 @@ function fakeSession(id: number, hooks: Partial<Record<'onFamily', () => Promise
     }),
     tickSlg: vi.fn(async () => {
       rec.slgCalls++;
+      if (hooks.onSlg) await hooks.onSlg();
     }),
     tickBattle: vi.fn(() => {
       rec.battleCalls++;
@@ -278,6 +282,54 @@ describe('Scheduler upkeep rotation', () => {
   });
 });
 
+describe('Scheduler upkeep failures are counted, not swallowed', () => {
+  // Both upkeep calls used to be `.catch(() => undefined)`. That is how a `tickSlg()` whose only
+  // world action was rejected on EVERY call stayed invisible for months while the logs stayed clean
+  // and /internal/bots/status reported a healthy fleet (see BotSession.upgradeNextBuilding).
+  it('surfaces a rejected upkeep step in status() instead of discarding it', async () => {
+    const pool = Array.from({ length: 3 }, (_, i) =>
+      fakeSession(i, { onSlg: async () => { throw new Error('Insufficient paper'); } }),
+    );
+    const scheduler = new Scheduler(pool.map((p) => p.session), fakeCapacity(async () => 0), { ...OPTS, upkeepRotations: 1 });
+
+    await scheduler.tick();
+
+    expect(scheduler.status().upkeepErrors.slg).toBe(3);
+    expect(scheduler.status().upkeepErrors.family).toBe(0);
+  });
+
+  it('keeps running the rest of the fleet when one session throws', async () => {
+    const boom = fakeSession(0, { onSlg: async () => { throw new Error('boom'); } });
+    const ok = fakeSession(1);
+    const scheduler = new Scheduler([boom.session, ok.session], fakeCapacity(async () => 0), { ...OPTS, upkeepRotations: 1 });
+
+    await scheduler.tick();
+
+    expect(ok.slgCalls).toBe(1);
+    expect(boom.battleCalls).toBe(1); // the chain continues past the failure, as it did before
+  });
+
+  it('logs one rolled-up warning per interval, not one per failure', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const pool = Array.from({ length: 4 }, (_, i) =>
+        fakeSession(i, { onSlg: async () => { throw new Error('Insufficient paper'); } }),
+      );
+      const scheduler = new Scheduler(pool.map((p) => p.session), fakeCapacity(async () => 0), { ...OPTS, upkeepRotations: 1 });
+
+      await scheduler.tick();
+      await scheduler.tick();
+
+      const upkeepLines = warn.mock.calls.filter((c) => String(c[0]).startsWith('botsvc upkeep failures:'));
+      expect(upkeepLines).toHaveLength(1);
+      expect(String(upkeepLines[0]![0])).toContain('slg=4');
+      expect(String(upkeepLines[0]![0])).toContain('Insufficient paper');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
 describe('Scheduler upkeep with nobody online', () => {
   it('returns before slicing when the online set is empty (empty pool, nothing to rotate over)', async () => {
     // Guards the rotation arithmetic below it: chunkSize = ceil(0/rotations) = 0, so `start` and the
@@ -285,6 +337,6 @@ describe('Scheduler upkeep with nobody online', () => {
     // at all, and this keeps a still-starting fleet from spinning up workers every tick.
     const scheduler = new Scheduler([], fakeCapacity(async () => 0), OPTS);
     await expect(scheduler.tick()).resolves.toBeUndefined();
-    expect(scheduler.status()).toEqual({ total: 0, online: 0, targetOnline: 10, effectiveTarget: 10, paused: false });
+    expect(scheduler.status()).toEqual({ total: 0, online: 0, targetOnline: 10, effectiveTarget: 10, paused: false, upkeepErrors: { family: 0, slg: 0 } });
   });
 });
