@@ -4,12 +4,14 @@ import type { AppState } from '../core/AppState';
 import type { AnimationController } from '../animation/AnimationController';
 import type { ImageController } from '../images/ImageController';
 import type { CommandManager } from '../core/CommandManager';
-import type { WorldPose, WorldPositions } from '../core/types';
+import type { SpriteBinding, WorldPose, WorldPositions } from '../core/types';
 import { Skeleton } from '../skeleton/Skeleton';
-import { computeAnchorDrag, type Vec2 } from '../rendering/spriteGeometry';
+import {
+  computeAnchorDrag, bindingToSpriteFrame, worldToLocalPixel, solveTwoPointBind, type Vec2,
+} from '../rendering/spriteGeometry';
 import {
   RotateBoneCommand, AddKeyframeCommand, DeleteKeyframeCommand,
-  SetLengthScaleCommand, SetBindingPropCommand,
+  SetLengthScaleCommand, SetBindingPropCommand, TwoPointBindCommand,
 } from './commands';
 import { pointToSegmentDist, findBoneAt, findSkinHandleAt, findSpriteAt } from './hitTest';
 
@@ -84,12 +86,18 @@ export class InteractionController {
   private onMouseDown(e: MouseEvent): void {
     if (e.button !== 0) return;
 
+    const { x, y } = this.renderer.toStageCoords(e.clientX, e.clientY);
+
+    // A two-point bind in progress is modal and swallows the click: the hit-tests below
+    // would otherwise re-select a bone or start an anchor drag, and an anchor drag would
+    // move the very frame the first pick was measured against.
+    if (this.state.bindPick) { this.takeBindPick(x, y); return; }
+
     const skinMode = this.state.editorMode === 'skin';
     // In Skin mode the pose is fixed at rest; hit-test against the rest pose.
     const frame = skinMode
       ? new Map<string, import('../core/types').ResolvedBoneTransform>()
       : this.animCtrl.getCurrentFrame();
-    const { x, y } = this.renderer.toStageCoords(e.clientX, e.clientY);
     const worldPose = Skeleton.computeFK(this.state.rootX, this.state.rootY, frame, this.state.boneLengthScales);
 
     if (skinMode) {
@@ -161,6 +169,79 @@ export class InteractionController {
       };
     }
     return true;
+  }
+
+  // ── Two-point bind ────────────────────────────────────────────────────────
+
+  /** One click of a two-point bind. The first click records the near joint; the second
+   *  solves and commits. Both points are converted through the SAME sprite frame (the
+   *  binding is deliberately untouched until the solve), which is what makes the pair
+   *  measurable against each other. */
+  private takeBindPick(x: number, y: number): void {
+    const pick = this.state.bindPick;
+    if (!pick) return;
+
+    const bone    = Skeleton.BONE_MAP.get(pick.boneId);
+    const binding = this.state.getBinding(pick.boneId);
+    const texture = this.imageCtrl.getTexture(pick.boneId);
+    const pos     = this.restPos(pick.boneId);
+    if (!bone || !binding || !texture || !pos) {
+      this.state.cancelBindPick();
+      this.bus.emit('error', 'Two-point bind needs a bone with an image bound to it');
+      return;
+    }
+
+    const frame = bindingToSpriteFrame(pos.sx, pos.sy, pos.wa, binding, texture.width, texture.height);
+    const tex   = worldToLocalPixel(frame, x, y);
+    if (!tex) {
+      this.state.cancelBindPick();
+      this.bus.emit('error', 'Image has zero scale — set a non-zero Scale X/Y first');
+      return;
+    }
+
+    if (!pick.first) {
+      this.state.setBindPickFirst({ tex, world: { x, y } });
+      this.bus.emit('status', `Two-point bind: now click ${bone.label}'s FAR joint in the image`);
+      return;
+    }
+
+    const boneLen = bone.len * this.state.getLengthScale(pick.boneId);
+    const solved  = solveTwoPointBind(pick.first.tex, tex, texture.width, texture.height, boneLen, binding.flipX);
+    if (!solved) {
+      // Keep the first pick: the usual cause is a stray second click on top of the first,
+      // and throwing the good point away would make the artist redo both.
+      this.bus.emit('error', 'Those two points are the same spot — click the far joint');
+      return;
+    }
+
+    const oldProps: Partial<SpriteBinding> = {
+      anchorX: binding.anchorX, anchorY: binding.anchorY, rotation: binding.rotation ?? 0,
+    };
+    const newProps: Partial<SpriteBinding> = {
+      anchorX: solved.anchorX, anchorY: solved.anchorY, rotation: solved.rotation,
+    };
+    let lengthScale: { old: number; new: number } | undefined;
+
+    if (pick.fitLength) {
+      // Bone gives way: keep the image at its current size and stretch the bone to the
+      // span that was just picked. `binding.scaleX` never carries flipX's sign (that is a
+      // separate field), so scaleY alone is the honest magnitude here.
+      const imgScale = Math.abs(binding.scaleY ?? 1);
+      lengthScale = {
+        old: this.state.getLengthScale(pick.boneId),
+        new: (solved.spanPx * imgScale) / bone.len,
+      };
+    } else {
+      // Image gives way: uniform scale, so the two picks span exactly the bone.
+      oldProps.scaleX = binding.scaleX ?? 1;
+      oldProps.scaleY = binding.scaleY ?? 1;
+      newProps.scaleX = solved.scale;
+      newProps.scaleY = solved.scale;
+    }
+
+    this.state.cancelBindPick();
+    this.cmdManager.execute(new TwoPointBindCommand(this.state, pick.boneId, oldProps, newProps, lengthScale));
+    this.bus.emit('status', `${bone.label} bound to joints — anchor(${solved.anchorX.toFixed(2)}, ${solved.anchorY.toFixed(2)}) rot ${solved.rotation.toFixed(1)}°`);
   }
 
   private startBindingAnchorDrag(boneId: string, worldPose: WorldPositions, x: number, y: number): void {
@@ -336,7 +417,31 @@ export class InteractionController {
       case 's':
       case 'S':
         e.preventDefault();
+        this.state.cancelBindPick();
         this.state.setEditorMode(this.state.editorMode === 'skin' ? 'animate' : 'skin');
+        break;
+      case 'b':
+      case 'B': {
+        e.preventDefault();
+        if (this.state.editorMode !== 'skin' || this.state.previewMode !== 'sprite') {
+          this.bus.emit('error', 'Two-point bind lives in Skin mode with Sprite preview on');
+          break;
+        }
+        const boneId = this.state.selectedBone;
+        const bone   = boneId ? Skeleton.BONE_MAP.get(boneId) : undefined;
+        if (!boneId || !bone || bone.len <= 0 || bone.isHead) {
+          this.bus.emit('error', 'Select a limb bone first (the head has no length to bind against)');
+          break;
+        }
+        this.state.startBindPick(boneId);
+        this.bus.emit('status', `Two-point bind: click ${bone.label}'s NEAR joint in the image (Esc to cancel)`);
+        break;
+      }
+      case 'Escape':
+        if (this.state.bindPick) {
+          this.state.cancelBindPick();
+          this.bus.emit('status', 'Two-point bind cancelled');
+        }
         break;
       case 'k':
       case 'K': {

@@ -4,6 +4,7 @@ import type {
   ResolvedBoneTransform,
   SpriteBinding,
   AttachmentPoint,
+  BindPick,
 } from '../core/types';
 import { Skeleton } from '../skeleton/Skeleton';
 import { drawSkinHandles } from './skinHandles';
@@ -59,6 +60,7 @@ export interface RenderData {
   showSkeletonOverlay: boolean;
   showGuide:           boolean;
   showPivots:          boolean;
+  bindPick:            BindPick | null;
   backgroundColor:     number;
   rootX:               number;
   rootY:               number;
@@ -185,9 +187,13 @@ export class Renderer {
     this.drawSelection(data);
     if (data.showGuide)  this.drawGuide(data.rootX, data.rootY);
     if (data.showPivots) this.drawPivots(data.worldPose, data.selectedBone);
-    if (data.previewMode === 'sprite') this.drawAnchorPoints(data);
+    // Anchor markers are a Skin-mode instrument: in Animate mode they are one red dot per
+    // bone over the artwork the artist is trying to judge, and Show pivots already answers
+    // "where are the joints" there.
+    if (data.previewMode === 'sprite' && data.editorMode === 'skin') this.drawAnchorPoints(data);
     this.drawAttachmentPoints(data.rootX, data.rootY, data.worldPose, data.attachmentPoints);
     if (data.editorMode === 'skin') drawSkinHandles(this.selGfx, data);
+    this.drawBindPick(data);
   }
 
   // ── Sprite layer ──────────────────────────────────────────────────────────
@@ -354,16 +360,46 @@ export class Renderer {
     this.selGfx.lineTo(rootX, rootY + 50);
   }
 
+  /** A RING rather than a filled dot, and wider than the anchor marker it shares a point
+   *  with. An anchor's world position IS its bone's pivot (see `drawAnchorPoints`), so the
+   *  old r=3 filled dot was drawn and then painted over by the r=4..6 anchor dot on the very
+   *  next line — in Sprite preview the checkbox appeared to do nothing at all. */
   private drawPivots(wp: WorldPositions, selectedBone: string | null): void {
     wp.forEach((pos, boneId) => {
       if (boneId === 'root') return;
       const isSelected = boneId === selectedBone;
       const color = isSelected ? 0xf9e2af : 0x89b4fa;
-      this.selGfx.lineStyle({ width: 1, color, alpha: 0.6 });
-      this.selGfx.beginFill(color, 0.4);
-      this.selGfx.drawCircle(pos.sx, pos.sy, 3);
-      this.selGfx.endFill();
+      this.selGfx.lineStyle({ width: 1.5, color, alpha: 0.95 });
+      this.selGfx.drawCircle(pos.sx, pos.sy, 8);
     });
+  }
+
+  /** Two-point bind in progress: the bone's own two ends (solid = where the first pick
+   *  lands, hollow = the second), plus a crosshair on the first pick once it is taken. */
+  private drawBindPick(data: RenderData): void {
+    const pick = data.bindPick;
+    if (!pick) return;
+    const pos = data.worldPose.get(pick.boneId);
+    if (!pos) return;
+    const CYAN = 0x89dceb;
+
+    this.selGfx.lineStyle({ width: 2, color: CYAN, alpha: 0.9 });
+    this.selGfx.moveTo(pos.sx, pos.sy);
+    this.selGfx.lineTo(pos.ex, pos.ey);
+    this.selGfx.beginFill(CYAN, 0.95);
+    this.selGfx.drawCircle(pos.sx, pos.sy, 5);
+    this.selGfx.endFill();
+    this.selGfx.drawCircle(pos.ex, pos.ey, 5);
+
+    const first = pick.first;
+    if (!first) return;
+    const S = 9;
+    this.selGfx.lineStyle({ width: 2, color: CYAN, alpha: 1 });
+    this.selGfx.moveTo(first.world.x - S, first.world.y);
+    this.selGfx.lineTo(first.world.x + S, first.world.y);
+    this.selGfx.moveTo(first.world.x, first.world.y - S);
+    this.selGfx.lineTo(first.world.x, first.world.y + S);
+    this.selGfx.drawCircle(first.world.x, first.world.y, 4);
   }
 
   // ── Drawing primitives ────────────────────────────────────────────────────
@@ -401,7 +437,9 @@ export class Renderer {
       const ay = pose.sy + (transform?.translateY ?? 0);
       const isSelected = boneId === data.selectedBone;
 
-      // Line from bone pivot to anchor (visible when offset is non-zero)
+      // Pivot → anchor line. The anchor sits ON the pivot by definition, so this only
+      // appears when an animated translateX/Y has carried the sprite off its bone —
+      // computeFK does not apply translate, so the skeleton stays put and the gap is real.
       if (Math.hypot(ax - pose.sx, ay - pose.sy) > 1) {
         this.selGfx.lineStyle({ width: 1, color: 0xff4444, alpha: 0.4 });
         this.selGfx.moveTo(pose.sx, pose.sy);

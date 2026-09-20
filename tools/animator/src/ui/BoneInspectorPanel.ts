@@ -81,6 +81,8 @@ export class BoneInspectorPanel {
     bus.on('images:change',  () => this.render());
     bus.on('rig:change',     () => this.render());
     bus.on('editor:mode',    () => this.render());
+    bus.on('preview:mode',   () => this.render());
+    bus.on('bindpick:change',() => this.render());
 
     this.render();
   }
@@ -136,6 +138,7 @@ export class BoneInspectorPanel {
             <input type="checkbox" id="chk-flipX" ${binding.flipX ? 'checked' : ''}></div>
           <div class="prop-row"><span class="prop-label">Z-Order</span>
             <input type="number" id="inp-zorder" value="${binding.zOrder}" step="1" style="width:55px" title="Render layer (higher = in front)"></div>
+          ${this.twoPointBindHtml(boneId)}
           <button id="btn-remove-binding" class="danger sm" style="width:100%;margin-top:4px">Remove Binding</button>`;
       } else if (hasImage) {
         html += `<div class="hint-text">Image loaded but no binding.<br>Reload the image to restore.</div>`;
@@ -179,6 +182,34 @@ export class BoneInspectorPanel {
 
     this.infoArea.innerHTML = html;
     this.attachListeners(boneId, binding, kfTime);
+  }
+
+  /** The two-point bind control block. Only offered where the gesture has a meaning:
+   *  a bone with a length (the head is a circle with no far joint) and the sprite
+   *  actually on screen to point at. */
+  private twoPointBindHtml(boneId: string): string {
+    const bone = Skeleton.BONE_MAP.get(boneId);
+    if (!bone || bone.len <= 0 || bone.isHead) return '';
+    if (this.state.previewMode !== 'sprite') {
+      return `<div class="hint-text" style="text-align:left;margin-top:6px">Turn on <strong>Sprite</strong> preview to bind by joints</div>`;
+    }
+
+    const pick = this.state.bindPick;
+    const active = pick?.boneId === boneId;
+    const hint = !active
+      ? `Click the two joints in the image; anchor, rotation and scale are solved from them.`
+      : pick?.first
+        ? `Now click the <strong>far</strong> joint (${bone.label}'s other end).`
+        : `Click the <strong>near</strong> joint — the end that pivots.`;
+
+    return `
+      <div style="border-top:1px solid var(--border);margin:6px 0 0;padding-top:6px">
+        <button id="btn-two-point-bind" class="sm" style="width:100%">
+          ${active ? 'Cancel Bind (Esc)' : 'Two-Point Bind (B)'}</button>
+        <label class="checkbox-row" style="margin-top:4px" title="Off: scale the image so the picked span matches the bone. On: keep the image's scale and stretch the bone to the picked span.">
+          <input type="checkbox" id="chk-bind-fitlen" ${this.state.bindFitLength ? 'checked' : ''}> Fit bone to image</label>
+        <div class="hint-text" style="text-align:left">${hint}</div>
+      </div>`;
   }
 
   private attachListeners(
@@ -240,6 +271,19 @@ export class BoneInspectorPanel {
         document.getElementById('inp-zorder')?.addEventListener('change', e => {
           const v = parseInt((e.target as HTMLInputElement).value, 10);
           if (!isNaN(v)) this.state.setBinding(boneId, { ...binding, zOrder: v });
+        });
+        document.getElementById('btn-two-point-bind')?.addEventListener('click', () => {
+          if (this.state.bindPick?.boneId === boneId) {
+            this.state.cancelBindPick();
+            this.bus.emit('status', 'Two-point bind cancelled');
+            return;
+          }
+          this.state.startBindPick(boneId);
+          const label = Skeleton.BONE_MAP.get(boneId)?.label ?? boneId;
+          this.bus.emit('status', `Two-point bind: click ${label}'s NEAR joint in the image (Esc to cancel)`);
+        });
+        document.getElementById('chk-bind-fitlen')?.addEventListener('change', e => {
+          this.state.setBindFitLength((e.target as HTMLInputElement).checked);
         });
         document.getElementById('btn-remove-binding')?.addEventListener('click', () => {
           this.cmdManager.execute(new RemoveBindingCommand(this.state, boneId));

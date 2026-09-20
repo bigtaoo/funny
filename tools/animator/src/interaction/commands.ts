@@ -160,3 +160,34 @@ export class SetBindingPropCommand implements Command {
     if (binding) this.state.setBinding(this.boneId, { ...binding, ...this.oldProps });
   }
 }
+
+/** A two-point bind's result: up to four binding fields plus, when the artist chose to
+ *  fit the bone to the image instead of the image to the bone, a length-scale change —
+ *  as ONE undo step, because they are one gesture and half of it is not a state the
+ *  artist ever asked for.
+ *
+ *  Merges partials the way SetBindingPropCommand does (re-reading the binding on each
+ *  execute/undo) rather than snapshotting the whole object, so an unrelated field
+ *  someone changed in between survives an undo of this command. */
+export class TwoPointBindCommand implements Command {
+  readonly label: string;
+
+  constructor(
+    private readonly state: AppState,
+    private readonly boneId: string,
+    private readonly oldProps: Partial<SpriteBinding>,
+    private readonly newProps: Partial<SpriteBinding>,
+    private readonly lengthScale?: { old: number; new: number },
+  ) {
+    this.label = `Bind ${Skeleton.BONE_MAP.get(boneId)?.label ?? boneId} Image to Joints`;
+  }
+
+  execute(): void { this.apply(this.newProps, this.lengthScale?.new); }
+  undo():    void { this.apply(this.oldProps, this.lengthScale?.old); }
+
+  private apply(props: Partial<SpriteBinding>, scale: number | undefined): void {
+    const binding = this.state.getBinding(this.boneId);
+    if (binding) this.state.setBinding(this.boneId, { ...binding, ...props });
+    if (scale !== undefined) this.state.setLengthScale(this.boneId, scale);
+  }
+}

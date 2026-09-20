@@ -11,7 +11,7 @@ import type { EventBus, AppEvents } from '../core/EventBus';
 import type { AttachmentPoint, SpriteBinding } from '../core/types';
 import { Skeleton } from '../skeleton/Skeleton';
 import { TARGET_SCREEN_PX, SUPERSAMPLE, type SizeTierKey } from './unitSize';
-import { basename, canvasToBlob, clamp01, deriveTaoPath, isDesktop, loadImageFromBlob, saveWithPicker, type WritableFileHandle } from './fileIO';
+import { basename, canvasToBlob, clamp01, deriveTaoPath, isDesktop, loadImageFromBlob, sanitizeFilename, saveWithPicker, type WritableFileHandle } from './fileIO';
 import { serializeClip, type SerializedClip } from './clipSerialization';
 import { serializeBindings } from './bindingSerialization';
 
@@ -54,6 +54,9 @@ export interface TaoExportHost {
   readonly animCtrl:          AnimationController;
   readonly imageCtrl:         ImageController;
   readonly bus:               EventBus<AppEvents>;
+  /** Active library project's name — the suggested `.tao` filename when there is no
+   *  loaded `.taoeditor` to derive one from. See EditorProjectHost.projectName. */
+  readonly projectName:       string;
   readonly editorFilePath:    string | null;
   readonly editorFileHandle:  WritableFileHandle | null;
   taoFileHandle:              WritableFileHandle | null;
@@ -127,12 +130,24 @@ export async function exportTao(host: TaoExportHost): Promise<void> {
       const writable = await host.taoFileHandle.createWritable();
       await writable.write(blob);
       await writable.close();
+      host.bus.emit('status', `Exported ${host.taoFileHandle.name ?? '.tao'}`);
     } else {
-      host.taoFileHandle = await saveWithPicker(blob, 'animation', [
+      // Suggest the bundle that belongs to this project: the loaded .taoeditor's own name
+      // where there is one (dog.taoeditor → dog.tao), else the project's library name.
+      // The old literal 'animation' made every character's first export land as
+      // animation.tao, in whichever folder the browser last defaulted to.
+      const suggested = host.editorFileHandle?.name
+        ? deriveTaoPath(host.editorFileHandle.name)
+        : sanitizeFilename(host.projectName, 'animation');
+      const outcome = await saveWithPicker(blob, suggested, [
         { description: 'Tao Animation', accept: { 'application/octet-stream': ['.tao'] } },
       ], host.editorFileHandle);
+      if (!outcome) return;   // cancelled
+      host.taoFileHandle = outcome.handle;
+      host.bus.emit('status', outcome.handle
+        ? `Exported ${outcome.name}`
+        : `Downloaded ${outcome.name} to your browser's download folder`);
     }
-    host.bus.emit('status', 'Exported .tao');
   } catch (err) {
     host.bus.emit('error', `Export failed: ${(err as Error).message}`);
   }

@@ -202,9 +202,42 @@ alpha 命中 + 选中优先落地后补的测试（`ImageController.test.ts` 新
 
 `buildAlphaMask` 那 10 例用 `vi.stubGlobal` 桩 `createImageBitmap`/`document`（同 `fileIO.test.ts` 的手法，驱动真实函数体而不是 mock 掉函数本身），覆盖降采样到 512 上限、RGBA→单字节 alpha 的行序、极端长宽比不许出零尺寸掩码、以及三条"解码/取上下文/读像素失败都必须返回 null 而不是抛"——最后这条不是防御性洁癖：`setBlob` 会 `await` 它，异常逃出去就不只是没有掩码，而是整张图都载不进来。
 
+## 两点绑定、被盖住的 Show pivots、和一次首存去向不明（2026-09-20）
+
+起因是画师报「图片和骨骼不匹配，想在动作编辑时调图片位置」。**这个需求本身是假的**：症状（髋部整体错位 + 膝盖裂开）是静态绑定错，不是动画错——逐帧存位移等于把同一个错误修 N 遍，而且 `binding.offsetX/offsetY` 这条路 2026-06 已经走过一次并被删掉（见 `file-formats.md`）。真正缺的是**指认关节的手段**。
+
+### 两点绑定
+
+`solveTwoPointBind(P1, P2, texW, texH, boneLen, flipX)`（`rendering/spriteGeometry.ts`，纯函数）把画师在贴图上点的两个关节反解成 anchor + rotation + scale。公式与推导见 `REQUIREMENTS.md §3.8`。三个值互不依赖，根源是合成式的一个恒等式：`pixel = anchor×texSize` 时旋转缩放项恒为零、`world ≡ pivot`——所以 anchor 钉住的像素不会因为后改 rotation/scale 而跑掉，不需要迭代。
+
+测试的核心不是逐值断言而是**往返**：把解喂回 `bindingToSpriteFrame` + `localPixelToWorld`，断言 P1 落在 pivot、P2 落在 tip（含 flipX 情形）。逐值断言只能证明「算出了某个数」，往返证明的是「这个数干了该干的事」。
+
+接线（`InteractionController.takeBindPick`）有两处是要点：
+- **取点是模态的**：`onMouseDown` 第一件事就是拦截，否则底下的 hit-test 会重新选骨、甚至启动 anchor 拖拽——而 anchor 拖拽会移动第一点赖以测量的那个 frame。
+- **两点必须共用同一个 frame**：取点期间绝不碰 binding，两点都经同一次 `bindingToSpriteFrame` 换算，最后一次性解算。
+- 第二点落在第一点上时**保留第一点**（常见误操作是重复点一下），只报错不清空。
+
+`Fit bone to image`（粘性偏好，存在 `AppState.bindFitLength`）切换谁让步：关 → 改 `scaleX/Y`（骨骼不动，**不扰动已有动画**）；开 → 改 `lengthScale`（贴图不缩放）。两者合成**一条** `TwoPointBindCommand`，因为半个手势不是画师要过的状态。
+
+### Show pivots 明明勾上了却没反应
+
+`drawPivots` 画 r=3 实心点，紧接着 `drawAnchorPoints` 在**同一个 `Graphics`** 上画 r=4/6 的红点——而 anchor 的世界位置**恒等于** pivot（定义如此），于是后者逐像素盖住前者。勾选框看着完全没用。
+
+修法不是调顺序（那只会反过来盖住 anchor），而是**让两者可区分**：pivot 改画 r=8 空心环；anchor 红点只在 Skin 模式画（Animate 模式下它只是盖在美术图上的一排红点，而「关节在哪」本来就是 Show pivots 的活）。
+
+> 同一处还有个注释级的历史残留：`// Line from bone pivot to anchor (visible when offset is non-zero)` 里的 offset 指的是 2026-06 删掉的那个字段。那条线**仍然有用**，但触发条件早已换成关键帧的 `translateX/Y`（`computeFK` 不应用 translate，骨架不动而贴图被挪开）。注释改了，逻辑没动。
+
+### 首次保存去向不明
+
+「记住文件身份、之后直接覆盖」只在**已经有**身份之后成立；新项目第一次 Save 必然弹框，而那次弹框的建议名写死成字面量 `'project'`（Export 是 `'animation'`），默认目录是浏览器下载目录。画师连点几次 Save，git 里没有任何变更——文件确实存出去了，只是没人知道在哪。
+
+三处改动：建议名改用项目名（`sanitizeFilename` 过一遍）、状态栏报出落点（桌面壳报完整路径，浏览器只能报文件名——File System Access API 从不暴露目录）、`saveWithPicker` 返回 `SaveOutcome | null` 让「取消」和「下载兜底」不再都是 `null`（此前 Firefox 一次成功下载什么都不报）。
+
+**真要原生落盘**：`tools/desktop-shell` 的 `npm start` 里打开 animator，`window.nwDesktop.fs` 就位，按绝对路径直接写盘——这条路径 animator 早就接好了（`isDesktop()` 分支），只是在浏览器里跑时用不到。
+
 ## 参数两层模型
 
-**Binding（静态，所有帧共用）**：`anchorX/Y`（挂点比例，允许超出 0–1）、`rotation`（静态偏移）、`scaleX/Y`、`flipX`、`zOrder`
+**Binding（静态，所有帧共用）**：`anchorX/Y`（挂点比例，允许超出 0–1）、`rotation`（静态偏移）、`scaleX/Y`、`flipX`、`zOrder`。手调之外还有**两点绑定**（`B`）反解这三个值，见上一节
 
 **Keyframe（动态，逐帧）**：`rotation`（delta）、`translateX/Y`、`scaleX/Y`、`alpha`
 
@@ -230,11 +263,13 @@ alpha 命中 + 选中优先落地后补的测试（`ImageController.test.ts` 新
 | `Delete`/`Backspace` | 删选中关键帧 |
 | `Tab` | 切换 Skeleton / Sprite 预览 |
 | `S` | 切换 Skin / Animate 模式 |
+| `B` | 两点绑定（Skin + Sprite 预览 + 选中带长度的骨骼） |
+| `Esc` | 取消进行中的两点绑定 |
 | `Ctrl+Z` / `Ctrl+Shift+Z` | Undo / Redo |
 
 ## 事件总线（核心事件）
 
-`bone:select`、`bone:rotate`、`time:change`、`play:state`、`anim:select`、`anim:list`、`kf:change`、`images:change`、`binding:change`、`attachment:change`、`rig:change`、`preview:mode`、`editor:mode`、`history:change`、`status`、`error`、`pose:reset`
+`bone:select`、`bone:rotate`、`time:change`、`play:state`、`anim:select`、`anim:list`、`kf:change`、`images:change`、`binding:change`、`attachment:change`、`rig:change`、`preview:mode`、`editor:mode`、`bindpick:change`、`history:change`、`status`、`error`、`pose:reset`
 
 **消息分流**：`status`=低风险进度提示（Saving…/Loaded/Ready）→ 底部 `StatusBar`（3s 自动清）；`error`=失败/被阻止的操作（保存/载入/导出失败、版本不支持、未选动画、重名等）→ 顶部居中红色浮层 `ErrorToast`（可手动 ✕，8s 自动消，多条堆叠）。新增错误务必发 `error` 而非 `status`，避免被一闪而过淹没；原生 `alert()` 一律改走 `error`。
 
@@ -251,7 +286,7 @@ alpha 命中 + 选中优先落地后补的测试（`ImageController.test.ts` 新
 | `src/animation/interpolate.ts` | `sampleClip` 插值（无依赖，游戏侧共享） |
 | `src/images/ImageController.ts` | 逐张 PNG 导入、Blob + PIXI.Texture 管理 |
 | `src/io/IOController.ts` | 装配壳（2026-08-13 起，`单文件 500 行收敛` form①，771→123）：只留 `editorFilePath`/`editorFileHandle`/`taoFileHandle` 三个磁盘身份字段 + 两个 host builder，逻辑全下沉到 `src/io/{fileIO,clipSerialization,editorProject,taoExport}.ts` |
-| `src/io/fileIO.ts` | 磁盘 / File System Access API 工具函数（`isDesktop`/`saveWithPicker`/`basename`/`deriveTaoPath` 等），纯函数，无需 host |
+| `src/io/fileIO.ts` | 磁盘 / File System Access API 工具函数（`isDesktop`/`saveWithPicker`/`sanitizeFilename`/`basename`/`deriveTaoPath` 等），纯函数，无需 host |
 | `src/io/clipSerialization.ts` | clip↔JSON 互转（`serializeClip`/`deserializeClip`），纯函数，无需 host |
 | `src/io/editorProject.ts` | `.taoeditor` 存档读写（`buildEditorBlob`/`loadEditorBlob` 复用），`EditorProjectHost` |
 | `src/io/taoExport.ts` | `.tao` 导出 + 贴图烘焙 + 精灵表打包，`TaoExportHost`；桌面壳 `window.nwDesktop.fs` / 浏览器 File System Access API 双路径 |
@@ -265,4 +300,4 @@ alpha 命中 + 选中优先落地后补的测试（`ImageController.test.ts` 新
 | `src/interaction/InteractionController.ts` | 鼠标拖拽（Animate 模式骨骼旋转 / Skin 模式长度+图片旋转+锚点手柄）+ 键盘快捷键 |
 | `src/interaction/commands.ts` | 骨骼/贴图 Undo 命令（旋转关键帧、加/删关键帧、长度、贴图属性）——零 canvas/DOM，2026-08-29 从 InteractionController 拆出 |
 | `src/rendering/skinHandles.ts` | Skin 模式手柄绘制（长度方块 + 贴图四角轮廓 + 旋转旋钮），2026-08-29 从 Renderer 拆出的自由函数 |
-| `src/rendering/spriteGeometry.ts` | 贴图世界坐标四角/旋转手柄位置/点在四边形内测试，纯函数零依赖，供 Renderer 画手柄与 InteractionController 命中测试共用 |
+| `src/rendering/spriteGeometry.ts` | 贴图世界坐标四角/旋转手柄位置/点在四边形内测试/**两点绑定反解**（`solveTwoPointBind`），纯函数零依赖，供 Renderer 画手柄与 InteractionController 命中测试共用 |

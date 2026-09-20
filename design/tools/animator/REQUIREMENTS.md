@@ -185,6 +185,36 @@ sprite.x        = bone_pivot.x  + keyframe.translateX
 sprite.scale    = keyframe.scaleX × binding.scaleX
 ```
 
+#### 两点绑定（Two-Point Bind，2026-09-20）
+
+拖 anchor / 转 rotation / 调 scale 三件事在画布上互相牵扯，靠手感一个个试很难收敛——尤其 anchor 允许超出 0–1，肉眼根本猜不到「图片外面 0.8 倍高度处」这种值。两点绑定把它反过来：**画师指认贴图里的两个关节，三个参数由几何反解直接算出来**。
+
+**操作**（Skin 模式 + Sprite 预览，选中一根有长度的骨骼；head 没有远端关节，不提供）：
+
+1. 点 Inspector 的 **Two-Point Bind (B)**，或按 `B`；画布上该骨骼两端亮起（实心 = 第一点要落的地方，空心 = 第二点）。
+2. 在**贴图里**点近端关节（骨骼 pivot 那端），出现青色十字。
+3. 再点远端关节（骨骼 tip 那端）——解算并写入，一次 Undo 可整体撤销。`Esc` 取消。
+
+**反解**（`spriteGeometry.solveTwoPointBind`，纯函数）：设两点的贴图像素坐标为 P₁、P₂，贴图尺寸 W×H，骨长 L。
+
+```
+anchorX  = P₁.x / W                       ← anchor 的定义就是「哪个像素钉在 pivot 上」
+anchorY  = P₁.y / H
+rotation = −atan2(Δy, flipX ? −Δx : Δx)   ← 正的等比 scale 会从 atan2 里约掉，flipX 的符号不会
+scale    = L / |P₂−P₁|                    ← 两点只约束一个距离，所以解必须等比
+```
+
+三个输出互不依赖，因为 `pixel = anchor×texSize` 时合成式里的旋转缩放项恒为零、`world ≡ pivot`——改 rotation 和 scale 都不会让 anchor 钉住的那个像素跑掉。
+
+**Fit bone to image**（Inspector 复选框，粘性偏好）：决定贴图和骨骼谁让步。
+
+| | 贴图 | 骨骼 |
+|---|---|---|
+| 关（默认） | `scaleX/Y ← L / span`，缩放到骨长 | 不动——**不会扰动已有动画** |
+| 开 | scale 保持不变 | `lengthScale ← span × scale / bone.len`，拉到贴图的关节跨距 |
+
+美术图才是角色真实比例时用「开」；已经排好动画、只想把贴图摆正时用「关」。两者都只写现有字段，`.tao` / `.taoeditor` 格式零改动。
+
 #### 层级顺序（zOrder）
 
 推荐默认层级（从后到前）：
@@ -220,6 +250,7 @@ zOrder 只决定**画**的顺序，不能直接当**点选**的顺序用：贴�
 每个角色可单独设置每根骨骼的视觉长度，让骨骼与美术图片比例对齐，方便动画调整。
 
 - **Inspector**：选中骨骼后（root / head 除外）顶部显示 **Length (px)** 输入框，输入实际像素值
+- **两点绑定**：勾上 Fit bone to image 后，两点绑定会改这个值（见 §3.8）
 - **内部存储**：`boneLengthScales: Map<boneId, number>`（稀疏，1.0 不存储）
 - **生效范围**：FK 计算、hit-test、渲染；与关键帧动画数据完全独立
 - **序列化**：写入 `.taoeditor` 和 `.tao`；游戏运行时读取 `boneLengthScales` 还原骨骼比例
@@ -264,9 +295,17 @@ zOrder 只决定**画**的顺序，不能直接当**点选**的顺序用：贴�
 
 辅助选项：
 - Show joints（关节圆圈）
+- Show pivots（每根骨骼 pivot 的空心圆环，两种模式都画）
 - Onion skin（相邻帧半透明叠加）
 - Guide lines（中心垂直参考线）
 - Bones overlay（Sprite 模式下叠加显示骨骼线框，快捷按钮 🦴 Bones）
+
+**Anchor 标记与 Show pivots 的分工（2026-09-20 理顺）**：anchor 的世界位置**恒等于**它那根骨骼的 pivot（这是 anchor 的定义，见 §3.8），所以两者画的是同一个点。此前 Sprite 预览下红色 anchor 点（r=4/6，实心）紧跟在 pivot 点（r=3，实心）后面画进同一个 `Graphics`，把它整个盖住——**勾不勾 Show pivots 画面完全一样**，看着像坏了。现在：
+
+- pivot 画成 **r=8 的空心环**，套在 anchor 点外面，两者同时可读；
+- anchor 红点**只在 Skin 模式**画（调绑定的地方）。Animate 模式下它只是盖在美术图上的一排红点，而"关节在哪"本来就是 Show pivots 的职责。
+
+红点到 sprite 之间那条线只在关键帧有 `translateX/Y` 时出现（`computeFK` 不应用 translate，骨架不动而贴图被挪开，这个间距是真的）。
 
 ### 3.12 时间轴
 
@@ -284,7 +323,7 @@ zOrder 只决定**画**的顺序，不能直接当**点选**的顺序用：贴�
 
 `Ctrl+Z` / `Ctrl+Shift+Z` / `Ctrl+Y`，上限 100 步。
 
-计入 Undo：骨骼旋转、关键帧增删改（含**时间轴上拖动关键帧改时间**，2026-08-26 起真正入栈）、sprite 绑定修改（含 zOrder）、挂点编辑。  
+计入 Undo：骨骼旋转、关键帧增删改（含**时间轴上拖动关键帧改时间**，2026-08-26 起真正入栈）、sprite 绑定修改（含 zOrder）、挂点编辑、**两点绑定**（anchor + rotation + scale，勾了 Fit bone to image 时连同骨长，合成**一步**）。  
 不计入：播放控制、预览模式切换、scrub、视图选项、编辑器模式切换。
 
 ### 3.14 导出 / 导入
@@ -295,6 +334,14 @@ zOrder 只决定**画**的顺序，不能直接当**点选**的顺序用：贴�
 | Save .taoeditor | `.taoeditor` | 编辑器存档：保留原始图片 + 完整编辑状态；直接覆盖已加载的文件，不重复弹框 |
 | Load .taoeditor | `.taoeditor` | 恢复完整编辑会话（图片 + 动画 + 绑定 + 骨骼长度）；只在此处弹一次文件选择框，记住的路径/handle 供之后的 Save/Export 复用 |
 | 另存为 | `.taoeditor` | 存一份新文件（弹一次保存框），之后的 Save/Export 目标切到这份新文件（同 Word/Photoshop 惯例） |
+
+**首次保存落到哪里（2026-09-20）**：「记住文件身份、之后直接覆盖」只有在**已经有**文件身份之后才成立。新项目第一次 Save 必然要弹一次框，而此前那次弹框的建议名是写死的字面量 `project`（Export 则是 `animation`），默认目录又是浏览器自己的下载目录——结果是存出去了、git 里却没有任何变更，画师根本不知道文件去了哪。现在：
+
+- **建议名用项目名**（Project 下拉里那个名字，经 `sanitizeFilename` 去掉文件系统不接受的字符）；Export 若已有 `.taoeditor` 身份则从它派生（`dog.taoeditor` → `dog.tao`），否则同样用项目名。
+- **状态栏说清落点**：桌面壳报**完整路径**（IPC 拿得到），浏览器只能报**文件名**（File System Access API 从不暴露目录），下载兜底则明说"已下载到浏览器的下载目录"。
+- **取消不再谎报成功**：`saveWithPicker` 的返回值从「handle 或 null」改成 `SaveOutcome | null`，`null` **只**表示用户取消；Firefox/Safari 的下载兜底返回 `{ handle: null, name }`——此前它和取消一样都是 `null`，于是一次成功的下载什么都不报。
+
+**想要真正的原生落盘**：在桌面壳（`tools/desktop-shell`，`npm start`）里打开 animator，`window.nwDesktop.fs` 就位，Save 直接按绝对路径写盘，没有沙箱对话框这一层。
 
 **2026-07-28**：`Import .tao` 按钮已移除（实际没人用——项目内没有只有 `.tao` 没有 `.taoeditor` 的场景），换成"另存为"。Save/Export 从"每次都弹原生/浏览器保存框选路径"改成"记住 Load 时的文件身份，直接覆盖/派生同目录路径"，桌面壳（`tools/desktop-shell`）内用原生 IPC 落盘（`window.nwDesktop.fs.*`），脱离壳单独跑时退回浏览器 File System Access API（`showOpenFilePicker`/`showSaveFilePicker`，记住 handle 复用；Export 因浏览器 API 拿不到目录，首次仍需弹一次框）。见 [`design/tools/desktop-shell/DESIGN.md`](../desktop-shell/DESIGN.md) §3/§8。
 

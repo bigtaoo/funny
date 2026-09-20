@@ -1,4 +1,4 @@
-import type { SpriteBinding, AttachmentPoint } from './types';
+import type { SpriteBinding, AttachmentPoint, BindPick, BindPickPoint } from './types';
 import type { EventBus, AppEvents } from './EventBus';
 
 export class AppState {
@@ -67,6 +67,40 @@ export class AppState {
   setEditorMode(mode: 'skin' | 'animate'): void {
     this._editorMode = mode;
     this.bus.emit('editor:mode', mode);
+  }
+
+  // ── Two-point bind picking ────────────────────────────────────────────────
+
+  private _bindPick: BindPick | null = null;
+  private _bindFitLength = false;
+
+  get bindPick(): BindPick | null { return this._bindPick; }
+
+  /** Sticky preference rather than per-pick state: which side gives way (see BindPick).
+   *  An artist rigging a character answers this once for the whole character, and the
+   *  keyboard shortcut has nowhere to ask. */
+  get bindFitLength(): boolean { return this._bindFitLength; }
+
+  setBindFitLength(v: boolean): void { this._bindFitLength = v; }
+
+  /** Arm a two-point bind on `boneId`. Any pick already in progress is discarded —
+   *  a half-finished one holds a point measured against whatever the binding looked
+   *  like then, which is only meaningful paired with its own second point. */
+  startBindPick(boneId: string): void {
+    this._bindPick = { boneId, fitLength: this._bindFitLength, first: null };
+    this.bus.emit('bindpick:change');
+  }
+
+  setBindPickFirst(point: BindPickPoint): void {
+    if (!this._bindPick) return;
+    this._bindPick = { ...this._bindPick, first: point };
+    this.bus.emit('bindpick:change');
+  }
+
+  cancelBindPick(): void {
+    if (!this._bindPick) return;
+    this._bindPick = null;
+    this.bus.emit('bindpick:change');
   }
 
   // ── Preview / view options ────────────────────────────────────────────────

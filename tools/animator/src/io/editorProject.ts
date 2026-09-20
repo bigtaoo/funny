@@ -12,7 +12,10 @@ import type { ImageController } from '../images/ImageController';
 import type { CommandManager } from '../core/CommandManager';
 import type { EventBus, AppEvents } from '../core/EventBus';
 import type { AttachmentPoint, SpriteBinding } from '../core/types';
-import { basename, isDesktop, saveWithPicker, type WritableFileHandle } from './fileIO';
+import {
+  basename, isDesktop, sanitizeFilename, saveWithPicker,
+  type SaveOutcome, type WritableFileHandle,
+} from './fileIO';
 import { deserializeClip, serializeClip, type SerializedClip } from './clipSerialization';
 import { serializeBinding, serializeBindings } from './bindingSerialization';
 
@@ -34,6 +37,11 @@ export interface EditorProjectHost {
   readonly imageCtrl:   ImageController;
   readonly cmdManager:  CommandManager;
   readonly bus:         EventBus<AppEvents>;
+  /** Name of the active project in the library (the Project dropdown). Used as the
+   *  suggested filename the first time a project is saved to disk — before this, every
+   *  new project arrived at the save dialog as the literal "project.taoeditor", which
+   *  told the artist nothing about which character they were about to overwrite. */
+  readonly projectName: string;
   editorFilePath:   string | null;
   editorFileHandle: WritableFileHandle | null;
   taoFileHandle:    WritableFileHandle | null;
@@ -144,10 +152,11 @@ export async function saveEditorProject(host: EditorProjectHost): Promise<void> 
       if (host.editorFilePath) {
         const result = await window.nwDesktop!.fs.writeFile(host.editorFilePath, await blob.arrayBuffer());
         if (!result.ok) throw new Error(result.error ?? 'write failed');
+        host.bus.emit('status', `Saved to ${host.editorFilePath}`);
       } else {
-        await saveEditorProjectAsDesktop(host, blob);
+        const path = await saveEditorProjectAsDesktop(host, blob);
+        if (path) host.bus.emit('status', `Saved to ${path}`);
       }
-      host.bus.emit('status', 'Project saved');
       return;
     }
 
@@ -155,12 +164,13 @@ export async function saveEditorProject(host: EditorProjectHost): Promise<void> 
       const writable = await host.editorFileHandle.createWritable();
       await writable.write(blob);
       await writable.close();
+      host.bus.emit('status', `Saved ${host.editorFileHandle.name ?? 'project'}`);
     } else {
-      host.editorFileHandle = await saveWithPicker(blob, 'project', [
-        { description: 'Tao Editor Project', accept: { 'application/octet-stream': ['.taoeditor'] } },
-      ]);
+      const outcome = await saveWithPicker(blob, sanitizeFilename(host.projectName, 'project'), EDITOR_FILE_TYPES);
+      if (!outcome) return;   // cancelled — stay quiet rather than claim a save
+      host.editorFileHandle = outcome.handle;
+      host.bus.emit('status', describeSave(outcome));
     }
-    host.bus.emit('status', 'Project saved');
   } catch (err) {
     host.bus.emit('error', `Save failed: ${(err as Error).message}`);
   }
@@ -175,20 +185,33 @@ export async function saveEditorProjectAs(host: EditorProjectHost): Promise<void
 
     if (isDesktop()) {
       const saved = await saveEditorProjectAsDesktop(host, blob);
-      if (saved) host.bus.emit('status', `Saved a copy to ${basename(saved)}`);
+      if (saved) host.bus.emit('status', `Saved a copy to ${saved}`);
       return;
     }
 
-    const handle = await saveWithPicker(blob, 'project', [
-      { description: 'Tao Editor Project', accept: { 'application/octet-stream': ['.taoeditor'] } },
-    ], host.editorFileHandle);
-    if (handle) {
-      host.editorFileHandle = handle;
-      host.bus.emit('status', 'Saved a copy — now editing that file');
-    }
+    const suggested = host.editorFileHandle?.name ?? sanitizeFilename(host.projectName, 'project');
+    const outcome = await saveWithPicker(blob, suggested, EDITOR_FILE_TYPES, host.editorFileHandle);
+    if (!outcome) return;
+    host.editorFileHandle = outcome.handle;
+    host.bus.emit('status', outcome.handle
+      ? `Saved a copy as ${outcome.name} — now editing that file`
+      : describeSave(outcome));
   } catch (err) {
     host.bus.emit('error', `Save failed: ${(err as Error).message}`);
   }
+}
+
+const EDITOR_FILE_TYPES = [
+  { description: 'Tao Editor Project', accept: { 'application/octet-stream': ['.taoeditor'] } },
+];
+
+/** Say where the bytes landed. The browser never tells us the directory, so the filename
+ *  is all we can name for a picker save — but the download fallback has a directory worth
+ *  naming, because that is exactly where an artist stops being able to find the file. */
+function describeSave(outcome: SaveOutcome): string {
+  return outcome.handle
+    ? `Saved as ${outcome.name}`
+    : `Downloaded ${outcome.name} to your browser's download folder`;
 }
 
 /** Shared desktop "ask for a location, write, remember it" step for both the
