@@ -187,6 +187,18 @@ export function invalidateRender(): void {
   onActivity?.();
 }
 
+/**
+ * How long it has been since the last real activity — a pointer event on any platform adapter
+ * ({@link holdRenderActive}) or a scene swap / resize ({@link invalidateRender}).
+ *
+ * Already maintained for {@link DECOR_QUIET_AFTER_MS}; exported so `analytics/idleWatch.ts` can read
+ * the same number instead of installing a second input hook. Analytics must not import this module
+ * (it drags PIXI into the render-free app core), so app.ts passes the accessor in.
+ */
+export function msSinceActivity(): number {
+  return now() - lastActivityMs;
+}
+
 /** True while a {@link holdRenderActive} / {@link invalidateRender} hold is still in effect. */
 export function renderHoldActive(): boolean {
   return now() < activeUntilMs;

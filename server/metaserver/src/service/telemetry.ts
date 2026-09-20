@@ -185,7 +185,7 @@ export class TelemetryService implements TelemetryHandlers {
     async clientAnomaly(req: FastifyRequest, reply: FastifyReply) {
       const body = (req.body ?? {}) as {
         publicId?: unknown; platform?: unknown; buildVersion?: unknown; events?: unknown;
-        device?: unknown; dpr?: unknown; mem?: unknown;
+        device?: unknown; dpr?: unknown; mem?: unknown; sid?: unknown;
       };
       if (!Array.isArray(body.events)) {
         return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'missing events'));
@@ -208,6 +208,10 @@ export class TelemetryService implements TelemetryHandlers {
         device: typeof body.device === 'string' ? body.device.slice(0, 16) : undefined,
         dpr: typeof body.dpr === 'number' && Number.isFinite(body.dpr) ? clampNum(body.dpr, 0, 16) : undefined,
         mem: typeof body.mem === 'number' && Number.isFinite(body.mem) ? clampNum(body.mem, 0, 1024) : undefined,
+        // Telemetry session id — the same value analytics sends as `session_id`, and the only join
+        // between this pipeline and that one (client analytics/session.ts). Capped like every other
+        // inline field; buildAnomalyLine additionally restricts it to id-shaped characters.
+        sid: typeof body.sid === 'string' && body.sid ? body.sid.slice(0, 64) : undefined,
       };
       const events: ClientAnomalyEvent[] = (body.events as unknown[]).slice(0, 200).flatMap((raw) => {
         if (!raw || typeof raw !== 'object') return [];
@@ -229,6 +233,9 @@ export class TelemetryService implements TelemetryHandlers {
         // Moment-level device context; buildAnomalyLine allowlists `orient` by value.
         if (typeof o.orient === 'string' && o.orient) e.orient = o.orient.slice(0, 16);
         if (typeof o.vp === 'string' && o.vp) e.vp = o.vp.slice(0, 16);
+        // Per-event session id overriding the envelope's: the crash sentinel reports on the run that
+        // DIED during the next run's startup, so its line must name the dead session, not the reader.
+        if (typeof o.sid === 'string' && o.sid) e.sid = o.sid.slice(0, 64);
         if (typeof o.sinceRot === 'number' && Number.isFinite(o.sinceRot)) {
           // Clamped rather than dropped: a bogus value is still evidence the client rotated, and the
           // ceiling (24h) keeps a garbage number from reading as a plausible duration.

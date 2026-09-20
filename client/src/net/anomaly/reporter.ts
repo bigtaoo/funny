@@ -7,10 +7,21 @@ import { getApiBaseUrl } from '../config';
 import { netTransport } from '../transport';
 import type { IStorage } from '../../platform/IPlatform';
 import { deviceClass, deviceMemoryGb, devicePixelRatio, momentContext, type MomentContext } from './deviceContext';
+import { telemetrySessionId } from '../../analytics/session';
 
 export const log = netLog('anomaly');
 
 export type AnomalyType = 'mem' | 'cpu' | 'webgl_lost' | 'anr' | 'jserror' | 'crash' | 'ad';
+
+/**
+ * Per-event override of everything that describes *which run of the app* an event belongs to, rather
+ * than the live one. Exists for one caller — the crash sentinel, which reports on the PREVIOUS
+ * session during this session's startup (see {@link AnomalyReporter.report}).
+ */
+export interface EventContext extends MomentContext {
+  /** Telemetry session id of the session being described, when it is not the current one. */
+  sid?: string;
+}
 
 /** A single anomaly event (same shape as ClientAnomalyEvent in metaserver/clientLog.ts on the server). */
 interface AnomalyEvent {
@@ -24,6 +35,12 @@ interface AnomalyEvent {
   orient?: MomentContext['orient'];
   vp?: MomentContext['vp'];
   sinceRot?: MomentContext['sinceRot'];
+  /**
+   * Telemetry session id of the session this event describes, when that is NOT the session doing the
+   * reporting — i.e. the crash sentinel's late report about the run that died. Absent otherwise, in
+   * which case the envelope's own `sid` applies (see {@link envelope}).
+   */
+  sid?: string;
 }
 
 const ENDPOINT = '/client/anomaly';
@@ -86,10 +103,18 @@ function stringifyDetail(detail: Record<string, unknown>): string {
  *
  * `device`/`dpr`/`mem` were added 2026-08-24 — see deviceContext.ts for why `platform` alone (a build
  * target, not a device) left mobile-only failures unfilterable.
+ *
+ * `sid` was added 2026-09-20 and is the join key this channel never had: the SAME value analytics
+ * sends as `session_id` (analytics/session.ts). Before it, the crash pipeline and the event pipeline
+ * described the same running client under two identifier systems with no overlap — `publicId` here,
+ * which does not exist before login and names a player rather than a run — so "did the players who
+ * crashed come back, or was that their last session" could not be asked at all. Now:
+ * `{source="client",kind="anomaly"} | logfmt | sid="…"` on one side, `session_id` on the other.
  */
 function envelope(events: AnomalyEvent[]): string {
   return JSON.stringify({
     publicId: readPublicId() ?? undefined,
+    sid: telemetrySessionId(),
     platform: platformName(),
     buildVersion: readBuildVersion(),
     device: deviceClass(),
@@ -113,9 +138,11 @@ class AnomalyReporter {
    * which reports on the **previous** session during the next startup. Snapshotting the current
    * orientation/viewport there would describe the session that survived, not the one that died —
    * and would quietly invent a "the crash happened in portrait" claim out of the reader's own
-   * post-crash screen position. The sentinel passes the dead session's persisted values instead.
+   * post-crash screen position. The sentinel passes the dead session's persisted values instead —
+   * including its `sid`, so the line names the session that died rather than the one reading its
+   * remains (the envelope's `sid` is always the live one).
    */
-  report(type: AnomalyType, msg: string, detail?: Record<string, unknown>, ctx?: MomentContext): void {
+  report(type: AnomalyType, msg: string, detail?: Record<string, unknown>, ctx?: EventContext): void {
     const now = Date.now();
     if (now - (this.lastByType[type] ?? -Infinity) < COOLDOWN_MS[type]) return; // within cooldown: discard
     if (this.sent + this.queue.length >= SESSION_CAP) return;                    // session cap reached
@@ -183,6 +210,6 @@ class AnomalyReporter {
 export const anomalyReporter = new AnomalyReporter();
 
 /** Report a single anomaly event (unified entry point for MemoryMonitor / PerfMonitor / watchdog / error hooks). */
-export function reportAnomaly(type: AnomalyType, msg: string, detail?: Record<string, unknown>, ctx?: MomentContext): void {
+export function reportAnomaly(type: AnomalyType, msg: string, detail?: Record<string, unknown>, ctx?: EventContext): void {
   anomalyReporter.report(type, msg, detail, ctx);
 }

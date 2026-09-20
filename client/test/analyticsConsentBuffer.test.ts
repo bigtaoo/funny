@@ -108,6 +108,39 @@ describe('pre-consent buffer', () => {
     expect(names()).toContain('session_start');
   });
 
+  it('holds events tracked before init() at all — the boot timeline has no other way in', async () => {
+    // client/src/analytics/bootTimeline.ts reports on the window BEFORE init() by definition (bundle
+    // download, renderer, asset gate), and app.ts emits prev_session_crash from the same window.
+    // Until 2026-09-20 a returning player lost every one of them: setConsent(true) had already run,
+    // so the consent branch was skipped, and the next line — `if (!queue || !sessionId) return` —
+    // discarded them without buffering.
+    vi.resetModules();
+    state.pushed.length = 0;
+    state.sampled.clear();
+    const analytics = await import('../src/analytics/index');
+    analytics.setConsent(true);
+    analytics.track('boot', { origin: 'nav' });
+    analytics.track('prev_session_crash', { alive_ms: 1200 });
+    expect(state.pushed).toEqual([]); // nothing can leave yet: there is no queue
+
+    await analytics.init({ storage: fakeStorage() } as never, undefined, 'https://host/api');
+    expect(names()).toEqual(['boot', 'prev_session_crash', 'session_start']);
+  });
+
+  it('keeps a fresh player\'s boot events through BOTH gates — pre-init and pre-consent', async () => {
+    vi.resetModules();
+    state.pushed.length = 0;
+    state.sampled.clear();
+    const analytics = await import('../src/analytics/index');
+    analytics.track('boot', { origin: 'nav' });                       // before init AND before consent
+    await analytics.init({ storage: fakeStorage() } as never, undefined, 'https://host/api');
+    analytics.track('load_time', { total_ms: 1500 });                 // after init, still before consent
+    expect(state.pushed).toEqual([]);
+
+    analytics.setConsent(true);
+    expect(names()).toEqual(['boot', 'session_start', 'load_time']);
+  });
+
   it('keeps the earliest events when the buffer overflows', async () => {
     const analytics = await freshAnalytics();
     for (let i = 0; i < 200; i++) analytics.track('level_attempt', { level_id: `lv${i}` });

@@ -113,6 +113,25 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
     expect(typeof body.data.defaultSample).toBe('number');
   });
 
+  /**
+   * The launch counter (ANALYTICS_DESIGN §3.6b). This endpoint is the only thing every client hits
+   * before the age/consent gates, so it is the only place a player who leaves at one of them can be
+   * counted — but it is unauthenticated, which is why `?p=` is clamped to a known build target
+   * rather than stored as sent: an unclamped value would become part of a document `_id`.
+   */
+  it('GET /analytics/config counts the launch, bucketing an unknown platform instead of storing it', async () => {
+    await mongo!.collections.boots_daily.deleteMany({});
+    await fetch(`${base}/analytics/config?p=web`);
+    await fetch(`${base}/analytics/config?p=web`);
+    await fetch(`${base}/analytics/config?p=../../etc/passwd`);
+    await fetch(`${base}/analytics/config`);
+
+    // The counter write is fire-and-forget (it must never delay the config body), so give it a tick.
+    await new Promise((r) => setTimeout(r, 150));
+    const docs = await mongo!.collections.boots_daily.find({}).toArray();
+    expect(docs.map((d) => [d.platform, d.count]).sort()).toEqual([['unknown', 2], ['web', 2]]);
+  });
+
   // ─── Event ingestion ────────────────────────────────────────────────────────────
 
   it('POST /analytics/events ingests event batch → 200', async () => {

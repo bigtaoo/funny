@@ -129,6 +129,39 @@ describe('buildAnomalyLokiPayload', () => {
     const p = buildAnomalyLokiPayload('1', [{ type: 'mem', msg: 'x', ts: 5, sinceRot: 12.7 }], {}, () => '0')!;
     expect(p.streams[0]!.values[0]![1]!).toContain('sinceRot=13');
   });
+
+  // ── telemetry session id (2026-09-20) ──
+  // This is the only field on the anomaly channel that also exists in the analytics database, and it
+  // is the whole reason "was the crash the end of that player's session" can be asked at all — so the
+  // assertions are on the exact token a join query matches.
+  it('stamps the session id on every line, and lets a per-event one override it', () => {
+    const p = buildAnomalyLokiPayload(
+      '1',
+      [
+        // The crash sentinel's late report: it describes the run that DIED, whose id is not this one.
+        { type: 'crash', msg: 'died', ts: 1, sid: 'dead-session-1' },
+        { type: 'jserror', msg: 'boom', ts: 2 },
+      ],
+      { sid: 'live-session-2' },
+      () => '0',
+    )!;
+    const [crash, jserr] = p.streams[0]!.values.map((v) => v[1]!);
+    expect(crash).toContain('sid=dead-session-1');
+    expect(crash).not.toContain('sid=live-session-2');
+    expect(jserr).toContain('sid=live-session-2');
+  });
+
+  it('drops a session id that is not id-shaped rather than escaping it into the line', () => {
+    // Client-supplied, inline on every line, and meant to be matched exactly — a free-form value
+    // would let a client inject logfmt-shaped text into the field a reader trusts as a join key.
+    const p = buildAnomalyLokiPayload(
+      '1',
+      [{ type: 'mem', msg: 'x', ts: 5 }],
+      { sid: 'abc" publicId="000000001' },
+      () => '0',
+    )!;
+    expect(p.streams[0]!.values[0]![1]!).not.toContain('sid=');
+  });
 });
 
 // ── MetaService.bootstrap / clientLog (constructed directly; cols and similar are stubs) ────────────────

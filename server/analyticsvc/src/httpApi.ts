@@ -35,6 +35,22 @@ function resolveGeo(ip: string | undefined): ResolvedGeo | undefined {
   return { ip, country: hit?.country || undefined, region: hit?.region || undefined, city: hit?.city || undefined };
 }
 
+/** Build targets the launch counter accepts. Anything else is bucketed rather than stored verbatim. */
+const BOOT_PLATFORMS = new Set(['web', 'wechat', 'crazygames']);
+
+/**
+ * The `?p=` platform of a config request, for the launch counter — clamped to a known build target.
+ *
+ * The allowlist is the point: this value becomes part of a document `_id`, on an endpoint that needs
+ * no auth, so an unclamped string would let anyone mint unbounded documents in `boots_daily` (and
+ * scatter the real counts across near-miss spellings). An unrecognised or missing value counts as
+ * `unknown`, which is still a launch and still belongs in the denominator.
+ */
+function bootPlatform(rawUrl: string | undefined): string {
+  const p = new URL(rawUrl ?? '/', 'http://x').searchParams.get('p') ?? '';
+  return BOOT_PLATFORMS.has(p) ? p : 'unknown';
+}
+
 function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     let body = '';
@@ -120,6 +136,15 @@ export function startHttpApi(
 
       // ─── GET /analytics/config (no auth, accessible anonymously) ─────────────────────────
       if (method === 'GET' && url === '/analytics/config') {
+        // Count the launch (ANALYTICS_DESIGN §3.6b). This request is the only one every launch makes
+        // *before* the age and consent gates, which makes it the only denominator for the players who
+        // answer neither — they never reach session_start, so every other query on this service
+        // reports them as if they had not existed. Nothing identifying is recorded: only the date and
+        // the build target, and the client is not asked for anything else.
+        //
+        // Fire-and-forget, deliberately: a Mongo hiccup must cost a tick in a trend, never the config
+        // response — a client that fails to get this body runs the whole session with analytics off.
+        void svc.countBoot(bootPlatform(req.url)).catch(() => {/* silent */});
         return send(res, 200, ok(svc.getConfig()));
       }
 
@@ -237,6 +262,14 @@ export function startHttpApi(
         if (type === 'badge_dist') {
           const badge_dist = await svc.queryBadgeDist(days);
           return send(res, 200, ok({ type, badge_dist }));
+        }
+        if (type === 'boot_funnel') {
+          const boot_funnel = await svc.queryBootFunnel(days);
+          return send(res, 200, ok({ type, boot_funnel }));
+        }
+        if (type === 'load_time') {
+          const load_time = await svc.queryLoadTime(days);
+          return send(res, 200, ok({ type, load_time }));
         }
         return sendErr(res, ErrorCode.BAD_REQUEST, `unknown query type: ${type}`);
       }

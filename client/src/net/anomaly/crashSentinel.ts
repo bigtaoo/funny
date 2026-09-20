@@ -5,13 +5,16 @@
 // has already loaded (app.ts injects platform storage during startup, before initCrashSentinel()
 // but the ordering isn't a hard guarantee this module should bake in).
 import { recentClientLogs } from '../log';
+import { telemetrySessionId } from '../../analytics/session';
 import { installRotationWatch, lastRotationAt, momentContext, type MomentContext } from './deviceContext';
-import { anomalyReporter, clip, getStorage, log, MSG_MAX, readBuildVersion, reportAnomaly } from './reporter';
+import { anomalyReporter, clip, getStorage, log, MSG_MAX, readBuildVersion, reportAnomaly, type EventContext } from './reporter';
 
 const SENTINEL_KEY = 'nw_session_sentinel';
 const HEARTBEAT_MS = 15_000;
 
 interface Sentinel {
+  /** Telemetry session id of the session this sentinel belongs to (analytics/session.ts). */
+  sid?: string;
   startedAt: number;
   lastSeenAt: number;
   cleanExit?: boolean;
@@ -28,6 +31,26 @@ function lsGet(k: string): string | null { try { return getStorage().getItem(k);
 function lsSet(k: string, v: string): void { try { getStorage().setItem(k, v); } catch { /* ignore */ } }
 
 let sentinel: Sentinel | null = null;
+
+/**
+ * Set by {@link initCrashSentinel} when the previous run of the app died without a clean exit, and
+ * read by app.ts to mirror that finding into analytics as `prev_session_crash`.
+ *
+ * Why analytics needs its own copy of something already reported to Loki: the crash report answers
+ * "what died", the analytics event answers "and then what" — whether that device started a session
+ * the next day, whether it ever reached the lobby again. Those are retention questions, and they can
+ * only be asked where the retention data lives. `prev_sid` names the dead session in the same
+ * vocabulary the Loki line uses, so the two halves can still be put back together.
+ *
+ * Null when the previous session exited cleanly, when there was no previous session, and on dev
+ * builds — the same gate the crash report itself uses (a hot reload is not a crash).
+ */
+let prevCrash: { sid?: string; aliveMs: number } | null = null;
+
+/** The previous session's abnormal exit, if there was one. See {@link prevCrash}. */
+export function previousSessionCrash(): { sid?: string; aliveMs: number } | null {
+  return prevCrash;
+}
 
 /** Refresh the liveness stamp + device context and persist. Called on the heartbeat and, crucially,
  *  the instant the screen rotates — see the rotation-watch wiring in initCrashSentinel. */
@@ -49,8 +72,9 @@ function touchSentinel(): void {
  * heartbeat or rotation write. A crash carrying sinceRot≈0 is therefore the signature we are
  * hunting: the last thing we ever heard from that session was it rotating.
  */
-function deadSessionContext(prev: Sentinel): MomentContext {
-  const ctx: MomentContext = {};
+function deadSessionContext(prev: Sentinel): EventContext {
+  const ctx: EventContext = {};
+  if (prev.sid) ctx.sid = prev.sid;
   if (prev.orient) ctx.orient = prev.orient;
   if (prev.vp) ctx.vp = prev.vp;
   if (typeof prev.lastRotAt === 'number') {
@@ -76,6 +100,7 @@ export function initCrashSentinel(): void {
       // Mirrors the dev-build gating already used in web.ts (version check) and ota.ts (update check).
       if (prev && typeof prev.startedAt === 'number' && !prev.cleanExit && readBuildVersion() !== '0.0.0') {
         const aliveMs = Math.max(0, (prev.lastSeenAt ?? prev.startedAt) - prev.startedAt);
+        prevCrash = { aliveMs, ...(prev.sid ? { sid: prev.sid } : {}) };
         reportAnomaly('crash', 'previous session ended without clean exit', {
           startedAt: prev.startedAt,
           lastSeenAt: prev.lastSeenAt,
@@ -90,7 +115,7 @@ export function initCrashSentinel(): void {
       }
     } catch { /* corrupted sentinel: ignore */ }
   }
-  sentinel = { startedAt: Date.now(), lastSeenAt: Date.now() };
+  sentinel = { sid: telemetrySessionId(), startedAt: Date.now(), lastSeenAt: Date.now() };
   touchSentinel();
 
   // Persist on every orientation flip, not just on the 15s heartbeat. Two things depend on this:

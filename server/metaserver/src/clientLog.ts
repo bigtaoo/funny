@@ -62,7 +62,7 @@ export function buildLokiPayload(
 // ── Client anomaly events reported in full → Loki (parallel and complementary to the targeted log collection above; not subject to allowPublicIds) ──
 //
 // Loki ingestion convention: labels are only { source="client", kind="anomaly" } (low cardinality);
-// type/publicId/platform/device/dpr/mem/buildVersion/orient/vp/sinceRot/detail/msg are all placed
+// type/publicId/sid/platform/device/dpr/mem/buildVersion/orient/vp/sinceRot/detail/msg are all placed
 // **inline** (logfmt). Grafana: `{source="client",kind="anomaly"} | logfmt | type="webgl_lost"`.
 //
 // The device/orient/vp/sinceRot group was added 2026-08-24. Before it, `platform` (a BUILD TARGET —
@@ -84,6 +84,9 @@ export interface ClientAnomalyEvent {
   orient?: string;   // portrait | landscape
   vp?: string;       // viewport as WxH in CSS px
   sinceRot?: number; // ms since the last orientation flip; absent when the session never rotated
+  /** Telemetry session id of the session this event describes, when that is not the reporting one
+   *  (the crash sentinel's late report about the run that died). Falls back to the envelope's. */
+  sid?: string;
 }
 
 /** Session-stable reporter envelope, stamped onto every line of the batch. */
@@ -93,6 +96,16 @@ export interface ClientAnomalySession {
   device?: string;       // phone | tablet | desktop | unknown — the hardware bucket `platform` never carried
   dpr?: number;
   mem?: number;          // approximate device RAM in GB (Chromium only)
+  /**
+   * Telemetry session id — the SAME value analytics sends as `session_id` (client
+   * analytics/session.ts), added 2026-09-20. The two pipelines described the same running client
+   * under identifier systems with no overlap: `publicId` here (absent before login, and a player
+   * rather than a run) against `session_id` there. With this field,
+   * `{source="client",kind="anomaly"} | logfmt | sid="…"` and a Mongo query on `session_id` name the
+   * same run, which is what makes "did the players who crashed ever come back" a question with an
+   * answer.
+   */
+  sid?: string;
 }
 
 /** Allowlist of anomaly types accepted into Loki (prevents clients from injecting arbitrary types that inflate inline cardinality or mislead queries). */
@@ -106,6 +119,14 @@ const ALLOWED_DEVICES = new Set(['phone', 'tablet', 'desktop', 'unknown']);
 /** Same for orientation: exactly two real values, anything else is dropped rather than passed through. */
 const ALLOWED_ORIENTS = new Set(['portrait', 'landscape']);
 
+/**
+ * Session ids as the client mints them (crypto.randomUUID, or the `s-<base36>-<base36>` fallback).
+ * Anything else is dropped rather than escaped: this value is client-supplied, lands inline on every
+ * line, and is meant to be matched exactly (`| logfmt | sid="…"`) — a free-form string would let a
+ * client inject logfmt-shaped text into the one field a reader is about to trust as a join key.
+ */
+const SID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+
 /** Build an anomaly logfmt line: type/publicId are mandatory, everything else is optional, msg comes last. */
 function buildAnomalyLine(publicId: string, s: ClientAnomalySession, e: ClientAnomalyEvent): string {
   const type = ALLOWED_ANOMALY_TYPES.has(e.type) ? e.type : 'other';
@@ -115,6 +136,8 @@ function buildAnomalyLine(publicId: string, s: ClientAnomalySession, e: ClientAn
   if (typeof s.dpr === 'number' && Number.isFinite(s.dpr)) parts.push(`dpr=${s.dpr}`);
   if (typeof s.mem === 'number' && Number.isFinite(s.mem)) parts.push(`mem=${s.mem}`);
   if (s.buildVersion) parts.push(`buildVersion=${logfmtValue(s.buildVersion)}`);
+  const sid = e.sid ?? s.sid;
+  if (sid && SID_RE.test(sid)) parts.push(`sid=${sid}`);
   if (e.orient && ALLOWED_ORIENTS.has(e.orient)) parts.push(`orient=${logfmtValue(e.orient)}`);
   if (e.vp) parts.push(`vp=${logfmtValue(e.vp)}`);
   if (typeof e.sinceRot === 'number' && Number.isFinite(e.sinceRot)) parts.push(`sinceRot=${Math.round(e.sinceRot)}`);

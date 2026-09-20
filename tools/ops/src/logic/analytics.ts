@@ -163,6 +163,85 @@ export function levelFunnelRows<T>(rows: readonly T[]): T[] {
   return rows.slice(0, LEVEL_FUNNEL_LIMIT);
 }
 
+// ── Launch funnel (the pre-consent denominator) ──
+
+export interface BootFunnelRow {
+  date: string;
+  platform: string;
+  boots: number;
+  sessions: number;
+  consents: number;
+  reach_rate?: number;
+}
+
+export interface BootFunnelDisplayRow extends BootFunnelRow {
+  /** Launches that reported nothing at all — the age/consent-gate bounce, and the point of the table. */
+  lost: number;
+  reachRate: number;
+}
+
+/**
+ * The launch funnel with the one number the payload does not carry: `lost = boots − sessions`.
+ *
+ * Clamped at zero because the two sides come from different clocks — a launch counted just before
+ * midnight UTC whose `session_start` lands just after it is booked on different days — so a small
+ * negative is a boundary artefact, not a day where more sessions than launches happened.
+ */
+export function bootFunnelRows(rows: readonly BootFunnelRow[]): BootFunnelDisplayRow[] {
+  return rows.map((r) => ({
+    ...r,
+    lost: Math.max(0, r.boots - r.sessions),
+    reachRate: r.reach_rate ?? (r.boots > 0 ? r.sessions / r.boots : 0),
+  }));
+}
+
+// ── Load time ──
+
+/** Phase columns of the load-time table, in boot order (must match LOAD_TIME_PHASES in analyticsvc). */
+export const LOAD_TIME_PHASE_LABELS: readonly { key: string; label: string; title: string }[] = [
+  { key: 'to_script_ms', label: 'Network', title: 'Navigation start → our first line of JS (web only): DNS, TLS, HTML, bundle download' },
+  { key: 'renderer_ms', label: 'Renderer', title: 'Creating the PIXI application and its GPU context' },
+  { key: 'first_frame_ms', label: 'First frame', title: 'Total elapsed when the canvas was first painted' },
+  { key: 'preload_ms', label: 'Assets', title: 'The L0 boot-tier asset gate' },
+  { key: 'scene_ms', label: 'First scene', title: 'Asset gate closed → the first real screen was built' },
+];
+
+export interface LoadTimeDisplayRow {
+  platform: string;
+  samples: number;
+  p50_ms: number;
+  p75_ms: number;
+  p90_ms: number;
+  p95_ms: number;
+  /** Mean per phase, aligned with LOAD_TIME_PHASE_LABELS; undefined where the platform reports none. */
+  phases: (number | undefined)[];
+  abandoned: number;
+  /** abandoned / (abandoned + samples) — the share of launches that gave up before the first screen. */
+  abandonRate: number;
+}
+
+export function loadTimeRows(
+  rows: readonly { platform: string; samples: number; p50_ms: number; p75_ms: number; p90_ms: number; p95_ms: number; avg: Record<string, number>; abandoned: number }[],
+): LoadTimeDisplayRow[] {
+  return rows.map((r) => ({
+    platform: r.platform,
+    samples: r.samples,
+    p50_ms: r.p50_ms,
+    p75_ms: r.p75_ms,
+    p90_ms: r.p90_ms,
+    p95_ms: r.p95_ms,
+    phases: LOAD_TIME_PHASE_LABELS.map((p) => r.avg[p.key]),
+    abandoned: r.abandoned,
+    abandonRate: barRatio(r.abandoned, r.abandoned + r.samples),
+  }));
+}
+
+/** ms as a player would say it: `820ms` under a second, `3.4s` above. */
+export function ms(v: number | undefined): string {
+  if (v === undefined) return '—';
+  return v < 1000 ? `${v}ms` : `${(v / 1000).toFixed(1)}s`;
+}
+
 // ── Post-match badge distribution pivot ──
 
 export interface BadgeRow {

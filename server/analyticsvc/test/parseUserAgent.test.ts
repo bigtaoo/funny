@@ -1,6 +1,6 @@
-// Unit tests for the hand-rolled UA parser (service/defs.ts parseUserAgent). Pure function, no Mongo.
+// Unit tests for the hand-rolled UA parser (service/userAgent.ts). Pure function, no Mongo.
 import { describe, expect, it } from 'vitest';
-import { parseUserAgent } from '../src/service/defs';
+import { parseUserAgent } from '../src/service/userAgent';
 
 describe('parseUserAgent', () => {
   it('undefined/empty UA falls back to unknown browser + desktop device_type', () => {

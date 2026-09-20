@@ -390,6 +390,47 @@ describe('Crash sentinel device context', () => {
     expect(crash.sinceRot).toBe(0);
   });
 
+  // ── telemetry session id (2026-09-20) ──
+  // The join key between this pipeline and analytics. Before it, a crash in Loki and a session that
+  // stopped sending events in Mongo could only be matched by eyeballing two clocks and a platform
+  // string, so "did the crash end that player's session" was not a question with an answer.
+  it('stamps the analytics session id on the envelope, and the DEAD session\'s id on the crash line', async () => {
+    const { mod, cap } = await freshAnomaly({ publicId: PUBLIC_ID, buildVersion: 'abc1234' });
+    const { telemetrySessionId } = await import('../src/analytics/session');
+    cap.store.set(SENTINEL, JSON.stringify({ sid: 'dead-session', startedAt: 1000, lastSeenAt: 5000 }));
+
+    mod.initCrashSentinel();
+
+    const sent = JSON.parse((cap.fetch.mock.calls[0] as [string, RequestInit])[1].body as string);
+    expect(sent.sid).toBe(telemetrySessionId());             // the live run, as analytics names it
+    expect(sent.sid).not.toBe('dead-session');
+    const crash = sent.events.find((e: { type: string }) => e.type === 'crash');
+    expect(crash.sid).toBe('dead-session');                  // the run the report is about
+
+    // …and it survives into the Loki line, where the join is actually performed.
+    const line = buildAnomalyLokiPayload(PUBLIC_ID, sent.events, sent, () => '0')!.streams[0]!.values[0]![1]!;
+    expect(line).toContain('sid=dead-session');
+  });
+
+  it('remembers this session\'s id in the sentinel, so the NEXT startup can name it', async () => {
+    const { mod, cap } = await freshAnomaly({ publicId: PUBLIC_ID, buildVersion: 'abc1234' });
+    const { telemetrySessionId } = await import('../src/analytics/session');
+    mod.initCrashSentinel();
+    expect(JSON.parse(cap.store.get(SENTINEL)!).sid).toBe(telemetrySessionId());
+  });
+
+  it('hands app.ts the previous crash so analytics can mirror it, and nothing after a clean exit', async () => {
+    const clean = await freshAnomaly({ publicId: PUBLIC_ID, buildVersion: 'abc1234' });
+    clean.cap.store.set(SENTINEL, JSON.stringify({ sid: 'old', startedAt: 1000, lastSeenAt: 5000, cleanExit: true }));
+    clean.mod.initCrashSentinel();
+    expect(clean.mod.previousSessionCrash()).toBeNull();
+
+    const crashed = await freshAnomaly({ publicId: PUBLIC_ID, buildVersion: 'abc1234' });
+    crashed.cap.store.set(SENTINEL, JSON.stringify({ sid: 'old', startedAt: 1000, lastSeenAt: 5000 }));
+    crashed.mod.initCrashSentinel();
+    expect(crashed.mod.previousSessionCrash()).toEqual({ sid: 'old', aliveMs: 4000 });
+  });
+
   it('carries no sinceRot for a session that never rotated', async () => {
     const { mod, cap } = await freshAnomaly({ publicId: PUBLIC_ID, buildVersion: 'abc1234' });
     cap.store.set(SENTINEL, JSON.stringify({ startedAt: 1000, lastSeenAt: 5000, orient: 'portrait' }));

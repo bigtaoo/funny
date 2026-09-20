@@ -5783,6 +5783,18 @@ paths:
       operationId: getAnalyticsConfig
       summary: Deliver collection config (no auth required; fetched once on anonymous session start)
       security: []
+      parameters:
+        - name: p
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - web
+              - wechat
+              - crazygames
+          description: |
+            Build target, used only to keep a per-platform launch counter (ANALYTICS_DESIGN §3.6b). This request is the one thing every launch does before the age/consent gates, so it is the only possible denominator for players who answer neither and leave. Nothing identifying is sent or stored — no device id, no IP — and an unrecognised value is counted as `unknown`.
       responses:
         '200':
           description: Collection config

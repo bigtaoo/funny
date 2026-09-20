@@ -5275,7 +5275,10 @@ export interface operations {
     };
     getAnalyticsConfig: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Build target, used only to keep a per-platform launch counter (ANALYTICS_DESIGN §3.6b). This request is the one thing every launch does before the age/consent gates, so it is the only possible denominator for players who answer neither and leave. Nothing identifying is sent or stored — no device id, no IP — and an unrecognised value is counted as `unknown`. */
+                p?: "web" | "wechat" | "crazygames";
+            };
             header?: never;
             path?: never;
             cookie?: never;
