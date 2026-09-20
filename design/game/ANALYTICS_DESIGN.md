@@ -54,7 +54,7 @@ analyticsvc (第八应用进程, 端口 18085)
     │  JWT 验签复用 meta 公钥（可选，不连 accounts 库）
     │
     ├── MongoDB notebook_wars_analytics（独立数据库）
-    │       collections: events(TTL 90d) / sessions / funnels_daily
+    │       collections: events(TTL 90d) / sessions / funnels_daily / boots_daily
     │
     └── GET /internal/query  ← tools/ops 管理后台调用（聚合查询）
 ```
@@ -196,10 +196,34 @@ GDPR 同意门（C5-c/L1-1）默认关闭，**同意之前没有任何数据离�
 覆盖：`client/test/analyticsConsentBuffer.test.ts`（补发、不补发、采样在补发时才算、溢出留最早、
 「先 setConsent 后 init」的老玩家顺序）。
 
-**仍然看不到的**：在年龄门或同意弹窗上直接走掉的人。这两屏之前连 `session_start` 都还没有，
-而 `showConsent` 也没有「拒绝」分支，所以分母只能来自客户端之外——要量它得在反代/服务端加一个
-不含个人数据的启动计数（`GET /analytics/config` 是目前唯一一个每次启动必发、且无需同意的请求）。
-**这条还开着。**
+**曾经看不到的**：在年龄门或同意弹窗上直接走掉的人——这两屏之前连 `session_start` 都还没有，分母只能来自客户端之外。见下节，**已补上**。
+
+### 3.6b 启动计数：同意墙之外的那个分母（2026-09-20）
+
+`GET /analytics/config` 是**每次启动必发、且在两道门之前、且不需要同意**的唯一一个请求，所以
+它就是唯一可能的分母落点。客户端在这个请求上带一个 `?p=<web|wechat|crazygames>`（`analytics/config.ts`），
+服务端在 `boots_daily` 上按 `(日期, 平台)` 做一次 `$inc`（`analyticsvc/service/traffic.ts` `countBoot`）。
+
+**只有日期、平台、计数**，没有 device id、没有 IP、没有账号——这个集合的隐私立场就是这三列，
+任何再多一列的东西都是「在问玩家之前就采集的数据」。因此它数的是**启动次数**，不是人；
+能跟它比的也只有同样按次计的 `session_start`**事件条数**（不是去重设备数）。
+
+读法（ops「Analytics」页顶部 Launch funnel 卡，查询 `type=boot_funnel`，§9.8）：
+
+| 列 | 含义 |
+|---|---|
+| `Launches` | `boots_daily` 计数 = 加载到 JS 并发出 config 请求的启动次数 |
+| `Sessions` | 当天 `session_start` 事件条数 = 拿到同意、真的上报了东西的启动 |
+| `Lost` | `Launches − Sessions`，**这一条就是本节存在的理由**：在年龄门/同意墙上走掉的人 |
+| `Consents` | `gdpr_consent` 条数（弹窗只弹一次，所以约等于新客同意数） |
+
+**当趋势看，别当精确率看**：① config 请求无需鉴权，谁都能打；② 卸载时那次 flush 失败的会话
+也会算进 `Lost`；③ 跨 UTC 零点的启动，两侧可能落在不同天（ops 侧因此把 `Lost` 夹在 ≥0）。
+**「拒绝」按钮没做**：`showConsent` 至今只有「接受」一条分支，拒绝之后还能不能玩是产品/合规
+决定、不是埋点决定，这轮只补分母。
+
+覆盖：`analyticsvc/test/bootAndLoadTime.e2e.test.ts`（并发不丢计数、只有那几列、有启动零会话的
+那天照样出行、反过来也出行）+ `analytics.e2e.test.ts`（`?p=` 白名单外记成 `unknown`）。
 
 ---
 
@@ -255,6 +279,42 @@ GDPR 同意门（C5-c/L1-1）默认关闭，**同意之前没有任何数据离�
 |---|---|---|
 | `session_start` | `platform, os, locale` | app 启动 / 前台恢复 |
 | `session_end` | `duration_sec, scenes_visited[]` | app 后台 / 关闭 |
+
+### 5.1b 启动与加载（Boot / Load，2026-09-20）
+
+在这之前**启动阶段零事件**：一个会话的第一条事件是 `session_start`，而它来自 `analytics.init()`，
+也就是说包已经下完、渲染器已经建好、L0 资源门已经放行之后才有第一条数据。于是
+「打开了页面但没撑到进游戏」只能翻反代日志，「手机流量下加载好久」连个数字都给不出。
+
+三条事件，**故意不合成一条**——它们条数之间的差就是测量本身（`client/src/analytics/bootTimeline.ts`）：
+
+| 事件 | 时机 | 回答什么 |
+|---|---|---|
+| `boot` | 我们的第一行 JS 执行（`startApp` 首句） | 我们还不存在的那段时间花了多少：DNS/TLS/HTML/包体 |
+| `first_frame` | 第一次 `renderer.render()` 完成 | 白屏到第一帧 |
+| `load_time` | `core.start()` 返回，第一个真实场景建好 | 总时长，**按阶段拆开** |
+
+`boot` 与 `load_time` 的条数比 = **加载中途放弃的比例**，这拨人不进任何场景、不点任何按钮、
+在别的任何报表里都不存在。
+
+**时间原点分两种，`origin` 字段写明是哪一种**：web 上 `performance.now()` 从导航开始计，
+所以 `to_script_ms` 天然含网络与解析（`origin:'nav'`）；微信没有 document，时间线从模块加载算起
+（`origin:'script'`，`to_script_ms≈0`，包已在本地）。**两者不可直接比较**，所以不做成一个字段。
+
+| 事件 | 属性 |
+|---|---|
+| `boot` | `origin, to_script_ms`；web 另附 `nav_type`（navigate/reload/back_forward——**冷启与热重载的缓存命中差几倍，混在一起的 p50 谁也不描述**）、`dns_ms, tcp_ms, tls_ms, ttfb_ms, html_ms, js_ms, js_files, js_kb` |
+| `first_frame` | `origin, total_ms, renderer_ms, since_renderer_ms` |
+| `load_time` | `origin, total_ms` + 阶段拆分 `to_script_ms / renderer_ms / first_frame_ms / preload_ms / scene_ms` + `preload_assets` |
+
+**缺的阶段留空，不写 0**：一个 0 在 ops 的均值里读作「这步是瞬间完成的」，而真相是
+「这个平台没有这一步」（微信没有网络阶段）。`js_kb` 同理——缓存命中或跨域没有
+`Timing-Allow-Origin` 时 `transferSize` 为 0，那是「量不到」，不是「零字节」。
+
+服务端查询 `type=load_time`（按平台 p50/p75/p90/p95 + 阶段均值 + 直方图 + 放弃数）见 §9.10。
+
+覆盖：`client/test/analyticsBootTimeline.test.ts`、`analyticsConsentBuffer.test.ts`（这三条事件
+全都发生在 `init()` 之前，唯一的活路是 `track()` 的缓冲）、`analyticsvc/test/bootAndLoadTime.e2e.test.ts`。
 
 ### 5.2 场景层（Navigation）
 
@@ -315,7 +375,7 @@ scene 取值：`IntroScene / LobbyScene / LoginScene / CampaignMapScene / LevelP
 
 | 事件 | 必填属性 | 说明 |
 |---|---|---|
-| `churn_signal` | `reason, scene` | reason: background/explicit_exit/idle_10min |
+| `churn_signal` | `reason, scene` | reason: background/explicit_exit/idle_10min（后者 2026-09-20 接线，见下） |
 | `tutorial_start` / `tutorial_complete` | `level_id` | 开始/完成新手引导（§9.6 引导漏斗用） |
 | `tutorial_skip` | `step` | 跳过引导（`step:'tutorial'`，来自 `game.ts`；`step:'intro'` 已改用专属 `intro_skip`，见下） |
 | `tutorial_step` | `level_id, phase, step_key, step_index` | 教程内部小步骤（§9.7 教程步骤漏斗用），`step_key` 见 `TUTORIAL_ORDERED_KEYS` |
@@ -328,6 +388,28 @@ scene 取值：`IntroScene / LobbyScene / LoginScene / CampaignMapScene / LevelP
 
 > **成功/失败为什么是两个事件名而不是一个带 `ok` 的事件**：§9.6 的首会话 `actions` 分布按**事件名**统计去重设备数、不看 props。合成一个名字，在唯一已经把新客 cohort 隔离出来的那张报表里两者就分不开了。
 | `intro_complete` / `intro_skip` | — | 首启故事 `IntroScene` 看完/跳过（`app/nav/auth.ts` `goIntro` 的 `onFinish(skipped)`），design-doc-audit-2026-07 补齐——此前这一步完全没有埋点。100% 采样，纳入 §9.6 `ONBOARDING_STEPS` 的 `intro_seen` 步骤 |
+
+### 5.6a `idle_10min`：人还在屏幕前，手已经停了（2026-09-20）
+
+§5.6 从一开始就写着这个 reason，§12.2 和 §12.6 两次押后，理由每次一样：
+**埋点层看不见输入**。它没有 `InputManager`，也不能去拿——`analytics/index.ts` 被
+`app/createAppCore.ts` import，而后者是**刻意无渲染**的（headless E2E 要驱动同一个 core），
+从输入到时间戳的每一条路（`InputManager` → `render/renderPolicy`）都会把 PIXI 拖进那张图。
+
+所以**探针是注入的**：`app.ts`（唯一有资格同时碰两边的文件）把 `render/renderPolicy.ts` 的
+`msSinceActivity` 传给 `analytics/idleWatch.ts`。那个时间戳本来就存在——每个平台适配器的指针
+事件都要经过 `holdRenderActive()` 去解帧率节流。没有新测量，没有新钩子。
+
+三条不许误报的规矩（`client/test/analyticsIdleWatch.test.ts` 逐条钉住）：
+
+1. **一次离开只报一次**，有输入才重新上膛；否则一个 AFK 玩家每分钟给你一条。
+2. **不认领「没在看的那段时间」**：读数被夹在「watch 启动以来」和「最近一次回到前台以来」之内。
+   `lastActivityMs` 是 renderPolicy 的模块级变量，`RenderPolicy.install()` 之前它的含义是
+   「还没人说过话」——不夹的话，开了二十秒的游戏第一次检查就能报出十分钟空闲。
+3. **后台不查**：那次离开已经由 `churn_signal{reason:'background'}` 报过了，
+   而且后台标签页「没有输入」是白捡的——再报一次等于用一个「玩家正看着屏幕」的 reason 重复计数。
+
+**不调 `endSession()`**（`background`/`explicit_exit` 会调）：会话没结束，人可能回来。
 
 ### 5.6b 渲染画像（Render Profile，ADR-084）
 
@@ -343,6 +425,36 @@ scene 取值：`IntroScene / LobbyScene / LoginScene / CampaignMapScene / LevelP
 | （同上，帧成本）2026-09-13 起 | `updP50, rndP50, updMax, rndMax` | **一帧的钱花在哪**。均为每 **tick** 的毫秒数（`rnd` 因此已含 `skipPct` 的折扣，可直接与帧周期 `1000/fpsP50` 相比）；两者之和接近帧周期 = 主线程是瓶颈，远小于帧周期 = 时间不在我们的 JS 里（显示刷新上限 / GPU 填充率 / 合成器）。见 `claudedocs/client-render-budget.md` §9.6 |
 
 Grafana 上值得先看的两张：按 `platform` 切的 `fpsP50` 分布（iOS/微信/web），以及按 `scene` 切的 `skipPct`（reactive 的菜单应该显著大于 0，`live` 的战斗应该等于 0）。
+
+### 5.6c 崩溃与埋点的共同 id（2026-09-20）
+
+客户端有两条各自独立的自述通道，此前**没有任何共同键**：
+
+| | 崩溃/异常通道 | 埋点通道 |
+|---|---|---|
+| 落地 | Loki（`/client/anomaly` → `metaserver/clientLog.ts`） | Mongo（`/analytics/events`） |
+| 标识 | `publicId` | `session_id` |
+
+`publicId` 登录前根本不存在，而且它标识的是**一个人**、不是**一次运行**，所以
+「闪退的那些人是不是当场就流失了」只能靠对两边的时钟和一个 platform 字符串肉眼凑——
+几百并发以下基本靠猜。
+
+**做法一：同一个 sid。** 会话 id 挪进 `client/src/analytics/session.ts`，第一次被读时生成，
+两条通道都盖：埋点作为 `session_id`，异常通道作为信封里的 `sid`。于是
+`{source="client",kind="anomaly"} | logfmt | sid="…"` 和 Mongo 上按 `session_id` 查的是**同一次运行**。
+它单独成模块是因为**次序**：崩溃哨兵在 `startApp()` 里就跑了，远早于 `analytics.init()` 建队列，
+读 id 不能依赖埋点已经初始化（甚至不能依赖埋点是开着的——离线包不调 `init`，它的崩溃报告一样该有 id）。
+
+**每条事件可以覆盖信封的 sid**：崩溃哨兵是在**下一次**启动时报告**上一次**死掉的那次运行的，
+所以它那条线必须写死掉的那个 sid，而不是正在读取遗骸的这个（和 `orient`/`vp` 走的是同一个
+`ctx` 机制，理由也一样）。哨兵因此把自己的 sid 一起持久化。
+服务端对 `sid` 只认 `^[A-Za-z0-9_-]{1,64}$`，不合就整个丢掉——这是个客户端给的值、会内联进每一行、
+而且读的人要拿它当 join key 精确匹配，放行自由文本等于让人往里注 logfmt。
+
+**做法二：`prev_session_crash`。** 哨兵检测到上次非正常退出时，除了 Loki 的 crash 报告，
+再往埋点发一条 `prev_session_crash{prev_sid, alive_ms}`。因为「闪退的设备第二天还回来吗」
+是个**留存问题**，只能在存留存数据的那边问；`prev_sid` 保证需要时还能跟 Loki 那半拼回去。
+和 crash 报告同一道闸：dev 构建（`buildVersion '0.0.0'`）不报，热重载不是闪退。
 
 ### 5.7 成就漏斗（Achievement，S9-8）
 

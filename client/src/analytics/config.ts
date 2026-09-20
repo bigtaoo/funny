@@ -16,13 +16,20 @@ const DISABLED_FALLBACK: AnalyticsConfig = {
 
 let cached: AnalyticsConfig = DISABLED_FALLBACK;
 
-export async function fetchAnalyticsConfig(analyticsBaseUrl: string): Promise<void> {
+/**
+ * @param platform  Build target, sent as `?p=` purely so the server can keep a per-platform **launch
+ *   counter** (ANALYTICS_DESIGN §3.6b). This request is the only one every launch makes before the
+ *   age/consent gates, which makes it the only possible denominator for the players who answer
+ *   neither and leave — they never reach `session_start`. Nothing identifying is sent, and nothing
+ *   identifying may ever be added here: the whole point is a number that needs no consent to count.
+ */
+export async function fetchAnalyticsConfig(analyticsBaseUrl: string, platform?: string): Promise<void> {
   try {
     // Through the transport seam, not the global fetch: the WeChat mini-game has no fetch and
     // installs wx.request behind this (net/transport.ts, ASSET_PACKAGING §4.4).
     const res = await netTransport().request({
       method: 'GET',
-      url: `${analyticsBaseUrl}/analytics/config`,
+      url: `${analyticsBaseUrl}/analytics/config${platform ? `?p=${encodeURIComponent(platform)}` : ''}`,
       headers: { Accept: 'application/json' },
     });
     if (res.ok) {

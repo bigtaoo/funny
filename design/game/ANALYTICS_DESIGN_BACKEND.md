@@ -40,12 +40,18 @@ notebook_wars_analytics
 │          ip?, geo_country?, geo_region?, geo_city? }
 │       索引：{ started_at: -1 } / { device_id: 1, started_at: -1 } / { ip: 1, started_at: -1 }
 │
-└── funnels_daily  每日预聚合（永久，ETL job 每小时跑）
-        { date, platform, funnel_step, count, conversion_rate? }
-        索引：{ date: -1, platform: 1 }
+├── funnels_daily  每日预聚合（永久，ETL job 每小时跑）
+│       { date, platform, funnel_step, count, conversion_rate? }
+│       索引：{ date: -1, platform: 1 }
+│
+└── boots_daily    启动计数（永久，2026-09-20；见 ANALYTICS_DESIGN §3.6b）
+        { _id: `${date}|${platform}`, date, platform, count, updated_at }
+        索引：{ date: -1 }（_id 本身就是 (date, platform)，upsert 不需要额外索引）
+        **只有这五列**：这是同意墙之前唯一能记的东西，没有 device_id、没有 IP、没有账号。
+        写入者是 `GET /analytics/config`（每次启动必发、在年龄门/同意墙之前、无需同意）。
 ```
 
-关卡/教程/场景细粒度漏斗（§9.7）与设备/地理分布（§9.8）都是**实时聚合查询**（不经 ETL 预聚合），直接查 `events` 集合。
+关卡/教程/场景细粒度漏斗（§9.7）、设备/地理分布（§9.8）、启动漏斗（§9.9）与加载时长（§9.10）都是**实时聚合查询**（不经 ETL 预聚合），直接查 `events`（`boots_daily` 只在 §9.9 里被读一次）。
 
 ### 6.3 TTL 策略
 
@@ -54,6 +60,7 @@ notebook_wars_analytics
 | `events` | 90 天 | 原始事件量大，超期分析价值低 |
 | `sessions` | 永久 | 轻量，留存/DAU 计算需要 |
 | `funnels_daily` | 永久 | 聚合结果，体积小 |
+| `boots_daily` | 永久 | 一天三行数字，要的就是长期趋势 |
 
 ---
 
@@ -64,7 +71,7 @@ notebook_wars_analytics
 ```
 server/analyticsvc/   (第九 workspace @nw/analyticsvc, CJS)
 ├── config.ts         NW_ANALYTICS_PORT / NW_ANALYTICS_MONGO_*
-├── db.ts             MongoDB 连接 + 3 个 collections + 索引
+├── db.ts             MongoDB 连接 + 4 个 collections + 索引
 ├── service.ts        ingestEvents() / getConfig() / queryFunnel()
 ├── httpApi.ts        node:http + 路由（/health, /analytics/config, /analytics/events, /internal/query）
 └── index.ts          启动
@@ -337,6 +344,33 @@ cohort（某日活跃设备）
 
 **IP 地理定位 + 账号防护**：`server/analyticsvc/src/httpApi.ts` 的 `POST /analytics/events` 从 `X-Forwarded-For`（Caddy 反代自动注入）取客户端 IP，存入 `EventDoc.ip`/`SessionDoc.ip`（`{ ip: 1, ts: -1 }` / `{ ip: 1, started_at: -1 }` 索引，供后续查「同一 IP 下有几个账号/设备」这类风控场景使用），并用 `geoip-lite`（离线库，无外部网络调用）解析出 `geo_country/geo_region/geo_city`。`GET /internal/query?type=geo_dist` 按国家分组，ops 新增「Geo (country) distribution」卡；原有的「Region distribution」卡实际统计的是 `locale`（语言码）而非地理位置，已改名为「Locale distribution」以免混淆。
 
+### 9.9 启动漏斗（`type=boot_funnel`，2026-09-20）
+
+本服务里**唯一分母不是埋点事件**的查询，因为它要数的那拨人不发埋点事件。详见
+[`ANALYTICS_DESIGN.md`](ANALYTICS_DESIGN.md) §3.6b。
+
+按 (日期, 平台) 出行：`boots`（`boots_daily` 计数）/ `sessions`（`session_start` **条数**）/
+`consents`（`gdpr_consent` 条数）/ `reach_rate = sessions/boots`。
+
+实现上是**外连接**（`analyticsvc/service/traffic.ts`）：两侧任意一边出现过的 (日期, 平台) 都出一行。
+内连接会正好丢掉这张表最有价值的那一行——**有启动、零会话的那天**。反过来「有会话、没计数」
+也出行（老客户端不发 `?p=`、或者计数写失败），这时 `reach_rate` 留空而不是编一个出来。
+
+### 9.10 加载时长（`type=load_time`，2026-09-20）
+
+按平台给 `samples / p50 / p75 / p90 / p95` + 各阶段均值 + 直方图 + `abandoned`。
+事件定义见 [`ANALYTICS_DESIGN.md`](ANALYTICS_DESIGN.md) §5.1b。
+
+三个实现决定，都在 `analyticsvc/service/dist.ts`：
+
+- **百分位读直方图，不用 `$percentile`**：聚合里把 `props.total_ms` 按 100ms 分桶（`$ceil`，
+  桶标签是**闭上界**——用 `$floor` 的话每个整百值都会高一桶，所有百分位一起漂移），
+  百分位在 JS 里按累计计数读出来。代价是 100ms 精度，换来内存**按桶数封顶**（`$push` 每条一个
+  子文档，忙一周就能顶到 16MB 文档上限）、不吃 MongoDB 版本，而且顺手就有了 ops 要的那张直方图。
+- **每个阶段各自记 sum 和 n**，不是 `$avg` 也不是 `$push`：某平台没有的阶段（微信没有网络阶段）
+  必须**不参与自己的均值**，而不是按 0 平进去。
+- **`abandoned` 用事件对算，不用超时**：同一会话有 `boot` 无 `load_time` = 加载界面还开着就关了页面。
+
 ---
 
 ## §10 隐私合规
@@ -432,9 +466,35 @@ cohort（某日活跃设备）
 （`upgrade`/`recharge`，§12.1 曾写作已接线）都是它一跑就红的东西——**这类漂移靠读文档发现不了，
 因为文档描述的正是本该成立的状态**。
 
-**仍然开着的**（这次没做，按需排期）：
+**当时仍然开着的**（四条，全部在 §12.7 做掉了）：
 - 年龄门/同意弹窗上直接走掉的人没有分母（§3.6 末尾），要服务端加无个人数据的启动计数。
 - 启动/加载阶段零观测：没有 boot / first_frame / load_time 事件，"打开了页面但没撑到进游戏"只能翻反代日志。
 - 崩溃管道（`/client/anomaly`）与埋点管道没有共同 id，答不了「闪退的人是不是当场流失」。
 - `churn_signal` 的 `idle_10min` 仍未实现（§12.2 起就延后）。
+
+### 12.7 补齐 §12.6 留下的四个盲区（2026-09-20，同日第二轮）
+
+四条一起做，因为它们是同一件事的四个面：**玩家开始玩之前和停止玩之后，我们什么都不知道**。
+
+| # | 盲区 | 做法 | 正文 |
+|---|---|---|---|
+| 1 | 同意墙之前走掉的人没有分母 | `GET /analytics/config` 上加 `?p=`，服务端在 `boots_daily` 按 (日期,平台) `$inc`；查询 `type=boot_funnel` | §3.6b / §9.9 |
+| 2 | 启动/加载零观测 | `boot` / `first_frame` / `load_time` 三条事件 + 分阶段耗时；查询 `type=load_time`（p50/75/90/95 + 阶段均值 + 直方图 + 放弃数） | §5.1b / §9.10 |
+| 3 | 崩溃与埋点无共同 id | 会话 id 提到 `analytics/session.ts`，两条管道同盖一个 sid（Loki 侧 `sid=`）；外加 `prev_session_crash` 事件 | §5.6c |
+| 4 | `idle_10min` 一直没做 | `render/renderPolicy.ts` 的 `msSinceActivity` 由 `app.ts` 注入给 `analytics/idleWatch.ts` | §5.6a |
+
+**沿途修掉的一个结构性 bug**：`track()` 在 `init()` 之前是**直接扔**的。老玩家尤其致命——
+`createAppCore` 在 `init()` **上一行**就 `setConsent(true)`，于是同意分支被跳过，紧接着的
+`if (!queue || !sessionId) return` 把事件丢了，连缓冲都没进。而本轮新增的事件里，
+`boot` 和 `prev_session_crash` **按定义就发生在 `init()` 之前**——不修的话这两条对老玩家恒为零，
+而且和 §12.6 那三个问题是同一个品种：**报表照常出数，只是那一格永远是 0**。
+现在 `track()` 在「没同意」或「还没 init」两种状态下一律缓冲，`init()` 也改成**先补发再发
+`session_start`**，让队列保持时间顺序。
+
+**没做也不打算在这里做的**：`showConsent` 的「拒绝」分支（§3.6b 末尾）——拒绝之后还能不能玩是产品/合规决定，不是埋点决定。
+
+新增覆盖：`client/test/analyticsBootTimeline.test.ts`（8）、`analyticsIdleWatch.test.ts`（7）、
+`analyticsConsentBuffer.test.ts` 加两条 pre-init 用例、`anomaly-chain.test.ts` 加三条 sid 用例、
+`server/analyticsvc/test/bootAndLoadTime.e2e.test.ts`（12）、`analytics.e2e.test.ts` 加 `?p=` 白名单、
+`metaserver/test/clientLog.test.ts` 加两条 sid 用例、`tools/ops/test/analytics.test.ts` 加 11 条。
 

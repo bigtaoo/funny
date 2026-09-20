@@ -9,7 +9,10 @@ import * as PIXI from 'pixi.js-legacy';
 import { IPlatform } from './platform/IPlatform';
 import { MemoryMonitor } from './cache/MemoryMonitor';
 import { PerfMonitor } from './cache/PerfMonitor';
-import { initCrashSentinel, installAnomalyWatchers, setAnomalyStorage, recordRenderSample } from './net/anomaly';
+import { initCrashSentinel, installAnomalyWatchers, previousSessionCrash, setAnomalyStorage, recordRenderSample } from './net/anomaly';
+import * as analytics from './analytics';
+import { markBoot } from './analytics/bootTimeline';
+import { startIdleWatch } from './analytics/idleWatch';
 import { SceneManager, type DialogGate } from './scenes/SceneManager';
 import { Side } from './game';
 import { ScalingManager, createLayout, resettledLayout } from './layout/ScalingManager';
@@ -23,7 +26,7 @@ import { FeedbackDialog } from './ui/dialogs/FeedbackDialog';
 import { t } from './i18n';
 import { ui as C } from './render/sketchUi';
 import { setBakeRenderer } from './render/bake';
-import { POWER_PREFERENCE, RenderPolicy, rendererResolution } from './render/renderPolicy';
+import { msSinceActivity, POWER_PREFERENCE, RenderPolicy, rendererResolution } from './render/renderPolicy';
 import { setDebugFlagStorage } from './debugFlags';
 import { installTextPaddingFloor } from './render/pixiText';
 import { preloadBoot } from './assets/bootManifest';
@@ -59,6 +62,12 @@ export async function startApp(
    */
   wrapViews?: (views: AppViews) => AppViews,
 ): Promise<void> {
+  // Boot timeline, phase ①: our first executed line (ANALYTICS_DESIGN §5.1b). On web this already
+  // carries everything that happened before it — DNS, TLS, the HTML response, the bundle download —
+  // because `performance.now()` is measured from navigation start. Must stay the first statement of
+  // this function: every later phase is reported relative to it.
+  markBoot('script');
+
   // Surface every uncaught error / rejection to the console (web-platform concern).
   installGlobalErrorHandlers();
 
@@ -78,6 +87,9 @@ export async function startApp(
     powerPreference: POWER_PREFERENCE,
   });
 
+  // Boot timeline, phase ②: a GPU context exists and the ticker is running.
+  markBoot('renderer');
+
   // Raise the global text-padding floor so no PIXI.Text (migrated to makeText or not)
   // can clip tall CJK glyph tops. See render/pixiText.ts. Layout-neutral.
   installTextPaddingFloor();
@@ -91,6 +103,10 @@ export async function startApp(
     const t0 = performance.now();
     origRender(...args);
     recordRenderSample(performance.now() - t0);
+    // Boot timeline, phase ③: the first completed render is the moment the page stops being blank.
+    // markBoot ignores every call after the first, so the steady-state cost here is one Map lookup
+    // per frame.
+    markBoot('first_frame');
   }) as typeof app.renderer.render;
 
   // Procedural art (sketch.ts) bakes static board layers to textures via this renderer.
@@ -128,6 +144,12 @@ export async function startApp(
   // (platform.storage) instead of silently reading nothing there.
   setAnomalyStorage(platform.storage);
   initCrashSentinel();
+  // Mirror a detected hard death into analytics as well (ANALYTICS_DESIGN §5.6c). The crash report
+  // itself goes to Loki; this event is what makes "did that device ever come back" answerable in the
+  // place that holds retention, and `prev_sid` names the dead session the same way the Loki line
+  // does. Tracked before analytics.init() — that is fine, track() buffers (see analytics/index.ts).
+  const crashed = previousSessionCrash();
+  if (crashed) analytics.track('prev_session_crash', { alive_ms: crashed.aliveMs, ...(crashed.sid ? { prev_sid: crashed.sid } : {}) });
   installAnomalyWatchers({ canvas: app.view as unknown as { addEventListener?: (t: string, cb: (e: unknown) => void) => void } });
 
   // Global fallback toast: when a non-200 / network error bubbles up to window without being
@@ -175,7 +197,15 @@ export async function startApp(
   // gracefully rather than wedging boot. On CrazyGames the SDK loading splash is
   // dismissed by onLoadingComplete() *after* this gate, so it covers our preload.
   const loading = new LoadingOverlay(app);
-  await preloadBoot((done, total) => loading.setProgress(total ? done / total : 1));
+  // Boot timeline, phase ④: the asset gate. Its span is the one part of startup that scales with the
+  // player's connection rather than their CPU, so it is reported separately from everything else.
+  markBoot('preload_start');
+  let preloadAssets = 0;
+  await preloadBoot((done, total) => {
+    preloadAssets = total;
+    loading.setProgress(total ? done / total : 1);
+  });
+  markBoot('preload_done', { preload_assets: preloadAssets });
   loading.destroy();
 
   // Audio volume/mute (AUDIO_DESIGN.md §4). Must run before the first cue can fire and AFTER the
@@ -306,6 +336,16 @@ export async function startApp(
   });
 
   core.start();
+
+  // Boot timeline, phase ⑤: the first real screen is built — the end of "loading" as a player would
+  // describe it. This emits `load_time` with the whole per-phase breakdown.
+  markBoot('ready');
+
+  // churn_signal{reason:'idle_10min'} (ANALYTICS_DESIGN §5.6). The probe is injected from here
+  // because this file is the only one that may touch both sides: renderPolicy already timestamps
+  // every pointer event for its own frame-rate throttle, and the analytics layer must stay free of
+  // PIXI (app/createAppCore.ts is render-free by contract).
+  startIdleWatch({ msSinceActivity });
 
   // ── L1 idle prefetch (ASSET_PACKAGING §11, §14) ─────────────────────────────
   // The first scene is now up and the player is reading it. Spend that idle window

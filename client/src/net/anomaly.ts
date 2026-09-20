@@ -25,7 +25,7 @@
 // Public entry point only (claudedocs/client-modules.md "单文件 500 行收敛" form①) — pure re-exports,
 // zero logic of its own. Split across ./anomaly/{reporter,anrContext,crashSentinel,watchers}.ts, each
 // importing only from its siblings (never back from here), so this split stays acyclic.
-export type { AnomalyType } from './anomaly/reporter';
+export type { AnomalyType, EventContext } from './anomaly/reporter';
 export { anomalyReporter, reportAnomaly, setAnomalyStorage, readBuildVersion } from './anomaly/reporter';
 export type { DeviceClass, MomentContext, OrientationName } from './anomaly/deviceContext';
 export {
@@ -37,5 +37,5 @@ export {
   setActiveScene, getActiveScene, setAnrContextProvider,
   recordFrameSample, recordConstructSample, recordRenderSample, takeFrameCost,
 } from './anomaly/anrContext';
-export { initCrashSentinel } from './anomaly/crashSentinel';
+export { initCrashSentinel, previousSessionCrash } from './anomaly/crashSentinel';
 export { installAnomalyWatchers, type AnomalyWatchersOpts } from './anomaly/watchers';
