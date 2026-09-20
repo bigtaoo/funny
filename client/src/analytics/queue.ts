@@ -5,7 +5,7 @@ import type { components } from '../net/openapi';
 import { netTransport } from '../net/transport';
 import { onAppLifecycleChange } from '../platform/appLifecycle';
 
-type AnalyticsEvent = components['schemas']['AnalyticsEvent'];
+export type AnalyticsEvent = components['schemas']['AnalyticsEvent'];
 
 export interface QueueOptions {
   analyticsBaseUrl: string;
