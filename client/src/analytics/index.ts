@@ -10,7 +10,7 @@ import { getOrCreateDeviceId } from '../platform/uuid';
 import { onAppLifecycleChange } from '../platform/appLifecycle';
 import { getLocale } from '../i18n';
 import { fetchAnalyticsConfig, shouldTrack } from './config';
-import { EventQueue, type BatchMeta } from './queue';
+import { EventQueue, type AnalyticsEvent, type BatchMeta } from './queue';
 
 // Derive analytics base URL from API base. If API is https://host/api,
 // analytics is at https://host/analytics (Caddy routes /analytics* to analyticsvc).
@@ -37,22 +37,50 @@ const NAV_CHECKPOINT_SCENES = new Set(['LoginScene', 'IntroScene', 'LobbyScene',
  * GDPR consent gate (C5-c, L1-1). Default `false`: NO telemetry leaves the device
  * until the player accepts the consent dialog. The core calls {@link setConsent}
  * with the persisted flag before init (returning consented users), and again on
- * accept (fresh users). `track()` is a no-op while this is false.
+ * accept (fresh users).
  */
 let consentGranted = false;
-/** session_start props captured at init, re-emitted by setConsent when consent flips on post-init. */
-let sessionStartProps: Record<string, unknown> | null = null;
 
 /**
- * Grant / revoke analytics consent (L1-1). When flipped on after init has already
- * run (fresh user just accepted), re-emits the session_start that was gated out so
- * the funnel still has a session anchor.
+ * Events tracked before consent was granted. **Nothing here has left the device** — the buffer is
+ * memory-only, is replayed by {@link setConsent} once the player accepts, and is dropped outright if
+ * they never do. That is the same privacy position as the old "no-op until consent" behaviour, but it
+ * keeps the events a funnel is actually built on.
+ *
+ * Why this exists: a brand-new player's boot order is `goIntro() → age gate → consent dialog`
+ * (app/createAppCore.ts `start()`), so *every* pre-lobby event — `session_start`, the IntroScene
+ * `screen_view`/`nav_checkpoint`, and `intro_complete`/`intro_skip` — was tracked while the gate was
+ * still closed and silently discarded. Only `session_start` was re-emitted on accept. The result was
+ * structural, not statistical: the `intro_seen` step of the onboarding funnel (ANALYTICS_DESIGN §9.6)
+ * counted zero for **every** new user, which is exactly the cohort that funnel exists to measure, and
+ * because `computeStepFunnel` divides by the previous step, the step after it lost its rate too.
+ */
+let pending: AnalyticsEvent[] = [];
+/** Buffer cap. Keeps the *earliest* events (the funnel head) and drops the tail once full. */
+const PENDING_MAX = 100;
+
+/**
+ * Grant / revoke analytics consent (L1-1). Granting releases the pre-consent buffer (see
+ * {@link pending}); revoking — or simply never granting — discards it.
  */
 export function setConsent(granted: boolean): void {
   const was = consentGranted;
   consentGranted = granted;
-  if (granted && !was && queue && sessionId && sessionStartProps) {
-    track('session_start', sessionStartProps);
+  if (!granted) { pending = []; return; }
+  if (!was) flushPreConsent();
+}
+
+/**
+ * Release the pre-consent buffer into the real queue, applying each event's own sampling rate at
+ * replay time. No-op until consent *and* init are both done: whichever finishes last calls this, so
+ * the two can arrive in either order (returning players consent before init, fresh players after).
+ */
+function flushPreConsent(): void {
+  if (!consentGranted || !queue || !sessionId) return;
+  const buffered = pending;
+  pending = [];
+  for (const e of buffered) {
+    if (shouldTrack(e.event)) queue.push(e);
   }
 }
 
@@ -112,10 +140,12 @@ export async function init(
   queue.start();
   bindSessionLifecycle();
 
-  // Emit session_start immediately (sample=1.0 by default). Gated by consent —
-  // if the player hasn't accepted yet this is a no-op and setConsent re-emits it.
-  sessionStartProps = { platform: platformName, os, locale: getLocale() };
-  track('session_start', sessionStartProps);
+  // Emit session_start immediately (sample=1.0 by default). Before consent it lands in the
+  // pre-consent buffer like every other event and is replayed on accept.
+  track('session_start', { platform: platformName, os, locale: getLocale() });
+  // Returning player: consent was granted before init finished, so anything tracked in that window
+  // (the gates and the intro run off the same tick as init) is still sitting in the buffer.
+  flushPreConsent();
 }
 
 // ── Session lifecycle → churn_signal + session_end ───────────────────────────
@@ -153,22 +183,28 @@ export function click(id: string, extra: Record<string, unknown> = {}): void {
 
 /** Track a named event with arbitrary props (synchronous, non-blocking). */
 export function track(event: string, props: Record<string, unknown> = {}): void {
-  if (!consentGranted) return; // GDPR gate (L1-1): no telemetry before consent
-  if (!queue || !sessionId) return;
-
-  // screen_view bookkeeping + the nav_checkpoint companion event run unconditionally on
-  // *this* event's own consent/queue gates above, deliberately ahead of the shouldTrack(event)
-  // check below — nav_checkpoint has its own 100%-sample config entry (see analyticsvc
-  // service.ts DEFAULT_CONFIG) and must not inherit screen_view's 5% sampling outcome, or it
-  // only ever fires on the ~5% of screen_view calls that already passed that check.
+  // screen_view bookkeeping + the nav_checkpoint companion event run ahead of every gate below.
+  // Ahead of the consent gate so `scenes_visited` and the scene funnel still see the pre-consent
+  // part of the session (those events are buffered, not discarded), and ahead of the
+  // shouldTrack(event) check because nav_checkpoint has its own 100%-sample config entry (see
+  // analyticsvc service/defs.ts DEFAULT_CONFIG) and must not inherit screen_view's 5% sampling
+  // outcome, or it only ever fires on the ~5% of screen_view calls that already passed that check.
   if (event === 'screen_view') {
     const scene = props['scene'] as string | undefined;
     if (scene) scenesVisited.push(scene);
-    queue.checkpoint(); // flush before adding new screen event
+    queue?.checkpoint(); // flush before adding new screen event
     if (scene && NAV_CHECKPOINT_SCENES.has(scene)) {
       track('nav_checkpoint', { scene });
     }
   }
+
+  // GDPR gate (L1-1): before consent nothing may leave the device, but the event is held in memory
+  // so accepting still yields a complete session. See `pending`.
+  if (!consentGranted) {
+    if (pending.length < PENDING_MAX) pending.push({ event, ts: Date.now(), props });
+    return;
+  }
+  if (!queue || !sessionId) return;
 
   if (!shouldTrack(event)) return;
   queue.push({ event, ts: Date.now(), props });

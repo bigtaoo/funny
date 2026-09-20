@@ -153,7 +153,7 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
           goLevelPrep(levelId);
         }).catch(() => {
           // Insufficient coins: fail silently → fall back to the shop route
-          nav.goShop(() => goLevelPrep(levelId));
+          nav.goShop(() => goLevelPrep(levelId), undefined, 'prep');
         });
       },
     });

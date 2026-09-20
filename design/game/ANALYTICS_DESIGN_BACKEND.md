@@ -294,7 +294,8 @@ cohort（某日活跃设备）
 回答「玩家**第一次进游戏**都做了什么、在哪一步流失、多少人过了新手引导」。`AnalyticsService.queryFirstSession(days)` 先取每个设备**最早的 `session_start`**，只保留其首次会话落在窗口 `[今起前 days 天, 今日结束]` 内的设备（= 新用户 cohort），随后所有统计**只看这一次首次会话**（按 `session_id` 关联，与老用户彻底隔离）。
 
 - **新手引导漏斗** `funnel`（有序、逐步转化）：`ONBOARDING_STEPS`（`service.ts`）= 打开 → **看完/跳过 intro** → 开始引导 → **完成引导** → 首战 → 首通。相邻步转化率定位首日流失点；`tutorial_complete ÷ tutorial_start` 即引导完成率。步骤判定基于首次会话的事件集合，改 `ONBOARDING_STEPS` 一处即可增删步骤。
-  - **采样一致性（关键）**：漏斗每步都取自 **100% 采样事件**（`session_start / intro_complete|intro_skip / tutorial_start / tutorial_complete / game_start / level_complete`，见 `DEFAULT_CONFIG`），各步计数才可直接相比。**故意不含**进大厅这类 `screen_view` 派生里程碑——`screen_view` 只 5% 采样，混进来会把采样损耗误显示成流失悬崖。`intro_seen` 步骤是例外：它读的是专属 `intro_complete`/`intro_skip` 事件而非 `screen_view`，design-doc-audit-2026-07 补入（此前这一步完全没数据，见 §5.6 事件表、`ONBOARDING_DESIGN.md` §7 的核实记录）。`tutorial_start/complete` 本来漏配、回落到 `defaultSample=0.1`，此前已一并提到 1.0（否则引导完成率失真）。
+  - **采样一致性（关键）**：漏斗每步都取自 **100% 采样事件**（`session_start / intro_complete|intro_skip / tutorial_start / tutorial_complete / game_start / level_complete`，见 `DEFAULT_CONFIG`），各步计数才可直接相比。**故意不含**进大厅这类 `screen_view` 派生里程碑——`screen_view` 只 5% 采样，混进来会把采样损耗误显示成流失悬崖。`intro_seen` 步骤是例外：它读的是专属 `intro_complete`/`intro_skip` 事件而非 `screen_view`，design-doc-audit-2026-07 补入（此前这一步完全没数据，见 §5.6 事件表、`ONBOARDING_DESIGN.md` §7 的核实记录）。
+  - ⚠️ **补入之后它仍然恒为 0，直到 2026-09-20**：那两个事件发生在同意墙之前，被 `track()` 的同意门原地丢弃（详见 §3.6）。**「事件已接线」不等于「事件到得了服务器」**——核一条埋点要核到它穿过所有门为止，别停在有 `analytics.track` 调用这一步。`tutorial_start/complete` 本来漏配、回落到 `defaultSample=0.1`，此前已一并提到 1.0（否则引导完成率失真）。
 - **首会话行为分布** `actions`：首次会话里命中的场景（`screen_view` 的 scene，`kind:'scene'`）与语义动作（除 `session_start/session_end/screen_view/churn_signal` 外的全部事件名，含 `ui_click`，`kind:'action'`）各自的去重设备数 + 占 cohort 比例，按覆盖降序。回答「首日玩家都点了哪些功能」。
   - action 行多为 100% 采样事件（`game_start/shop_buy/gacha_draw/tutorial_*/ui_click…`），可信；**scene 行来自 5% 采样的 `screen_view`，系统性欠采**（ops 卡片已标注）。因此「首日点了哪个按钮」主要看 `ui_click`（如 `lobby.shop`）与语义动作，而非 scene 行。
 - **口径注意**：「最早」仅在事件保留窗口内判定（events TTL=90 天）。真正首次会话早于保留期、却在窗口内回流的设备，不会被误判为新用户。
@@ -411,3 +412,29 @@ cohort（某日活跃设备）
 - `ONBOARDING_STEPS`（§9.6）新增 `intro_seen` 步骤（`intro_complete` 或 `intro_skip` 命中即算），首次纳入 intro 到「首次会话新手引导漏斗」。
 - 新增查询类型 `GET /internal/query?type=feature_guide_funnel`（`AnalyticsService.queryFeatureGuideFunnel`，写法同 `queryLevelFunnel`），ops「Analytics」页新增对应卡片。字段定义见 §5.9，查询说明见 §9.7。
 - 登录方式（试玩/匿名/正式）节点仍未接专属事件——优先级较低，本次不强制，留给后续迭代（`ONBOARDING_DESIGN.md` §7 已记录）。
+
+### 12.6 上架前埋点体检：三处让漏斗读数失真的硬伤 + 登录/匹配两个盲区（2026-09-20）
+
+上架前按「流失点数据齐不齐」逐条核对代码（不是核文档），发现的不是缺口而是**三处会让现有报表给出错误
+数字**的问题，都已修：
+
+| # | 问题 | 后果 | 修法 |
+|---|---|---|---|
+| 1 | 同意墙之前 `track()` 直接丢弃 | §9.6 `intro_seen` 对**每个新用户**恒 0，下一步转化率变 `undefined` | 同意前缓冲，接受时补发（§3.6） |
+| 2 | 22 个事件不在 `DEFAULT_CONFIG` 里 | 全部付费 + 全部日常留存事件只留 10%，而漏斗按设备去重 → 随机化而非等比缩小 | 补齐并全部 1.0（§5.4） |
+| 3 | `shop_open` 0.5 vs `shop_buy` 1.0 | §9.3 经济漏斗转化率虚高约 2×；`source` 从未填过 | 两端同率；`source` 串通（§5.4） |
+
+同批补的两个盲区：**登录/注册结果**（`login_submit`/`login_ok`/`login_fail`/`login_skip`，§5.6）与
+**排位队列放弃**（`pvp_queue_cancel`/`pvp_match_bot`/`pvp_room_join`/`pvp_room_error`，§5.5）。
+
+**装了门禁**：`client/test/analyticsEventConfig.test.ts` 双向比对「客户端发的事件名」与
+`DEFAULT_CONFIG` 的键，并钉死漏斗关键事件必须 `sample: 1.0`。问题 2、3 和两个死条目
+（`upgrade`/`recharge`，§12.1 曾写作已接线）都是它一跑就红的东西——**这类漂移靠读文档发现不了，
+因为文档描述的正是本该成立的状态**。
+
+**仍然开着的**（这次没做，按需排期）：
+- 年龄门/同意弹窗上直接走掉的人没有分母（§3.6 末尾），要服务端加无个人数据的启动计数。
+- 启动/加载阶段零观测：没有 boot / first_frame / load_time 事件，"打开了页面但没撑到进游戏"只能翻反代日志。
+- 崩溃管道（`/client/anomaly`）与埋点管道没有共同 id，答不了「闪退的人是不是当场流失」。
+- `churn_signal` 的 `idle_10min` 仍未实现（§12.2 起就延后）。
+

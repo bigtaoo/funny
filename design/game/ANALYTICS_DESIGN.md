@@ -179,6 +179,28 @@ function flushSync(batch: EventBatch): void {
 - flush 失败 → 事件留在内存队列，下次 flush 重试（最多 3 次，含生命周期触发）
 - 超出重试或队列超 200 条 → 静默丢弃（分析用途，丢一点不影响结论）
 
+### 3.6 同意墙与「同意前缓冲」（2026-09-20）
+
+GDPR 同意门（C5-c/L1-1）默认关闭，**同意之前没有任何数据离开设备**。这一条不变；变的是同意之前的事件
+不再被直接扔掉，而是**存在内存里**（`analytics/index.ts` 的 `pending`，上限 100 条，满了丢新的、留最早的），
+玩家点「接受」时按各自采样率补发，**一直没点就随进程一起消失**。
+
+**为什么必须这么做**：新玩家的启动顺序是 `start() → goIntro() → 年龄门 → 同意弹窗`
+（`app/createAppCore.ts`），也就是说 `session_start`、IntroScene 的 `screen_view`/`nav_checkpoint`、
+`intro_complete`/`intro_skip` **全部发生在门还关着的时候**。旧实现里 `track()` 在这个状态下直接 `return`，
+只有 `session_start` 会在同意时补发一次。后果不是统计噪声而是**结构性归零**：§9.6 新手漏斗的 `intro_seen`
+一步对**每一个新用户**都计 0，而那正是这张漏斗唯一要量的人群；又因为 `computeStepFunnel` 的转化率是
+`count/prev`，prev=0 让它**后面一步的转化率也变成 `undefined`。仪表盘上不显示为坏掉，显示为「所有人都在
+看片头时退了」。
+
+覆盖：`client/test/analyticsConsentBuffer.test.ts`（补发、不补发、采样在补发时才算、溢出留最早、
+「先 setConsent 后 init」的老玩家顺序）。
+
+**仍然看不到的**：在年龄门或同意弹窗上直接走掉的人。这两屏之前连 `session_start` 都还没有，
+而 `showConsent` 也没有「拒绝」分支，所以分母只能来自客户端之外——要量它得在反代/服务端加一个
+不含个人数据的启动计数（`GET /analytics/config` 是目前唯一一个每次启动必发、且无需同意的请求）。
+**这条还开着。**
+
 ---
 
 ## §4 采集配置（服务端控制开关）
@@ -259,12 +281,23 @@ scene 取值：`IntroScene / LobbyScene / LoginScene / CampaignMapScene / LevelP
 
 | 事件 | 必填属性 | 可选属性 | 说明 |
 |---|---|---|---|
-| `shop_open` | — | `source` | source: lobby/result/prep 等入口 |
+| `shop_open` | `source, tab` | — | `source` ∈ `lobby_recharge`/`prep`/`shop_group`/`unknown`（`ShopSource`，`app/appCtx.ts`）。**2026-09-20 起才真的填**，此前恒为空 props；同批把采样率从 0.5 提到 1.0，见下方注 |
 | `shop_buy` | `item_id, cost` | `currency` | 购买商品 |
 | `shop_close` | `converted` | `time_sec` | converted=是否有购买 |
 | `gacha_draw` | `pool_id, count` | `results[]` | count: 1 or 10 |
-| `upgrade` | `unit_type, stat, level_after` | `cost{}` | PvE 养成升级 |
-| `recharge` | `tier` | — | 充值（tier: small/mid/large） |
+| `iap_purchase` | `tier, platform` | — | 真金充值成功（`app/nav/shop/iap.ts`），platform ∈ apple/google/paddle |
+| `starter_buy` | `product_id, platform` | — | 新手礼包购买成功 |
+| `battlepass_buy` / `battlepass_claim` | — | — | 战令购买 / 领取 |
+| `recharge_milestone_claim` / `promo_redeem` / `fate_redeem` | — | — | 充值里程碑 / 兑换码 / 命运点兑换 |
+| `ads_reward` | `coins, platform` | — | 激励视频发奖成功 |
+| `daily_checkin` / `daily_reward_claim` / `weekly_chest_claim` / `event_claim` | — | — | 留存四件套的领取（RETENTION_DESIGN） |
+| `equip_craft` / `equip_enhance` / `equip_reforge` / `equip_salvage` / `equip_equip` / `card_fuse` / `card_lock` | — | — | 养成动作（"这系统有没有人用"） |
+
+> ⚠️ **2026-09-20 修**：上表 `iap_purchase` 往下的十九个事件**从落地起就不在 `DEFAULT_CONFIG` 里**，于是全部回落到 `defaultSample: 0.1`。
+> 由于所有漏斗查询都按 `device_id` 去重，10% 采样**不是把柱子等比缩短**，而是随机决定某台设备"看起来有没有签到"——付费与留存两条线的读数在此之前不可用。
+> 同批修的还有 `shop_open` 0.5 vs `shop_buy` 1.0：分母半采样、分子全采样，§9.3 的经济漏斗转化率系统性虚高约 2×。
+> 门禁：`client/test/analyticsEventConfig.test.ts`（客户端发的每个事件名必须在 `DEFAULT_CONFIG` 里有显式条目，反向也查——配了却没有调用点的条目同样红）。
+> 被这条门禁扫出来的两个死条目 `upgrade`/`recharge` 已删：§12.1 曾记它们接在 `goLevelPrep`/`goShop` 上，但那两处在后来的 `nav/` 拆分中没了，配置留了下来。
 
 ### 5.5 社交层（Social）
 
@@ -273,6 +306,10 @@ scene 取值：`IntroScene / LobbyScene / LoginScene / CampaignMapScene / LevelP
 | `friend_add` | — | 加好友成功 |
 | `pvp_room_create` | `mode` | mode: friendly/ranked |
 | `pvp_match_start` | `mode` | 成功匹配开局 |
+| `pvp_queue_cancel` | `wait_sec` | 排位队列里主动退出（2026-09-20 补）。`wait_sec` = 从进队到退出的墙钟秒数——**"等多久就放弃"是定匹配超时的那个数**，此前没有任何测量 |
+| `pvp_match_bot` | `wait_sec, difficulty` | 排不到真人、服务端下发 `match_bot` 兜底成机器人局（feature flag `match_bot_fallback`）。对玩家静默，此前在数据里也静默 |
+| `pvp_room_join` | — | 用好友房邀请码发起加入 |
+| `pvp_room_error` | `error` | 房间侧错误码（邀请码失效、`PREMATCH_LOST` 等）——加入失败是玩家分不清"码错了"还是"游戏坏了"的死胡同 |
 
 ### 5.6 流失信号（Churn Signals）
 
@@ -284,6 +321,12 @@ scene 取值：`IntroScene / LobbyScene / LoginScene / CampaignMapScene / LevelP
 | `tutorial_step` | `level_id, phase, step_key, step_index` | 教程内部小步骤（§9.7 教程步骤漏斗用），`step_key` 见 `TUTORIAL_ORDERED_KEYS` |
 | `nav_checkpoint` | `scene` | 场景级漏斗用（§9.7），100% 采样，仅在 `screen_view` 命中场景白名单时自动补发 |
 | `login_gate_hit` | `scene` | 离线功能门控弹「需要登录」 |
+| `login_submit` | `mode` | 提交登录/注册表单（mode: login/register）。2026-09-20 补——此前 `LoginScene` 除 `screen_view` 外零埋点，**新客第一道硬墙有多少人过去了、剩下的被哪个错误挡住，全不可知** |
+| `login_ok` | `mode` | 登录/注册成功 |
+| `login_fail` | `mode, error` | 失败。`error` 取**服务端错误码**（`ApiError.code`）或 `network`/`no_api_base`，不是翻译后的文案——要分的是"密码错了"（会重试）和"邮箱被占用"/网络失败（会走人） |
+| `login_skip` | — | 在登录页选「先玩离线」。即"拒绝注册"这条分支 |
+
+> **成功/失败为什么是两个事件名而不是一个带 `ok` 的事件**：§9.6 的首会话 `actions` 分布按**事件名**统计去重设备数、不看 props。合成一个名字，在唯一已经把新客 cohort 隔离出来的那张报表里两者就分不开了。
 | `intro_complete` / `intro_skip` | — | 首启故事 `IntroScene` 看完/跳过（`app/nav/auth.ts` `goIntro` 的 `onFinish(skipped)`），design-doc-audit-2026-07 补齐——此前这一步完全没有埋点。100% 采样，纳入 §9.6 `ONBOARDING_STEPS` 的 `intro_seen` 步骤 |
 
 ### 5.6b 渲染画像（Render Profile，ADR-084）

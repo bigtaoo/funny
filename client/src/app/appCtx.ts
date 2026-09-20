@@ -35,6 +35,13 @@ export interface AppState {
 }
 
 /**
+ * Where a shop visit came from — reported as `shop_open.source` (ANALYTICS_DESIGN §9.3) so the
+ * economy funnel can tell a deliberate visit from one the game pushed the player into.
+ * `shop_group` is a peer-tab hop inside the shop/gacha/daily/battle-pass group, i.e. already inside.
+ */
+export type ShopSource = 'lobby_recharge' | 'prep' | 'shop_group' | 'unknown';
+
+/**
  * Navigation registry: every screen transition callable from any module. Populated by createAppCore
  * during assembly (Object.assign of each module's factory output), so a function in one module can
  * call `ctx.nav.goX()` in another without a static import cycle.
@@ -74,7 +81,8 @@ export interface Nav {
     preload?: { family?: FamilyDetailView | null; sect?: SectDetailView | null },
   ): void;
   goAuctionHouse(worldApi: WorldApiClient, worldId: string, opts?: { overlay?: boolean; onBack?: () => void }): void;
-  goShop(onBack?: () => void, initialTab?: 'shop' | 'coins'): void;
+  /** `source` is the shop_open funnel entry-point dimension (ANALYTICS_DESIGN §9.3), not behaviour. */
+  goShop(onBack?: () => void, initialTab?: 'shop' | 'coins', source?: ShopSource): void;
   goGacha(group?: { shopBack?: () => void }): void;
   goDaily(): void;
   goEvents(): void;

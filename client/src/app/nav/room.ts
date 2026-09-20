@@ -44,9 +44,15 @@ export function createRoomNav(ctx: AppCtx): Pick<Nav, 'goRoom' | 'goDeckBuilder'
     // straight from socialsvc by publicId, same as the friends/family social surfaces.
     const worldApi = api ? new WorldApiClient(platform.storage) : null;
     let rankedQueued = false;
+    // Wall-clock the player spends waiting, reported with whichever way the queue ends
+    // (pvp_queue_cancel / pvp_match_bot). "How long before they give up" is the number that
+    // decides the matchmaking timeout, and nothing measured it before 2026-09-20.
+    let queueStartTs = 0;
+    const queueWaitSec = (): number => (queueStartTs ? Math.round((Date.now() - queueStartTs) / 1000) : 0);
     const queueRanked = (): void => {
       if (rankedQueued) return;
       rankedQueued = true;
+      queueStartTs = Date.now();
       log.info('entering ranked queue (createRanked)');
       analytics.track('pvp_room_create', { mode: 'ranked' });
       session?.createRanked(getSavedDeck());
@@ -61,11 +67,18 @@ export function createRoomNav(ctx: AppCtx): Pick<Nav, 'goRoom' | 'goDeckBuilder'
         nav.goLobby();
       },
       createRoom() { analytics.track('pvp_room_create', { mode: 'friendly' }); session?.createRoom(getSavedDeck()); },
-      joinRoom(code: string) { session?.joinRoom(code, getSavedDeck()); },
+      // Joining by friend code is its own funnel step: a wrong/expired code is a dead end the
+      // player cannot distinguish from "the game is broken", and onRoomError below reports it.
+      joinRoom(code: string) { analytics.track('pvp_room_join', {}); session?.joinRoom(code, getSavedDeck()); },
       setReady(ready: boolean) { session?.setReady(ready); },
       startMatch() { session?.startMatch(); },
-      createRanked() { analytics.track('pvp_room_create', { mode: 'ranked' }); session?.createRanked(getSavedDeck()); },
-      cancelQueue() { rankedQueued = false; session?.cancelQueue(); },
+      createRanked() { queueStartTs = Date.now(); analytics.track('pvp_room_create', { mode: 'ranked' }); session?.createRanked(getSavedDeck()); },
+      cancelQueue() {
+        analytics.track('pvp_queue_cancel', { wait_sec: queueWaitSec() });
+        rankedQueued = false;
+        queueStartTs = 0;
+        session?.cancelQueue();
+      },
     });
 
     if (session) {
@@ -74,13 +87,17 @@ export function createRoomNav(ctx: AppCtx): Pick<Nav, 'goRoom' | 'goDeckBuilder'
         // Matchmaking timeout fallback to AI (feature flag match_bot_fallback): server pushes match_bot →
         // exit the queue UI and start a local AI match (using the server-provided seed + AI level).
         onMatchBot: (seed, _opponentName, _elo, difficulty) => {
+          // Wanted a human, got a bot. Silent to the player and, until now, silent in the data too —
+          // yet "ranked is all bots" is exactly the kind of thing that empties a PvP mode.
+          analytics.track('pvp_match_bot', { wait_sec: queueWaitSec(), difficulty });
           rankedQueued = false;
+          queueStartTs = 0;
           const level = parseAiDifficulty(difficulty);
           log.info('match_bot fallback → local AI match', { seed, difficulty: level });
           nav.goGame({ seed, ...(level !== undefined ? { difficulty: level } : {}), fromBotFallback: true });
         },
         onRoomState: (s) => view.applyRoomState(s),
-        onRoomError: (e) => view.applyRoomError(e),
+        onRoomError: (e) => { analytics.track('pvp_room_error', { error: e.code }); view.applyRoomError(e); },
         onPeerDc:    (p) => view.applyPeerDc(p),
         onNetState:  (s) => {
           view.applyNetState(s);

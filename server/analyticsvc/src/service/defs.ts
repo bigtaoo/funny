@@ -33,15 +33,57 @@ export const DEFAULT_CONFIG: AnalyticsConfig = {
     level_complete: { sample: 1.0 },
     level_abandon:  { sample: 1.0 },
     card_play:      { enabled: false },
-    shop_open:      { sample: 0.5 },
+    // shop_open was 0.5 while shop_buy/shop_close are 1.0, which made the §9.3 economy funnel read
+    // roughly double the real conversion — the denominator was half-sampled and the numerator was not.
+    // Both ends of a funnel have to share a rate; the volume saved was never worth a wrong number.
+    shop_open:      { sample: 1.0 },
     shop_buy:       { sample: 1.0 },
     shop_close:     { sample: 1.0 },
     gacha_draw:     { sample: 1.0 },
-    recharge:       { sample: 1.0 },
-    upgrade:        { sample: 1.0 },
     friend_add:     { sample: 1.0 },
     pvp_room_create:{ sample: 1.0 },
     pvp_match_start:{ sample: 1.0 },
+    // Ranked-queue drop-off (ANALYTICS_DESIGN §5.5): leaving the queue, a failed friend-code join, and
+    // the bot fallback are the three ways a player who wanted a match does not get one.
+    pvp_queue_cancel: { sample: 1.0 },
+    pvp_room_join:    { sample: 1.0 },
+    pvp_room_error:   { sample: 1.0 },
+    pvp_match_bot:    { sample: 1.0 },
+    // Login/registration outcome (ANALYTICS_DESIGN §5.6): the first hard wall a new player meets.
+    login_submit:   { sample: 1.0 },
+    login_ok:       { sample: 1.0 },
+    login_fail:     { sample: 1.0 },
+    login_skip:     { sample: 1.0 },
+    // Purchases, ads and every retention claim (ANALYTICS_DESIGN §5.4). These were all missing from
+    // this table until 2026-09-20 and therefore fell back to defaultSample (0.1) — a 10% sample of a
+    // per-device de-duplicated funnel does not scale the bars down, it randomises whether a given
+    // device looks like it checked in at all. They are discrete, player-initiated, low-frequency
+    // actions: far below the ui_click volume that is already at 1.0.
+    iap_purchase:             { sample: 1.0 },
+    starter_buy:              { sample: 1.0 },
+    battlepass_buy:           { sample: 1.0 },
+    battlepass_claim:         { sample: 1.0 },
+    recharge_milestone_claim: { sample: 1.0 },
+    promo_redeem:             { sample: 1.0 },
+    fate_redeem:              { sample: 1.0 },
+    ads_reward:               { sample: 1.0 },
+    daily_checkin:            { sample: 1.0 },
+    daily_reward_claim:       { sample: 1.0 },
+    weekly_chest_claim:       { sample: 1.0 },
+    event_claim:              { sample: 1.0 },
+    // Progression sinks — the "is anyone using this system" half of the retention question.
+    equip_craft:    { sample: 1.0 },
+    equip_enhance:  { sample: 1.0 },
+    equip_reforge:  { sample: 1.0 },
+    equip_salvage:  { sample: 1.0 },
+    equip_equip:    { sample: 1.0 },
+    card_fuse:      { sample: 1.0 },
+    card_lock:      { sample: 1.0 },
+    siege_replay:   { sample: 1.0 },
+    // Account-lifecycle bookends. gdpr_consent is the only signal that the consent dialog was
+    // accepted at all, so sampling it would leave the top of the funnel with no anchor whatsoever.
+    gdpr_consent:   { sample: 1.0 },
+    account_delete: { sample: 1.0 },
     // Achievement funnel (S9-8, ANALYTICS_DESIGN §5.7): unlock toast → view wall → claim; 100% sampled (low-frequency, high-value).
     achievement_unlock_toast: { sample: 1.0 },
     achievement_view_wall:    { sample: 1.0 },

@@ -4,7 +4,7 @@
 // Split out of createShopNav (see shop.ts).
 import * as analytics from '../../../analytics';
 import { ApiError } from '../../../net/ApiClient';
-import type { AppCtx, Nav } from '../../appCtx';
+import type { AppCtx, Nav, ShopSource } from '../../appCtx';
 import { TOKEN_KEY } from '../../appConstants';
 import { shopCardBadgeClaimable, battlePassBadgeClaimable, rechargeBadgeClaimable } from './badges';
 import { createShopIap } from './iap';
@@ -15,11 +15,13 @@ export function createShopNav(ctx: AppCtx): ShopNav {
   const { api, saveManager, platform, state, views, nav } = ctx;
   const { doRechargeCoins, doBuySubscription, doBuyStarter } = createShopIap(ctx);
 
-  function goShop(onBack?: () => void, initialTab?: 'shop' | 'coins'): void {
+  function goShop(onBack?: () => void, initialTab?: 'shop' | 'coins', source: ShopSource = 'unknown'): void {
     if (!api) { nav.goLobby(); return; }
     const client = api;
     state.inLobby = false;
-    analytics.track('shop_open', {});
+    // `source` separates "went shopping" from "was pushed here by a wall" (ANALYTICS_DESIGN §9.3).
+    // It was in the design from the start but never populated — every shop_open carried empty props.
+    analytics.track('shop_open', { source, tab: initialTab ?? 'shop' });
     analytics.track('screen_view', { scene: 'ShopScene' });
     // Conversion flag: whether a purchase was made during this shop visit; reported with shop_close on exit (funnel bottom, §9.3).
     let converted = false;
@@ -143,9 +145,9 @@ export function createShopNav(ctx: AppCtx): ShopNav {
     views.showGacha({
       // Back always leaves the shop group entirely (returns to the origin — lobby / level-prep),
       // never hops through the Shop tab first: Shop/Coins/Gacha/BattlePass are peers, not a stack.
-      onBack() { if (shopBack) shopBack(); else goShop(); },
-      ...(inGroup ? { openShop: () => goShop(shopBack), getShopBadge: () => shopCardBadgeClaimable(saveManager.get().monetization) } : {}),
-      ...(inGroup && coinsAvail ? { openCoins: () => goShop(shopBack, 'coins') } : {}),
+      onBack() { if (shopBack) shopBack(); else goShop(undefined, undefined, 'shop_group'); },
+      ...(inGroup ? { openShop: () => goShop(shopBack, undefined, 'shop_group'), getShopBadge: () => shopCardBadgeClaimable(saveManager.get().monetization) } : {}),
+      ...(inGroup && coinsAvail ? { openCoins: () => goShop(shopBack, 'coins', 'shop_group') } : {}),
       ...(inGroup && bpAvail ? { openBattlePass: () => goBattlePass({ shopBack }), getBattlePassBadge: () => battlePassBadgeClaimable(saveManager.get().battlePass) } : {}),
       ...(inGroup && bpAvail ? { openRecharge: () => goRecharge({ shopBack }), getRechargeBadge: () => rechargeBadgeClaimable(saveManager.get()) } : {}),
       getCoins: () => saveManager.get().wallet.coins,
@@ -281,8 +283,8 @@ export function createShopNav(ctx: AppCtx): ShopNav {
       onBack: () => { if (shopBack) shopBack(); else nav.goLobby(); },
       getCoins: () => saveManager.get().wallet.coins,
       onSaveChanged: (listener: () => void) => saveManager.subscribe(listener),
-      ...(inGroup ? { openShop: () => goShop(shopBack), getShopBadge: () => shopCardBadgeClaimable(saveManager.get().monetization), openGacha: () => goGacha({ shopBack }) } : {}),
-      ...(inGroup && coinsAvail ? { openCoins: () => goShop(shopBack, 'coins') } : {}),
+      ...(inGroup ? { openShop: () => goShop(shopBack, undefined, 'shop_group'), getShopBadge: () => shopCardBadgeClaimable(saveManager.get().monetization), openGacha: () => goGacha({ shopBack }) } : {}),
+      ...(inGroup && coinsAvail ? { openCoins: () => goShop(shopBack, 'coins', 'shop_group') } : {}),
       ...(inGroup && loggedIn ? { openRecharge: () => goRecharge({ shopBack }), getRechargeBadge: () => rechargeBadgeClaimable(saveManager.get()) } : {}),
       ...(loggedIn
         ? {
@@ -323,8 +325,8 @@ export function createShopNav(ctx: AppCtx): ShopNav {
       onBack: () => { if (shopBack) shopBack(); else nav.goLobby(); },
       getCoins: () => saveManager.get().wallet.coins,
       onSaveChanged: (listener: () => void) => saveManager.subscribe(listener),
-      ...(inGroup ? { openShop: () => goShop(shopBack), getShopBadge: () => shopCardBadgeClaimable(saveManager.get().monetization), openGacha: () => goGacha({ shopBack }) } : {}),
-      ...(inGroup && coinsAvail ? { openCoins: () => goShop(shopBack, 'coins') } : {}),
+      ...(inGroup ? { openShop: () => goShop(shopBack, undefined, 'shop_group'), getShopBadge: () => shopCardBadgeClaimable(saveManager.get().monetization), openGacha: () => goGacha({ shopBack }) } : {}),
+      ...(inGroup && coinsAvail ? { openCoins: () => goShop(shopBack, 'coins', 'shop_group') } : {}),
       ...(inGroup && loggedIn ? { openBattlePass: () => goBattlePass({ shopBack }), getBattlePassBadge: () => battlePassBadgeClaimable(saveManager.get().battlePass) } : {}),
       ...(loggedIn && client
         ? {
