@@ -1444,11 +1444,11 @@ function buildRoomCodeEntry(w: number, h: number) {
 }
 
 describe('RoomScene — code-entry keypad', () => {
-  it('charset is 10 digits + 11 letters (skips I/O/L), 21 chars = 3 rows', () => {
+  it('charset is the 10 digits = 2 rows of 5', () => {
     // Must match server matchsvc CODE_ALPHABET — its test asserts the same literal.
-    expect(CODE_ALPHABET).toBe('0123456789ABCDEFGHJKM');
-    expect(CODE_ALPHABET).toHaveLength(21);
-    expect(CODE_ALPHABET).not.toMatch(/[IOL]/);
+    expect(CODE_ALPHABET).toBe('0123456789');
+    expect(CODE_ALPHABET).toHaveLength(10);
+    expect(CODE_ALPHABET).not.toMatch(/[^0-9]/);
   });
 
   for (const [label, [w, h]] of [
@@ -1459,7 +1459,7 @@ describe('RoomScene — code-entry keypad', () => {
       const { scene, layout } = buildRoomCodeEntry(w, h);
       const dw = layout.designWidth, dh = layout.designHeight;
       const hits = (scene as any).hits as Array<{ rect: { x: number; y: number; w: number; h: number } }>;
-      // back + 21 keypad chars + clear/⌫/confirm = 25 tappable areas, all on-screen.
+      // back + 10 keypad digits + clear/⌫/confirm = 14 tappable areas, all on-screen.
       expect(hits.length).toBe(1 + CODE_ALPHABET.length + 3);
       for (const { rect: r } of hits) {
         expect(r.x).toBeGreaterThanOrEqual(0);

@@ -698,14 +698,14 @@ describe('Matchsvc duel invite ("切磋", ADR friends-duel-confirm)', () => {
 // ── Room code character set ───────────────────────────────────────────────────
 // The server generator and the client keyboard must use the same character set;
 // otherwise codes containing characters that cannot be typed will be issued.
-// The set is fixed to 10 digits + 11 letters (skipping I/O/L), matching client RoomScene.ts's
-// CODE_ALPHABET character-for-character; the client side has a corresponding assertion,
-// so any change on either side will be caught by the other side's tests.
+// The set is fixed to the 10 digits, matching client RoomScene.ts's CODE_ALPHABET
+// character-for-character; the client side has a corresponding assertion, so any
+// change on either side will be caught by the other side's tests.
 describe('Matchsvc room-code charset', () => {
-  it('character set = 10 digits + 11 letters (matches client keyboard, skips I/O/L)', () => {
-    expect(CODE_ALPHABET).toBe('0123456789ABCDEFGHJKM');
-    expect(CODE_ALPHABET).toHaveLength(21); // exactly 3 rows × 7 = one screen
-    expect(CODE_ALPHABET).not.toMatch(/[IOL]/); // avoid confusion with 0/1
+  it('character set = the 10 digits (matches client keypad, no letters)', () => {
+    expect(CODE_ALPHABET).toBe('0123456789');
+    expect(CODE_ALPHABET).toHaveLength(10); // exactly 2 rows × 5 on the keypad
+    expect(CODE_ALPHABET).not.toMatch(/[^0-9]/); // digits only — no letter lookalikes
     expect(new Set(CODE_ALPHABET).size).toBe(CODE_ALPHABET.length); // no duplicates
   });
 
@@ -718,5 +718,19 @@ describe('Matchsvc room-code charset', () => {
       if (rs?.kind !== 'room_state') throw new Error('no room_state');
       expect(rs.code).toMatch(inSet);
     }
+  });
+
+  // Digits only is a 10^6 space, so collisions are no longer negligible: the registry must
+  // dedupe rather than rely on the draw being lucky.
+  it('codes are unique across many rooms on one registry', () => {
+    const { svc, last } = setup();
+    const seen = new Set<string>();
+    for (let i = 0; i < 500; i++) {
+      svc.roomCreate(`acc${i}`, 'P', `1000000${i}`);
+      const rs = last(`acc${i}`, 'room_state');
+      if (rs?.kind !== 'room_state') throw new Error('no room_state');
+      seen.add(rs.code);
+    }
+    expect(seen.size).toBe(500);
   });
 });

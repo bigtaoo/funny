@@ -5,15 +5,15 @@ import { describe, it, expect, vi } from 'vitest';
 vi.mock('crypto', async (importOriginal) => {
   const actual = await importOriginal<typeof import('crypto')>();
   // Every pick becomes CODE_ALPHABET[0] -> the second room's 16 collision-avoidance attempts all fail,
-  // forcing uniqueCode()'s "give up, use a deterministic fallback" path (rooms.ts line 288).
+  // forcing uniqueCode()'s "give up on random, linear-probe for a free code" fallback path.
   return { ...actual, randomInt: () => 0 };
 });
 
 import { RoomRegistry } from '../src/matchsvc/rooms';
 import type { MatchStarterPort, PushMsg } from '../src/matchsvc/types';
 
-describe('RoomRegistry.uniqueCode collision fallback (rooms.ts line 288)', () => {
-  it('16 consecutive collisions falls back to a deterministic zero-padded + timestamp-suffixed code instead of looping forever', () => {
+describe('RoomRegistry.uniqueCode collision fallback', () => {
+  it('16 consecutive collisions falls back to a linear probe that still yields a free digits-only code', () => {
     const pushed: { acc: string; msg: PushMsg }[] = [];
     const matchStarter: MatchStarterPort = { start: () => {} };
     const registry = new RoomRegistry({ push: (acc, msg) => pushed.push({ acc, msg }), redis: null, matchStarter });
@@ -30,7 +30,7 @@ describe('RoomRegistry.uniqueCode collision fallback (rooms.ts line 288)', () =>
     const codeB = codeOf('b');
     expect(codeA).toBe('000000');
     expect(codeB).not.toBe('000000'); // fallback code, distinct from the ever-colliding random pick
-    expect(codeB.startsWith('00')).toBe(true); // CODE_ALPHABET[0].repeat(CODE_LEN - 4) prefix, then a timestamp suffix
+    expect(codeB).toMatch(/^[0-9]{6}$/); // the probe stays inside the digits-only charset
     expect(registry.size).toBe(2); // both rooms created successfully despite the collision
   });
 });

@@ -5,10 +5,10 @@ import { ProfileExtra } from '../../ui/dialogs/ProfilePopup';
 /**
  * Server room-code charset — MUST stay identical to matchsvc Matchsvc.ts, or the
  * server can hand out a code containing a character the keypad can't type.
- * 10 digits + 11 letters = 21 chars → exactly 3 rows of 7 on the keypad (fits one
- * screen). Letters skip I/O/L so they don't read as 0/1.
+ * Digits only: no letter/digit lookalikes when a code is read out loud, and the
+ * keypad is 10 keys → 2 rows of 5.
  */
-export const CODE_ALPHABET = '0123456789ABCDEFGHJKM';
+export const CODE_ALPHABET = '0123456789';
 export const CODE_LEN = 6;
 
 export interface RoomSceneCallbacks {

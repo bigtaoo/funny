@@ -115,8 +115,9 @@ export function drawCodeEntry(host: RoomViewHost): void {
   prompt.anchor.set(0.5, 0.5); prompt.x = w / 2; prompt.y = Math.round(h * 0.18);
   host.container.addChild(prompt);
 
-  // Entered-code boxes.
-  const boxW = Math.round(w * 0.10);
+  // Entered-code boxes. Width is also capped against the height budget: on a wide-and-short
+  // landscape window a pure w*0.10 box is ~28% of the screen height and runs into the keypad.
+  const boxW = Math.min(Math.round(w * 0.10), Math.round(h * 0.14));
   const boxH = Math.round(boxW * 1.25);
   const boxGap = Math.round(w * 0.02);
   const rowW = CODE_LEN * boxW + (CODE_LEN - 1) * boxGap;
@@ -135,12 +136,14 @@ export function drawCodeEntry(host: RoomViewHost): void {
     host.container.addChild(cl);
   }
 
-  // Character keypad (7 per row). Cells are square and sized to fit the
+  // Digit keypad (5 per row → 2 rows). Cells are square and sized to fit the
   // vertical budget between the code boxes and the bottom action row, so the
   // grid never overflows / pushes the actions off-screen in landscape.
-  const perRow = 7;
+  const perRow = 5;
   const rows = Math.ceil(CODE_ALPHABET.length / perRow);
-  const kY = Math.round(h * 0.40);
+  // Below the code boxes, never on top of them — h * 0.40 alone is not enough clearance once the
+  // box row is tall (landscape).
+  const kY = Math.max(Math.round(h * 0.40), rowY + boxH + Math.round(h * 0.04));
   const kGap = Math.round(w * 0.015);
   const aH = Math.round(h * 0.08);            // bottom action row height (mirrors below)
   const gapBeforeAction = Math.round(h * 0.02);
