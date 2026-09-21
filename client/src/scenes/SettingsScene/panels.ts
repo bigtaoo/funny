@@ -170,58 +170,107 @@ export function drawLanguage(host: PanelHost): void {
 }
 
 /**
+ * One `label … [toggle]` row with a wrapped hint underneath, in one HALF of the content width.
+ *
+ * Two settings share this shape and, as of 2026-09-21, share a row: data saver on the left, the
+ * analytics consent on the right. They are paired rather than stacked because this screen has no
+ * vertical room left — the band between the language buttons (which run to 0.84w, so there is no
+ * "right column" at that height) and Help/Account at 0.73h fits exactly one row, and everything
+ * below it is booked down to the viewport readout at the bottom edge.
+ *
+ * `x0`/`x1` are the half's left edge and the right edge its toggle is flush with.
+ */
+function toggleRow(host: PanelHost, o: {
+  x0: number; x1: number; rowY: number; label: string; hint: string;
+  on: boolean; onLabel: string; seed: number; onTap: () => void;
+}): void {
+  const { h, container } = host;
+  const label = txt(o.label, FS.title, C.dark, true);
+  label.anchor.set(0, 0.5); label.x = o.x0; label.y = o.rowY;
+  container.addChild(label);
+
+  // Narrower than the language buttons (0.22w) because two of these share the row now, and the
+  // labels inside are one short word in every locale ("On"/"Aus"/"已关闭").
+  const btnW = Math.round((o.x1 - o.x0) * 0.42);
+  const btnH = Math.round(h * 0.062);
+  const bx = o.x1 - btnW;
+  const by = o.rowY - Math.round(btnH / 2);
+
+  const box = sketchPanel(btnW, btnH, {
+    fill: o.on ? C.accent : C.paper, border: o.on ? C.gold : C.dark, width: o.on ? 2.8 : 2, seed: o.seed,
+  });
+  box.x = bx; box.y = by;
+  container.addChild(box);
+
+  const lbl = txt(o.onLabel, snapFont(Math.round(btnH * 0.36)), o.on ? 0xffffff : C.dark, o.on);
+  lbl.anchor.set(0.5, 0.5); lbl.x = bx + btnW / 2; lbl.y = by + btnH / 2;
+  container.addChild(lbl);
+
+  // Wrapped, not shrunk. Fitting a whole sentence onto ONE line of this width scaled it to ~0.2 —
+  // 5 design px of type, below anything the font scale offers and simply unreadable (measured on
+  // all three portrait viewports, 2026-09-11). It sits BELOW the row, so it is free to use the
+  // half's full width and spend the vertical gap before Help/Account instead.
+  const hint = makeText(o.hint, {
+    fontSize: FS.tiny, fill: C.mid, fontFamily: 'monospace',
+    wordWrap: true, wordWrapWidth: o.x1 - o.x0, breakWords: true,
+  });
+  hint.anchor.set(0, 0); hint.x = o.x0; hint.y = o.rowY + Math.round(h * 0.028);
+  container.addChild(hint);
+
+  host.hits.push({ rect: { x: bx, y: by, w: btnW, h: btnH }, fn: o.onTap });
+}
+
+/** The row both toggles sit on, and the split between their halves. */
+function toggleRowGeometry(w: number, h: number) {
+  return { rowY: Math.round(h * 0.635), leftX0: Math.round(w * 0.12), leftX1: Math.round(w * 0.46),
+           rightX0: Math.round(w * 0.56), rightX1: Math.round(w * 0.94) };
+}
+
+/**
  * Data saver (ASSET_PACKAGING §14). The player-owned half of "don't spend my bandwidth
  * speculatively" — the automatic half (`prefetchPolicy.shouldSkipPrefetch`) can only read
  * `navigator.connection`, which is Chromium-only and therefore absent on iOS Safari, Firefox and
  * inside every iOS in-app browser. Rather than guess the link there (throughput would answer the
  * wrong question — a fast LTE link is fast AND metered), this just lets the player say so. Works
  * on every platform, needs no API, and cannot be wrong.
- *
- * Laid out as label + toggle on ONE row, unlike the sections around it: it sits in the gap between
- * the language buttons (bottom ≈ 0.587h) and the Help/Account labels (0.73h), and a stacked
- * label-over-button block does not fit there without pushing the rest of the screen around.
  */
 export function drawDataSaver(host: PanelHost): void {
-  const { w, h, container } = host;
-  const rowY = Math.round(h * 0.635);
-  const label = txt(t('settings.dataSaver'), FS.title, C.dark, true);
-  label.anchor.set(0, 0.5); label.x = Math.round(w * 0.12); label.y = rowY;
-  container.addChild(label);
-
+  const g = toggleRowGeometry(host.w, host.h);
   const on = isDataSaverEnabled();
-  // Matches the language row's button metrics so the two read as the same kind of control.
-  const btnW = Math.round(w * 0.22);
-  const btnH = Math.round(h * 0.062);
-  const bx = Math.round(w * 0.62);
-  const by = rowY - Math.round(btnH / 2);
-
-  const box = sketchPanel(btnW, btnH, {
-    fill: on ? C.accent : C.paper, border: on ? C.gold : C.dark, width: on ? 2.8 : 2, seed: 83,
-  });
-  box.x = bx; box.y = by;
-  container.addChild(box);
-
-  const lbl = txt(t(on ? 'settings.dataSaverOn' : 'settings.dataSaverOff'), snapFont(Math.round(btnH * 0.36)), on ? 0xffffff : C.dark, on);
-  lbl.anchor.set(0.5, 0.5); lbl.x = bx + btnW / 2; lbl.y = by + btnH / 2;
-  container.addChild(lbl);
-
-  // Wrapped, not shrunk. Fitting this whole sentence onto ONE line of 0.46w scaled it to ~0.2 —
-  // 5 design px of type, which is below anything the font scale offers and simply unreadable
-  // (measured on all three portrait viewports, 2026-09-11). It sits BELOW the toggle row, so it is
-  // free to use the full content width and spend the vertical gap before Help/Account instead.
-  const hint = makeText(t('settings.dataSaverHint'), {
-    fontSize: FS.tiny, fill: C.mid, fontFamily: 'monospace',
-    wordWrap: true, wordWrapWidth: Math.round(w * 0.76), breakWords: true,
-  });
-  hint.anchor.set(0, 0); hint.x = Math.round(w * 0.12); hint.y = rowY + Math.round(h * 0.028);
-  container.addChild(hint);
-
-  host.hits.push({
-    rect: { x: bx, y: by, w: btnW, h: btnH },
+  toggleRow(host, {
+    x0: g.leftX0, x1: g.leftX1, rowY: g.rowY, seed: 83, on,
+    label: t('settings.dataSaver'),
+    onLabel: t(on ? 'settings.dataSaverOn' : 'settings.dataSaverOff'),
+    hint: t('settings.dataSaverHint'),
     // Takes effect from the next launch: this session's prefetch chain has already been decided
     // (and, on the lobby the player came from, very likely already finished). Not worth cancelling
     // mid-flight — the bytes are spent, and the setting is about the sessions after this one.
-    fn: () => { setDataSaverEnabled(!on); host.render(); },
+    onTap: () => { setDataSaverEnabled(!on); host.render(); },
+  });
+}
+
+/**
+ * Analytics consent (COMPLIANCE_GLOBAL §3.3, GDPR Art 7(3)). The withdrawal half of the
+ * first-launch consent gate: whatever the player answered there — including "essentials only",
+ * which is the whole point of offering it — has to be changeable afterwards, and as easily.
+ *
+ * Absent callbacks → not drawn at all, rather than drawn disabled: the pair is missing only in the
+ * headless harnesses, never in a build a player runs.
+ */
+export function drawAnalyticsConsent(host: PanelHost): void {
+  const { cb } = host;
+  if (!cb.getAnalyticsConsent || !cb.onSetAnalyticsConsent) return;
+
+  const g = toggleRowGeometry(host.w, host.h);
+  const on = cb.getAnalyticsConsent();
+  toggleRow(host, {
+    x0: g.rightX0, x1: g.rightX1, rowY: g.rowY, seed: 89, on,
+    label: t('settings.analytics'),
+    onLabel: t(on ? 'settings.analyticsOn' : 'settings.analyticsOff'),
+    hint: t('settings.analyticsHint'),
+    // Takes effect immediately, unlike the data saver beside it: the queue reads consent per
+    // event, so switching off stops the very next one and switching on resumes without a relaunch.
+    onTap: () => { cb.onSetAnalyticsConsent!(!on); host.render(); },
   });
 }
 

@@ -57,7 +57,7 @@ import { DeckBuilderScene, type DeckBuilderCallbacks } from '../scenes/DeckBuild
 import { CityScene, type CitySceneCallbacks } from '../scenes/CityScene';
 import { DailyScene, type DailyCallbacks } from '../scenes/DailyScene';
 import { EventScene, type EventCallbacks } from '../scenes/EventScene';
-import { ConsentDialog, type ConsentCallbacks } from '../ui/dialogs/ConsentDialog';
+import { ConsentDialog, type ConsentCallbacks, type ConsentMode } from '../ui/dialogs/ConsentDialog';
 import { AgeGateDialog, type AgeGateCallbacks, type AgeGateMode } from '../ui/dialogs/AgeGateDialog';
 import { ReconnectPromptDialog, type ReconnectPromptCallbacks } from '../ui/dialogs/ReconnectPromptDialog';
 import { OwnerId, ownerToSide } from '../game';
@@ -128,8 +128,9 @@ export class PixiAppViews implements AppViews {
     );
   }
 
-  showConsent(cb: ConsentCallbacks): void {
-    this.mounts.mount('ConsentDialog', () => new ConsentDialog(this.layout.designWidth, this.layout.designHeight, cb));
+  showConsent(mode: ConsentMode, cb: ConsentCallbacks): void {
+    this.mounts.mount('ConsentDialog', () =>
+      new ConsentDialog(this.layout.designWidth, this.layout.designHeight, cb, mode));
   }
 
   showAgeGate(mode: AgeGateMode, cb: AgeGateCallbacks): void {

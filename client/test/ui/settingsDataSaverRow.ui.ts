@@ -19,6 +19,7 @@ import { SettingsScene } from '../../src/scenes/SettingsScene';
 import { installPrefetchPolicy, resetPrefetchPolicyForTest, isDataSaverEnabled } from '../../src/assets/prefetchPolicy';
 import type { IStorage } from '../../src/platform/IPlatform';
 import { createFakeTextInput } from '../harness/fakeTextInput';
+import type { Hit } from '../../src/ui/hits';
 
 initI18n('en');
 
@@ -31,7 +32,7 @@ function memStorage(): IStorage {
   };
 }
 
-interface Node { text: string; top: number; bottom: number }
+interface Node { text: string; top: number; bottom: number; left: number; right: number }
 
 function collect(root: PIXI.Container): Node[] {
   const out: Node[] = [];
@@ -41,7 +42,7 @@ function collect(root: PIXI.Container): Node[] {
     for (const ch of n.children) {
       if (ch instanceof PIXI.Text) {
         const b = ch.getBounds();
-        out.push({ text: ch.text, top: b.y, bottom: b.y + b.height });
+        out.push({ text: ch.text, top: b.y, bottom: b.y + b.height, left: b.x, right: b.x + b.width });
         continue;
       }
       if (ch instanceof PIXI.Container) walk(ch);
@@ -57,10 +58,19 @@ function find(nodes: Node[], text: string): Node {
   return hit;
 }
 
-/** The scene's rendered container — collect() walks a PIXI tree, not the scene wrapper. */
-function build(w: number, h: number): PIXI.Container {
+/**
+ * The scene's rendered container — collect() walks a PIXI tree, not the scene wrapper.
+ *
+ * `analytics` supplies the consent pair that makes the second toggle appear. Left out by default
+ * so the pre-existing data-saver assertions keep measuring the row on its own.
+ */
+function build(w: number, h: number, analytics?: boolean): PIXI.Container {
   return new SettingsScene(createLayout(w, h), new InputManager(), {
     onBack() {},
+    ...(analytics === undefined ? {} : {
+      getAnalyticsConsent: () => analytics,
+      onSetAnalyticsConsent: () => {},
+    }),
     playerName: 'Tester',
     publicId: '123456789',
     pvp: { rank: 'bronze', elo: 1000 },
@@ -170,9 +180,11 @@ describe('SettingsScene — data-saver toggle click', () => {
     const label = collect(s.container).find((n) => n.text === t('settings.dataSaver'));
     expect(label, 'data-saver label missing').toBeDefined();
     const midY = (label!.top + label!.bottom) / 2;
-    // The toggle sits to the RIGHT of the label on the same row (see drawDataSaver) — anything at
-    // this y further left would be the label itself, which is not clickable.
-    const hit = s.hits.find((h) => h.rect.y <= midY && midY <= h.rect.y + h.rect.h && h.rect.x > 800 * 0.5);
+    // The toggle sits to the RIGHT of the label but still in the row's LEFT HALF: since 2026-09-21
+    // the analytics toggle shares this row and owns everything past 0.56w, so an unbounded
+    // "further right than the label" search would find that one instead the moment it is drawn.
+    const hit = s.hits.find((h) => h.rect.y <= midY && midY <= h.rect.y + h.rect.h
+      && h.rect.x > label!.right && h.rect.x < 800 * 0.5);
     expect(hit, `no hit rect on the data-saver row (rects: ${JSON.stringify(s.hits.map((x) => x.rect))})`).toBeDefined();
     return hit!.fn;
   }
@@ -212,5 +224,131 @@ describe('SettingsScene — data-saver toggle click', () => {
     resetPrefetchPolicyForTest();
     installPrefetchPolicy({ storage }); // new session, same storage
     expect(isDataSaverEnabled()).toBe(true);
+  });
+});
+
+/**
+ * The analytics-consent toggle that shares this row (COMPLIANCE_GLOBAL §3.3, GDPR Art 7(3)).
+ *
+ * Why it is here and not on a row of its own: there is no row of its own left. Everything from the
+ * profile card down to the viewport readout is pinned to a fraction of h, the language buttons run
+ * to 0.84w (so "the right column" does not exist at that height), and the first attempt — a
+ * separate row at 0.56h — drew the label straight through the "Deutsch" button. Sharing the
+ * data-saver row was the only placement that did not push another section around, and it splits
+ * the width in half, which is exactly the geometry a longer locale breaks.
+ */
+describe('SettingsScene — analytics-consent toggle', () => {
+  afterEach(() => resetPrefetchPolicyForTest());
+
+  /** A rendered scene with the analytics pair supplied, plus its text nodes. */
+  function built(w: number, h: number, on: boolean): { s: SettingsScene; ns: Node[] } {
+    resetPrefetchPolicyForTest();
+    installPrefetchPolicy({ storage: memStorage() });
+    const s = new SettingsScene(createLayout(w, h), new InputManager(), {
+      onBack() {}, playerName: 'Tester', publicId: '1', pvp: { rank: 'bronze', elo: 1 },
+      onReplayTutorial() {}, onLogout() {},
+      getAnalyticsConsent: () => on,
+      onSetAnalyticsConsent: () => {},
+      openTextInput: createFakeTextInput().openTextInput,
+    });
+    return { s, ns: collect(s.container) };
+  }
+
+  /**
+   * The two toggle BOXES on the shared row, left one first.
+   *
+   * Found through the scene's hit rects rather than by their labels, because the labels are not
+   * unique: zh renders both as 已关闭 / 已开启, so a text lookup silently returns the data saver's
+   * node for both halves and the overlap assertion below compares a node with itself.
+   */
+  function rowToggles(s: SettingsScene, ns: Node[]): [Hit['rect'], Hit['rect']] {
+    const label = find(ns, t('settings.analytics'));
+    const midY = (label.top + label.bottom) / 2;
+    const onRow = s.hits.filter((hh) => hh.rect.y <= midY && midY <= hh.rect.y + hh.rect.h)
+      .map((hh) => hh.rect).sort((a, b) => a.x - b.x);
+    expect(onRow.length, `expected both toggles on the shared row, got ${onRow.length}`).toBe(2);
+    return [onRow[0], onRow[1]];
+  }
+
+  it('is absent when the host supplies no consent callbacks (the headless harnesses)', () => {
+    resetPrefetchPolicyForTest();
+    installPrefetchPolicy({ storage: memStorage() });
+    expect(collect(build(800, 1280)).map((n) => n.text)).not.toContain(t('settings.analytics'));
+  });
+
+  it.each([[true, 'settings.analyticsOn'], [false, 'settings.analyticsOff']] as const)(
+    'shows the state the host reports (%s)', (on, key) => {
+      const texts = built(800, 1280, on).ns.map((n) => n.text);
+      expect(texts).toContain(t('settings.analytics'));
+      expect(texts).toContain(t(key));
+    },
+  );
+
+  // The halves are 0.12…0.46w and 0.56…0.94w. Each holds a label, a right-flushed toggle and a
+  // wrapped hint, and every one of those is locale-sized — so the pair is checked on the shapes
+  // the game really sees, in the wordiest locale as well as English.
+  it.each([[800, 1280], [1280, 800], [1024, 640], [412, 915]])(
+    'never lets the two halves run into each other (%ix%i)',
+    (w, h) => {
+      for (const locale of ['zh', 'en', 'de'] as const) {
+        setLocale(locale);
+        try {
+          const { s, ns } = built(w, h, false);
+          const [leftBox, rightBox] = rowToggles(s, ns);
+          const leftRight = Math.max(
+            find(ns, t('settings.dataSaver')).right,
+            find(ns, t('settings.dataSaverHint')).right,
+            leftBox.x + leftBox.w,
+          );
+          const rightLeft = Math.min(
+            find(ns, t('settings.analytics')).left,
+            find(ns, t('settings.analyticsHint')).left,
+            rightBox.x,
+          );
+          expect(leftRight, `${locale}: the data-saver half runs into the analytics half`)
+            .toBeLessThanOrEqual(rightLeft);
+        } finally {
+          setLocale('en');
+        }
+      }
+    },
+  );
+
+  it('keeps the analytics half clear of Help/Account below it, in every locale', () => {
+    for (const locale of ['zh', 'en', 'de'] as const) {
+      setLocale(locale);
+      try {
+        const { s, ns } = built(800, 1280, false);
+        const [, rightBox] = rowToggles(s, ns);
+        const bottom = Math.max(find(ns, t('settings.analyticsHint')).bottom, rightBox.y + rightBox.h);
+        expect(bottom, `${locale}: the analytics hint overruns the section below`)
+          .toBeLessThan(Math.min(find(ns, t('settings.help')).top, find(ns, t('settings.account')).top));
+      } finally {
+        setLocale('en');
+      }
+    }
+  });
+
+  it('flips the value through the real hit rect, and redraws showing it', () => {
+    resetPrefetchPolicyForTest();
+    installPrefetchPolicy({ storage: memStorage() });
+    let granted = false;
+    const s = new SettingsScene(createLayout(800, 1280), new InputManager(), {
+      onBack() {}, playerName: 'Tester', publicId: '1', pvp: { rank: 'bronze', elo: 1 },
+      onReplayTutorial() {}, onLogout() {},
+      getAnalyticsConsent: () => granted,
+      onSetAnalyticsConsent: (v: boolean) => { granted = v; },
+      openTextInput: createFakeTextInput().openTextInput,
+    });
+
+    const label = find(collect(s.container), t('settings.analytics'));
+    const midY = (label.top + label.bottom) / 2;
+    const hit = s.hits.find((hh) => hh.rect.y <= midY && midY <= hh.rect.y + hh.rect.h && hh.rect.x > label.right);
+    expect(hit, 'no hit rect to the right of the analytics label').toBeDefined();
+
+    hit!.fn();
+
+    expect(granted).toBe(true);
+    expect(collect(s.container).map((n) => n.text)).toContain(t('settings.analyticsOn'));
   });
 });

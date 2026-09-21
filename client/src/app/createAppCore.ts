@@ -12,6 +12,7 @@
 // See app.ts for the thin PIXI shell that constructs PixiAppViews and calls start().
 
 import type { IPlatform } from '../platform/IPlatform';
+import { needsConsentChoice } from '../platform/consentRegion';
 import type { AppViews } from './AppViews';
 import type { Replay } from '../game';
 import { initI18n, t } from '../i18n';
@@ -124,6 +125,9 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
   // GDPR gate (C5-c, L1-1): seed consent from the persisted flag BEFORE init so a
   // returning consented user's session_start fires, while a not-yet-consented user
   // emits nothing until they accept the dialog (setConsent in gateConsent).
+  // `=== true` is what makes both non-consenting states safe here: "never asked" and
+  // "chose essentials only" (flag `false`) look identical to init, which is correct —
+  // neither may emit. gateGdpr re-applies the real value once it can tell them apart.
   analytics.setConsent(saveManager.getFlag(GDPR_CONSENT_FLAG) === true);
   void analytics.init(platform, api, baseUrl);
 
@@ -211,23 +215,44 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
   }
 
   /**
-   * GDPR consent gate (C5-c, L1-1). Runs `next()` immediately if consent was already
-   * given (local flag, mirrors server `flags.gdprConsent`); otherwise shows the blocking
-   * consent dialog and only proceeds once accepted. Anonymous / offline users see it too —
-   * acceptance lands the local flag (synced to the server later via SaveManager push), and
-   * the explicit recordGdprConsent fires immediately when a token is already present.
+   * GDPR consent gate (C5-c, L1-1). Runs `next()` immediately once the player has answered;
+   * otherwise shows the blocking consent dialog. Anonymous / offline users see it too — the
+   * answer lands in the local flag (synced to the server later via SaveManager push), and the
+   * explicit recordGdprConsent fires immediately when a token is already present.
+   *
+   * Three states, read off `save.flags` directly for the same reason the age gate does:
+   * `SaveManager.getFlag` answers `flags[key] === true`, and a player who chose "essentials only"
+   * has to be distinguishable from one who was never asked, or the dialog returns every launch and
+   * their refusal is quietly overwritten the first time they tap through it.
+   *
+   * | `flags.gdprConsent` | meaning | analytics |
+   * |---|---|---|
+   * | `true` | accepted everything | on |
+   * | `false` | terms accepted, analytics refused ("essentials only") | off |
+   * | absent | never asked | (gate shows) |
+   *
+   * Nothing is tracked on the refusal path — not even a `gdpr_consent { granted: false }` event.
+   * The refusal is the one answer that cannot be reported through the thing it refuses; it reaches
+   * the server as account state via `recordGdprConsent`, which is record-keeping under Art 7(1),
+   * not telemetry. ANALYTICS_DESIGN §3.6c has what that costs the launch funnel.
    */
   function gateGdpr(next: () => void): void {
-    if (saveManager.getFlag(GDPR_CONSENT_FLAG) === true) { next(); return; }
-    views.showConsent({
-      onAccept() {
-        saveManager.setFlag(GDPR_CONSENT_FLAG, true);
-        analytics.setConsent(true);
-        analytics.track('gdpr_consent', { granted: true });
-        const token = platform.storage.getItem(TOKEN_KEY);
-        if (api && token) { api.setToken(token); void api.recordGdprConsent(true).catch(() => { /* best-effort; flag still syncs via SaveManager */ }); }
-        next();
-      },
+    const answered = saveManager.get().flags[GDPR_CONSENT_FLAG];
+    if (answered !== undefined) { analytics.setConsent(answered === true); next(); return; }
+
+    /** Shared tail of both answers: persist locally, mirror to the account, proceed. */
+    const record = (granted: boolean): void => {
+      saveManager.setFlag(GDPR_CONSENT_FLAG, granted);
+      analytics.setConsent(granted);
+      if (granted) analytics.track('gdpr_consent', { granted: true });
+      const token = platform.storage.getItem(TOKEN_KEY);
+      if (api && token) { api.setToken(token); void api.recordGdprConsent(granted).catch(() => { /* best-effort; flag still syncs via SaveManager */ }); }
+      next();
+    };
+
+    views.showConsent(needsConsentChoice() ? 'choice' : 'accept-only', {
+      onAccept() { record(true); },
+      onDecline() { record(false); },
     });
   }
 

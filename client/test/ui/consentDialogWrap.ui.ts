@@ -48,14 +48,17 @@ function findWrappedText(root: PIXI.Container): PIXI.Text | null {
 }
 
 describe('ConsentDialog body text wraps instead of overflowing (2026-08-11)', () => {
-  it('the zh consent.body string has no whitespace (the precondition that makes this bug CJK-specific)', () => {
+  it('the zh consent bodies have no whitespace (the precondition that makes this bug CJK-specific)', () => {
     // If this ever stops being true (translators add spaces), the bug this test guards against
-    // can no longer reproduce via this string — worth knowing rather than the test going quietly stale.
+    // can no longer reproduce via these strings — worth knowing rather than the test going quietly stale.
+    // Both modes are listed: 'choice' got its own longer body when the two-button card shipped
+    // (2026-09-21), and a new string is exactly how this regression would come back.
     expect(t('consent.body')).not.toMatch(/\s/);
+    expect(t('consent.bodyChoice')).not.toMatch(/\s/);
   });
 
   it('sets breakWords so a single-token CJK run can still be split at a character boundary', () => {
-    const dlg = new ConsentDialog(1280, 800, { onAccept: () => {} });
+    const dlg = new ConsentDialog(1280, 800, { onAccept: () => {}, onDecline: () => {} });
     const body = findWrappedText(dlg.container);
     expect(body).not.toBeNull();
     expect(body!.style.breakWords).toBe(true);
@@ -63,7 +66,7 @@ describe('ConsentDialog body text wraps instead of overflowing (2026-08-11)', ()
   });
 
   it('wraps onto multiple lines and never emits a line wider than wordWrapWidth (landscape 1280x800)', () => {
-    const dlg = new ConsentDialog(1280, 800, { onAccept: () => {} });
+    const dlg = new ConsentDialog(1280, 800, { onAccept: () => {}, onDecline: () => {} });
     const body = findWrappedText(dlg.container)!;
     const metrics = PIXI.TextMetrics.measureText(body.text, body.style as PIXI.TextStyle);
     expect(metrics.lines.length).toBeGreaterThan(1);
@@ -72,11 +75,45 @@ describe('ConsentDialog body text wraps instead of overflowing (2026-08-11)', ()
   });
 
   it('wraps onto multiple lines on a narrow portrait viewport too (375x812)', () => {
-    const dlg = new ConsentDialog(375, 812, { onAccept: () => {} });
+    const dlg = new ConsentDialog(375, 812, { onAccept: () => {}, onDecline: () => {} });
     const body = findWrappedText(dlg.container)!;
     const metrics = PIXI.TextMetrics.measureText(body.text, body.style as PIXI.TextStyle);
     expect(metrics.lines.length).toBeGreaterThan(1);
     for (const w of metrics.lineWidths) expect(w).toBeLessThanOrEqual(body.style.wordWrapWidth as number);
     dlg.destroy();
   });
+
+  // The 'choice' card swaps in a LONGER body and adds a second button under the first. Both of
+  // those eat the same vertical budget, so it gets the same treatment on both viewports.
+  for (const [w, h] of [[1280, 800], [375, 812]] as const) {
+    it(`'choice' mode wraps its longer body within the card too (${w}x${h})`, () => {
+      const dlg = new ConsentDialog(w, h, { onAccept: () => {}, onDecline: () => {} }, 'choice');
+      const body = findWrappedText(dlg.container)!;
+      const metrics = PIXI.TextMetrics.measureText(body.text, body.style as PIXI.TextStyle);
+      expect(metrics.lines.length).toBeGreaterThan(1);
+      for (const lw of metrics.lineWidths) expect(lw).toBeLessThanOrEqual(body.style.wordWrapWidth as number);
+      dlg.destroy();
+    });
+  }
+
+  // The card grows to fit its content, but the SCREEN does not — a second button pushing the block
+  // past the viewport still draws, just off both edges (the card is centred, so the title goes
+  // first). Before the two-pass rescale in ConsentDialog.build, short landscape overflowed by 56px
+  // in de and 19px in en. Asserted against the accept-only card rather than against 0: the
+  // full-screen paper backdrop's hand-drawn stroke always bleeds ~1px, so the honest question is
+  // whether the second button makes the footprint any worse, not whether it is pixel-exact.
+  for (const [label, w, h] of [['landscape', 1280, 800], ['portrait', 375, 812], ['short landscape', 812, 375]] as const) {
+    it(`'choice' mode fits the same viewport the accept-only card does (${label} ${w}x${h})`, () => {
+      const one = new ConsentDialog(w, h, { onAccept: () => {}, onDecline: () => {} });
+      const base = one.container.getBounds();
+      one.destroy();
+
+      const two = new ConsentDialog(w, h, { onAccept: () => {}, onDecline: () => {} }, 'choice');
+      const got = two.container.getBounds();
+      two.destroy();
+
+      expect(got.y).toBeGreaterThanOrEqual(base.y);
+      expect(got.y + got.height).toBeLessThanOrEqual(base.y + base.height);
+    });
+  }
 });
