@@ -212,14 +212,20 @@ GDPR 同意门（C5-c/L1-1）默认关闭，**同意之前没有任何数据离�
 
 | 列 | 含义 |
 |---|---|
-| `Launches` | `boots_daily` 计数 = 加载到 JS 并发出 config 请求的启动次数 |
+| `Launches` | `boots_daily.count` = 加载到 JS 并发出 config 请求的启动次数 |
 | `Sessions` | 当天 `session_start` 事件条数 = 拿到同意、真的上报了东西的启动 |
-| `Lost` | `Launches − Sessions`，**这一条就是本节存在的理由**：在年龄门/同意墙上走掉的人 |
+| `Declined` | `boots_daily.declined` = 选「仅必要」的人的启动次数（**`Launches` 的子集**，2026-09-21，§3.6c） |
+| `Lost` | `Launches − Sessions − Declined`，**这一条就是本节存在的理由**：在年龄门/同意墙上走掉的人 |
 | `Consents` | `gdpr_consent` 条数（弹窗只弹一次，所以约等于新客同意数） |
 
+`Declined` 为什么必须单列：拒绝埋点的人**照样在玩**，只是一条都不报——从这张表看过去，他们
+和"打开就关"长得一模一样。不拆的话 `Lost` 会随着拒绝率一起涨，而那正好是**看上去像门槛变差、
+实际上是拒绝的人变多**的那种假信号。
+
 **当趋势看，别当精确率看**：① config 请求无需鉴权，谁都能打；② 卸载时那次 flush 失败的会话
-也会算进 `Lost`；③ 跨 UTC 零点的启动，两侧可能落在不同天（ops 侧因此把 `Lost` 夹在 ≥0）；
-④ 2026-09-21 起 `Lost` 里还混进了**选「仅必要」的人**——他们进了游戏但一条都不报，见 §3.6c。
+也会算进 `Lost`；③ 跨 UTC 零点的启动，两侧可能落在不同天（ops 侧因此把 `Lost` 夹在 ≥0——
+`Declined` 那次 tick 是**第二个请求**，同样可能落到零点另一侧）；④ `reach_rate`（ops 的
+`Reached` 列）分母仍是 `Launches`、没跟着改口径，见 BACKEND §9.9。
 
 覆盖：`analyticsvc/test/bootAndLoadTime.e2e.test.ts`（并发不丢计数、只有那几列、有启动零会话的
 那天照样出行、反过来也出行）+ `analytics.e2e.test.ts`（`?p=` 白名单外记成 `unknown`）。
@@ -259,16 +265,33 @@ GDPR 同意门（C5-c/L1-1）默认关闭，**同意之前没有任何数据离�
 
 **拒绝这条路上一个事件都不发**，连 `gdpr_consent { granted: false }` 都不发：它是唯一一个没法用
 它自己拒绝的东西去上报的答案。它只作为账号状态经 `POST /account/gdpr-consent` 落到服务端，属
-Art 7(1) 的举证留痕，不是遥测。**代价记在 §3.6b**：这些人计进了 `Launches` 却永远不出现在
-`Sessions`，所以 `Lost` 现在是「走掉的人 + 拒绝埋点的人」两拨混在一起。要拆开，得给
-`GET /analytics/config` 再加一个同样只有「日期/平台/计数」的无鉴权计数列——**这轮没做**。
+Art 7(1) 的举证留痕，不是遥测。
+
+**唯一的例外是一次计数（2026-09-21 补完）**：拒绝之后客户端会再打一次
+`GET /analytics/config?p=<平台>&d=1`，服务端在**同一行** `boots_daily` 上 `$inc { declined }`、
+且**不**再 `$inc { count }`（那次启动在 init 那个 config 请求里已经数过了）。这不是遥测：
+落地的还是「日期 / 平台 / 一个数」，没有 device id、没有 IP、没有账号，跟 §3.6b 的启动计数
+是同一套隐私立场、同一个无鉴权端点。不这么做的话，这些人计进了 `Launches` 却永远不出现在
+`Sessions`，`Lost` 就是「走掉的人 + 拒绝埋点的人」混在一起——而后者只会越攒越多。
+
+两条路都要 tick，因为要对齐的是**启动次数**：
+- 弹窗上点「仅必要」的那次启动（`record(false)`）；
+- 之后每一次启动——gate 读到 `flags.gdprConsent === false` 直接放行的那条分支。
+  设置页里关掉开关**不 tick**：那次启动早就发过 `session_start`、已经算在 `Sessions` 里了，
+  再记一次等于从漏斗里扣两遍；他们的**下一次**启动会由 gate 补上。
+
+客户端实现：`analytics.countDeclinedLaunch()`（`analytics/index.ts`，每次启动至多一次，
+离线/没配 API base 时静默跳过）→ `analytics/config.ts` 的 `pingDeclinedLaunch()`，走
+`netTransport` 所以微信 `wx.request` 那条路也通，发完不看响应。
 
 **撤回同样要能**（Art 7(3)：撤回要和给出一样容易）：设置页和数据节省开关并排放了一个
 「匿名数据」开关，两个方向都能改，接的是 gate 那三次写里的同两次（本地 flag + 账号），
 不发 `gdpr_consent`——设置页里重新打开不是首启转化，算进漏斗会把同意数冲歪。
 
 覆盖：`client/test/consentGate.test.ts`（两种形态各出一次、拒绝后进得去、拒绝记得住、拒绝零上报、
-拒绝仍落账号、时区表逐条）+ `client/test/ui/consentDialogWrap.ui.ts`（`choice` 的长文案在三种
+拒绝仍落账号、拒绝那次与之后每次启动各 tick 一次且接受时不 tick、时区表逐条）
++ `analyticsvc/test/bootAndLoadTime.e2e.test.ts` / `analytics.e2e.test.ts`（`?d=1` 只动 `declined`
+不动 `count`、tick 先到时 `count` 补 0、并发不丢、漏斗把 `declined` 单列出来）+ `client/test/ui/consentDialogWrap.ui.ts`（`choice` 的长文案在三种
 视口都不溢出——横屏矮屏原本 de 溢出 56px，靠 `ConsentDialog.build` 的二次量算回来）+
 `client/test/ui/settingsDataSaverRow.ui.ts`（两个开关并排那一行，三语言四视口互不相撞）。
 

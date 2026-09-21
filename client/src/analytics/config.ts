@@ -46,6 +46,30 @@ export async function fetchAnalyticsConfig(analyticsBaseUrl: string, platform?: 
   }
 }
 
+/**
+ * Tell the launch counter that this launch belongs to a player who refused analytics
+ * (ANALYTICS_DESIGN §3.6c) — the same unauthenticated endpoint, plus `&d=1`, and the response is
+ * thrown away.
+ *
+ * This is the only thing the refusal path ever sends, and it is not telemetry: the server bumps one
+ * number on the (date, platform) row it already keeps and stores nothing else — no device id, no
+ * account, not even a `gdpr_consent` event, which would be an event reporting that events were
+ * refused. Without it these launches are invisible in exactly the wrong way: since §3.6c they play
+ * the game and report nothing, so they sat in the funnel's `Lost` column mixed in with the players
+ * who read the consent dialog and closed the tab.
+ *
+ * Fire-and-forget: a failure costs a tick in a trend and must never be visible to the player.
+ */
+export function pingDeclinedLaunch(analyticsBaseUrl: string, platform: string): void {
+  void netTransport()
+    .request({
+      method: 'GET',
+      url: `${analyticsBaseUrl}/analytics/config?p=${encodeURIComponent(platform)}&d=1`,
+      headers: { Accept: 'application/json' },
+    })
+    .catch(() => { /* network failure → the tick is simply missing */ });
+}
+
 export function getAnalyticsConfig(): AnalyticsConfig {
   return cached;
 }

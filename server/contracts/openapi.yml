@@ -5795,6 +5795,15 @@ paths:
               - crazygames
           description: |
             Build target, used only to keep a per-platform launch counter (ANALYTICS_DESIGN §3.6b). This request is the one thing every launch does before the age/consent gates, so it is the only possible denominator for players who answer neither and leave. Nothing identifying is sent or stored — no device id, no IP — and an unrecognised value is counted as `unknown`.
+        - name: d
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - '1'
+          description: |
+            `1` marks this as a launch by a player who refused analytics ("essentials only", ANALYTICS_DESIGN §3.6c). The client sends it as a second, throwaway call of this same endpoint, which then bumps a refusal count on the (date, platform) row instead of the launch count — so the launch is still counted exactly once, and the launch funnel can tell "left at a gate" from "playing and reporting nothing". It is the only thing the refusal path ever sends: a refusal cannot be reported as an event, and this endpoint stores no one.
       responses:
         '200':
           description: Collection config

@@ -170,6 +170,8 @@ export interface BootFunnelRow {
   platform: string;
   boots: number;
   sessions: number;
+  /** Launches by players who refused analytics — a subset of `boots` (ANALYTICS_DESIGN §3.6c). */
+  declined?: number;
   consents: number;
   reach_rate?: number;
 }
@@ -177,22 +179,36 @@ export interface BootFunnelRow {
 export interface BootFunnelDisplayRow extends BootFunnelRow {
   /** Launches that reported nothing at all — the age/consent-gate bounce, and the point of the table. */
   lost: number;
+  /** `declined`, defaulted — absent on rows from days before the refusal counter shipped. */
+  declinedCount: number;
   reachRate: number;
 }
 
 /**
- * The launch funnel with the one number the payload does not carry: `lost = boots − sessions`.
+ * The launch funnel with the one number the payload does not carry:
+ * `lost = boots − sessions − declined`.
  *
- * Clamped at zero because the two sides come from different clocks — a launch counted just before
+ * The `declined` term is the 2026-09-21 correction. Refusing analytics stopped ending the session
+ * (§3.6c), so a refuser launches, plays, and reports nothing — arriving in `boots` and never in
+ * `sessions`, which is also the exact signature of someone who read the consent dialog and closed
+ * the tab. Their own counter is what separates the two, and it is subtracted here rather than
+ * shown beside `lost`, because a `Lost` column that is really "left, or stayed silently" is a number
+ * nobody can act on.
+ *
+ * Clamped at zero because the terms come from different clocks — a launch counted just before
  * midnight UTC whose `session_start` lands just after it is booked on different days — so a small
  * negative is a boundary artefact, not a day where more sessions than launches happened.
  */
 export function bootFunnelRows(rows: readonly BootFunnelRow[]): BootFunnelDisplayRow[] {
-  return rows.map((r) => ({
-    ...r,
-    lost: Math.max(0, r.boots - r.sessions),
-    reachRate: r.reach_rate ?? (r.boots > 0 ? r.sessions / r.boots : 0),
-  }));
+  return rows.map((r) => {
+    const declinedCount = r.declined ?? 0;
+    return {
+      ...r,
+      declinedCount,
+      lost: Math.max(0, r.boots - r.sessions - declinedCount),
+      reachRate: r.reach_rate ?? (r.boots > 0 ? r.sessions / r.boots : 0),
+    };
+  });
 }
 
 // ── Load time ──
