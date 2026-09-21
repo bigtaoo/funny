@@ -33,6 +33,10 @@ vi.mock('../src/analytics/queue', () => ({ EventQueue: FakeQueue }));
 vi.mock('../src/analytics/config', () => ({
   fetchAnalyticsConfig: vi.fn(async () => {}),
   shouldTrack: vi.fn((e: string) => state.sampled.size === 0 || state.sampled.has(e)),
+  // Unused here, but the module has to be mocked whole: a missing export is `undefined` at the
+  // call site, so leaving it out turns any later use of countDeclinedLaunch() in this file into a
+  // "not a function" with no obvious connection to this factory.
+  pingDeclinedLaunch: vi.fn(),
 }));
 
 function fakeStorage(): IStorage {

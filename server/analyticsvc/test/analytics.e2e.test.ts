@@ -150,6 +150,19 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
     expect(docs[0]).toMatchObject({ platform: 'web', count: 2, declined: 1 });
   });
 
+  it('clamps the platform on the refusal tick too — it mints document _ids just like a launch does', async () => {
+    // The `?p=` allowlist exists because this endpoint needs no auth and its value becomes part of
+    // a document `_id`. `?d=1` reaches the same upsert, so an unclamped platform there would be the
+    // same unbounded-document hole through a second door.
+    await mongo!.collections.boots_daily.deleteMany({});
+    await fetch(`${base}/analytics/config?p=../../etc/passwd&d=1`);
+
+    await new Promise((r) => setTimeout(r, 150));
+    const docs = await mongo!.collections.boots_daily.find({}).toArray();
+    expect(docs.map((d) => d.platform)).toEqual(['unknown']);
+    expect(docs[0]).toMatchObject({ count: 0, declined: 1 });
+  });
+
   // ─── Event ingestion ────────────────────────────────────────────────────────────
 
   it('POST /analytics/events ingests event batch → 200', async () => {

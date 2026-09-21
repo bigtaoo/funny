@@ -112,6 +112,9 @@ describe.skipIf(!mongo)('launch counter + load time', () => {
 
       const doc = await mongo!.collections.boots_daily.findOne({ platform: 'wechat' });
       expect(doc).toMatchObject({ count: 0, declined: 1 });
+      // The privacy contract has to hold on THIS path too, not just when a launch created the row:
+      // a date, a build target, two numbers. Whoever adds a field here has to break a test twice.
+      expect(Object.keys(doc!).sort()).toEqual(['_id', 'count', 'date', 'declined', 'platform', 'updated_at']);
     });
 
     it('runs concurrently without losing counts', async () => {
@@ -156,6 +159,11 @@ describe.skipIf(!mongo)('launch counter + load time', () => {
       // 10 launches: 2 reported, 4 played in silence, 4 actually left at a gate. Before the refusal
       // counter existed this row said "8 lost".
       expect(web.boots - web.sessions - web.declined).toBe(4);
+      // `reach_rate` deliberately keeps ALL launches as its denominator, refusals included. It has
+      // history plotted behind it, and silently re-basing a number already on a trend line rewrites
+      // that history. Anyone who "fixes" it to sessions/(boots − declined) — 2/6, which is a
+      // defensible metric, just not this one — has to come here and say so on purpose.
+      expect(web.reach_rate).toBeCloseTo(0.2);
     });
 
     it('still reports a day whose launches produced NO sessions — the worst case is the point', async () => {
