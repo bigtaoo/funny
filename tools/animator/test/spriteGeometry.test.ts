@@ -6,6 +6,7 @@ import { describe, it, expect } from 'vitest';
 import {
   rotateVec, bindingToSpriteFrame, localPixelToWorld, spriteCorners, rotationHandlePos, pointInQuad,
   computeAnchorDrag, worldToLocalPixel, alphaAt, MIN_HIT_ALPHA,
+  solveTwoPointBind, MIN_BIND_SPAN_PX,
   type SpriteFrame, type AlphaMask,
 } from '../src/rendering/spriteGeometry';
 
@@ -283,5 +284,91 @@ describe('alphaAt', () => {
   it('MIN_HIT_ALPHA sits above the anti-aliasing halo a paint tool leaves, but below any real ink', () => {
     expect(MIN_HIT_ALPHA).toBeGreaterThan(0);
     expect(MIN_HIT_ALPHA).toBeLessThan(32);
+  });
+});
+
+describe('solveTwoPointBind', () => {
+  const texW = 200, texH = 400;
+
+  /** Apply a solve to a sprite frame and report where the two picked pixels landed.
+   *  This is the whole contract: near joint → bone pivot, far joint → bone tip. */
+  function land(
+    p1: { x: number; y: number }, p2: { x: number; y: number },
+    pivot: { x: number; y: number }, boneWA: number, boneLen: number, flipX: boolean,
+  ) {
+    const s = solveTwoPointBind(p1, p2, texW, texH, boneLen, flipX)!;
+    const frame = bindingToSpriteFrame(
+      pivot.x, pivot.y, boneWA,
+      { anchorX: s.anchorX, anchorY: s.anchorY, rotation: s.rotation, scaleX: s.scale, scaleY: s.scale, flipX },
+      texW, texH,
+    );
+    return { solved: s, near: localPixelToWorld(frame, p1.x, p1.y), far: localPixelToWorld(frame, p2.x, p2.y) };
+  }
+
+  it('lands the near pick on the pivot and the far pick on the tip', () => {
+    // Bone at 120° (r_upper_leg's rest angle), length 78 — the case from the notebook rig.
+    const pivot = { x: 300, y: 250 }, wa = 120, len = 78;
+    const tip = { x: pivot.x + len * Math.cos((wa * Math.PI) / 180), y: pivot.y + len * Math.sin((wa * Math.PI) / 180) };
+
+    const { near, far } = land({ x: 150, y: 62 }, { x: 40, y: 330 }, pivot, wa, len, false);
+
+    expect(near.x).toBeCloseTo(pivot.x, 8);
+    expect(near.y).toBeCloseTo(pivot.y, 8);
+    expect(far.x).toBeCloseTo(tip.x, 8);
+    expect(far.y).toBeCloseTo(tip.y, 8);
+  });
+
+  it('still lands both ends when the sprite is mirrored', () => {
+    const pivot = { x: -40, y: 90 }, wa = -33, len = 51;
+    const tip = { x: pivot.x + len * Math.cos((wa * Math.PI) / 180), y: pivot.y + len * Math.sin((wa * Math.PI) / 180) };
+
+    const { near, far } = land({ x: 20, y: 380 }, { x: 175, y: 15 }, pivot, wa, len, true);
+
+    expect(near.x).toBeCloseTo(pivot.x, 8);
+    expect(near.y).toBeCloseTo(pivot.y, 8);
+    expect(far.x).toBeCloseTo(tip.x, 8);
+    expect(far.y).toBeCloseTo(tip.y, 8);
+  });
+
+  it('reads the anchor straight off the near pick, so it may fall outside 0–1', () => {
+    const s = solveTwoPointBind({ x: 36, y: -60 }, { x: 36, y: 140 }, texW, texH, 100, false)!;
+    expect(s.anchorX).toBeCloseTo(36 / texW, 10);
+    expect(s.anchorY).toBeCloseTo(-60 / texH, 10);
+    expect(s.anchorY).toBeLessThan(0);
+  });
+
+  it('scales the image so the pick span becomes the bone length', () => {
+    // 3-4-5 triangle: span is exactly 100px of texture.
+    const s = solveTwoPointBind({ x: 10, y: 10 }, { x: 70, y: 90 }, texW, texH, 25, false)!;
+    expect(s.spanPx).toBeCloseTo(100, 10);
+    expect(s.scale).toBeCloseTo(0.25, 10);
+  });
+
+  it('cancels a uniform scale out of the rotation — only the pick direction sets it', () => {
+    const near = { x: 50, y: 50 };
+    const short = solveTwoPointBind(near, { x: 80, y: 80 }, texW, texH, 40, false)!;
+    const long  = solveTwoPointBind(near, { x: 170, y: 170 }, texW, texH, 40, false)!;
+    expect(short.rotation).toBeCloseTo(long.rotation, 10);
+    expect(short.rotation).toBeCloseTo(-45, 10);   // image points down-right → rotate back by 45°
+    expect(short.scale).not.toBeCloseTo(long.scale, 3);
+  });
+
+  it('mirrors the rotation for a flipped sprite rather than reusing the unflipped angle', () => {
+    const p1 = { x: 50, y: 50 }, p2 = { x: 130, y: 110 };
+    const plain   = solveTwoPointBind(p1, p2, texW, texH, 40, false)!;
+    const flipped = solveTwoPointBind(p1, p2, texW, texH, 40, true)!;
+    expect(flipped.rotation).toBeCloseTo(-180 - plain.rotation, 8);
+  });
+
+  it('refuses a degenerate pick instead of returning an exploded scale', () => {
+    expect(solveTwoPointBind({ x: 50, y: 50 }, { x: 50, y: 50 }, texW, texH, 40, false)).toBeNull();
+    expect(solveTwoPointBind({ x: 50, y: 50 }, { x: 51, y: 50 }, texW, texH, 40, false)).toBeNull();
+    expect(MIN_BIND_SPAN_PX).toBeGreaterThan(0);
+  });
+
+  it('refuses a degenerate texture or bone', () => {
+    expect(solveTwoPointBind({ x: 0, y: 0 }, { x: 50, y: 50 }, 0, texH, 40, false)).toBeNull();
+    expect(solveTwoPointBind({ x: 0, y: 0 }, { x: 50, y: 50 }, texW, 0, 40, false)).toBeNull();
+    expect(solveTwoPointBind({ x: 0, y: 0 }, { x: 50, y: 50 }, texW, texH, 0, false)).toBeNull();
   });
 });

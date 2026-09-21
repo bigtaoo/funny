@@ -54,7 +54,7 @@ import type { RechargeCallbacks } from '../../src/scenes/RechargeScene';
 import type { WorldMapView } from '../../src/scenes/WorldMapScene';
 import type { DailyCallbacks } from '../../src/scenes/DailyScene';
 import type { EventCallbacks } from '../../src/scenes/EventScene';
-import type { ConsentCallbacks } from '../../src/ui/dialogs/ConsentDialog';
+import type { ConsentCallbacks, ConsentMode } from '../../src/ui/dialogs/ConsentDialog';
 import type { AgeGateCallbacks, AgeGateMode } from '../../src/ui/dialogs/AgeGateDialog';
 import type { ReconnectPromptCallbacks } from '../../src/ui/dialogs/ReconnectPromptDialog';
 import type { TitlesSceneCallbacks } from '../../src/scenes/TitlesScene';
@@ -105,6 +105,8 @@ export class HeadlessAppViews implements AppViews {
   equipment?: EquipmentCallbacks;
   stats?: StatsCallbacks;
   consent?: ConsentCallbacks;
+  /** Which button set the last showConsent asked for ('choice' = the two-answer EU/US card). */
+  consentMode?: ConsentMode;
   /** The age gate's mode + callback, when the core put it up. */
   ageGate?: { mode: AgeGateMode; cb: AgeGateCallbacks };
   reconnectPrompt?: ReconnectPromptCallbacks;
@@ -144,7 +146,8 @@ export class HeadlessAppViews implements AppViews {
     this.screen = 'realLayerInterlude';
     this.realLayerInterlude = { illustrationUrl, textKey, cb };
   }
-  showConsent(cb: ConsentCallbacks): void { this.screen = 'consent'; this.consent = cb; }
+  /** `consentMode` is recorded rather than acted on — the region branch is asserted in consentGate.test.ts. */
+  showConsent(mode: ConsentMode, cb: ConsentCallbacks): void { this.screen = 'consent'; this.consentMode = mode; this.consent = cb; }
   showAgeGate(mode: AgeGateMode, cb: AgeGateCallbacks): void { this.screen = 'ageGate'; this.ageGate = { mode, cb }; }
 
   /**

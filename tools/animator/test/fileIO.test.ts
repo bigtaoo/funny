@@ -6,6 +6,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   isDesktop, clamp01, basename, deriveTaoPath, saveWithPicker, canvasToBlob, loadImageFromBlob,
+  sanitizeFilename,
 } from '../src/io/fileIO';
 
 afterEach(() => {
@@ -75,7 +76,7 @@ describe('saveWithPicker', () => {
   const blob = new Blob(['payload'], { type: 'application/octet-stream' });
   const types = [{ description: 'Tao Animation', accept: { 'application/octet-stream': ['.tao'] } }];
 
-  it('native picker path: writes via the returned handle and returns it for reuse', async () => {
+  it('native picker path: writes via the picked handle and reports the name it wrote', async () => {
     const written: Blob[] = [];
     let closed = false;
     const handle = {
@@ -89,7 +90,10 @@ describe('saveWithPicker', () => {
     vi.stubGlobal('window', { showSaveFilePicker: picker });
 
     const result = await saveWithPicker(blob, 'animation', types);
-    expect(result).toBe(handle);
+    expect(result!.handle).toBe(handle);
+    // No `name` on this handle stub, so the outcome falls back to the suggested name —
+    // the caller always has something to show the artist.
+    expect(result!.name).toBe('animation.tao');
     expect(written).toEqual([blob]);
     expect(closed).toBe(true);
     // suggestedName gets exactly one canonical extension appended.
@@ -156,7 +160,9 @@ describe('saveWithPicker', () => {
     });
 
     const result = await saveWithPicker(blob, 'animation', types);
-    expect(result).toBeNull(); // no handle to remember in the fallback path
+    // A successful download is NOT a cancel: null handle (nothing to overwrite later),
+    // but a real name, so the caller can say where the bytes went.
+    expect(result).toEqual({ handle: null, name: 'my-anim.tao' });
     expect(created).toHaveLength(1);
     expect(created[0]!.download).toBe('my-anim.tao'); // canonical extension appended
     expect(clicked).toEqual(['my-anim.tao']);
@@ -223,5 +229,39 @@ describe('loadImageFromBlob', () => {
     }
     vi.stubGlobal('Image', Img);
     await expect(loadImageFromBlob(new Blob(['x']))).rejects.toThrow('Image load failed');
+  });
+});
+
+// sanitizeFilename turns a project's library name into something a save dialog can be
+// pre-filled with. It is the only thing standing between "the artist named this project
+// anything at all" and the native picker, so the interesting cases are the names that are
+// legal in the library but not on disk.
+describe('sanitizeFilename', () => {
+  it('leaves an ordinary name alone, including non-ASCII', () => {
+    expect(sanitizeFilename('Untitled', 'project')).toBe('Untitled');
+    expect(sanitizeFilename('\u72d7 v2', 'project')).toBe('\u72d7 v2');
+    expect(sanitizeFilename('runner-01_final', 'project')).toBe('runner-01_final');
+  });
+
+  it('drops the characters no filesystem accepts, rather than escaping them', () => {
+    // A slash would turn the name into a path; the rest are Windows-reserved.
+    expect(sanitizeFilename('a/b', 'project')).toBe('ab');
+    expect(sanitizeFilename('a\\b', 'project')).toBe('ab');
+    expect(sanitizeFilename('a:b*c?d"e<f>g|h', 'project')).toBe('abcdefgh');
+  });
+
+  it('strips control characters, which a pasted name can carry invisibly', () => {
+    expect(sanitizeFilename('run\u0000ner\u001f', 'project')).toBe('runner');
+  });
+
+  it('collapses and trims whitespace so the dialog is not pre-filled with padding', () => {
+    expect(sanitizeFilename('  two   words  ', 'project')).toBe('two words');
+    expect(sanitizeFilename('tab\there', 'project')).toBe('tab here');
+  });
+
+  it('falls back when nothing usable survives — never an empty filename', () => {
+    expect(sanitizeFilename('', 'project')).toBe('project');
+    expect(sanitizeFilename('///', 'project')).toBe('project');
+    expect(sanitizeFilename('   ', 'project')).toBe('project');
   });
 });

@@ -4,39 +4,12 @@ import type {
   ResolvedBoneTransform,
   SpriteBinding,
   AttachmentPoint,
+  BindPick,
 } from '../core/types';
 import { Skeleton } from '../skeleton/Skeleton';
 import { drawSkinHandles } from './skinHandles';
-
-// Cache default shadow size (computed once from rest pose)
-let _defaultShadow: { w: number; h: number } | null = null;
-function defaultShadowSize(): { w: number; h: number } {
-  return (_defaultShadow ??= Skeleton.computeDefaultShadowSize());
-}
-
-// Unified procedural shadow — a single soft ellipse generated once, scaled to the
-// shadow attachment point's shadowW/H. Mirrors the runtime (StickmanRuntime.ts) so
-// the editor preview matches the game; shadows are no longer authored as images.
-let _shadowTex: PIXI.Texture | null = null;
-function shadowTexture(): PIXI.Texture {
-  if (_shadowTex) return _shadowTex;
-  const SIZE = 128;
-  const canvas  = document.createElement('canvas');
-  canvas.width  = SIZE;
-  canvas.height = SIZE;
-  const ctx = canvas.getContext('2d')!;
-  const r   = SIZE / 2;
-  const grad = ctx.createRadialGradient(r, r, 0, r, r, r);
-  grad.addColorStop(0,    'rgba(0,0,0,1)');
-  grad.addColorStop(0.55, 'rgba(0,0,0,0.85)');
-  grad.addColorStop(1,    'rgba(0,0,0,0)');
-  ctx.fillStyle = grad;
-  ctx.beginPath();
-  ctx.arc(r, r, r, 0, Math.PI * 2);
-  ctx.fill();
-  _shadowTex = PIXI.Texture.from(canvas);
-  return _shadowTex;
-}
+import { drawTubularBone, drawHead, drawJoint } from './bonePrimitives';
+import { defaultShadowSize, shadowTexture } from './shadowAssets';
 
 // ── RenderData ────────────────────────────────────────────────────────────────
 
@@ -59,6 +32,7 @@ export interface RenderData {
   showSkeletonOverlay: boolean;
   showGuide:           boolean;
   showPivots:          boolean;
+  bindPick:            BindPick | null;
   backgroundColor:     number;
   rootX:               number;
   rootY:               number;
@@ -185,9 +159,13 @@ export class Renderer {
     this.drawSelection(data);
     if (data.showGuide)  this.drawGuide(data.rootX, data.rootY);
     if (data.showPivots) this.drawPivots(data.worldPose, data.selectedBone);
-    if (data.previewMode === 'sprite') this.drawAnchorPoints(data);
+    // Anchor markers are a Skin-mode instrument: in Animate mode they are one red dot per
+    // bone over the artwork the artist is trying to judge, and Show pivots already answers
+    // "where are the joints" there.
+    if (data.previewMode === 'sprite' && data.editorMode === 'skin') this.drawAnchorPoints(data);
     this.drawAttachmentPoints(data.rootX, data.rootY, data.worldPose, data.attachmentPoints);
     if (data.editorMode === 'skin') drawSkinHandles(this.selGfx, data);
+    this.drawBindPick(data);
   }
 
   // ── Sprite layer ──────────────────────────────────────────────────────────
@@ -298,9 +276,9 @@ export class Renderer {
       if (!bone || !pos) continue;
 
       if (bone.isHead) {
-        this.drawHead(g, pos.ex, pos.ey, 1);
+        drawHead(g, pos.ex, pos.ey, 1);
       } else if (bone.outerW && bone.innerW) {
-        this.drawTubularBone(g, pos.sx, pos.sy, pos.ex, pos.ey, bone.outerW, bone.innerW, 1);
+        drawTubularBone(g, pos.sx, pos.sy, pos.ex, pos.ey, bone.outerW, bone.innerW, 1);
       }
     }
 
@@ -311,11 +289,11 @@ export class Renderer {
         const pos = wp.get(bone.id);
         if (!pos) continue;
         const sk = `${pos.sx.toFixed(0)},${pos.sy.toFixed(0)}`;
-        if (!drawn.has(sk)) { this.drawJoint(g, pos.sx, pos.sy, 6); drawn.add(sk); }
+        if (!drawn.has(sk)) { drawJoint(g, pos.sx, pos.sy, 6); drawn.add(sk); }
         const isLeaf = !Skeleton.BONE_DEFS.some(b => b.parent === bone.id);
         if (isLeaf) {
           const ek = `${pos.ex.toFixed(0)},${pos.ey.toFixed(0)}`;
-          if (!drawn.has(ek)) { this.drawJoint(g, pos.ex, pos.ey, 5); drawn.add(ek); }
+          if (!drawn.has(ek)) { drawJoint(g, pos.ex, pos.ey, 5); drawn.add(ek); }
         }
       }
     }
@@ -354,40 +332,46 @@ export class Renderer {
     this.selGfx.lineTo(rootX, rootY + 50);
   }
 
+  /** A RING rather than a filled dot, and wider than the anchor marker it shares a point
+   *  with. An anchor's world position IS its bone's pivot (see `drawAnchorPoints`), so the
+   *  old r=3 filled dot was drawn and then painted over by the r=4..6 anchor dot on the very
+   *  next line — in Sprite preview the checkbox appeared to do nothing at all. */
   private drawPivots(wp: WorldPositions, selectedBone: string | null): void {
     wp.forEach((pos, boneId) => {
       if (boneId === 'root') return;
       const isSelected = boneId === selectedBone;
       const color = isSelected ? 0xf9e2af : 0x89b4fa;
-      this.selGfx.lineStyle({ width: 1, color, alpha: 0.6 });
-      this.selGfx.beginFill(color, 0.4);
-      this.selGfx.drawCircle(pos.sx, pos.sy, 3);
-      this.selGfx.endFill();
+      this.selGfx.lineStyle({ width: 1.5, color, alpha: 0.95 });
+      this.selGfx.drawCircle(pos.sx, pos.sy, 8);
     });
   }
 
-  // ── Drawing primitives ────────────────────────────────────────────────────
+  /** Two-point bind in progress: the bone's own two ends (solid = where the first pick
+   *  lands, hollow = the second), plus a crosshair on the first pick once it is taken. */
+  private drawBindPick(data: RenderData): void {
+    const pick = data.bindPick;
+    if (!pick) return;
+    const pos = data.worldPose.get(pick.boneId);
+    if (!pos) return;
+    const CYAN = 0x89dceb;
 
-  private drawTubularBone(
-    g: PIXI.Graphics,
-    sx: number, sy: number, ex: number, ey: number,
-    outerW: number, innerW: number, alpha: number,
-  ): void {
-    g.lineStyle({ width: outerW, color: 0x222222, alpha, cap: PIXI.LINE_CAP.ROUND, join: PIXI.LINE_JOIN.ROUND });
-    g.moveTo(sx, sy); g.lineTo(ex, ey);
-    g.lineStyle({ width: innerW, color: 0xFFFFFF, alpha, cap: PIXI.LINE_CAP.ROUND, join: PIXI.LINE_JOIN.ROUND });
-    g.moveTo(sx, sy); g.lineTo(ex, ey);
-  }
+    this.selGfx.lineStyle({ width: 2, color: CYAN, alpha: 0.9 });
+    this.selGfx.moveTo(pos.sx, pos.sy);
+    this.selGfx.lineTo(pos.ex, pos.ey);
+    this.selGfx.beginFill(CYAN, 0.95);
+    this.selGfx.drawCircle(pos.sx, pos.sy, 5);
+    this.selGfx.endFill();
+    this.selGfx.drawCircle(pos.ex, pos.ey, 5);
 
-  private drawHead(g: PIXI.Graphics, cx: number, cy: number, alpha: number): void {
-    g.lineStyle({ width: 4, color: 0x222222, alpha });
-    g.beginFill(0xFFFFFF, alpha);
-    g.drawCircle(cx, cy, Skeleton.HEAD_R);
-    g.endFill();
-    g.lineStyle(0);
-    g.beginFill(0x222222, alpha);
-    g.drawCircle(cx + Skeleton.HEAD_R * 0.38, cy - Skeleton.HEAD_R * 0.1, 3);
-    g.endFill();
+    const first = pick.first;
+    if (!first) return;
+    const S = 9;
+    this.selGfx.lineStyle({ width: 2, color: CYAN, alpha: 1 });
+    this.selGfx.moveTo(first.world.x - S, first.world.y);
+    this.selGfx.lineTo(first.world.x + S, first.world.y);
+    this.selGfx.moveTo(first.world.x, first.world.y - S);
+    this.selGfx.lineTo(first.world.x, first.world.y + S);
+    this.selGfx.drawCircle(first.world.x, first.world.y, 4);
   }
 
   private drawAnchorPoints(data: RenderData): void {
@@ -401,7 +385,9 @@ export class Renderer {
       const ay = pose.sy + (transform?.translateY ?? 0);
       const isSelected = boneId === data.selectedBone;
 
-      // Line from bone pivot to anchor (visible when offset is non-zero)
+      // Pivot → anchor line. The anchor sits ON the pivot by definition, so this only
+      // appears when an animated translateX/Y has carried the sprite off its bone —
+      // computeFK does not apply translate, so the skeleton stays put and the gap is real.
       if (Math.hypot(ax - pose.sx, ay - pose.sy) > 1) {
         this.selGfx.lineStyle({ width: 1, color: 0xff4444, alpha: 0.4 });
         this.selGfx.moveTo(pose.sx, pose.sy);
@@ -423,13 +409,6 @@ export class Renderer {
         this.selGfx.moveTo(ax, ay - S); this.selGfx.lineTo(ax, ay + S);
       }
     });
-  }
-
-  private drawJoint(g: PIXI.Graphics, x: number, y: number, r: number): void {
-    g.lineStyle({ width: 2.5, color: 0x222222, alpha: 1 });
-    g.beginFill(0xFFFFFF);
-    g.drawCircle(x, y, r);
-    g.endFill();
   }
 
   // ── Attachment points ─────────────────────────────────────────────────────

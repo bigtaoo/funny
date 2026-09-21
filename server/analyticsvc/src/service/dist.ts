@@ -1,12 +1,32 @@
 // analyticsvc query domain: distributions — locale/region, OS, browser, device type, geo country
-// and match-badge spread, all counted as distinct devices.
+// and match-badge spread, all counted as distinct devices, plus the startup load-time profile
+// (percentiles, not devices).
 //
 // Independent sibling class (2026-08-11 mixin-chain split, claudedocs/server.md "拆分形态的优先级"
 // 形态②): holds its own `cols`/`now`, no shared base, no cross-domain calls — assembled by
 // composition in ../service.ts.
 
 import { AnalyticsCollections } from '../db';
-import { RegionRow, OsRow, BadgeDistRow, BrowserRow, DeviceTypeRow, WebViewRow, GeoRow, dayStart } from './defs';
+import {
+  RegionRow, OsRow, BadgeDistRow, BrowserRow, DeviceTypeRow, WebViewRow, GeoRow, LoadTimeRow,
+  LOAD_TIME_BUCKET_MS, LOAD_TIME_PHASES, dayStart,
+} from './defs';
+
+/**
+ * Read a percentile off a cumulative histogram: the upper bound of the first bucket whose running
+ * total reaches `p` of the population. Exact to the bucket width, and never interpolated — an
+ * interpolated value would suggest a precision the buckets do not have.
+ */
+function percentileFromBuckets(buckets: { lt_ms: number; count: number }[], total: number, p: number): number {
+  if (total === 0) return 0;
+  const target = total * p;
+  let seen = 0;
+  for (const b of buckets) {
+    seen += b.count;
+    if (seen >= target) return b.lt_ms;
+  }
+  return buckets[buckets.length - 1]?.lt_ms ?? 0;
+}
 
 export class DistService {
   constructor(
@@ -102,6 +122,124 @@ export class DistService {
     ];
     const rows = await this.cols.events.aggregate<{ _id: string; devices: number }>(pipeline).toArray();
     return rows.map((r) => ({ country: r._id || 'unknown', devices: r.devices }));
+  }
+
+  /**
+   * Load-time profile per platform (ANALYTICS_DESIGN §5.1b) — percentiles of the total, the mean of
+   * each phase, and the number of launches that never finished loading at all.
+   *
+   * **Percentiles come from a histogram, not from `$percentile`.** `load_time.props.total_ms` is
+   * rounded into {@link LOAD_TIME_BUCKET_MS} buckets in the aggregation and the percentiles are read
+   * off the cumulative counts here. That costs 100ms of precision and buys two things: memory bounded
+   * by the number of distinct buckets rather than by the number of launches (a `$push` of every value
+   * risks the 16MB document limit on a busy week), and no dependency on a MongoDB version — and it
+   * produces the histogram the ops page wants anyway, which an exact percentile operator would not.
+   *
+   * `abandoned` is the other half of the measurement and is computed from the same two events rather
+   * than from a timeout: a session that emitted `boot` and never `load_time` closed the page while
+   * the loading screen was up. Those players reach no scene, click nothing and appear nowhere else.
+   */
+  async queryLoadTime(days: number): Promise<LoadTimeRow[]> {
+    const since = new Date(dayStart(this.now()) - (days - 1) * 86400_000);
+
+    // Per-phase sum AND count, rather than $avg or $push: the count has to be per phase, because a
+    // phase missing from a platform (WeChat reports no network phases) must be left out of its own
+    // mean instead of being averaged in as zero — and $push would accumulate one sub-document per
+    // event, which is exactly the unbounded growth the histogram exists to avoid.
+    const phaseAccumulators = Object.fromEntries(
+      LOAD_TIME_PHASES.flatMap((p) => [
+        [`${p}_sum`, { $sum: { $cond: [{ $isNumber: `$props.${p}` }, `$props.${p}`, 0] } }],
+        [`${p}_n`, { $sum: { $cond: [{ $isNumber: `$props.${p}` }, 1, 0] } }],
+      ]),
+    );
+
+    const hist = await this.cols.events
+      .aggregate<{ _id: { platform: string; bucket: number }; count: number } & Record<string, number>>([
+        { $match: { ts: { $gte: since }, event: 'load_time', 'props.total_ms': { $type: 'number' } } },
+        {
+          $group: {
+            _id: {
+              platform: '$platform',
+              // $ceil, not $floor: the bucket label is an inclusive upper bound ("this many launches
+              // finished in at most lt_ms"), so a launch of exactly 100ms belongs to the 100ms bucket
+              // and not to the 100–200ms one. With $floor every exact multiple lands one bucket too
+              // high, which shifts every percentile up by a bucket.
+              bucket: { $ceil: { $divide: ['$props.total_ms', LOAD_TIME_BUCKET_MS] } },
+            },
+            count: { $sum: 1 },
+            ...phaseAccumulators,
+          },
+        },
+        { $sort: { '_id.platform': 1 as const, '_id.bucket': 1 as const } },
+      ])
+      .toArray();
+
+    const abandoned = await this.abandonedByPlatform(since);
+
+    const byPlatform = new Map<string, { buckets: Map<number, number>; samples: number; sums: Map<string, { sum: number; n: number }> }>();
+    for (const row of hist) {
+      const platform = row._id.platform || 'unknown';
+      let agg = byPlatform.get(platform);
+      if (!agg) {
+        agg = { buckets: new Map(), samples: 0, sums: new Map() };
+        byPlatform.set(platform, agg);
+      }
+      const upper = row._id.bucket * LOAD_TIME_BUCKET_MS;
+      agg.buckets.set(upper, (agg.buckets.get(upper) ?? 0) + row.count);
+      agg.samples += row.count;
+      for (const phase of LOAD_TIME_PHASES) {
+        const n = row[`${phase}_n`] ?? 0;
+        if (n === 0) continue;
+        const cur = agg.sums.get(phase) ?? { sum: 0, n: 0 };
+        cur.sum += row[`${phase}_sum`] ?? 0;
+        cur.n += n;
+        agg.sums.set(phase, cur);
+      }
+    }
+
+    const rows: LoadTimeRow[] = [];
+    for (const [platform, agg] of byPlatform) {
+      const buckets = [...agg.buckets.entries()].sort((a, b) => a[0] - b[0]).map(([lt_ms, count]) => ({ lt_ms, count }));
+      const avg: Record<string, number> = {};
+      for (const [phase, { sum, n }] of agg.sums) avg[phase] = Math.round(sum / n);
+      rows.push({
+        platform,
+        samples: agg.samples,
+        p50_ms: percentileFromBuckets(buckets, agg.samples, 0.5),
+        p75_ms: percentileFromBuckets(buckets, agg.samples, 0.75),
+        p90_ms: percentileFromBuckets(buckets, agg.samples, 0.9),
+        p95_ms: percentileFromBuckets(buckets, agg.samples, 0.95),
+        avg,
+        buckets,
+        abandoned: abandoned.get(platform) ?? 0,
+      });
+    }
+    // Platforms that only ever produced abandoned launches still deserve a row — that is the worst
+    // result this query can report, and dropping it would read as "no data" instead.
+    for (const [platform, count] of abandoned) {
+      if (byPlatform.has(platform)) continue;
+      rows.push({ platform, samples: 0, p50_ms: 0, p75_ms: 0, p90_ms: 0, p95_ms: 0, avg: {}, buckets: [], abandoned: count });
+    }
+    return rows.sort((a, b) => b.samples - a.samples);
+  }
+
+  /** Sessions per platform that emitted `boot` and never `load_time` — see {@link queryLoadTime}. */
+  private async abandonedByPlatform(since: Date): Promise<Map<string, number>> {
+    const rows = await this.cols.events
+      .aggregate<{ _id: string; abandoned: number }>([
+        { $match: { ts: { $gte: since }, event: { $in: ['boot', 'load_time'] } } },
+        {
+          $group: {
+            _id: { session: '$session_id', platform: '$platform' },
+            booted: { $max: { $cond: [{ $eq: ['$event', 'boot'] }, 1, 0] } },
+            loaded: { $max: { $cond: [{ $eq: ['$event', 'load_time'] }, 1, 0] } },
+          },
+        },
+        { $match: { booted: 1, loaded: 0 } },
+        { $group: { _id: '$_id.platform', abandoned: { $sum: 1 } } },
+      ])
+      .toArray();
+    return new Map(rows.map((r) => [r._id || 'unknown', r.abandoned]));
   }
 
   /**

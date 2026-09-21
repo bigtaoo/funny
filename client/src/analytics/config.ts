@@ -16,13 +16,20 @@ const DISABLED_FALLBACK: AnalyticsConfig = {
 
 let cached: AnalyticsConfig = DISABLED_FALLBACK;
 
-export async function fetchAnalyticsConfig(analyticsBaseUrl: string): Promise<void> {
+/**
+ * @param platform  Build target, sent as `?p=` purely so the server can keep a per-platform **launch
+ *   counter** (ANALYTICS_DESIGN §3.6b). This request is the only one every launch makes before the
+ *   age/consent gates, which makes it the only possible denominator for the players who answer
+ *   neither and leave — they never reach `session_start`. Nothing identifying is sent, and nothing
+ *   identifying may ever be added here: the whole point is a number that needs no consent to count.
+ */
+export async function fetchAnalyticsConfig(analyticsBaseUrl: string, platform?: string): Promise<void> {
   try {
     // Through the transport seam, not the global fetch: the WeChat mini-game has no fetch and
     // installs wx.request behind this (net/transport.ts, ASSET_PACKAGING §4.4).
     const res = await netTransport().request({
       method: 'GET',
-      url: `${analyticsBaseUrl}/analytics/config`,
+      url: `${analyticsBaseUrl}/analytics/config${platform ? `?p=${encodeURIComponent(platform)}` : ''}`,
       headers: { Accept: 'application/json' },
     });
     if (res.ok) {
@@ -37,6 +44,30 @@ export async function fetchAnalyticsConfig(analyticsBaseUrl: string): Promise<vo
   } catch {
     // network failure → keep disabled fallback
   }
+}
+
+/**
+ * Tell the launch counter that this launch belongs to a player who refused analytics
+ * (ANALYTICS_DESIGN §3.6c) — the same unauthenticated endpoint, plus `&d=1`, and the response is
+ * thrown away.
+ *
+ * This is the only thing the refusal path ever sends, and it is not telemetry: the server bumps one
+ * number on the (date, platform) row it already keeps and stores nothing else — no device id, no
+ * account, not even a `gdpr_consent` event, which would be an event reporting that events were
+ * refused. Without it these launches are invisible in exactly the wrong way: since §3.6c they play
+ * the game and report nothing, so they sat in the funnel's `Lost` column mixed in with the players
+ * who read the consent dialog and closed the tab.
+ *
+ * Fire-and-forget: a failure costs a tick in a trend and must never be visible to the player.
+ */
+export function pingDeclinedLaunch(analyticsBaseUrl: string, platform: string): void {
+  void netTransport()
+    .request({
+      method: 'GET',
+      url: `${analyticsBaseUrl}/analytics/config?p=${encodeURIComponent(platform)}&d=1`,
+      headers: { Accept: 'application/json' },
+    })
+    .catch(() => { /* network failure → the tick is simply missing */ });
 }
 
 export function getAnalyticsConfig(): AnalyticsConfig {

@@ -5,6 +5,9 @@
 /** Minimal duck-typed shape of a `FileSystemFileHandle` (File System Access API), which
  *  TS's default lib doesn't declare — kept local rather than pulling in `@types/wicg-*`. */
 export interface WritableFileHandle {
+  /** The chosen file's NAME only — the File System Access API never hands out a path.
+   *  Optional because the Firefox/Safari download fallback produces no handle at all. */
+  readonly name?: string;
   getFile(): Promise<File>;
   createWritable(): Promise<{ write(b: Blob): Promise<void>; close(): Promise<void> }>;
 }
@@ -75,17 +78,28 @@ function ensureSingleExt(name: string, ext: string): string {
   return n;
 }
 
-/** Save blob via the File System Access API (native save dialog with folder + filename),
- *  returning the resulting handle so the caller can reuse it for silent overwrites on
- *  later saves/exports. Falls back to a filename prompt + triggerDownload for browsers
- *  without the API (e.g. Firefox), which returns null — no handle to remember there.
+/** What a `saveWithPicker` call actually did, so the caller can say where the bytes went
+ *  instead of a bare "saved". Distinguishing the download fallback from a cancel is the
+ *  point: both used to come back as a plain `null`, so Firefox's successful download was
+ *  reported as nothing at all. */
+export interface SaveOutcome {
+  /** The file to reuse for silent overwrites, or null in the download fallback —
+   *  a downloaded file leaves nothing behind that can be written to again. */
+  handle: WritableFileHandle | null;
+  /** The filename actually written. The API never reveals the directory. */
+  name: string;
+}
+
+/** Save blob via the File System Access API (native save dialog with folder + filename).
+ *  Falls back to a filename prompt + triggerDownload for browsers without the API
+ *  (e.g. Firefox). Returns null ONLY when the user cancelled.
  *  `startIn`, when given, biases the dialog to open near that handle's location. */
 export async function saveWithPicker(
   blob: Blob,
   suggestedName: string,
   types: Array<{ description?: string; accept: Record<string, string[]> }>,
   startIn?: WritableFileHandle | null,
-): Promise<WritableFileHandle | null> {
+): Promise<SaveOutcome | null> {
   // Pass a name that already carries exactly one canonical extension so neither
   // the native picker nor the user prompt can produce a doubled ".taoeditor".
   const ext       = primaryExt(types);
@@ -104,16 +118,31 @@ export async function saveWithPicker(
     const writable = await handle.createWritable();
     await writable.write(blob);
     await writable.close();
-    return handle;
+    return { handle, name: handle.name ?? suggested };
   } else {
     // Firefox / Safari fallback: prompt for filename, then trigger download.
     // The save path is controlled by the browser's download settings
     // (Firefox: Settings → Downloads → "Always ask you where to save files").
     const name = window.prompt('Save as:', suggested);
     if (name === null) return null;  // user cancelled
-    triggerDownload(blob, ensureSingleExt(name.trim() || suggested, ext));
-    return null;
+    const written = ensureSingleExt(name.trim() || suggested, ext);
+    triggerDownload(blob, written);
+    return { handle: null, name: written };
   }
+}
+
+/** Make `name` usable as a filename on every platform: drop the characters no filesystem
+ *  accepts, collapse whitespace, and fall back to `fallback` when nothing usable is left.
+ *  A project called "Untitled" or "狗 v2" should reach the save dialog as itself; one
+ *  called "a/b" must not turn into a directory. */
+export function sanitizeFilename(name: string, fallback: string): string {
+  const cleaned = name
+    .replace(/[\\/:*?"<>|]/g, '')     // illegal on at least one target filesystem
+    .replace(/\s+/g, ' ')             // tabs/newlines collapse to a space — they separate words
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001f]/g, '')  // the rest (NUL and friends) separate nothing; drop them
+    .trim();
+  return cleaned || fallback;
 }
 
 /** Filename portion of an absolute disk path (desktop shell paths only need `\`/`/`). */

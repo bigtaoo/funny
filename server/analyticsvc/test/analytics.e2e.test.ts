@@ -113,6 +113,56 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
     expect(typeof body.data.defaultSample).toBe('number');
   });
 
+  /**
+   * The launch counter (ANALYTICS_DESIGN §3.6b). This endpoint is the only thing every client hits
+   * before the age/consent gates, so it is the only place a player who leaves at one of them can be
+   * counted — but it is unauthenticated, which is why `?p=` is clamped to a known build target
+   * rather than stored as sent: an unclamped value would become part of a document `_id`.
+   */
+  it('GET /analytics/config counts the launch, bucketing an unknown platform instead of storing it', async () => {
+    await mongo!.collections.boots_daily.deleteMany({});
+    await fetch(`${base}/analytics/config?p=web`);
+    await fetch(`${base}/analytics/config?p=web`);
+    await fetch(`${base}/analytics/config?p=../../etc/passwd`);
+    await fetch(`${base}/analytics/config`);
+
+    // The counter write is fire-and-forget (it must never delay the config body), so give it a tick.
+    await new Promise((r) => setTimeout(r, 150));
+    const docs = await mongo!.collections.boots_daily.find({}).toArray();
+    expect(docs.map((d) => [d.platform, d.count]).sort()).toEqual([['unknown', 2], ['web', 2]]);
+  });
+
+  /**
+   * The refusal column (§3.6c). `?d=1` is the same endpoint called a second time by a client whose
+   * player chose "essentials only" — it must move the refusal count and leave the launch count
+   * alone, or a refusing player would be counted as two launches and drag the whole funnel's
+   * denominator with them.
+   */
+  it('GET /analytics/config?d=1 counts a refused launch on the same row, not another launch', async () => {
+    await mongo!.collections.boots_daily.deleteMany({});
+    await fetch(`${base}/analytics/config?p=web`);
+    await fetch(`${base}/analytics/config?p=web&d=1`);
+    await fetch(`${base}/analytics/config?p=web&d=0`); // anything but `1` is an ordinary launch
+
+    await new Promise((r) => setTimeout(r, 150));
+    const docs = await mongo!.collections.boots_daily.find({}).toArray();
+    expect(docs).toHaveLength(1);
+    expect(docs[0]).toMatchObject({ platform: 'web', count: 2, declined: 1 });
+  });
+
+  it('clamps the platform on the refusal tick too — it mints document _ids just like a launch does', async () => {
+    // The `?p=` allowlist exists because this endpoint needs no auth and its value becomes part of
+    // a document `_id`. `?d=1` reaches the same upsert, so an unclamped platform there would be the
+    // same unbounded-document hole through a second door.
+    await mongo!.collections.boots_daily.deleteMany({});
+    await fetch(`${base}/analytics/config?p=../../etc/passwd&d=1`);
+
+    await new Promise((r) => setTimeout(r, 150));
+    const docs = await mongo!.collections.boots_daily.find({}).toArray();
+    expect(docs.map((d) => d.platform)).toEqual(['unknown']);
+    expect(docs[0]).toMatchObject({ count: 0, declined: 1 });
+  });
+
   // ─── Event ingestion ────────────────────────────────────────────────────────────
 
   it('POST /analytics/events ingests event batch → 200', async () => {

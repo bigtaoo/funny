@@ -40,12 +40,20 @@ notebook_wars_analytics
 │          ip?, geo_country?, geo_region?, geo_city? }
 │       索引：{ started_at: -1 } / { device_id: 1, started_at: -1 } / { ip: 1, started_at: -1 }
 │
-└── funnels_daily  每日预聚合（永久，ETL job 每小时跑）
-        { date, platform, funnel_step, count, conversion_rate? }
-        索引：{ date: -1, platform: 1 }
+├── funnels_daily  每日预聚合（永久，ETL job 每小时跑）
+│       { date, platform, funnel_step, count, conversion_rate? }
+│       索引：{ date: -1, platform: 1 }
+│
+└── boots_daily    启动计数（永久，2026-09-20；见 ANALYTICS_DESIGN §3.6b / §3.6c）
+        { _id: `${date}|${platform}`, date, platform, count, declined?, updated_at }
+        索引：{ date: -1 }（_id 本身就是 (date, platform)，upsert 不需要额外索引）
+        **只有这六列**：这是同意墙之前唯一能记的东西，没有 device_id、没有 IP、没有账号。
+        写入者是 `GET /analytics/config`（每次启动必发、在年龄门/同意墙之前、无需同意）。
+        `declined` 是 `count` 的**子集**（拒绝埋点那拨人的启动次数，2026-09-21 加，
+        `?d=1` 那次请求写它、且**不**再写 `count`）；老文档里没有这一列，读成 0。
 ```
 
-关卡/教程/场景细粒度漏斗（§9.7）与设备/地理分布（§9.8）都是**实时聚合查询**（不经 ETL 预聚合），直接查 `events` 集合。
+关卡/教程/场景细粒度漏斗（§9.7）、设备/地理分布（§9.8）、启动漏斗（§9.9）与加载时长（§9.10）都是**实时聚合查询**（不经 ETL 预聚合），直接查 `events`（`boots_daily` 只在 §9.9 里被读一次）。
 
 ### 6.3 TTL 策略
 
@@ -54,6 +62,7 @@ notebook_wars_analytics
 | `events` | 90 天 | 原始事件量大，超期分析价值低 |
 | `sessions` | 永久 | 轻量，留存/DAU 计算需要 |
 | `funnels_daily` | 永久 | 聚合结果，体积小 |
+| `boots_daily` | 永久 | 一天几行数字，要的就是长期趋势 |
 
 ---
 
@@ -64,7 +73,7 @@ notebook_wars_analytics
 ```
 server/analyticsvc/   (第九 workspace @nw/analyticsvc, CJS)
 ├── config.ts         NW_ANALYTICS_PORT / NW_ANALYTICS_MONGO_*
-├── db.ts             MongoDB 连接 + 3 个 collections + 索引
+├── db.ts             MongoDB 连接 + 4 个 collections + 索引
 ├── service.ts        ingestEvents() / getConfig() / queryFunnel()
 ├── httpApi.ts        node:http + 路由（/health, /analytics/config, /analytics/events, /internal/query）
 └── index.ts          启动
@@ -294,7 +303,8 @@ cohort（某日活跃设备）
 回答「玩家**第一次进游戏**都做了什么、在哪一步流失、多少人过了新手引导」。`AnalyticsService.queryFirstSession(days)` 先取每个设备**最早的 `session_start`**，只保留其首次会话落在窗口 `[今起前 days 天, 今日结束]` 内的设备（= 新用户 cohort），随后所有统计**只看这一次首次会话**（按 `session_id` 关联，与老用户彻底隔离）。
 
 - **新手引导漏斗** `funnel`（有序、逐步转化）：`ONBOARDING_STEPS`（`service.ts`）= 打开 → **看完/跳过 intro** → 开始引导 → **完成引导** → 首战 → 首通。相邻步转化率定位首日流失点；`tutorial_complete ÷ tutorial_start` 即引导完成率。步骤判定基于首次会话的事件集合，改 `ONBOARDING_STEPS` 一处即可增删步骤。
-  - **采样一致性（关键）**：漏斗每步都取自 **100% 采样事件**（`session_start / intro_complete|intro_skip / tutorial_start / tutorial_complete / game_start / level_complete`，见 `DEFAULT_CONFIG`），各步计数才可直接相比。**故意不含**进大厅这类 `screen_view` 派生里程碑——`screen_view` 只 5% 采样，混进来会把采样损耗误显示成流失悬崖。`intro_seen` 步骤是例外：它读的是专属 `intro_complete`/`intro_skip` 事件而非 `screen_view`，design-doc-audit-2026-07 补入（此前这一步完全没数据，见 §5.6 事件表、`ONBOARDING_DESIGN.md` §7 的核实记录）。`tutorial_start/complete` 本来漏配、回落到 `defaultSample=0.1`，此前已一并提到 1.0（否则引导完成率失真）。
+  - **采样一致性（关键）**：漏斗每步都取自 **100% 采样事件**（`session_start / intro_complete|intro_skip / tutorial_start / tutorial_complete / game_start / level_complete`，见 `DEFAULT_CONFIG`），各步计数才可直接相比。**故意不含**进大厅这类 `screen_view` 派生里程碑——`screen_view` 只 5% 采样，混进来会把采样损耗误显示成流失悬崖。`intro_seen` 步骤是例外：它读的是专属 `intro_complete`/`intro_skip` 事件而非 `screen_view`，design-doc-audit-2026-07 补入（此前这一步完全没数据，见 §5.6 事件表、`ONBOARDING_DESIGN.md` §7 的核实记录）。
+  - ⚠️ **补入之后它仍然恒为 0，直到 2026-09-20**：那两个事件发生在同意墙之前，被 `track()` 的同意门原地丢弃（详见 §3.6）。**「事件已接线」不等于「事件到得了服务器」**——核一条埋点要核到它穿过所有门为止，别停在有 `analytics.track` 调用这一步。`tutorial_start/complete` 本来漏配、回落到 `defaultSample=0.1`，此前已一并提到 1.0（否则引导完成率失真）。
 - **首会话行为分布** `actions`：首次会话里命中的场景（`screen_view` 的 scene，`kind:'scene'`）与语义动作（除 `session_start/session_end/screen_view/churn_signal` 外的全部事件名，含 `ui_click`，`kind:'action'`）各自的去重设备数 + 占 cohort 比例，按覆盖降序。回答「首日玩家都点了哪些功能」。
   - action 行多为 100% 采样事件（`game_start/shop_buy/gacha_draw/tutorial_*/ui_click…`），可信；**scene 行来自 5% 采样的 `screen_view`，系统性欠采**（ops 卡片已标注）。因此「首日点了哪个按钮」主要看 `ui_click`（如 `lobby.shop`）与语义动作，而非 scene 行。
 - **口径注意**：「最早」仅在事件保留窗口内判定（events TTL=90 天）。真正首次会话早于保留期、却在窗口内回流的设备，不会被误判为新用户。
@@ -335,6 +345,38 @@ cohort（某日活跃设备）
 **同批修掉的 `device_type` 误判**：安卓平板不带手机才有的 `Mobile` token，也不带 `Tablet` token，而原规则把 `Mobi|Android` 写成同一个或分支——于是**每一台安卓平板都被记成手机**。现改为 `Android` 命中后再看有无 `Mobi`。这条与客户端 `net/anomaly/deviceContext.ts` 的 `classify()` 刻意保持一致：两者对同一次会话回答同一个问题，互相矛盾比各自粗一点更糟，测试里有一条用例把两边钉在一起。
 
 **IP 地理定位 + 账号防护**：`server/analyticsvc/src/httpApi.ts` 的 `POST /analytics/events` 从 `X-Forwarded-For`（Caddy 反代自动注入）取客户端 IP，存入 `EventDoc.ip`/`SessionDoc.ip`（`{ ip: 1, ts: -1 }` / `{ ip: 1, started_at: -1 }` 索引，供后续查「同一 IP 下有几个账号/设备」这类风控场景使用），并用 `geoip-lite`（离线库，无外部网络调用）解析出 `geo_country/geo_region/geo_city`。`GET /internal/query?type=geo_dist` 按国家分组，ops 新增「Geo (country) distribution」卡；原有的「Region distribution」卡实际统计的是 `locale`（语言码）而非地理位置，已改名为「Locale distribution」以免混淆。
+
+### 9.9 启动漏斗（`type=boot_funnel`，2026-09-20）
+
+本服务里**唯一分母不是埋点事件**的查询，因为它要数的那拨人不发埋点事件。详见
+[`ANALYTICS_DESIGN.md`](ANALYTICS_DESIGN.md) §3.6b。
+
+按 (日期, 平台) 出行：`boots`（`boots_daily` 计数）/ `sessions`（`session_start` **条数**）/
+`declined`（`boots_daily.declined`，**`boots` 的子集**）/ `consents`（`gdpr_consent` 条数）/
+`reach_rate = sessions/boots`。
+
+`reach_rate` **故意不改口径**（仍是 `sessions/boots`）：它已经在趋势图里躺了一段时间，
+换分母等于把历史悄悄改写。要看"能报的人里有多少真报了"，自己拿 `sessions/(boots − declined)` 算。
+ops 那边扣的是 `Lost = boots − sessions − declined`（§3.6c）。
+
+实现上是**外连接**（`analyticsvc/service/traffic.ts`）：两侧任意一边出现过的 (日期, 平台) 都出一行。
+内连接会正好丢掉这张表最有价值的那一行——**有启动、零会话的那天**。反过来「有会话、没计数」
+也出行（老客户端不发 `?p=`、或者计数写失败），这时 `reach_rate` 留空而不是编一个出来。
+
+### 9.10 加载时长（`type=load_time`，2026-09-20）
+
+按平台给 `samples / p50 / p75 / p90 / p95` + 各阶段均值 + 直方图 + `abandoned`。
+事件定义见 [`ANALYTICS_DESIGN.md`](ANALYTICS_DESIGN.md) §5.1b。
+
+三个实现决定，都在 `analyticsvc/service/dist.ts`：
+
+- **百分位读直方图，不用 `$percentile`**：聚合里把 `props.total_ms` 按 100ms 分桶（`$ceil`，
+  桶标签是**闭上界**——用 `$floor` 的话每个整百值都会高一桶，所有百分位一起漂移），
+  百分位在 JS 里按累计计数读出来。代价是 100ms 精度，换来内存**按桶数封顶**（`$push` 每条一个
+  子文档，忙一周就能顶到 16MB 文档上限）、不吃 MongoDB 版本，而且顺手就有了 ops 要的那张直方图。
+- **每个阶段各自记 sum 和 n**，不是 `$avg` 也不是 `$push`：某平台没有的阶段（微信没有网络阶段）
+  必须**不参与自己的均值**，而不是按 0 平进去。
+- **`abandoned` 用事件对算，不用超时**：同一会话有 `boot` 无 `load_time` = 加载界面还开着就关了页面。
 
 ---
 
@@ -411,3 +453,55 @@ cohort（某日活跃设备）
 - `ONBOARDING_STEPS`（§9.6）新增 `intro_seen` 步骤（`intro_complete` 或 `intro_skip` 命中即算），首次纳入 intro 到「首次会话新手引导漏斗」。
 - 新增查询类型 `GET /internal/query?type=feature_guide_funnel`（`AnalyticsService.queryFeatureGuideFunnel`，写法同 `queryLevelFunnel`），ops「Analytics」页新增对应卡片。字段定义见 §5.9，查询说明见 §9.7。
 - 登录方式（试玩/匿名/正式）节点仍未接专属事件——优先级较低，本次不强制，留给后续迭代（`ONBOARDING_DESIGN.md` §7 已记录）。
+
+### 12.6 上架前埋点体检：三处让漏斗读数失真的硬伤 + 登录/匹配两个盲区（2026-09-20）
+
+上架前按「流失点数据齐不齐」逐条核对代码（不是核文档），发现的不是缺口而是**三处会让现有报表给出错误
+数字**的问题，都已修：
+
+| # | 问题 | 后果 | 修法 |
+|---|---|---|---|
+| 1 | 同意墙之前 `track()` 直接丢弃 | §9.6 `intro_seen` 对**每个新用户**恒 0，下一步转化率变 `undefined` | 同意前缓冲，接受时补发（§3.6） |
+| 2 | 22 个事件不在 `DEFAULT_CONFIG` 里 | 全部付费 + 全部日常留存事件只留 10%，而漏斗按设备去重 → 随机化而非等比缩小 | 补齐并全部 1.0（§5.4） |
+| 3 | `shop_open` 0.5 vs `shop_buy` 1.0 | §9.3 经济漏斗转化率虚高约 2×；`source` 从未填过 | 两端同率；`source` 串通（§5.4） |
+
+同批补的两个盲区：**登录/注册结果**（`login_submit`/`login_ok`/`login_fail`/`login_skip`，§5.6）与
+**排位队列放弃**（`pvp_queue_cancel`/`pvp_match_bot`/`pvp_room_join`/`pvp_room_error`，§5.5）。
+
+**装了门禁**：`client/test/analyticsEventConfig.test.ts` 双向比对「客户端发的事件名」与
+`DEFAULT_CONFIG` 的键，并钉死漏斗关键事件必须 `sample: 1.0`。问题 2、3 和两个死条目
+（`upgrade`/`recharge`，§12.1 曾写作已接线）都是它一跑就红的东西——**这类漂移靠读文档发现不了，
+因为文档描述的正是本该成立的状态**。
+
+**当时仍然开着的**（四条，全部在 §12.7 做掉了）：
+- 年龄门/同意弹窗上直接走掉的人没有分母（§3.6 末尾），要服务端加无个人数据的启动计数。
+- 启动/加载阶段零观测：没有 boot / first_frame / load_time 事件，"打开了页面但没撑到进游戏"只能翻反代日志。
+- 崩溃管道（`/client/anomaly`）与埋点管道没有共同 id，答不了「闪退的人是不是当场流失」。
+- `churn_signal` 的 `idle_10min` 仍未实现（§12.2 起就延后）。
+
+### 12.7 补齐 §12.6 留下的四个盲区（2026-09-20，同日第二轮）
+
+四条一起做，因为它们是同一件事的四个面：**玩家开始玩之前和停止玩之后，我们什么都不知道**。
+
+| # | 盲区 | 做法 | 正文 |
+|---|---|---|---|
+| 1 | 同意墙之前走掉的人没有分母 | `GET /analytics/config` 上加 `?p=`，服务端在 `boots_daily` 按 (日期,平台) `$inc`；查询 `type=boot_funnel` | §3.6b / §9.9 |
+| 2 | 启动/加载零观测 | `boot` / `first_frame` / `load_time` 三条事件 + 分阶段耗时；查询 `type=load_time`（p50/75/90/95 + 阶段均值 + 直方图 + 放弃数） | §5.1b / §9.10 |
+| 3 | 崩溃与埋点无共同 id | 会话 id 提到 `analytics/session.ts`，两条管道同盖一个 sid（Loki 侧 `sid=`）；外加 `prev_session_crash` 事件 | §5.6c |
+| 4 | `idle_10min` 一直没做 | `render/renderPolicy.ts` 的 `msSinceActivity` 由 `app.ts` 注入给 `analytics/idleWatch.ts` | §5.6a |
+
+**沿途修掉的一个结构性 bug**：`track()` 在 `init()` 之前是**直接扔**的。老玩家尤其致命——
+`createAppCore` 在 `init()` **上一行**就 `setConsent(true)`，于是同意分支被跳过，紧接着的
+`if (!queue || !sessionId) return` 把事件丢了，连缓冲都没进。而本轮新增的事件里，
+`boot` 和 `prev_session_crash` **按定义就发生在 `init()` 之前**——不修的话这两条对老玩家恒为零，
+而且和 §12.6 那三个问题是同一个品种：**报表照常出数，只是那一格永远是 0**。
+现在 `track()` 在「没同意」或「还没 init」两种状态下一律缓冲，`init()` 也改成**先补发再发
+`session_start`**，让队列保持时间顺序。
+
+**已经在客户端做掉的**：`showConsent` 的「仅必要」分支（2026-09-21，ANALYTICS §3.6c）——拒绝埋点照样进游戏，服务端这边没有新端点，只是 `POST /account/gdpr-consent` 现在也会收到 `false`。**同日补完**：拒绝的人已经从 §3.6b 的 `Lost` 里拆出来了——`GET /analytics/config?d=1` 在同一行上 `$inc { declined }`（仍然只有「日期/平台/计数」，仍然无鉴权、无 device_id、无 IP），`boot_funnel` 多一列 `declined`，ops 的 `Lost` 改成 `boots − sessions − declined`。
+
+新增覆盖：`client/test/analyticsBootTimeline.test.ts`（8）、`analyticsIdleWatch.test.ts`（7）、
+`analyticsConsentBuffer.test.ts` 加两条 pre-init 用例、`anomaly-chain.test.ts` 加三条 sid 用例、
+`server/analyticsvc/test/bootAndLoadTime.e2e.test.ts`（12）、`analytics.e2e.test.ts` 加 `?p=` 白名单、
+`metaserver/test/clientLog.test.ts` 加两条 sid 用例、`tools/ops/test/analytics.test.ts` 加 11 条。
+

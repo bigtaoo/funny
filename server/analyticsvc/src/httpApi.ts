@@ -35,6 +35,25 @@ function resolveGeo(ip: string | undefined): ResolvedGeo | undefined {
   return { ip, country: hit?.country || undefined, region: hit?.region || undefined, city: hit?.city || undefined };
 }
 
+/** Build targets the launch counter accepts. Anything else is bucketed rather than stored verbatim. */
+const BOOT_PLATFORMS = new Set(['web', 'wechat', 'crazygames']);
+
+/**
+ * What a config request contributes to the launch counter: the `?p=` build target, and whether `?d=1`
+ * marks it as a launch by a player who refused analytics (ANALYTICS_DESIGN §3.6c).
+ *
+ * The platform allowlist is the point: this value becomes part of a document `_id`, on an endpoint
+ * that needs no auth, so an unclamped string would let anyone mint unbounded documents in
+ * `boots_daily` (and scatter the real counts across near-miss spellings). An unrecognised or missing
+ * value counts as `unknown`, which is still a launch and still belongs in the denominator. `d` adds
+ * no cardinality at all — it is one bit choosing which counter on an existing document to bump.
+ */
+function bootTick(rawUrl: string | undefined): { platform: string; declined: boolean } {
+  const q = new URL(rawUrl ?? '/', 'http://x').searchParams;
+  const p = q.get('p') ?? '';
+  return { platform: BOOT_PLATFORMS.has(p) ? p : 'unknown', declined: q.get('d') === '1' };
+}
+
 function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     let body = '';
@@ -120,6 +139,23 @@ export function startHttpApi(
 
       // ─── GET /analytics/config (no auth, accessible anonymously) ─────────────────────────
       if (method === 'GET' && url === '/analytics/config') {
+        // Count the launch (ANALYTICS_DESIGN §3.6b). This request is the only one every launch makes
+        // *before* the age and consent gates, which makes it the only denominator for the players who
+        // answer neither — they never reach session_start, so every other query on this service
+        // reports them as if they had not existed. Nothing identifying is recorded: only the date and
+        // the build target, and the client is not asked for anything else.
+        //
+        // `?d=1` is the same request made a second time by a client whose player refused analytics
+        // (§3.6c): it bumps the refusal counter on the same document instead of the launch counter,
+        // so the launch is counted once and the ops funnel can tell "left at a gate" from "playing,
+        // reporting nothing". Refusal cannot be sent as an event — it is the one answer that would
+        // have to use the thing it refuses — so it arrives here, where nobody is stored either way.
+        //
+        // Fire-and-forget, deliberately: a Mongo hiccup must cost a tick in a trend, never the config
+        // response — a client that fails to get this body runs the whole session with analytics off.
+        const tick = bootTick(req.url);
+        void (tick.declined ? svc.countDeclinedLaunch(tick.platform) : svc.countBoot(tick.platform))
+          .catch(() => {/* silent */});
         return send(res, 200, ok(svc.getConfig()));
       }
 
@@ -237,6 +273,14 @@ export function startHttpApi(
         if (type === 'badge_dist') {
           const badge_dist = await svc.queryBadgeDist(days);
           return send(res, 200, ok({ type, badge_dist }));
+        }
+        if (type === 'boot_funnel') {
+          const boot_funnel = await svc.queryBootFunnel(days);
+          return send(res, 200, ok({ type, boot_funnel }));
+        }
+        if (type === 'load_time') {
+          const load_time = await svc.queryLoadTime(days);
+          return send(res, 200, ok({ type, load_time }));
         }
         return sendErr(res, ErrorCode.BAD_REQUEST, `unknown query type: ${type}`);
       }

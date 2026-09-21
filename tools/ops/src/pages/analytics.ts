@@ -6,8 +6,9 @@
 // `distribution()`, which is what pulling the arithmetic out made visible.
 import { clear, h, pill } from '../dom';
 import {
-  analyticsUnavailable, badgeModes, badgePivot, barRatio, barWidthPx, distribution, eventCountGrid,
-  funnelPivot, funnelPlatforms, levelFunnelRows, loginHourRows, metricRows, ONBOARDING_LABELS,
+  analyticsUnavailable, badgeModes, badgePivot, barRatio, barWidthPx, bootFunnelRows, distribution,
+  eventCountGrid, funnelPivot, funnelPlatforms, levelFunnelRows, LOAD_TIME_PHASE_LABELS, loadTimeRows,
+  loginHourRows, metricRows, ms, ONBOARDING_LABELS,
   retentionCell, RETENTION_OFFSETS, retentionRows, sectionRows, sectionValue, type ShareRow,
   stepFunnelRows, TUTORIAL_LABELS,
 } from '../logic/analytics';
@@ -41,6 +42,7 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
     const [
       summary, evCounts, dau, funnel, regions, osDist, loginHour, retention, firstSession,
       levelFunnel, tutorialFunnel, sceneFunnel, featureGuideFunnel, browserDist, deviceTypeDist, webviewDist, geoDist, badgeDist,
+      bootFunnel, loadTime,
     ] = await Promise.allSettled([
       api.analyticsSummary(),
       api.analyticsEvents('event_counts', days),
@@ -60,6 +62,8 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
       api.analyticsEvents('webview_dist', days),
       api.analyticsEvents('geo_dist', days),
       api.analyticsEvents('badge_dist', days),
+      api.analyticsEvents('boot_funnel', days),
+      api.analyticsEvents('load_time', days),
     ]);
 
     // Monitoring overview (self-collected metrics + tickets)
@@ -82,6 +86,81 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
     if (analyticsUnavailable(evCounts)) {
       body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, 'Analytics service not configured (NW_ANALYTICS_BASE_URL)')));
       return;
+    }
+
+    // Launch funnel (ANALYTICS_DESIGN §3.6b). The only card on this page whose denominator is not an
+    // analytics event: `Launches` is the unauthenticated counter on GET /analytics/config, which
+    // every client hits before the age and consent gates. `Lost` is therefore the one measurement of
+    // the players who open the game and leave without a single event being recorded about them —
+    // every other card on this page starts counting at session_start and cannot see them at all.
+    // `Declined` is carved out of that gap (§3.6c): those players did answer and did stay — they
+    // just refused telemetry — and leaving them inside `Lost` made the gate bounce look worse than
+    // it is, in a way that grows with every refusal the game keeps.
+    const launches = bootFunnelRows(sectionRows(bootFunnel, (v) => v.boot_funnel));
+    if (launches.length) {
+      const t = h('table', {},
+        h('tr', {},
+          h('th', {}, 'Date'),
+          h('th', {}, 'Platform'),
+          h('th', { style: 'text-align:right' }, 'Launches'),
+          h('th', { style: 'text-align:right' }, 'Sessions'),
+          h('th', { style: 'text-align:right', title: 'Launches by players who chose "essentials only" — they are playing, they just report nothing (ANALYTICS_DESIGN §3.6c)' }, 'Declined'),
+          h('th', { style: 'text-align:right', title: 'Launches that never reported anything and were not refusals — left at the age or consent gate' }, 'Lost'),
+          h('th', { style: 'text-align:right', title: 'gdpr_consent — first-time acceptances' }, 'Consents'),
+          // `bar()` prints the percentage next to the bar, so this column needs no separate pct cell.
+          h('th', {}, 'Reached'),
+        ),
+      );
+      for (const r of launches) {
+        t.append(h('tr', {},
+          h('td', {}, r.date),
+          h('td', {}, r.platform),
+          h('td', { style: 'text-align:right' }, String(r.boots)),
+          h('td', { style: 'text-align:right' }, String(r.sessions)),
+          h('td', { style: 'text-align:right' }, String(r.declinedCount)),
+          h('td', { style: 'text-align:right' }, String(r.lost)),
+          h('td', { style: 'text-align:right' }, String(r.consents)),
+          h('td', {}, bar(r.reachRate)),
+        ));
+      }
+      body.append(h('div', { class: 'card' },
+        h('div', { class: 'muted' }, `Launch funnel — launches vs sessions that reported anything (last ${days} days)`),
+        t,
+      ));
+    }
+
+    // Load time (ANALYTICS_DESIGN §5.1b). Percentiles, not averages: startup is long-tailed and a
+    // mean describes nobody. `Gave up` counts sessions that emitted `boot` and never `load_time`.
+    const loads = loadTimeRows(sectionRows(loadTime, (v) => v.load_time));
+    if (loads.length) {
+      const t = h('table', {},
+        h('tr', {},
+          h('th', {}, 'Platform'),
+          h('th', { style: 'text-align:right' }, 'Launches'),
+          h('th', { style: 'text-align:right' }, 'p50'),
+          h('th', { style: 'text-align:right' }, 'p75'),
+          h('th', { style: 'text-align:right' }, 'p90'),
+          h('th', { style: 'text-align:right' }, 'p95'),
+          ...LOAD_TIME_PHASE_LABELS.map((p) => h('th', { style: 'text-align:right', title: p.title }, p.label)),
+          h('th', { style: 'text-align:right', title: 'Sessions that started loading and closed the page before the first screen' }, 'Gave up'),
+        ),
+      );
+      for (const r of loads) {
+        t.append(h('tr', {},
+          h('td', {}, r.platform),
+          h('td', { style: 'text-align:right' }, String(r.samples)),
+          h('td', { style: 'text-align:right' }, ms(r.p50_ms)),
+          h('td', { style: 'text-align:right' }, ms(r.p75_ms)),
+          h('td', { style: 'text-align:right' }, ms(r.p90_ms)),
+          h('td', { style: 'text-align:right' }, ms(r.p95_ms)),
+          ...r.phases.map((v) => h('td', { style: 'text-align:right' }, ms(v))),
+          h('td', { style: 'text-align:right' }, r.abandoned > 0 ? `${r.abandoned} (${pct(r.abandonRate)})` : '0'),
+        ));
+      }
+      body.append(h('div', { class: 'card' },
+        h('div', { class: 'muted' }, `Load time — total percentiles and the mean of each phase (last ${days} days)`),
+        t,
+      ));
     }
 
     // DAU trend

@@ -19,7 +19,7 @@ function make() {
   const events: Array<{ event: string; payload: unknown }> = [];
   for (const ev of [
     'bone:select', 'time:change', 'play:state', 'preview:mode', 'editor:mode',
-    'rig:change', 'binding:change', 'attachment:change',
+    'rig:change', 'binding:change', 'attachment:change', 'bindpick:change',
   ] as const) {
     bus.on(ev, (p: unknown) => events.push({ event: ev, payload: p }));
   }
@@ -311,5 +311,86 @@ describe('attachment points', () => {
     state.setAllAttachmentPoints([]);
 
     expect(state.attachmentPoints.size).toBe(0);
+  });
+
+  // ── Two-point bind picking ──────────────────────────────────────────────────
+
+  describe('two-point bind picking', () => {
+    const pt = (x: number, y: number) => ({ tex: { x, y }, world: { x: x * 2, y: y * 2 } });
+
+    it('starts with no pick in progress', () => {
+      expect(make().state.bindPick).toBeNull();
+    });
+
+    it('startBindPick arms the bone and announces it', () => {
+      const { state, events } = make();
+      state.startBindPick('r_upper_leg');
+
+      expect(state.bindPick).toEqual({ boneId: 'r_upper_leg', fitLength: false, first: null });
+      expect(events).toEqual([{ event: 'bindpick:change', payload: undefined }]);
+    });
+
+    it('snapshots bindFitLength at arm time rather than reading it at solve time', () => {
+      const { state } = make();
+      state.setBindFitLength(true);
+      state.startBindPick('r_upper_leg');
+      state.setBindFitLength(false);
+
+      expect(state.bindPick!.fitLength).toBe(true);
+    });
+
+    it('setBindPickFirst records the point and announces it', () => {
+      const { state, events } = make();
+      state.startBindPick('r_upper_leg');
+      events.length = 0;
+      state.setBindPickFirst(pt(30, 40));
+
+      expect(state.bindPick!.first).toEqual(pt(30, 40));
+      expect(state.bindPick!.boneId).toBe('r_upper_leg');
+      expect(events).toEqual([{ event: 'bindpick:change', payload: undefined }]);
+    });
+
+    it('setBindPickFirst without an armed pick is a no-op, not a half-built pick', () => {
+      const { state, events } = make();
+      state.setBindPickFirst(pt(1, 2));
+
+      expect(state.bindPick).toBeNull();
+      expect(events).toEqual([]);
+    });
+
+    it('re-arming discards a half-finished pick — its first point only means something paired with its own second', () => {
+      const { state } = make();
+      state.startBindPick('r_upper_leg');
+      state.setBindPickFirst(pt(30, 40));
+      state.startBindPick('r_lower_leg');
+
+      expect(state.bindPick).toEqual({ boneId: 'r_lower_leg', fitLength: false, first: null });
+    });
+
+    it('cancelBindPick clears and announces', () => {
+      const { state, events } = make();
+      state.startBindPick('r_upper_leg');
+      events.length = 0;
+      state.cancelBindPick();
+
+      expect(state.bindPick).toBeNull();
+      expect(events).toEqual([{ event: 'bindpick:change', payload: undefined }]);
+    });
+
+    it('cancelBindPick with nothing armed stays silent', () => {
+      const { state, events } = make();
+      state.cancelBindPick();
+
+      expect(events).toEqual([]);
+    });
+
+    it('bindFitLength is a sticky preference and deliberately does NOT emit — nothing redraws on it', () => {
+      const { state, events } = make();
+      expect(state.bindFitLength).toBe(false);
+
+      state.setBindFitLength(true);
+      expect(state.bindFitLength).toBe(true);
+      expect(events).toEqual([]);
+    });
   });
 });

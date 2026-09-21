@@ -1,5 +1,5 @@
 // analyticsvc MongoDB (A9-1).
-// Dedicated database notebook_wars_analytics, three collections: events (TTL 90d) / sessions / funnels_daily.
+// Dedicated database notebook_wars_analytics, four collections: events (TTL 90d) / sessions / funnels_daily / boots_daily.
 import { MongoClient, type Db, type Collection } from 'mongodb';
 
 /** Raw event document (TTL 90 days). */
@@ -66,6 +66,36 @@ export interface SessionDoc {
   geo_city?: string;
 }
 
+/**
+ * Daily launch counter, one document per (date, platform) — the denominator for everyone who opens
+ * the game and never answers the age / consent gates (ANALYTICS_DESIGN §3.6b).
+ *
+ * Deliberately **not** an `events` document and deliberately not per-device: `GET /analytics/config`
+ * is the one request every launch makes before those gates, and it carries no identity at all — no
+ * device id, no JWT, and this collection stores no IP. A counter is the most that can be recorded
+ * there without consent, and it is enough: compare it with the `session_start` **event count** (also
+ * one per launch) and the difference is the cohort that left at a gate. Comparing it with distinct
+ * devices would be comparing launches with people.
+ *
+ * Permanent, like funnels_daily — it is a couple of numbers a day, and the whole point is the long trend.
+ */
+export interface BootDailyDoc {
+  _id: string; // `${date}|${platform}`
+  date: string;
+  platform: string;
+  count: number;
+  /**
+   * Of those launches, the ones a player who refused analytics made ("essentials only",
+   * ANALYTICS_DESIGN §3.6c). Same three columns as `count` — date, platform, a number — written by
+   * the same unauthenticated request, because refusing telemetry cannot be reported *as* telemetry.
+   *
+   * Without it these launches are indistinguishable from the age/consent-gate bounce: both reach the
+   * counter and neither ever reaches `session_start`. Absent on documents written before 2026-09-21.
+   */
+  declined?: number;
+  updated_at: Date;
+}
+
 /** Daily funnel pre-aggregation (permanent; ETL job runs every hour). */
 export interface FunnelDailyDoc {
   _id?: string;
@@ -80,6 +110,7 @@ export interface AnalyticsCollections {
   events: Collection<EventDoc>;
   sessions: Collection<SessionDoc>;
   funnels_daily: Collection<FunnelDailyDoc>;
+  boots_daily: Collection<BootDailyDoc>;
 }
 
 export interface AnalyticsMongo {
@@ -105,6 +136,7 @@ export async function createAnalyticsMongo(uri: string, dbName: string): Promise
   const events = db.collection<EventDoc>('events');
   const sessions = db.collection<SessionDoc>('sessions');
   const funnels_daily = db.collection<FunnelDailyDoc>('funnels_daily');
+  const boots_daily = db.collection<BootDailyDoc>('boots_daily');
 
   async function ensureIndexes(): Promise<void> {
     // events: TTL 90 days (7776000s); query indexes
@@ -126,12 +158,15 @@ export async function createAnalyticsMongo(uri: string, dbName: string): Promise
     await sessions.createIndex({ ip: 1, started_at: -1 }, { sparse: true }); // account-protection: find sessions sharing an IP
     // funnels_daily
     await funnels_daily.createIndex({ date: -1, platform: 1 });
+    // boots_daily: the _id is already `${date}|${platform}`, so the upsert needs no index of its
+    // own; this one serves the range scan the boot_funnel query does.
+    await boots_daily.createIndex({ date: -1 });
   }
 
   return {
     client,
     db,
-    collections: { events, sessions, funnels_daily },
+    collections: { events, sessions, funnels_daily, boots_daily },
     ensureIndexes,
     close: () => client.close(),
   };

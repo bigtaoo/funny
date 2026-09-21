@@ -30,6 +30,7 @@
       "renderer/**/*"
     ],
     "win": {
+      "icon": "build/icon.ico",
       "verifyUpdateCodeSignature": false
     },
     "publish": {

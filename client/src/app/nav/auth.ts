@@ -8,7 +8,7 @@ import { showToastMessage } from '../../net/log';
 import type { AppCtx, Nav } from '../appCtx';
 import {
   SEEN_INTRO_FLAG, TOKEN_KEY, PLAYER_NAME_KEY, PLAYER_PUBLIC_ID_KEY, PLAYER_AVATAR_KEY, RENAME_COST,
-  FREE_RENAME_KEY,
+  FREE_RENAME_KEY, GDPR_CONSENT_FLAG,
 } from '../appConstants';
 
 /**
@@ -122,6 +122,18 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
       ...(loggedIn && !!api ? { onDeleteAccount: doDeleteAccount } : {}),
       // Replay tutorial (ONBOARDING_DESIGN §3.4): directly re-runs the dedicated tutorial level (never fails, can be skipped again).
       onReplayTutorial: () => nav.goTutorial(),
+      // Analytics consent, withdrawable and re-grantable (COMPLIANCE_GLOBAL §3.3). Same three
+      // writes the consent gate makes, minus the `gdpr_consent` event: re-granting here is not a
+      // first-launch conversion and would distort the funnel's consent count (ANALYTICS §3.6c).
+      // Withdrawing here likewise does not tick `countDeclinedLaunch()`: this launch already emitted
+      // `session_start` and is counted under `Sessions`, so marking it a refused launch too would
+      // subtract it from the funnel twice. Their *next* launch ticks it, from the gate.
+      getAnalyticsConsent: () => saveManager.getFlag(GDPR_CONSENT_FLAG) === true,
+      onSetAnalyticsConsent: (granted: boolean) => {
+        saveManager.setFlag(GDPR_CONSENT_FLAG, granted);
+        analytics.setConsent(granted);
+        if (api) void api.recordGdprConsent(granted).catch(() => { /* best-effort; flag still syncs via SaveManager */ });
+      },
       // Safe-area diagnostics (layout/viewportGeometry.ts): the only place a player on a device we
       // do not hold can read back the numbers the layout was built from.
       getViewportGeometry: () => platform.getViewportGeometry?.(),
@@ -176,16 +188,28 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
     views.showLogin({
       openTextInput: (o) => platform.openTextInput(o),
       ...(opts?.notice ? { initialNotice: opts.notice } : {}),
-      onPlayOffline() { nav.goLobby({ offline: true }); },
-      onLogin: (loginId, password) => doAuth(() => api!.login(loginId, password), loginId),
+      onPlayOffline() { analytics.track('login_skip', {}); nav.goLobby({ offline: true }); },
+      onLogin: (loginId, password) => doAuth('login', () => api!.login(loginId, password), loginId),
       onRegister: (loginId, password, displayName) =>
-        doAuth(() => api!.register(loginId, password, displayName), displayName || loginId),
+        doAuth('register', () => api!.register(loginId, password, displayName), displayName || loginId),
     });
   }
 
-  async function doAuth(call: () => Promise<AuthResult>, name?: string): Promise<AuthOutcome> {
+  /**
+   * `mode` is the analytics dimension only (ANALYTICS_DESIGN §5.6): login vs register is the first
+   * hard wall a new player meets, and before 2026-09-20 LoginScene emitted nothing but a
+   * `screen_view` — how many players got past it, and which error stopped the rest, was unknowable.
+   *
+   * Success and failure are two event NAMES rather than one event with an `ok` flag, because the
+   * first-session breakdown (§9.6 `actions`) counts distinct devices per event name and knows
+   * nothing about props: as one name the two would be indistinguishable in the one report where
+   * the new-user cohort is already isolated.
+   */
+  async function doAuth(mode: 'login' | 'register', call: () => Promise<AuthResult>, name?: string): Promise<AuthOutcome> {
+    analytics.track('login_submit', { mode });
     if (!api) {
       console.error('[auth] no API base configured (__NW_API_BASE__ empty) — request not sent');
+      analytics.track('login_fail', { mode, error: 'no_api_base' });
       return { ok: false, errorKey: 'auth.err.network', detail: 'API base not configured' };
     }
     try {
@@ -221,12 +245,16 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
       for (const [key, value] of Object.entries(preLoginFlags)) {
         if (value && saveManager.getFlag(key) !== true) saveManager.setFlag(key, true);
       }
+      analytics.track('login_ok', { mode });
       if (!offerResume(() => nav.goLobby({ offline: false }))) nav.goLobby({ offline: false });
       return { ok: true };
     } catch (e) {
       console.error('[auth] request failed', e);
       const detail =
         e instanceof ApiError ? `${e.code}: ${e.message}` : e instanceof Error ? e.message : String(e);
+      // The server's error *code*, not the translated message: the point is to tell "wrong password"
+      // (a player who will retry) from "email taken" or a network failure (players who leave).
+      analytics.track('login_fail', { mode, error: e instanceof ApiError ? e.code : 'network' });
       return { ok: false, errorKey: mapAuthError(e), detail };
     }
   }

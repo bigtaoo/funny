@@ -577,3 +577,152 @@ describe('InteractionController skin-mode click wiring', () => {
     expect(c.state.selectedBone).toBeNull();
   });
 });
+
+// Two-point bind end-to-end through the real mousedown handler: the artist points at the
+// two joints IN THE IMAGE and the binding that lands them on the bone's own two ends is
+// solved and committed. The solve's own maths is pinned in spriteGeometry.test.ts; what
+// this covers is the wiring — that the pick is modal, that the right numbers reach the
+// binding, and that the whole gesture is ONE undo step.
+describe('two-point bind', () => {
+  const TEX = 400;
+  const BONE = 'r_upper_leg';
+  const baseBinding: SpriteBinding = {
+    anchorX: 0.5, anchorY: 0.5, flipX: false, zOrder: 1, rotation: 0, scaleX: 1, scaleY: 1,
+  };
+
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  function makeBindController() {
+    const handlers: Record<string, (e: unknown) => void> = {};
+    const canvas = { addEventListener: (type: string, fn: (e: unknown) => void) => { handlers[type] = fn; } };
+    vi.stubGlobal('window', { addEventListener: () => {} });
+
+    const bus        = new EventBus<AppEvents>();
+    const state      = new AppState(bus);
+    const animCtrl   = new AnimationController(bus, state);
+    const cmdManager = new CommandManager(bus);
+    const renderer   = {
+      pixiApp:       { view: canvas },
+      toStageCoords: (clientX: number, clientY: number) => ({ x: clientX, y: clientY }),
+    };
+    const imageCtrl = {
+      getTexture:   (id: string) => (id === BONE ? { width: TEX, height: TEX } : undefined),
+      getAlphaMask: () => undefined,
+    };
+
+    state.setRootPos(0, 0);
+    state.setBinding(BONE, { ...baseBinding });
+    state.setEditorMode('skin');
+    state.setPreviewMode('sprite');
+    state.setSelectedBone(BONE);
+
+    new InteractionController(renderer as any, bus, state, animCtrl, cmdManager, imageCtrl as any);
+
+    // Same rest-pose frame the controller measures picks against, so a test can name a
+    // texture pixel and have the click land exactly there.
+    const pose  = Skeleton.computeFK(0, 0, new Map(), new Map()).get(BONE)!;
+    const frame = bindingToSpriteFrame(pose.sx, pose.sy, pose.wa, baseBinding, TEX, TEX);
+    const clickTex = (px: number, py: number) => {
+      const w = localPixelToWorld(frame, px, py);
+      handlers.mousedown({ button: 0, clientX: w.x, clientY: w.y });
+    };
+    const boneLen = Skeleton.BONE_MAP.get(BONE)!.len;
+
+    return { state, cmdManager, bus, clickTex, boneLen };
+  }
+
+  it('solves anchor, rotation and a uniform scale from the two picked pixels', () => {
+    const c = makeBindController();
+    c.state.startBindPick(BONE);
+
+    c.clickTex(200, 200);            // near joint: dead centre of the image
+    c.clickTex(200, 300);            // far joint: 100px straight down the image
+    const b = c.state.getBinding(BONE)!;
+
+    expect(b.anchorX).toBeCloseTo(0.5, 8);
+    expect(b.anchorY).toBeCloseTo(0.5, 8);
+    expect(b.rotation).toBeCloseTo(-90, 6);           // image points down; rotate it back onto the bone
+    expect(b.scaleX).toBeCloseTo(c.boneLen / 100, 8); // 100 image px must become the bone's length
+    expect(b.scaleY).toBeCloseTo(c.boneLen / 100, 8);
+    expect(c.state.bindPick).toBeNull();
+  });
+
+  it('is modal: a pick click neither re-selects a bone nor starts a drag', () => {
+    const c = makeBindController();
+    c.state.startBindPick(BONE);
+    c.state.setSelectedBone('spine');
+
+    c.clickTex(120, 90);
+
+    expect(c.state.selectedBone).toBe('spine');               // untouched by the hit-tests
+    expect(c.state.bindPick!.first!.tex.x).toBeCloseTo(120, 6);
+    expect(c.state.getBinding(BONE)).toEqual(baseBinding);    // nothing committed yet
+  });
+
+  it('commits the whole gesture as one undo step', () => {
+    const c = makeBindController();
+    c.state.startBindPick(BONE);
+    c.clickTex(200, 200);
+    c.clickTex(200, 300);
+
+    c.cmdManager.undo();
+
+    expect(c.state.getBinding(BONE)).toEqual(baseBinding);
+    c.cmdManager.redo();
+    expect(c.state.getBinding(BONE)!.rotation).toBeCloseTo(-90, 6);
+  });
+
+  it('with Fit bone to image, stretches the bone and leaves the image scale alone', () => {
+    const c = makeBindController();
+    c.state.setBindFitLength(true);
+    c.state.startBindPick(BONE);
+
+    c.clickTex(200, 200);
+    c.clickTex(200, 300);
+    const b = c.state.getBinding(BONE)!;
+
+    expect(b.scaleX).toBe(1);                                  // image untouched
+    expect(b.scaleY).toBe(1);
+    expect(b.rotation).toBeCloseTo(-90, 6);                    // orientation still solved
+    expect(c.state.getLengthScale(BONE)).toBeCloseTo(100 / c.boneLen, 8);
+  });
+
+  it('undoes the bone length together with the binding, not as a separate step', () => {
+    const c = makeBindController();
+    c.state.setBindFitLength(true);
+    c.state.startBindPick(BONE);
+    c.clickTex(200, 200);
+    c.clickTex(200, 300);
+
+    c.cmdManager.undo();
+
+    expect(c.state.getLengthScale(BONE)).toBe(1);
+    expect(c.state.getBinding(BONE)).toEqual(baseBinding);
+  });
+
+  it('keeps the good first pick when the second lands on the same spot', () => {
+    const c = makeBindController();
+    const errors: string[] = [];
+    c.bus.on('error', m => errors.push(m));
+    c.state.startBindPick(BONE);
+
+    c.clickTex(200, 200);
+    c.clickTex(200, 200);
+
+    expect(c.state.bindPick!.first!.tex.y).toBeCloseTo(200, 6);   // still armed, first pick intact
+    expect(c.state.getBinding(BONE)).toEqual(baseBinding);
+    expect(errors).toHaveLength(1);
+  });
+
+  it('aborts with an error when the armed bone has no image to point at', () => {
+    const c = makeBindController();
+    const errors: string[] = [];
+    c.bus.on('error', m => errors.push(m));
+    c.state.startBindPick('l_lower_arm');   // no texture on this slot
+
+    c.clickTex(200, 200);
+
+    expect(c.state.bindPick).toBeNull();
+    expect(errors).toHaveLength(1);
+  });
+});

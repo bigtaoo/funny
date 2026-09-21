@@ -13,7 +13,7 @@ import { wheelScrollY } from '../ui/wheelScroll';
 import type { SettingsSceneCallbacks } from './SettingsScene/types';
 import type { ITextInput } from '../platform/IPlatform';
 import { dispatchHit, hitAction, hitTest, inRect, type Hit } from '../ui/hits';
-import { drawProfile, drawLanguage, drawDataSaver, drawHelp, drawAccount, drawLegal, drawViewportDiagnostics, type PanelHost } from './SettingsScene/panels';
+import { drawProfile, drawLanguage, drawDataSaver, drawAnalyticsConsent, drawHelp, drawAccount, drawLegal, drawViewportDiagnostics, type PanelHost } from './SettingsScene/panels';
 import { drawAvatarPickerOverlay, type PickerHost } from './SettingsScene/avatarPicker';
 import { drawRenameOverlay, drawDeleteConfirm, type OverlayHost } from './SettingsScene/overlays';
 import { drawAudio, type AudioPanelHost, type AudioSlider } from './SettingsScene/audioPanel';
@@ -247,6 +247,7 @@ export class SettingsScene implements Scene {
     drawProfile(this.asPanelHost(), tbH);
     drawLanguage(this.asPanelHost());
     drawDataSaver(this.asPanelHost());
+    drawAnalyticsConsent(this.asPanelHost());
     drawAudio(this.asAudioHost());
     if (this.cb.onReplayTutorial) drawHelp(this.asPanelHost());
     drawAccount(this.asPanelHost());

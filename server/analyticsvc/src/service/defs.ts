@@ -1,6 +1,6 @@
 // analyticsvc shared declarations: the collection/sampling config, the event-ingestion and
-// query-result shapes, the hand-rolled UA parser, and the ordered step definitions behind every
-// funnel (onboarding / tutorial / scene / level / feature-guide). Pure data and types — no I/O,
+// query-result shapes, and the ordered step definitions behind every funnel (onboarding / tutorial /
+// scene / level / feature-guide). The UA parser moved to ./userAgent.ts. Pure data and types — no I/O,
 // no service state — imported by ../service.ts's mixins and re-exported from it for callers.
 import type { FunnelDailyDoc } from '../db';
 
@@ -33,15 +33,67 @@ export const DEFAULT_CONFIG: AnalyticsConfig = {
     level_complete: { sample: 1.0 },
     level_abandon:  { sample: 1.0 },
     card_play:      { enabled: false },
-    shop_open:      { sample: 0.5 },
+    // shop_open was 0.5 while shop_buy/shop_close are 1.0, which made the §9.3 economy funnel read
+    // roughly double the real conversion — the denominator was half-sampled and the numerator was not.
+    // Both ends of a funnel have to share a rate; the volume saved was never worth a wrong number.
+    shop_open:      { sample: 1.0 },
     shop_buy:       { sample: 1.0 },
     shop_close:     { sample: 1.0 },
     gacha_draw:     { sample: 1.0 },
-    recharge:       { sample: 1.0 },
-    upgrade:        { sample: 1.0 },
     friend_add:     { sample: 1.0 },
     pvp_room_create:{ sample: 1.0 },
     pvp_match_start:{ sample: 1.0 },
+    // Ranked-queue drop-off (ANALYTICS_DESIGN §5.5): leaving the queue, a failed friend-code join, and
+    // the bot fallback are the three ways a player who wanted a match does not get one.
+    pvp_queue_cancel: { sample: 1.0 },
+    pvp_room_join:    { sample: 1.0 },
+    pvp_room_error:   { sample: 1.0 },
+    pvp_match_bot:    { sample: 1.0 },
+    // Login/registration outcome (ANALYTICS_DESIGN §5.6): the first hard wall a new player meets.
+    login_submit:   { sample: 1.0 },
+    login_ok:       { sample: 1.0 },
+    login_fail:     { sample: 1.0 },
+    login_skip:     { sample: 1.0 },
+    // Purchases, ads and every retention claim (ANALYTICS_DESIGN §5.4). These were all missing from
+    // this table until 2026-09-20 and therefore fell back to defaultSample (0.1) — a 10% sample of a
+    // per-device de-duplicated funnel does not scale the bars down, it randomises whether a given
+    // device looks like it checked in at all. They are discrete, player-initiated, low-frequency
+    // actions: far below the ui_click volume that is already at 1.0.
+    iap_purchase:             { sample: 1.0 },
+    starter_buy:              { sample: 1.0 },
+    battlepass_buy:           { sample: 1.0 },
+    battlepass_claim:         { sample: 1.0 },
+    recharge_milestone_claim: { sample: 1.0 },
+    promo_redeem:             { sample: 1.0 },
+    fate_redeem:              { sample: 1.0 },
+    ads_reward:               { sample: 1.0 },
+    daily_checkin:            { sample: 1.0 },
+    daily_reward_claim:       { sample: 1.0 },
+    weekly_chest_claim:       { sample: 1.0 },
+    event_claim:              { sample: 1.0 },
+    // Progression sinks — the "is anyone using this system" half of the retention question.
+    equip_craft:    { sample: 1.0 },
+    equip_enhance:  { sample: 1.0 },
+    equip_reforge:  { sample: 1.0 },
+    equip_salvage:  { sample: 1.0 },
+    equip_equip:    { sample: 1.0 },
+    card_fuse:      { sample: 1.0 },
+    card_lock:      { sample: 1.0 },
+    siege_replay:   { sample: 1.0 },
+    // Startup / load timing (ANALYTICS_DESIGN §5.1b, client/src/analytics/bootTimeline.ts). One of
+    // each per session at most, so the volume is `session_start`-class — and the whole value is in
+    // the RATIO between them (`boot` without a matching `load_time` = abandoned while loading), which
+    // any sampling below 1.0 would turn into noise rather than a smaller version of itself.
+    boot:           { sample: 1.0 },
+    first_frame:    { sample: 1.0 },
+    load_time:      { sample: 1.0 },
+    // The crash pipeline's analytics-side mirror (ANALYTICS_DESIGN §5.6c): reported once, on the
+    // startup that follows an unclean exit. Rare by construction — sampling it would mostly delete it.
+    prev_session_crash: { sample: 1.0 },
+    // Account-lifecycle bookends. gdpr_consent is the only signal that the consent dialog was
+    // accepted at all, so sampling it would leave the top of the funnel with no anchor whatsoever.
+    gdpr_consent:   { sample: 1.0 },
+    account_delete: { sample: 1.0 },
     // Achievement funnel (S9-8, ANALYTICS_DESIGN §5.7): unlock toast → view wall → claim; 100% sampled (low-frequency, high-value).
     achievement_unlock_toast: { sample: 1.0 },
     achievement_view_wall:    { sample: 1.0 },
@@ -123,70 +175,9 @@ export interface ResolvedGeo {
 }
 
 // ─── Lightweight UA parsing (A9-9) ────────────────────────────────────────────
-// Intentionally hand-rolled (no ua-parser-js dependency) — analyticsvc is a plain node:http service with
-// no framework, and we only need coarse browser-name/device-type buckets for the ops dashboard, not exact
-// version parsing.
-export function parseUserAgent(ua: string | undefined): {
-  browser: string;
-  device_type: 'mobile' | 'tablet' | 'desktop';
-  webview?: string;
-} {
-  const s = ua ?? '';
-  let browser = 'unknown';
-  if (/MicroMessenger/i.test(s)) browser = 'wechat';
-  else if (/QQBrowser/i.test(s)) browser = 'qqbrowser';
-  else if (/Edg\//i.test(s)) browser = 'edge';
-  else if (/OPR\/|Opera/i.test(s)) browser = 'opera';
-  else if (/Firefox\//i.test(s)) browser = 'firefox';
-  else if (/CriOS|Chrome\//i.test(s)) browser = 'chrome';
-  else if (/Safari\//i.test(s)) browser = 'safari';
-
-  // Kept as its own axis rather than folded into `browser`, for two reasons: `browser` values already
-  // feed the ops distribution chart and renaming them would silently rewrite history, and the answer
-  // is genuinely not a browser name — a GSA WebView really *is* WebKit, so `browser=safari` is
-  // incomplete rather than wrong. What it hides is the host app, and the host app is what matters:
-  // in-app WebViews run under far tighter memory ceilings than the standalone browser and get killed
-  // by the OS instead of surfacing an error. Before this field, every one of them was indistinguishable
-  // from ordinary Safari/Chrome traffic — which is how a crash-loop report from a Google-app WebView
-  // (2026-08-22, see FEATURE_FLAGS_DESIGN §8) could not be attributed to its environment class at all.
-  const webview = detectWebView(s);
-
-  // Mirrors client/src/net/anomaly/deviceContext.ts's classify(). The two are deliberately kept in
-  // step: `device_type` here and `device` on the anomaly channel answer the same question about the
-  // same session, and a disagreement between them would be worse than either being slightly coarse.
-  // Both traps below fail in the direction that HIDES a non-phone, which is the direction that misleads.
-  let device_type: 'mobile' | 'tablet' | 'desktop' = 'desktop';
-  if (/iPad/i.test(s)) device_type = 'tablet';
-  // Android tablets omit the `Mobile` token that Android phones carry. The previous rule tested
-  // `Mobi|Android` together, so every Android tablet was counted as a phone.
-  else if (/Android/i.test(s)) device_type = /Mobi/i.test(s) ? 'mobile' : 'tablet';
-  else if (/Tablet|PlayBook|Silk/i.test(s)) device_type = 'tablet';
-  else if (/Mobi|iPhone|iPod/i.test(s)) device_type = 'mobile';
-
-  return webview ? { browser, device_type, webview } : { browser, device_type };
-}
-
-/**
- * Name the host app when the page is running inside an embedded WebView rather than a real browser.
- * Undefined for ordinary browser traffic.
- *
- * Order matters: several of these apps stack their token onto an otherwise normal Safari/Chrome UA,
- * and a few carry more than one (Instagram's in-app browser reports both `Instagram` and `FBAV`),
- * so the more specific product is tested first.
- */
-function detectWebView(s: string): string | undefined {
-  if (/MicroMessenger/i.test(s)) return 'wechat';
-  if (/Instagram/i.test(s)) return 'instagram';
-  if (/FBAN|FBAV|FB_IAB/i.test(s)) return 'facebook';
-  if (/\bGSA\//i.test(s)) return 'gsa';           // the Google app on iOS
-  if (/\bLine\//i.test(s)) return 'line';
-  if (/musical_ly|BytedanceWebview|TikTok/i.test(s)) return 'tiktok';
-  if (/Snapchat/i.test(s)) return 'snapchat';
-  if (/\bTwitter\b/i.test(s)) return 'twitter';
-  // Generic Android System WebView: Chrome's UA with a `; wv` marker in the platform section.
-  if (/;\s*wv\)/i.test(s)) return 'android-wv';
-  return undefined;
-}
+// Lives in ./userAgent.ts since 2026-09-20 (this file hit the 500-line gate); re-exported here so
+// `from './defs'` importers — ingest.ts and the UA test — are unaffected.
+export * from './userAgent';
 
 // ─── Query result types (A9-6) ───────────────────────────────────────────────────────
 
@@ -199,6 +190,53 @@ export interface EventCountRow {
 export interface DauRow {
   date: string;
   dau: number;
+}
+
+/**
+ * One (date, platform) row of the launch funnel (ANALYTICS_DESIGN §3.6b) — the only view that has a
+ * denominator for the players who never answer the age / consent gates.
+ *
+ * All four numbers count **launches**, not devices, so they are directly comparable:
+ * `boots` and `declined` from the unauthenticated counters on `GET /analytics/config`, `sessions`
+ * from the `session_start` event count, `consents` from `gdpr_consent`.
+ *
+ * `boots − sessions − declined` is the cohort that opened the game and left before anything could be
+ * recorded about them. The `declined` term is what ANALYTICS_DESIGN §3.6c costs and pays back: since
+ * refusing analytics no longer refuses the game, those players launch, play and report nothing, and
+ * without their own counter they sit in the gap looking exactly like a player who closed the tab.
+ */
+export interface BootFunnelRow {
+  date: string;
+  platform: string;
+  boots: number;
+  sessions: number;
+  /** Launches by players who chose "essentials only" — a subset of `boots` (§3.6c). */
+  declined: number;
+  consents: number;
+  /** sessions / boots — the share of launches that got far enough to report anything at all. */
+  reach_rate?: number;
+}
+
+/**
+ * Load-time profile per platform (ANALYTICS_DESIGN §5.1b). Percentiles rather than an average,
+ * because startup time is a long-tailed distribution: the mean is dragged around by a handful of
+ * cold-cache mobile launches and describes no actual player, while p50/p90 say "half of them" and
+ * "the bad tenth".
+ */
+export interface LoadTimeRow {
+  platform: string;
+  /** `load_time` events in the window. */
+  samples: number;
+  p50_ms: number;
+  p75_ms: number;
+  p90_ms: number;
+  p95_ms: number;
+  /** Mean of each phase, ms. A phase absent from the data (WeChat has no network phases) is omitted. */
+  avg: Record<string, number>;
+  /** Histogram for the ops page: `count` launches finished at or below `lt_ms`. */
+  buckets: { lt_ms: number; count: number }[];
+  /** Sessions that emitted `boot` but never `load_time` — i.e. gave up while loading. */
+  abandoned: number;
 }
 
 export interface RegionRow { locale: string; devices: number }
@@ -375,7 +413,19 @@ export interface QueryResult {
   device_type_dist?: DeviceTypeRow[];
   webview_dist?: WebViewRow[];
   geo_dist?: GeoRow[];
+  boot_funnel?: BootFunnelRow[];
+  load_time?: LoadTimeRow[];
 }
+
+/**
+ * Phases of `load_time`, in the order they happen (see client/src/analytics/bootTimeline.ts). Used
+ * by the query to average exactly these props and by the ops page to label the columns — one list so
+ * a phase added client-side cannot quietly stay missing from the report.
+ */
+export const LOAD_TIME_PHASES = ['to_script_ms', 'renderer_ms', 'first_frame_ms', 'preload_ms', 'scene_ms'] as const;
+
+/** Histogram resolution for the load-time percentiles, ms. Percentiles are exact to this width. */
+export const LOAD_TIME_BUCKET_MS = 100;
 
 // Funnel step definitions (order defines the conversion chain; the ETL uses the same list when writing funnels_daily).
 export const FUNNEL_STEPS = ['session_start', 'game_start', 'level_attempt', 'level_complete'] as const;

@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import {
   analyticsUnavailable, badgeModes, badgePivot, barRatio, barWidthPx, distribution, eventCountGrid,
   FUNNEL_STEPS, funnelPivot, funnelPlatforms, LEVEL_FUNNEL_LIMIT, levelFunnelRows, loginHourRows,
-  metricRows, ONBOARDING_LABELS, retentionCell, RETENTION_OFFSETS, retentionRows, sectionRows,
+  bootFunnelRows, loadTimeRows, metricRows, ms, ONBOARDING_LABELS, retentionCell, RETENTION_OFFSETS, retentionRows, sectionRows,
   sectionValue, stepFunnelRows, TUTORIAL_LABELS, type BadgeRow, type FunnelRow, type RetentionRow,
 } from '../src/logic/analytics';
 
@@ -281,5 +281,85 @@ describe('metricRows', () => {
 
   it('is empty when the stats backend reported nothing', () => {
     expect(metricRows({})).toEqual([]);
+  });
+});
+
+describe('bootFunnelRows', () => {
+  it('derives the lost launches — the players no other card on the page can see', () => {
+    expect(bootFunnelRows([{ date: '2026-09-20', platform: 'web', boots: 100, sessions: 62, declined: 8, consents: 20 }])).toEqual([
+      { date: '2026-09-20', platform: 'web', boots: 100, sessions: 62, declined: 8, consents: 20, declinedCount: 8, lost: 30, reachRate: 0.62 },
+    ]);
+  });
+
+  it('takes the refusals out of `lost` — they stayed, they just report nothing (§3.6c)', () => {
+    const [row] = bootFunnelRows([{ date: '2026-09-21', platform: 'web', boots: 100, sessions: 62, declined: 30, consents: 20 }]);
+    // Same 38-launch gap as the row above; 30 of it is now known to be people playing in silence.
+    expect(row).toMatchObject({ declinedCount: 30, lost: 8 });
+  });
+
+  it('reads a row from before the refusal counter existed as zero refusals, not as a hole', () => {
+    const [row] = bootFunnelRows([{ date: '2026-09-19', platform: 'web', boots: 100, sessions: 62, consents: 20 }]);
+    expect(row).toMatchObject({ declinedCount: 0, lost: 38 });
+  });
+
+  it('prefers the rate the service computed over recomputing it', () => {
+    const [row] = bootFunnelRows([
+      { date: '2026-09-20', platform: 'web', boots: 100, sessions: 62, consents: 20, reach_rate: 0.5 },
+    ]);
+    expect(row!.reachRate).toBe(0.5);
+  });
+
+  it('clamps lost at zero — a day boundary can book a launch and its session on different days', () => {
+    const [row] = bootFunnelRows([{ date: '2026-09-20', platform: 'web', boots: 10, sessions: 12, consents: 0 }]);
+    expect(row!.lost).toBe(0);
+  });
+
+  it('clamps lost at zero when the refusals alone overshoot the launches', () => {
+    // Same boundary case from the other side: the refusal tick is a second request and can land on
+    // the far side of midnight from the launch it belongs to.
+    const [row] = bootFunnelRows([{ date: '2026-09-21', platform: 'web', boots: 10, sessions: 2, declined: 9, consents: 0 }]);
+    expect(row!.lost).toBe(0);
+  });
+
+  it('survives a day with launches and nothing else', () => {
+    const [row] = bootFunnelRows([{ date: '2026-09-20', platform: 'web', boots: 7, sessions: 0, consents: 0 }]);
+    expect(row).toMatchObject({ lost: 7, reachRate: 0 });
+  });
+});
+
+describe('loadTimeRows', () => {
+  const row = {
+    platform: 'web',
+    samples: 40,
+    p50_ms: 1200,
+    p75_ms: 2000,
+    p90_ms: 3400,
+    p95_ms: 5000,
+    avg: { to_script_ms: 700, renderer_ms: 90, first_frame_ms: 900, preload_ms: 400, scene_ms: 120 },
+    abandoned: 10,
+  };
+
+  it('aligns the phase means with the column order and shares the loading cohort with the dropouts', () => {
+    const [r] = loadTimeRows([row]);
+    expect(r!.phases).toEqual([700, 90, 900, 400, 120]);
+    expect(r!.abandonRate).toBeCloseTo(10 / 50);
+  });
+
+  it('leaves a phase a platform never reports undefined rather than zero', () => {
+    const [r] = loadTimeRows([{ ...row, avg: { preload_ms: 400 } }]);
+    expect(r!.phases).toEqual([undefined, undefined, undefined, 400, undefined]);
+  });
+
+  it('is 0% given up when every launch finished', () => {
+    expect(loadTimeRows([{ ...row, abandoned: 0 }])[0]!.abandonRate).toBe(0);
+  });
+});
+
+describe('ms', () => {
+  it('switches from milliseconds to seconds at one second, and dashes what was never measured', () => {
+    expect(ms(999)).toBe('999ms');
+    expect(ms(1000)).toBe('1.0s');
+    expect(ms(3449)).toBe('3.4s');
+    expect(ms(undefined)).toBe('—');
   });
 });

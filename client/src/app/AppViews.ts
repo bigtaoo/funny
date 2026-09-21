@@ -56,7 +56,7 @@ import type { DefenseEditorCallbacks } from '../scenes/DefenseEditorScene';
 import type { TitlesSceneCallbacks } from '../scenes/TitlesScene';
 import type { DailyCallbacks } from '../scenes/DailyScene';
 import type { EventCallbacks } from '../scenes/EventScene';
-import type { ConsentCallbacks } from '../ui/dialogs/ConsentDialog';
+import type { ConsentCallbacks, ConsentMode } from '../ui/dialogs/ConsentDialog';
 import type { AgeGateCallbacks, AgeGateMode } from '../ui/dialogs/AgeGateDialog';
 import type { ReconnectPromptCallbacks } from '../ui/dialogs/ReconnectPromptDialog';
 import type { DeckBuilderCallbacks } from '../scenes/DeckBuilderScene';
@@ -192,8 +192,12 @@ export interface AppViews {
    * translated value is split into beats by the scene itself.
    */
   showRealLayerInterlude(illustrationUrl: string, textKey: TranslationKey, cb: IllustratedInterludeCallbacks): void;
-  /** First-launch GDPR / privacy consent gate (C5-c, L1-1). Blocks until accepted. */
-  showConsent(cb: ConsentCallbacks): void;
+  /**
+   * First-launch GDPR / privacy consent gate (C5-c, L1-1). Blocks until answered. `'accept-only'`
+   * has one button; `'choice'` adds an "essentials only" answer that also enters the game — see
+   * ConsentDialog and `platform/consentRegion.ts`.
+   */
+  showConsent(mode: ConsentMode, cb: ConsentCallbacks): void;
   /**
    * Neutral age gate, ahead of the consent gate (COMPLIANCE_GLOBAL §3.4). 'ask' collects a birth
    * year and reports it through `cb`; 'blocked' is the dead end for a player who already declared

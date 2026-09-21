@@ -50,6 +50,9 @@ export class AnalyticsService {
   queryLoginHour(...args: Parameters<TrafficService['queryLoginHour']>) { return this.traffic.queryLoginHour(...args); }
   queryRetention(...args: Parameters<TrafficService['queryRetention']>) { return this.traffic.queryRetention(...args); }
   queryFirstSession(...args: Parameters<TrafficService['queryFirstSession']>) { return this.traffic.queryFirstSession(...args); }
+  countBoot(...args: Parameters<TrafficService['countBoot']>) { return this.traffic.countBoot(...args); }
+  countDeclinedLaunch(...args: Parameters<TrafficService['countDeclinedLaunch']>) { return this.traffic.countDeclinedLaunch(...args); }
+  queryBootFunnel(...args: Parameters<TrafficService['queryBootFunnel']>) { return this.traffic.queryBootFunnel(...args); }
 
   // ── funnel ──
   queryFunnel(...args: Parameters<FunnelService['queryFunnel']>) { return this.funnel.queryFunnel(...args); }
@@ -67,6 +70,7 @@ export class AnalyticsService {
   queryWebViewDist(...args: Parameters<DistService['queryWebViewDist']>) { return this.dist.queryWebViewDist(...args); }
   queryGeoDist(...args: Parameters<DistService['queryGeoDist']>) { return this.dist.queryGeoDist(...args); }
   queryBadgeDist(...args: Parameters<DistService['queryBadgeDist']>) { return this.dist.queryBadgeDist(...args); }
+  queryLoadTime(...args: Parameters<DistService['queryLoadTime']>) { return this.dist.queryLoadTime(...args); }
 
   // ── ingest ──
   ingestEvents(...args: Parameters<IngestService['ingestEvents']>) { return this.ingest.ingestEvents(...args); }

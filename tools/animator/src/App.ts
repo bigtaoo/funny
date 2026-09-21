@@ -138,6 +138,7 @@ export class App {
         showSkeletonOverlay: state.showSkeletonOverlay,
         showGuide:           state.showGuide,
         showPivots:          state.showPivots,
+        bindPick:            state.bindPick,
         backgroundColor:     state.backgroundColor,
         rootX:               state.rootX,
         rootY:               state.rootY,

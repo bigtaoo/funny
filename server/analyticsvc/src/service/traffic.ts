@@ -1,12 +1,13 @@
 // analyticsvc query domain: raw traffic — per-event counts, DAU, login-hour histogram, rolling
-// retention, and the first-session (brand-new device) breakdown.
+// retention, the first-session (brand-new device) breakdown, and the pre-consent launch counter
+// plus the funnel that reads it.
 //
 // Independent sibling class (2026-08-11 mixin-chain split, claudedocs/server.md "拆分形态的优先级"
 // 形态②): holds its own `cols`/`now`, no shared base, no cross-domain calls — assembled by
 // composition in ../service.ts.
 
 import { AnalyticsCollections } from '../db';
-import { EventCountRow, DauRow, LoginHourRow, RETENTION_OFFSETS, RetentionOffset, RetentionRow, ONBOARDING_STEPS, ACTION_NOISE, EMPTY_STEP_KEYS, OnboardingStepRow, FirstSessionActionRow, FirstSessionResult, dayStart, toDateStr } from './defs';
+import { BootFunnelRow, EventCountRow, DauRow, LoginHourRow, RETENTION_OFFSETS, RetentionOffset, RetentionRow, ONBOARDING_STEPS, ACTION_NOISE, EMPTY_STEP_KEYS, OnboardingStepRow, FirstSessionActionRow, FirstSessionResult, dayStart, toDateStr } from './defs';
 
 export class TrafficService {
   constructor(
@@ -72,6 +73,126 @@ export class TrafficService {
       .toArray();
     const byHour = new Map(rows.map((r) => [r._id, r.count]));
     return Array.from({ length: 24 }, (_, h) => ({ hour: h, count: byHour.get(h) ?? 0 }));
+  }
+
+  /**
+   * Count one launch (ANALYTICS_DESIGN §3.6b). Called from `GET /analytics/config`, which every
+   * launch makes before the age and consent gates — and which is therefore the only place a player
+   * who leaves at one of those gates can be counted at all.
+   *
+   * Nothing but the date and the build target is written: no device id, no IP, no user.
+   *
+   * Fire-and-forget by contract — the caller must not await it and must not let a failure affect the
+   * config response. A config request that fails to count is a missing tick in a trend; a config
+   * request that fails to answer is a client with analytics disabled for the whole session.
+   */
+  async countBoot(platform: string): Promise<void> {
+    await this.bumpDaily(platform, 'count');
+  }
+
+  /**
+   * Count one launch by a player who refused analytics (ANALYTICS_DESIGN §3.6c). Called from the
+   * same `GET /analytics/config` with `?d=1`, on every launch of theirs — the one they refused on
+   * and every one after it.
+   *
+   * A subset of `count`, not a sibling of it: the launch itself was already counted by the plain
+   * config request the client sends at init, and this tick only says which bucket that launch
+   * belongs to. So `count − sessions − declined` is the gate bounce, and `declined` is the cohort
+   * that is playing and reporting nothing — two groups that `count − sessions` alone merges.
+   *
+   * Refusal is the one answer that cannot be sent as an event, which is why it arrives here instead:
+   * this endpoint needs no consent because it stores no one — the same date, platform and number as
+   * the launch counter, and nothing may ever be added to it.
+   */
+  async countDeclinedLaunch(platform: string): Promise<void> {
+    await this.bumpDaily(platform, 'declined');
+  }
+
+  /**
+   * Shared write of both counters. Upsert on a composite `_id` so it is a single atomic `$inc` with
+   * no index lookup and no risk of duplicate rows under concurrency.
+   */
+  private async bumpDaily(platform: string, field: 'count' | 'declined'): Promise<void> {
+    const date = toDateStr(this.now());
+    await this.cols.boots_daily.updateOne(
+      { _id: `${date}|${platform}` },
+      {
+        $inc: { [field]: 1 },
+        // A declined tick can be the first write of the day for its (date, platform) — the config
+        // request that precedes it is a different request and may have failed — so `count` is seeded
+        // on insert. $setOnInsert never fights the $inc above: Mongo rejects the two touching the
+        // same field, hence one branch per field rather than seeding both unconditionally.
+        $set: { date, platform, updated_at: new Date(this.now()) },
+        ...(field === 'declined' ? { $setOnInsert: { count: 0 } } : {}),
+      },
+      { upsert: true },
+    );
+  }
+
+  /**
+   * Launch funnel (ANALYTICS_DESIGN §3.6b): launches → sessions that reported anything → consents,
+   * per day and platform, with the refusals (§3.6c) split back out of the gap.
+   *
+   * The gap between `boots` and `sessions` is the measurement. Everything else this service knows
+   * begins at `session_start`, which is buffered client-side until the consent dialog is accepted —
+   * so a player who reads the age gate and closes the tab contributes *nothing* to any other query,
+   * and the drop-off they represent has always been invisible rather than zero.
+   *
+   * `declined` is a subset of `boots`, so what is left — `boots − sessions − declined` — is the gate
+   * bounce alone. Both sides count launches, not devices, so the ratio is meaningful; see
+   * BootFunnelRow. Read it as a trend, not an exact rate: the counter also ticks for a launch whose
+   * events are later lost to a failed unload flush, and it is an unauthenticated endpoint, so it
+   * counts whatever calls it.
+   */
+  async queryBootFunnel(days: number): Promise<BootFunnelRow[]> {
+    const sinceMs = dayStart(this.now()) - (days - 1) * 86400_000;
+    const since = new Date(sinceMs);
+    const sinceDate = toDateStr(sinceMs);
+
+    const boots = await this.cols.boots_daily.find({ date: { $gte: sinceDate } }).toArray();
+
+    const evRows = await this.cols.events
+      .aggregate<{ _id: { date: string; platform: string; event: string }; count: number }>([
+        { $match: { ts: { $gte: since }, event: { $in: ['session_start', 'gdpr_consent'] } } },
+        {
+          $group: {
+            _id: {
+              date: { $dateToString: { format: '%Y-%m-%d', date: '$ts' } },
+              platform: '$platform',
+              event: '$event',
+            },
+            count: { $sum: 1 },
+          },
+        },
+      ])
+      .toArray();
+
+    // One row per (date, platform) seen on EITHER side: a day with launches and no sessions is the
+    // most interesting row this query can produce, and an inner join would drop exactly that one.
+    const rows = new Map<string, BootFunnelRow>();
+    const rowFor = (date: string, platform: string): BootFunnelRow => {
+      const key = `${date}|${platform}`;
+      let row = rows.get(key);
+      if (!row) {
+        row = { date, platform, boots: 0, sessions: 0, declined: 0, consents: 0 };
+        rows.set(key, row);
+      }
+      return row;
+    };
+    for (const b of boots) {
+      const row = rowFor(b.date, b.platform);
+      row.boots = b.count;
+      row.declined = b.declined ?? 0; // absent on documents written before §3.6c shipped
+    }
+    for (const e of evRows) {
+      const row = rowFor(e._id.date, e._id.platform || 'unknown');
+      if (e._id.event === 'session_start') row.sessions = e.count;
+      else row.consents = e.count;
+    }
+
+    return [...rows.values()]
+      .map((r) => (r.boots > 0 ? { ...r, reach_rate: r.sessions / r.boots } : r))
+      .sort((a, b) => (a.date === b.date ? a.platform.localeCompare(b.platform) : b.date.localeCompare(a.date)));
   }
 
   /**

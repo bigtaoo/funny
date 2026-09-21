@@ -32,7 +32,7 @@ function fakeImageCtrl(blobs: Record<string, Blob> = {}) {
   };
 }
 
-function makeHost(opts: { blobs?: Record<string, Blob> } = {}): EditorProjectHost & { events: Array<{ event: string; payload: unknown }> } {
+function makeHost(opts: { blobs?: Record<string, Blob>; projectName?: string } = {}): EditorProjectHost & { events: Array<{ event: string; payload: unknown }> } {
   const bus = new EventBus<AppEvents>();
   const state = new AppState(bus);
   const animCtrl = new AnimationController(bus, state);
@@ -45,6 +45,7 @@ function makeHost(opts: { blobs?: Record<string, Blob> } = {}): EditorProjectHos
   let taoFileHandle: WritableFileHandle | null = null;
   return {
     state, animCtrl, cmdManager, bus,
+    projectName: opts.projectName ?? 'Untitled',
     imageCtrl: fakeImageCtrl(opts.blobs) as unknown as EditorProjectHost['imageCtrl'],
     get editorFilePath() { return editorFilePath; },
     set editorFilePath(v) { editorFilePath = v; },
@@ -190,6 +191,7 @@ describe('saveEditorProject', () => {
     const written: Blob[] = [];
     let closed = false;
     const handle: WritableFileHandle = {
+      name: 'runner.taoeditor',
       getFile: async () => new File([], 'x'),
       createWritable: async () => ({ write: async (b: Blob) => { written.push(b); }, close: async () => { closed = true; } }),
     };
@@ -200,7 +202,9 @@ describe('saveEditorProject', () => {
     await saveEditorProject(host);
     expect(written).toHaveLength(1);
     expect(closed).toBe(true);
-    expect(host.events[host.events.length - 1]).toEqual({ event: 'status', payload: 'Project saved' });
+    // Naming the file is the point of the message: a silent overwrite is otherwise
+    // indistinguishable from a save that landed somewhere the artist never meant.
+    expect(host.events[host.events.length - 1]).toEqual({ event: 'status', payload: 'Saved runner.taoeditor' });
   });
 
   it('desktop shell: writes directly to the known path via window.nwDesktop.fs', async () => {
@@ -212,7 +216,9 @@ describe('saveEditorProject', () => {
     await saveEditorProject(host);
     expect(writeFile).toHaveBeenCalledTimes(1);
     expect(writeFile.mock.calls[0]![0]).toBe('C:\\rig\\runner.taoeditor');
-    expect(host.events[host.events.length - 1]).toEqual({ event: 'status', payload: 'Project saved' });
+    // The desktop shell knows the real path, so it reports the real path. The browser arm
+    // cannot — the File System Access API never reveals a directory — and names the file only.
+    expect(host.events[host.events.length - 1]).toEqual({ event: 'status', payload: 'Saved to C:\\rig\\runner.taoeditor' });
   });
 
   it('desktop shell: a failed write reports an error, not a thrown exception', async () => {
@@ -227,6 +233,7 @@ describe('saveEditorProject', () => {
 describe('saveEditorProjectAs', () => {
   it('browser: remembers the newly-picked handle as the editing target going forward', async () => {
     const handle: WritableFileHandle = {
+      name: 'runner-v2.taoeditor',
       getFile: async () => new File([], 'x'),
       createWritable: async () => ({ write: async () => {}, close: async () => {} }),
     };
@@ -234,7 +241,7 @@ describe('saveEditorProjectAs', () => {
     const host = makeHost();
     await saveEditorProjectAs(host);
     expect(host.editorFileHandle).toBe(handle);
-    expect(host.events[host.events.length - 1]).toEqual({ event: 'status', payload: 'Saved a copy — now editing that file' });
+    expect(host.events[host.events.length - 1]).toEqual({ event: 'status', payload: 'Saved a copy as runner-v2.taoeditor — now editing that file' });
   });
 
   it('desktop shell: cancelling the save-as dialog leaves the host untouched and emits nothing further', async () => {
@@ -257,6 +264,7 @@ describe('saveEditorProjectAs', () => {
 /** A handle whose getFile() returns `file` and whose writes are recorded. */
 function pickerHandle(file: File, written: Blob[] = []): WritableFileHandle {
   return {
+    name: file.name,   // a real FileSystemFileHandle always carries one; the status line reads it
     getFile: async () => file,
     createWritable: async () => ({ write: async (b: Blob) => { written.push(b); }, close: async () => {} }),
   };
@@ -418,7 +426,7 @@ describe('triggerLoadEditor', () => {
 describe('saveEditorProject — first save of a brand-new project', () => {
   it('browser: asks for a location once, then remembers the handle', async () => {
     const written: Blob[] = [];
-    const handle = pickerHandle(new File([], 'x'), written);
+    const handle = pickerHandle(new File([], 'Untitled.taoeditor'), written);
     const picker = vi.fn(async (_opts: { suggestedName: string }) => handle);
     vi.stubGlobal('window', { showSaveFilePicker: picker });
     const host = makeHost();
@@ -427,10 +435,12 @@ describe('saveEditorProject — first save of a brand-new project', () => {
     await saveEditorProject(host);
 
     expect(picker).toHaveBeenCalledTimes(1);
-    expect(picker.mock.calls[0]![0]).toMatchObject({ suggestedName: 'project.taoeditor' });
+    // The library project's own name, not the literal 'project' — a dialog pre-filled with
+    // "project.taoeditor" is how a character ends up saved over another character's file.
+    expect(picker.mock.calls[0]![0]).toMatchObject({ suggestedName: 'Untitled.taoeditor' });
     expect(host.editorFileHandle).toBe(handle);
     expect(written).toHaveLength(1);
-    expect(host.events[host.events.length - 1]).toEqual({ event: 'status', payload: 'Project saved' });
+    expect(host.events[host.events.length - 1]).toEqual({ event: 'status', payload: 'Saved as Untitled.taoeditor' });
 
     // …and the second save must NOT ask again.
     await saveEditorProject(host);
@@ -451,7 +461,7 @@ describe('saveEditorProject — first save of a brand-new project', () => {
       filters: [{ name: 'Tao Editor Project', extensions: ['taoeditor'] }],
     });
     expect(host.editorFilePath).toBe('C:\\rig\\new.taoeditor');
-    expect(host.events[host.events.length - 1]).toEqual({ event: 'status', payload: 'Project saved' });
+    expect(host.events[host.events.length - 1]).toEqual({ event: 'status', payload: 'Saved to C:\\rig\\new.taoeditor' });
   });
 
   it('desktop shell: a failed save-as reports the error and leaves the path unset', async () => {
@@ -476,7 +486,7 @@ describe('saveEditorProject — first save of a brand-new project', () => {
 });
 
 describe('saveEditorProjectAs — desktop shell', () => {
-  it('writes a copy, retargets Save at it, and reports the basename only', async () => {
+  it('writes a copy, retargets Save at it, and reports the full path', async () => {
     const saveFileAs = vi.fn(async (_opts: { defaultPath?: string; filters: unknown[] }) => ({ canceled: false, path: 'C:\\rig\\copies\\runner-v2.taoeditor' }));
     vi.stubGlobal('window', { nwDesktop: { fs: { saveFileAs } } });
     const host = makeHost();
@@ -488,7 +498,9 @@ describe('saveEditorProjectAs — desktop shell', () => {
     expect(saveFileAs.mock.calls[0]![0]).toMatchObject({ defaultPath: 'C:\\rig\\runner.taoeditor' });
     // …and the new one replaces it, so subsequent Saves overwrite the copy (Word/Photoshop rule).
     expect(host.editorFilePath).toBe('C:\\rig\\copies\\runner-v2.taoeditor');
-    expect(host.events[host.events.length - 1]).toEqual({ event: 'status', payload: 'Saved a copy to runner-v2.taoeditor' });
+    // Full path, not just the basename: a copy's whole point is that it went SOMEWHERE ELSE,
+    // and "runner-v2.taoeditor" alone does not say which folder that was.
+    expect(host.events[host.events.length - 1]).toEqual({ event: 'status', payload: 'Saved a copy to C:\\rig\\copies\\runner-v2.taoeditor' });
   });
 
   it('reports a failed save-as as an error', async () => {
@@ -512,5 +524,52 @@ describe('saveEditorProjectAs — desktop shell', () => {
 
     expect(host.editorFileHandle).toBe(existing);
     expect(host.events.map((e) => e.payload)).toEqual(['Saving a copy…']);
+  });
+});
+
+// The Firefox/Safari arm: no File System Access API, so the bytes go to the browser's
+// download folder and nothing is remembered. It used to be indistinguishable from a
+// cancel (both produced a bare null), so a successful save reported nothing at all.
+describe('saveEditorProject — download fallback', () => {
+  it('names the file AND the folder, because that folder is where the file gets lost', async () => {
+    const clicked: string[] = [];
+    vi.stubGlobal('window', { prompt: vi.fn((_m: string, d: string) => d) });
+    vi.stubGlobal('URL', { createObjectURL: () => 'blob:fake', revokeObjectURL: () => {} });
+    vi.stubGlobal('document', {
+      createElement: () => {
+        const a = { href: '', download: '', click: () => clicked.push(a.download) };
+        return a;
+      },
+    });
+    const host = makeHost({ projectName: 'Dog Rig' });
+
+    await saveEditorProject(host);
+
+    expect(clicked).toEqual(['Dog Rig.taoeditor']);
+    expect(host.editorFileHandle).toBeNull();   // nothing to overwrite next time
+    expect(host.events[host.events.length - 1]).toEqual({
+      event: 'status',
+      payload: "Downloaded Dog Rig.taoeditor to your browser's download folder",
+    });
+  });
+
+  it('a cancelled prompt stays silent — a cancel is not a save', async () => {
+    vi.stubGlobal('window', { prompt: vi.fn(() => null) });
+    const host = makeHost();
+    host.events.length = 0;
+
+    await saveEditorProject(host);
+
+    const statuses = host.events.filter((e) => e.event === 'status');
+    expect(statuses[statuses.length - 1]).toEqual({ event: 'status', payload: 'Saving .taoeditor\u2026' });
+  });
+
+  it('sanitises the project name on its way to the dialog', async () => {
+    const picker = vi.fn(async (_opts: { suggestedName: string }) => pickerHandle(new File([], 'x.taoeditor')));
+    vi.stubGlobal('window', { showSaveFilePicker: picker });
+
+    await saveEditorProject(makeHost({ projectName: 'dog/rig: v2' }));
+
+    expect(picker.mock.calls[0]![0]).toMatchObject({ suggestedName: 'dogrig v2.taoeditor' });
   });
 });

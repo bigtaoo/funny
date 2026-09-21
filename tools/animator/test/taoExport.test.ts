@@ -25,7 +25,7 @@ function fakeImageCtrl(blobs: Record<string, Blob> = {}) {
 // TaoExportHost declares editorFilePath/editorFileHandle readonly (this flow only ever reads
 // them — editorProject.ts's flow is what writes them) — so, unlike editorProject.test.ts's host,
 // they're fixed at construction time here instead of reassigned by individual tests.
-function makeHost(opts: { blobs?: Record<string, Blob>; editorFilePath?: string | null } = {}): TaoExportHost & { events: Array<{ event: string; payload: unknown }> } {
+function makeHost(opts: { blobs?: Record<string, Blob>; editorFilePath?: string | null; editorFileHandle?: WritableFileHandle | null; projectName?: string } = {}): TaoExportHost & { events: Array<{ event: string; payload: unknown }> } {
   const bus = new EventBus<AppEvents>();
   const state = new AppState(bus);
   const animCtrl = new AnimationController(bus, state);
@@ -35,9 +35,10 @@ function makeHost(opts: { blobs?: Record<string, Blob>; editorFilePath?: string 
   let taoFileHandle: WritableFileHandle | null = null;
   return {
     state, animCtrl, bus,
+    projectName: opts.projectName ?? 'Untitled',
     imageCtrl: fakeImageCtrl(opts.blobs) as unknown as TaoExportHost['imageCtrl'],
     editorFilePath: opts.editorFilePath ?? null,
-    editorFileHandle: null,
+    editorFileHandle: opts.editorFileHandle ?? null,
     get taoFileHandle() { return taoFileHandle; },
     set taoFileHandle(v) { taoFileHandle = v; },
     events,
@@ -208,23 +209,56 @@ describe('exportTao', () => {
 
   it('browser: reuses an already-remembered .tao file handle without re-prompting', async () => {
     const written: Blob[] = [];
-    const handle: WritableFileHandle = { getFile: async () => new File([], 'x'), createWritable: async () => ({ write: async (b: Blob) => { written.push(b); }, close: async () => {} }) };
+    const handle: WritableFileHandle = { name: 'runner.tao', getFile: async () => new File([], 'x'), createWritable: async () => ({ write: async (b: Blob) => { written.push(b); }, close: async () => {} }) };
     vi.stubGlobal('window', {});
     const host = makeHost();
     host.taoFileHandle = handle;
 
     await exportTao(host);
     expect(written).toHaveLength(1);
-    expect(host.events[host.events.length - 1]).toEqual({ event: 'status', payload: 'Exported .tao' });
+    expect(host.events[host.events.length - 1]).toEqual({ event: 'status', payload: 'Exported runner.tao' });
   });
 
   it('browser: first export with no remembered handle goes through saveWithPicker and remembers the result', async () => {
-    const handle: WritableFileHandle = { getFile: async () => new File([], 'x'), createWritable: async () => ({ write: async () => {}, close: async () => {} }) };
+    const handle: WritableFileHandle = { name: 'runner.tao', getFile: async () => new File([], 'x'), createWritable: async () => ({ write: async () => {}, close: async () => {} }) };
     vi.stubGlobal('window', { showSaveFilePicker: vi.fn(async () => handle) });
     const host = makeHost();
 
     await exportTao(host);
     expect(host.taoFileHandle).toBe(handle);
+    expect(host.events[host.events.length - 1]).toEqual({ event: 'status', payload: 'Exported runner.tao' });
+  });
+
+  // Which name the dialog opens with. The literal 'animation' it used to pass meant every
+  // character's first export landed as animation.tao, wherever the browser last defaulted to.
+  it('browser: suggests the loaded .taoeditor\'s own name with a .tao extension', async () => {
+    const editorHandle: WritableFileHandle = { name: 'runner.taoeditor', getFile: async () => new File([], 'x'), createWritable: async () => ({ write: async () => {}, close: async () => {} }) };
+    const picker = vi.fn(async (_opts: { suggestedName: string }) => ({ name: 'runner.tao', getFile: async () => new File([], 'x'), createWritable: async () => ({ write: async () => {}, close: async () => {} }) }));
+    vi.stubGlobal('window', { showSaveFilePicker: picker });
+    const host = makeHost({ editorFileHandle: editorHandle });
+
+    await exportTao(host);
+    expect(picker.mock.calls[0]![0]).toMatchObject({ suggestedName: 'runner.tao' });
+  });
+
+  it('browser: with no .taoeditor to derive from, falls back to the library project name', async () => {
+    const picker = vi.fn(async (_opts: { suggestedName: string }) => ({ name: 'Dog Rig.tao', getFile: async () => new File([], 'x'), createWritable: async () => ({ write: async () => {}, close: async () => {} }) }));
+    vi.stubGlobal('window', { showSaveFilePicker: picker });
+
+    await exportTao(makeHost({ projectName: 'Dog/Rig' }));
+
+    expect(picker.mock.calls[0]![0]).toMatchObject({ suggestedName: 'DogRig.tao' });
+  });
+
+  it('browser: a cancelled export dialog remembers nothing and claims nothing', async () => {
+    const abort = Object.assign(new Error('cancelled'), { name: 'AbortError' });
+    vi.stubGlobal('window', { showSaveFilePicker: async () => { throw abort; } });
+    const host = makeHost();
+
+    await exportTao(host);
+
+    expect(host.taoFileHandle).toBeNull();
+    expect(host.events.some((e) => String(e.payload).startsWith('Exported'))).toBe(false);
   });
 
   it('a failure anywhere in the flow reports an error, not a thrown exception', async () => {

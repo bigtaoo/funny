@@ -40,6 +40,10 @@ ZIP 内含 `animation.json`（v2）+ `spritesheet.png`（shelf bin-packing）+ `
   - **不做批量重导出**：既然没人再读这两个键，包里的残留就是死字节；且 `art/**` 母版与 `client/src/assets/**` 已分叉（见下方 2026-07-17 note），重导出风险远大于收益。画师下次打开并保存对应 `.taoeditor` 时会自然清掉。
   - 画面影响：这 7 个单位的相关肢体各移动 **1.2–2.1 屏幕像素**（偏移在 rig 空间最大 16，乘 `targetScreenPx ÷ naturalHeight` ≈ 0.074–0.130；单位屏高 54px）。方向是**回到画师在 animator 里对齐的关节位置**。
 
+**2026-09-20 复核仍然成立**：画师报「图片贴不准骨骼，想在动作编辑时调图片位置」，听上去正是要把这个通道加回来（甚至是逐帧版本）。诊断下来症状是**静态绑定错**（anchor 没落在关节中心 + 骨长与贴图不匹配），跟动画无关。做法是给这七个字段加一个**新的输入方式**——两点绑定（画师指认贴图上的两个关节，反解 anchor/rotation/scale，见 `animator.md`）——**字段一个没加**。读写两侧契约、`pose.ts` 的合成公式都没动。
+
+> 这条值得留着：下一次「图片位置不对」的报障，先分清是绑定错还是动画错，再决定要不要碰格式。
+
 ### `easing`：字段存在，但真包里一次都没出现过
 
 同一轮扫描（108 clips / 445 keyframes / 1968 个 bone delta）里 `easing` 出现 **0 次**——animator 从没写过，所以现在所有关键帧实际都是线性插值。写侧类型把它当 `string`，运行时是 `EasingType` 联合；读侧用 `taoFormat.ts` 的 `asEasing()` 收窄（不认识的值 → `undefined` → `interpolate.ts` 当 `'linear'`，跟以前那个 `as BoneKeyframe` 直接断言的行为一致）。
