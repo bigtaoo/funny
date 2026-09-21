@@ -72,7 +72,6 @@ export function createRoomNav(ctx: AppCtx): Pick<Nav, 'goRoom' | 'goDeckBuilder'
       joinRoom(code: string) { analytics.track('pvp_room_join', {}); session?.joinRoom(code, getSavedDeck()); },
       setReady(ready: boolean) { session?.setReady(ready); },
       startMatch() { session?.startMatch(); },
-      createRanked() { queueStartTs = Date.now(); analytics.track('pvp_room_create', { mode: 'ranked' }); session?.createRanked(getSavedDeck()); },
       cancelQueue() {
         analytics.track('pvp_queue_cancel', { wait_sec: queueWaitSec() });
         rankedQueued = false;

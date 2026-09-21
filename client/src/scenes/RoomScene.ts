@@ -166,19 +166,16 @@ export class RoomScene implements Scene {
     this.render();
   }
 
-  private onRanked(): void {
-    if (!this.guardAvailable()) return;
-    this.connectingKey = 'room.searching';
-    this.view = 'searching';
-    this.cb.createRanked();
-    this.render();
-  }
-
+  /**
+   * Leaving the matchmaking queue returns to the lobby, not to this scene's idle picker.
+   * The searching view is only ever reached from the lobby's match button (`autoRanked`) — the
+   * picker no longer offers ranked at all — so dropping the player onto a create/join screen they
+   * never asked for was a detour; "cancel" now means "back where I came from" (2026-09-21).
+   */
   private onCancelSearch(): void {
     this.cb.cancelQueue();
-    this.view = 'idle';
     this.mySide = -1;
-    this.render();
+    this.cb.onBack();
   }
 
   private onJoinPressed(): void {
@@ -270,7 +267,6 @@ export class RoomScene implements Scene {
       set spinnerText(v) { scene.spinnerText = v; },
       render: () => this.render(),
       onCreate: () => this.onCreate(),
-      onRanked: () => this.onRanked(),
       onCancelSearch: () => this.onCancelSearch(),
       onJoinPressed: () => this.onJoinPressed(),
       onConfirmCode: () => this.onConfirmCode(),

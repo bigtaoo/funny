@@ -1392,3 +1392,42 @@ Daily 另外三个 tab、拍卖行的 `mine`/`bids` 两个 tab 全没审过。
 **变异没红先别怪测试，先确认那条变异真的改变了产物**。
 
 `tsc --noEmit`、`npm run build:web`、`test:ui` 274 文件 / **2772 例**（+15）全绿。本轮不含可见改动，故无实拍。
+
+## 60. 联机入口只留一扇门：排位从好友房的选择页撤走，取消匹配直接回大厅（2026-09-21）
+
+**起因**：用户两条并列的反馈——①「在大厅点匹配，然后点取消，我希望直接返回大厅」；
+②「social ⇒ 联机对战 打开的创建房间界面，去掉上面的匹配按钮，仅保留创建房间和加入房间两个按钮」。
+两条其实是同一件事的两头：`RoomScene` 的 `idle` 视图里一直摆着「排位赛」按钮（S1-R 落地时加的，见
+[`META_TASKS.md`](META_TASKS.md) S1-R），于是排位有**两扇门**——大厅那块「开始匹配」大按钮（`autoRanked`，
+直接落在 `searching` 视图）和这里这颗。既然选择页上的那颗要撤，`searching` 就只剩大厅一条来路，
+「取消匹配」再落回这张选择页就纯属绕路：玩家是从大厅来的，要回的也是大厅。
+
+| 位置 | 改了什么 |
+|---|---|
+| `RoomScene/views.ts` `drawIdle()` | 去掉「排位赛」按钮 + 它下面那行 `room.rankedDesc` 说明；剩下的创建/加入两颗按钮起点从 `h*0.24`（三颗时）下移到 `h*0.32`，让两颗仍读作居中；`RoomViewHost.onRanked` 一并删掉 |
+| `RoomScene.ts` | 删 `onRanked()`；`onCancelSearch()` 从「`view='idle'` + 重绘」改成 `cb.cancelQueue()` + `cb.onBack()`（`onBack` 本来就是关会话回大厅那条，见 `nav/room.ts`）。标题栏返回键在 `searching` 态本来就走 `onCancelSearch()`，所以两个出口自动一致 |
+| `RoomScene/types.ts` · `nav/room.ts` | `RoomSceneCallbacks.createRanked` 删掉——入队本来就不由这个场景发起，而是 `nav/room.ts` 的 `queueRanked()` 在网关 open 时打的（`autoRanked`），这颗回调随按钮一起变成死代码 |
+| `i18n zh/en/de` | `room.ranked` / `room.rankedDesc` 两个键删掉（`i18n-no-dead-keys` 会直接抓）。`room.rankedTitle` 留着——`searching` 态的标题栏还在用 |
+
+两处边界：
+
+- **`applyRoomError` 的落点没动**。排位失败（`RANKED_UNAVAILABLE` 等）仍然把 `searching` 打回 `idle` 并弹 toast，
+  也就是落在只剩创建/加入的那张选择页上。这跟「取消」不同：取消是玩家自己要走，失败是**还在这条路上出了事**，
+  把人留在联机页 + 一条说明，比直接甩回大厅少丢一次上下文。`applyNetState('disconnected')` 同理未动。
+- **删 `createRanked` 回调顺带删掉了 `roomNav.test.ts` 里那一例**（「`createRanked()` 打 `pvp_room_create{mode:ranked}` 并带上牌组入队」）。
+  它测的是一条已经不存在的调用路径；`autoRanked` 那条入队路径的同族断言（含不重复入队、取消后可重新入队）本来就在同一文件里，未受影响。
+
+**门禁**：`test/ui/scenes.ui.ts` 新增一组 3 例——①`idle` 恰好 3 个命中区（标题返回 + 两颗按钮），
+且第 2/3 颗分别走 `createRoom` 与 `codeEntry`（**数命中区**才抓得住「按钮还在只是画到屏外」）；
+②`autoRanked` 进 `searching` 后点取消，`cancelQueue` 与 `onBack` 各一次、且视图**没有**落到 `idle`；
+③标题栏返回键在 `searching` 态与取消同出口。
+
+**怎么核的**：真 Chrome + worktree 自己的 dev server（端口 9390）。
+本机没有可登录的联机后端，而 `searching`/社交页都要 `online`（`!offlineMode && 有 token`）才到得了，
+纯离线大厅根本不长这两个入口——**这是这条路线上最容易卡住的一步**：用 `localStorage` 塞
+`nw_api_base=http://127.0.0.1:9/api`（丢弃端口，不发任何外网请求）+ 一个假 `nw_token` 即可，
+`resolveEntry()` 见到 token 就乐观进在线大厅（`adoptSession` 在后台失败，不挡路），会话照建、`available` 为真，
+`searching` 是本地视图状态、不等服务器，于是整条 UI 路径都走得通。核完把这两个键删掉。
+实拍：大厅「开始匹配」→「匹配中」页 → 点「取消匹配」→ **直接回到大厅**；社交 →「联机对战」→ 页面上只剩
+「创建房间」「加入房间」两颗 + 「把房间码发给好友」。
+`tsc --noEmit`、`npx vitest run`（310 文件 / 3859 例）、`test:ui`（275 文件 / 2799 例）、`npm run build:web` 全绿。

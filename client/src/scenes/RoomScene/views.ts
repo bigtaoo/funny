@@ -29,7 +29,6 @@ export interface RoomViewHost {
   spinnerText: PIXI.Text | null;
   render(): void;
   onCreate(): void;
-  onRanked(): void;
   onCancelSearch(): void;
   onJoinPressed(): void;
   onConfirmCode(): void;
@@ -57,29 +56,30 @@ export function addButton(
   host.hits.push({ rect: { x, y, w, h }, fn });
 }
 
+/**
+ * Friend-room picker: create a room, or type a code to join one.
+ *
+ * 2026-09-21: the ranked button that used to sit on top of these two is gone. Ranked has its own
+ * entry — the lobby's match tile, which jumps straight into the `searching` view (`autoRanked`) —
+ * so offering it again here was a second door to the same queue on a screen the player reached by
+ * asking for a friend room.
+ */
 export function drawIdle(host: RoomViewHost): void {
   const { w, h } = host;
   const btnW = Math.round(w * 0.62);
   const btnH = Math.round(h * 0.10);
   const btnX = (w - btnW) / 2;
   const gap = Math.round(h * 0.035);
-  const y0 = Math.round(h * 0.24);
+  // Two buttons instead of three: start lower so the pair still reads as centered under the header.
+  const y0 = Math.round(h * 0.32);
 
-  // Ranked (primary) → matchmaking queue.
-  addButton(host, t('room.ranked'), btnX, y0, btnW, btnH, C.dark, C.green, () => host.onRanked(),
-    0xffffff, undefined, 'pvpTabIcon');
-  const rankedHint = txt(t('room.rankedDesc'), FS.label, C.mid);
-  rankedHint.anchor.set(0.5, 0); rankedHint.x = w / 2; rankedHint.y = y0 + btnH + Math.round(h * 0.008);
-  host.container.addChild(rankedHint);
-
-  const y1 = y0 + btnH + gap + Math.round(h * 0.03);
-  addButton(host, t('room.create'), btnX, y1, btnW, btnH, C.dark, C.accent, () => host.onCreate(),
+  addButton(host, t('room.create'), btnX, y0, btnW, btnH, C.dark, C.accent, () => host.onCreate(),
     0xffffff, undefined, 'roomTabIcon');
-  addButton(host, t('room.join'), btnX, y1 + btnH + gap, btnW, btnH, C.dark, C.gold, () => host.onJoinPressed(),
+  addButton(host, t('room.join'), btnX, y0 + btnH + gap, btnW, btnH, C.dark, C.gold, () => host.onJoinPressed(),
     0xffffff, undefined, 'enter');
 
   const hint = txt(t('room.share'), FS.label, C.mid);
-  hint.anchor.set(0.5, 0); hint.x = w / 2; hint.y = y1 + 2 * btnH + gap + Math.round(h * 0.035);
+  hint.anchor.set(0.5, 0); hint.x = w / 2; hint.y = y0 + 2 * btnH + gap + Math.round(h * 0.035);
   host.container.addChild(hint);
 }
 
