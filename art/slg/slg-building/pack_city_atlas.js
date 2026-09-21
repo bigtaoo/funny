@@ -44,7 +44,7 @@ const FILES = [
   { file: 'city_l4.webp',  name: 'city_l4'  },
   { file: 'city_l5.png',   name: 'city_l5'  },
   { file: 'city_l6.webp',  name: 'city_l6'  },
-  { file: 'city_l7.png',   name: 'city_l7'  },
+  { file: 'city_l7.webp',  name: 'city_l7'  },
   { file: 'city_l8.png',   name: 'city_l8'  },
   { file: 'city_l9.png',   name: 'city_l9'  },
   { file: 'city_l10.png',  name: 'city_l10' },
