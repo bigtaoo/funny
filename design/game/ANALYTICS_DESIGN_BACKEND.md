@@ -44,11 +44,13 @@ notebook_wars_analytics
 │       { date, platform, funnel_step, count, conversion_rate? }
 │       索引：{ date: -1, platform: 1 }
 │
-└── boots_daily    启动计数（永久，2026-09-20；见 ANALYTICS_DESIGN §3.6b）
-        { _id: `${date}|${platform}`, date, platform, count, updated_at }
+└── boots_daily    启动计数（永久，2026-09-20；见 ANALYTICS_DESIGN §3.6b / §3.6c）
+        { _id: `${date}|${platform}`, date, platform, count, declined?, updated_at }
         索引：{ date: -1 }（_id 本身就是 (date, platform)，upsert 不需要额外索引）
-        **只有这五列**：这是同意墙之前唯一能记的东西，没有 device_id、没有 IP、没有账号。
+        **只有这六列**：这是同意墙之前唯一能记的东西，没有 device_id、没有 IP、没有账号。
         写入者是 `GET /analytics/config`（每次启动必发、在年龄门/同意墙之前、无需同意）。
+        `declined` 是 `count` 的**子集**（拒绝埋点那拨人的启动次数，2026-09-21 加，
+        `?d=1` 那次请求写它、且**不**再写 `count`）；老文档里没有这一列，读成 0。
 ```
 
 关卡/教程/场景细粒度漏斗（§9.7）、设备/地理分布（§9.8）、启动漏斗（§9.9）与加载时长（§9.10）都是**实时聚合查询**（不经 ETL 预聚合），直接查 `events`（`boots_daily` 只在 §9.9 里被读一次）。
@@ -60,7 +62,7 @@ notebook_wars_analytics
 | `events` | 90 天 | 原始事件量大，超期分析价值低 |
 | `sessions` | 永久 | 轻量，留存/DAU 计算需要 |
 | `funnels_daily` | 永久 | 聚合结果，体积小 |
-| `boots_daily` | 永久 | 一天三行数字，要的就是长期趋势 |
+| `boots_daily` | 永久 | 一天几行数字，要的就是长期趋势 |
 
 ---
 
@@ -350,7 +352,12 @@ cohort（某日活跃设备）
 [`ANALYTICS_DESIGN.md`](ANALYTICS_DESIGN.md) §3.6b。
 
 按 (日期, 平台) 出行：`boots`（`boots_daily` 计数）/ `sessions`（`session_start` **条数**）/
-`consents`（`gdpr_consent` 条数）/ `reach_rate = sessions/boots`。
+`declined`（`boots_daily.declined`，**`boots` 的子集**）/ `consents`（`gdpr_consent` 条数）/
+`reach_rate = sessions/boots`。
+
+`reach_rate` **故意不改口径**（仍是 `sessions/boots`）：它已经在趋势图里躺了一段时间，
+换分母等于把历史悄悄改写。要看"能报的人里有多少真报了"，自己拿 `sessions/(boots − declined)` 算。
+ops 那边扣的是 `Lost = boots − sessions − declined`（§3.6c）。
 
 实现上是**外连接**（`analyticsvc/service/traffic.ts`）：两侧任意一边出现过的 (日期, 平台) 都出一行。
 内连接会正好丢掉这张表最有价值的那一行——**有启动、零会话的那天**。反过来「有会话、没计数」
@@ -491,7 +498,7 @@ cohort（某日活跃设备）
 现在 `track()` 在「没同意」或「还没 init」两种状态下一律缓冲，`init()` 也改成**先补发再发
 `session_start`**，让队列保持时间顺序。
 
-**已经在客户端做掉的**：`showConsent` 的「仅必要」分支（2026-09-21，ANALYTICS §3.6c）——拒绝埋点照样进游戏，服务端这边没有新端点，只是 `POST /account/gdpr-consent` 现在也会收到 `false`。**这里仍然没做的**：把拒绝的人从 §3.6b 的 `Lost` 里拆出来，要再加一列同样只有「日期/平台/计数」的无鉴权计数。
+**已经在客户端做掉的**：`showConsent` 的「仅必要」分支（2026-09-21，ANALYTICS §3.6c）——拒绝埋点照样进游戏，服务端这边没有新端点，只是 `POST /account/gdpr-consent` 现在也会收到 `false`。**同日补完**：拒绝的人已经从 §3.6b 的 `Lost` 里拆出来了——`GET /analytics/config?d=1` 在同一行上 `$inc { declined }`（仍然只有「日期/平台/计数」，仍然无鉴权、无 device_id、无 IP），`boot_funnel` 多一列 `declined`，ops 的 `Lost` 改成 `boots − sessions − declined`。
 
 新增覆盖：`client/test/analyticsBootTimeline.test.ts`（8）、`analyticsIdleWatch.test.ts`（7）、
 `analyticsConsentBuffer.test.ts` 加两条 pre-init 用例、`anomaly-chain.test.ts` 加三条 sid 用例、

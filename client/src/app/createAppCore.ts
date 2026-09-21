@@ -234,17 +234,29 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
    * Nothing is tracked on the refusal path — not even a `gdpr_consent { granted: false }` event.
    * The refusal is the one answer that cannot be reported through the thing it refuses; it reaches
    * the server as account state via `recordGdprConsent`, which is record-keeping under Art 7(1),
-   * not telemetry. ANALYTICS_DESIGN §3.6c has what that costs the launch funnel.
+   * not telemetry.
+   *
+   * `countDeclinedLaunch()` is the one exception, and it is not telemetry either: it bumps a
+   * date/platform/count row on the unauthenticated launch counter, which stores nobody. Both refusal
+   * paths call it — the launch they refuse on and every launch after — because since refusal stopped
+   * ending the session (ANALYTICS_DESIGN §3.6c) these players go on playing and reporting nothing,
+   * and the launch funnel could not tell them apart from the ones who read this dialog and left.
    */
   function gateGdpr(next: () => void): void {
     const answered = saveManager.get().flags[GDPR_CONSENT_FLAG];
-    if (answered !== undefined) { analytics.setConsent(answered === true); next(); return; }
+    if (answered !== undefined) {
+      analytics.setConsent(answered === true);
+      if (answered === false) analytics.countDeclinedLaunch();
+      next();
+      return;
+    }
 
     /** Shared tail of both answers: persist locally, mirror to the account, proceed. */
     const record = (granted: boolean): void => {
       saveManager.setFlag(GDPR_CONSENT_FLAG, granted);
       analytics.setConsent(granted);
       if (granted) analytics.track('gdpr_consent', { granted: true });
+      else analytics.countDeclinedLaunch();
       const token = platform.storage.getItem(TOKEN_KEY);
       if (api && token) { api.setToken(token); void api.recordGdprConsent(granted).catch(() => { /* best-effort; flag still syncs via SaveManager */ }); }
       next();

@@ -77,13 +77,22 @@ export interface SessionDoc {
  * one per launch) and the difference is the cohort that left at a gate. Comparing it with distinct
  * devices would be comparing launches with people.
  *
- * Permanent, like funnels_daily — it is three numbers a day, and the whole point is the long trend.
+ * Permanent, like funnels_daily — it is a couple of numbers a day, and the whole point is the long trend.
  */
 export interface BootDailyDoc {
   _id: string; // `${date}|${platform}`
   date: string;
   platform: string;
   count: number;
+  /**
+   * Of those launches, the ones a player who refused analytics made ("essentials only",
+   * ANALYTICS_DESIGN §3.6c). Same three columns as `count` — date, platform, a number — written by
+   * the same unauthenticated request, because refusing telemetry cannot be reported *as* telemetry.
+   *
+   * Without it these launches are indistinguishable from the age/consent-gate bounce: both reach the
+   * counter and neither ever reaches `session_start`. Absent on documents written before 2026-09-21.
+   */
+  declined?: number;
   updated_at: Date;
 }
 

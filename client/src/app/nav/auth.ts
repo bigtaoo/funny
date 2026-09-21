@@ -125,6 +125,9 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
       // Analytics consent, withdrawable and re-grantable (COMPLIANCE_GLOBAL §3.3). Same three
       // writes the consent gate makes, minus the `gdpr_consent` event: re-granting here is not a
       // first-launch conversion and would distort the funnel's consent count (ANALYTICS §3.6c).
+      // Withdrawing here likewise does not tick `countDeclinedLaunch()`: this launch already emitted
+      // `session_start` and is counted under `Sessions`, so marking it a refused launch too would
+      // subtract it from the funnel twice. Their *next* launch ticks it, from the gate.
       getAnalyticsConsent: () => saveManager.getFlag(GDPR_CONSENT_FLAG) === true,
       onSetAnalyticsConsent: (granted: boolean) => {
         saveManager.setFlag(GDPR_CONSENT_FLAG, granted);

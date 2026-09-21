@@ -7,7 +7,8 @@
 //   * the refusal STICKS — `flags.gdprConsent === false` has to survive as its own state, distinct
 //     from "never asked", or the next launch asks again and the first stray tap overwrites it;
 //   * refusing emits NOTHING, not even the consent event. This is the one answer that cannot be
-//     reported through the mechanism it refuses;
+//     reported through the mechanism it refuses — its single trace is a tick on the anonymous launch
+//     counter, so the funnel can tell a refusal apart from a player who left at the gate (§3.6c);
 //   * outside the covered regions the card has no second button at all, rather than one that is
 //     drawn and then ignored.
 import { describe, it, expect, afterEach, vi } from 'vitest';
@@ -37,6 +38,17 @@ function launch(flags: Record<string, boolean> = {}, storage: Record<string, str
 function storedConsent(platform: HeadlessPlatform): boolean | undefined {
   const raw = platform.storage.getItem('nw_save_v1');
   return (JSON.parse(raw ?? '{}') as { flags?: Record<string, boolean> }).flags?.[GDPR_CONSENT_FLAG];
+}
+
+/**
+ * Wait for a request to show up, rather than for one tick of the event loop: every ApiClient call
+ * goes through the process-wide token bucket in net/rateGate.ts (5 in a burst, then one per 200ms),
+ * so a launch that has already spent the budget holds the next call back by a few hundred ms. A
+ * fixed `setTimeout(0)` passes or fails depending on what the tests before it happened to send.
+ */
+async function until(pred: () => boolean, timeoutMs = 3000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!pred() && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10));
 }
 
 /** Pin the reported IANA zone for one test — the region test's only input on the web. */
@@ -98,6 +110,92 @@ describe('consent gate', () => {
     expect(posted, 'a refusal may not be reported through the thing it refuses').toEqual([]);
   });
 
+  it('counts the refused launch on the launch counter — the one thing that path does send', async () => {
+    // Not a contradiction of the test above: this is the unauthenticated date/platform/count row
+    // (ANALYTICS_DESIGN §3.6b), not an event. Without it a refusing player is indistinguishable from
+    // one who closed the tab at the gate — both reach the counter, neither ever reaches session_start.
+    withTimeZone('Europe/Berlin');
+    const seen: NetRequest[] = [];
+    setNetTransport({
+      request: async (req) => {
+        seen.push(req);
+        return { ok: true, status: 200, json: async () => ({ ok: true, data: { save: {} } }), text: async () => '' };
+      },
+    });
+
+    const { views } = launch({}, { nw_api_base: 'http://api.test' });
+    views.consent!.onDecline();
+    await until(() => seen.some((r) => r.url.includes('d=1')));
+
+    const ticks = seen.filter((r) => r.url.includes('/analytics/config') && r.url.includes('d=1'));
+    expect(ticks).toHaveLength(1);
+    expect(ticks[0].url).toContain('p=web');
+    expect(ticks[0].body, 'the tick carries nothing — the whole point is a number that needs no consent').toBeUndefined();
+  });
+
+  it('counts every later launch of a player who already refused, not just the one they refused on', async () => {
+    // The gate answers itself from the stored flag on those launches, so this is the branch that has
+    // to tick: they keep launching and keep reporting nothing, and each of those launches lands in
+    // the funnel's denominator.
+    withTimeZone('Europe/Berlin');
+    const seen: NetRequest[] = [];
+    setNetTransport({
+      request: async (req) => {
+        seen.push(req);
+        return { ok: true, status: 200, json: async () => ({ ok: true, data: { save: {} } }), text: async () => '' };
+      },
+    });
+
+    const { views } = launch({ [GDPR_CONSENT_FLAG]: false }, { nw_api_base: 'http://api.test' });
+    await until(() => seen.some((r) => r.url.includes('d=1')));
+
+    expect(views.screen).not.toBe('consent');
+    expect(seen.filter((r) => r.url.includes('/analytics/config') && r.url.includes('d=1'))).toHaveLength(1);
+  });
+
+  it('does not tick the refusal counter when the player accepts', async () => {
+    withTimeZone('Europe/Berlin');
+    const seen: NetRequest[] = [];
+    setNetTransport({
+      request: async (req) => {
+        seen.push(req);
+        return { ok: true, status: 200, json: async () => ({ ok: true, data: { save: {} } }), text: async () => '' };
+      },
+    });
+
+    const { views } = launch({}, { nw_api_base: 'http://api.test' });
+    views.consent!.onAccept();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(seen.filter((r) => r.url.includes('d=1'))).toEqual([]);
+  });
+
+  it('does not tick the counter when consent is withdrawn in Settings — that launch is already in `Sessions`', async () => {
+    // The only rule of this counter is that it stays comparable with the launch count it gets
+    // subtracted from. This launch accepted, emitted `session_start` and is counted under
+    // `Sessions`; marking it a refused launch too would remove it from the funnel twice. Their NEXT
+    // launch ticks it, from the gate — and nothing but the absence of a call enforces that here,
+    // since the once-per-launch guard has not fired yet on a launch that consented.
+    withTimeZone('Europe/Berlin');
+    const seen: NetRequest[] = [];
+    setNetTransport({
+      request: async (req) => {
+        seen.push(req);
+        return { ok: true, status: 200, json: async () => ({ ok: true, data: { save: {} } }), text: async () => '' };
+      },
+    });
+
+    const { views } = launch({}, { nw_api_base: 'http://api.test', [TOKEN_KEY]: 'tok-1' });
+    views.consent!.onAccept();
+    await until(() => views.screen === 'lobby');
+
+    views.lobby!.onOpenProfile();
+    views.settings!.onSetAnalyticsConsent!(false);
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(seen.filter((r) => r.url.includes('d=1'))).toEqual([]);
+  });
+
   it('mirrors the refusal to the account, which is record-keeping and not telemetry', async () => {
     withTimeZone('Europe/Berlin');
     const seen: NetRequest[] = [];
@@ -110,11 +208,15 @@ describe('consent gate', () => {
 
     const { views } = launch({}, { nw_api_base: 'http://api.test', [TOKEN_KEY]: 'tok-1' });
     views.consent!.onDecline();
-    await new Promise((r) => setTimeout(r, 0));
+    // Matched by BODY, not just by URL: a test before this one leaves its own app core running, and
+    // its late `{ consent: true }` write lands in whatever transport is installed when it finally
+    // gets through the rate gate — which is this test's. Asking "did any gdpr request happen" reads
+    // that neighbour's answer as this test's.
+    const answers = (): unknown[] => seen.filter((r) => r.url.includes('gdpr')).map((r) => JSON.parse(r.body!));
+    await until(() => answers().some((a) => (a as { consent: boolean }).consent === false));
 
-    const post = seen.find((r) => r.url.includes('gdpr'));
-    expect(post, 'the answer has to leave the device or it is lost on the next install').toBeDefined();
-    expect(JSON.parse(post!.body!)).toEqual({ consent: false });
+    expect(answers(), 'the answer has to leave the device or it is lost on the next install')
+      .toContainEqual({ consent: false });
   });
 
   it('still lets an acceptance through unchanged', async () => {

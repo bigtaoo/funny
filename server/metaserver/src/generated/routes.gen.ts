@@ -1497,6 +1497,25 @@ const QUERY_SCHEMAS: Record<string, unknown> = {
       }
     }
   },
+  "getAnalyticsConfig": {
+    "type": "object",
+    "properties": {
+      "p": {
+        "type": "string",
+        "enum": [
+          "web",
+          "wechat",
+          "crazygames"
+        ]
+      },
+      "d": {
+        "type": "string",
+        "enum": [
+          "1"
+        ]
+      }
+    }
+  },
 };
 
 // ── Path parameter schemas — fully inlined (AJV validation) ──────────────────

@@ -286,9 +286,20 @@ describe('metricRows', () => {
 
 describe('bootFunnelRows', () => {
   it('derives the lost launches — the players no other card on the page can see', () => {
-    expect(bootFunnelRows([{ date: '2026-09-20', platform: 'web', boots: 100, sessions: 62, consents: 20 }])).toEqual([
-      { date: '2026-09-20', platform: 'web', boots: 100, sessions: 62, consents: 20, lost: 38, reachRate: 0.62 },
+    expect(bootFunnelRows([{ date: '2026-09-20', platform: 'web', boots: 100, sessions: 62, declined: 8, consents: 20 }])).toEqual([
+      { date: '2026-09-20', platform: 'web', boots: 100, sessions: 62, declined: 8, consents: 20, declinedCount: 8, lost: 30, reachRate: 0.62 },
     ]);
+  });
+
+  it('takes the refusals out of `lost` — they stayed, they just report nothing (§3.6c)', () => {
+    const [row] = bootFunnelRows([{ date: '2026-09-21', platform: 'web', boots: 100, sessions: 62, declined: 30, consents: 20 }]);
+    // Same 38-launch gap as the row above; 30 of it is now known to be people playing in silence.
+    expect(row).toMatchObject({ declinedCount: 30, lost: 8 });
+  });
+
+  it('reads a row from before the refusal counter existed as zero refusals, not as a hole', () => {
+    const [row] = bootFunnelRows([{ date: '2026-09-19', platform: 'web', boots: 100, sessions: 62, consents: 20 }]);
+    expect(row).toMatchObject({ declinedCount: 0, lost: 38 });
   });
 
   it('prefers the rate the service computed over recomputing it', () => {
@@ -300,6 +311,13 @@ describe('bootFunnelRows', () => {
 
   it('clamps lost at zero — a day boundary can book a launch and its session on different days', () => {
     const [row] = bootFunnelRows([{ date: '2026-09-20', platform: 'web', boots: 10, sessions: 12, consents: 0 }]);
+    expect(row!.lost).toBe(0);
+  });
+
+  it('clamps lost at zero when the refusals alone overshoot the launches', () => {
+    // Same boundary case from the other side: the refusal tick is a second request and can land on
+    // the far side of midnight from the launch it belongs to.
+    const [row] = bootFunnelRows([{ date: '2026-09-21', platform: 'web', boots: 10, sessions: 2, declined: 9, consents: 0 }]);
     expect(row!.lost).toBe(0);
   });
 

@@ -93,6 +93,9 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
     // every client hits before the age and consent gates. `Lost` is therefore the one measurement of
     // the players who open the game and leave without a single event being recorded about them —
     // every other card on this page starts counting at session_start and cannot see them at all.
+    // `Declined` is carved out of that gap (§3.6c): those players did answer and did stay — they
+    // just refused telemetry — and leaving them inside `Lost` made the gate bounce look worse than
+    // it is, in a way that grows with every refusal the game keeps.
     const launches = bootFunnelRows(sectionRows(bootFunnel, (v) => v.boot_funnel));
     if (launches.length) {
       const t = h('table', {},
@@ -101,7 +104,8 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
           h('th', {}, 'Platform'),
           h('th', { style: 'text-align:right' }, 'Launches'),
           h('th', { style: 'text-align:right' }, 'Sessions'),
-          h('th', { style: 'text-align:right', title: 'Launches that never reported anything — left at the age or consent gate' }, 'Lost'),
+          h('th', { style: 'text-align:right', title: 'Launches by players who chose "essentials only" — they are playing, they just report nothing (ANALYTICS_DESIGN §3.6c)' }, 'Declined'),
+          h('th', { style: 'text-align:right', title: 'Launches that never reported anything and were not refusals — left at the age or consent gate' }, 'Lost'),
           h('th', { style: 'text-align:right', title: 'gdpr_consent — first-time acceptances' }, 'Consents'),
           // `bar()` prints the percentage next to the bar, so this column needs no separate pct cell.
           h('th', {}, 'Reached'),
@@ -113,6 +117,7 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
           h('td', {}, r.platform),
           h('td', { style: 'text-align:right' }, String(r.boots)),
           h('td', { style: 'text-align:right' }, String(r.sessions)),
+          h('td', { style: 'text-align:right' }, String(r.declinedCount)),
           h('td', { style: 'text-align:right' }, String(r.lost)),
           h('td', { style: 'text-align:right' }, String(r.consents)),
           h('td', {}, bar(r.reachRate)),

@@ -9,7 +9,7 @@ import type { ApiClient } from '../net/ApiClient';
 import { getOrCreateDeviceId } from '../platform/uuid';
 import { onAppLifecycleChange } from '../platform/appLifecycle';
 import { getLocale } from '../i18n';
-import { fetchAnalyticsConfig, shouldTrack } from './config';
+import { fetchAnalyticsConfig, pingDeclinedLaunch, shouldTrack } from './config';
 import { EventQueue, type AnalyticsEvent, type BatchMeta } from './queue';
 import { telemetrySessionId } from './session';
 
@@ -45,6 +45,34 @@ const NAV_CHECKPOINT_SCENES = new Set(['LoginScene', 'IntroScene', 'LobbyScene',
  * accept (fresh users).
  */
 let consentGranted = false;
+
+/**
+ * State for the refusal tick (ANALYTICS_DESIGN §3.6c, {@link countDeclinedLaunch}): the analytics
+ * base URL once {@link init} has derived it, and whether this launch's tick has been sent.
+ *
+ * Kept here rather than at the call site because the consent gate runs on every entry path (launch
+ * and again after login) while the tick has to be exactly one per launch — the number it is compared
+ * against counts launches.
+ */
+let bootCounterBase: string | null = null;
+let declinedLaunchSent = false;
+
+/**
+ * Record that this launch is one a player who refused analytics made (§3.6c), by bumping the
+ * unauthenticated launch counter's second column — see `config.ts` `pingDeclinedLaunch` for what is
+ * and is not sent. Call it from the consent gate on both refusal paths: the launch the player
+ * refuses on, and every later launch of theirs, which is what makes the counter comparable with the
+ * launch count it is subtracted from.
+ *
+ * At most once per launch, and a no-op until {@link init} has a base URL — which it has before any
+ * gate runs (createAppCore starts the SDK while it is being constructed, the gates run inside
+ * `start()`), and never gets while offline, where there is no counter to write to in the first place.
+ */
+export function countDeclinedLaunch(): void {
+  if (declinedLaunchSent || !bootCounterBase) return;
+  declinedLaunchSent = true;
+  pingDeclinedLaunch(bootCounterBase, getPlatformName());
+}
 
 /**
  * Events tracked before the SDK could send them — because consent had not been granted yet, or
@@ -119,9 +147,18 @@ export async function init(
   api: ApiClient | undefined,
   apiBase: string | null,
 ): Promise<void> {
+  // A fresh init is a fresh launch, and the refusal tick is per launch — so the guard starts over
+  // here rather than living for the lifetime of the module.
+  bootCounterBase = null;
+  declinedLaunchSent = false;
+
   if (!apiBase) return; // no server → analytics disabled silently
 
   const base = analyticsBaseUrl(apiBase);
+  // Set before the first await below: the consent gate can reach the refusal path while the config
+  // fetch is still in flight, and a tick that finds no base URL is simply not sent.
+  bootCounterBase = base;
+
   sessionId = telemetrySessionId();
   sessionStartTs = Date.now();
   scenesVisited = [];

@@ -3,7 +3,9 @@
  *
  *   • countBoot / queryBootFunnel — the launch counter written by `GET /analytics/config`, and the
  *     only denominator that includes players who leave at the age or consent gate. Every other query
- *     in this service starts at `session_start`, which those players never reach.
+ *     in this service starts at `session_start`, which those players never reach. Since 2026-09-21
+ *     it has a second column (countDeclinedLaunch, §3.6c): players who refused analytics stay in the
+ *     game and report nothing, which looks identical to leaving unless they are counted apart.
  *   • queryLoadTime — startup-time percentiles per platform, plus the launches that never finished
  *     loading at all.
  *
@@ -83,6 +85,46 @@ describe.skipIf(!mongo)('launch counter + load time', () => {
     });
   });
 
+  // ─── countDeclinedLaunch (§3.6c) ───────────────────────────────────────────
+
+  describe('countDeclinedLaunch', () => {
+    it('is a second column on the same row, not a second launch', async () => {
+      await mongo!.collections.boots_daily.deleteMany({});
+      await svc.countBoot('web');
+      await svc.countBoot('web');
+      await svc.countDeclinedLaunch('web');
+
+      const docs = await mongo!.collections.boots_daily.find({}).toArray();
+      expect(docs).toHaveLength(1);
+      // Both of those launches were counted once; one of them is now known to be a refusal. Double
+      // counting here would inflate the denominator the whole funnel is read against.
+      expect(docs[0]).toMatchObject({ count: 2, declined: 1 });
+      // Still date + platform + numbers, nothing about who refused.
+      expect(Object.keys(docs[0]!).sort()).toEqual(['_id', 'count', 'date', 'declined', 'platform', 'updated_at']);
+    });
+
+    it('seeds count=0 when the refusal tick lands before any launch tick', async () => {
+      // Not hypothetical: the two are separate requests, and the config request can fail while the
+      // refusal one gets through. Leaving `count` unset would make `boots` read as missing rather
+      // than zero, and the funnel subtracts `declined` from it.
+      await mongo!.collections.boots_daily.deleteMany({});
+      await svc.countDeclinedLaunch('wechat');
+
+      const doc = await mongo!.collections.boots_daily.findOne({ platform: 'wechat' });
+      expect(doc).toMatchObject({ count: 0, declined: 1 });
+      // The privacy contract has to hold on THIS path too, not just when a launch created the row:
+      // a date, a build target, two numbers. Whoever adds a field here has to break a test twice.
+      expect(Object.keys(doc!).sort()).toEqual(['_id', 'count', 'date', 'declined', 'platform', 'updated_at']);
+    });
+
+    it('runs concurrently without losing counts', async () => {
+      await mongo!.collections.boots_daily.deleteMany({});
+      await Promise.all(Array.from({ length: 25 }, () => svc.countDeclinedLaunch('crazygames')));
+      const doc = await mongo!.collections.boots_daily.findOne({ platform: 'crazygames' });
+      expect(doc?.declined).toBe(25);
+    });
+  });
+
   describe('queryBootFunnel', () => {
     it('puts launches next to the sessions and consents that came out of them', async () => {
       await mongo!.collections.boots_daily.deleteMany({});
@@ -99,6 +141,29 @@ describe.skipIf(!mongo)('launch counter + load time', () => {
       const web = rows.find((r) => r.platform === 'web')!;
       expect(web).toMatchObject({ boots: 10, sessions: 3, consents: 1 });
       expect(web.reach_rate).toBeCloseTo(0.3);
+      // No refusal ticks on those ten launches, and rows written before §3.6c have no such field at
+      // all — either way the column reads 0 rather than going missing.
+      expect(web.declined).toBe(0);
+    });
+
+    it('carries the refusals separately, so the gap left over is only the gate bounce (§3.6c)', async () => {
+      await mongo!.collections.boots_daily.deleteMany({});
+      await mongo!.collections.events.deleteMany({});
+      for (let i = 0; i < 10; i++) await svc.countBoot('web');
+      for (let i = 0; i < 4; i++) await svc.countDeclinedLaunch('web');
+      await mongo!.collections.events.insertMany([evDoc('s1', 'session_start'), evDoc('s2', 'session_start')]);
+
+      const rows = await svc.queryBootFunnel(7);
+      const web = rows.find((r) => r.platform === 'web')!;
+      expect(web).toMatchObject({ boots: 10, sessions: 2, declined: 4 });
+      // 10 launches: 2 reported, 4 played in silence, 4 actually left at a gate. Before the refusal
+      // counter existed this row said "8 lost".
+      expect(web.boots - web.sessions - web.declined).toBe(4);
+      // `reach_rate` deliberately keeps ALL launches as its denominator, refusals included. It has
+      // history plotted behind it, and silently re-basing a number already on a trend line rewrites
+      // that history. Anyone who "fixes" it to sessions/(boots − declined) — 2/6, which is a
+      // defensible metric, just not this one — has to come here and say so on purpose.
+      expect(web.reach_rate).toBeCloseTo(0.2);
     });
 
     it('still reports a day whose launches produced NO sessions — the worst case is the point', async () => {
@@ -120,7 +185,7 @@ describe.skipIf(!mongo)('launch counter + load time', () => {
 
       const rows = await svc.queryBootFunnel(7);
       expect(rows[0]).toMatchObject({ boots: 0, sessions: 1 });
-      expect(rows[0].reach_rate).toBeUndefined(); // no denominator → no rate invented
+      expect(rows[0]!.reach_rate).toBeUndefined(); // no denominator → no rate invented
     });
 
     it('is empty outside the window', async () => {
