@@ -609,3 +609,95 @@ no text, no labels
 ```
 
 **这两张落地后**：把 `cityAtlasContentTop.ui.ts` 的 `HEIGHT_BUDGET_K` 从 1.6 收紧到 1.2。
+
+### 第二轮结果（2026-09-21 同日）——`l4` 采用，`l7` 两个变体都退
+
+用户出了 3 张：1 张木寨（`l4`）、2 张石堡变体（`l7` 的 A/B）。用真实打包管线量：
+
+| 候选 | 宽高比 | 宽度填充 | 冷色% | 暖色% | 判定 |
+|---|---|---|---|---|---|
+| `wooden_town_doodle_512` → **`city_l4`** | **2.083** ✅ | 0.977 | 25.7 | 64.9 | **采用** |
+| `fortress_doodle_variant_a_512`（l7 A） | **1.340** ❌ | 1.000 | 99.9 | **0.0** | 退 |
+| `fortress_doodle_variant_b_512`（l7 B） | **1.210** ❌ | 0.992 | 91.5 | **0.0** | 退 |
+
+**`city_l4` 采用**：比例 2.083 落在 1.75–2.2 带内；院内 8 座独立建筑（旧图和 `city_l3` 都只有 4 座），密度硬指标达标；绘制高度 3.85 → **2.50 格**，5×5 档从「Lv4 比 Lv5 高 40%」变成 Lv3 3.04 / Lv4 2.50 / Lv5 2.75，残差 10–20%，密度足以承担档内递进，不再返工。源图保留 `.webp`（未转 png，避免有损转码），`pack_city_atlas.js` 的 `FILES` 同步改。
+
+> **一次险些误判**：肉眼看这张"发棕、不像蓝墨线"，差点按 2026-08-14 那次的画风漂移退掉。量了色相分布才发现**木寨档本来就是暖色主导**——`city_l3` 暖 64.6% / `city_l5` 暖 50.9%，候选的 64.9% 正在带内。**画风这一项也要量，别信眼睛**：统计口径就用 `makeCell` 输出的 cell 里 `b>r+8` / `r>b+8` 的像素占比。
+
+**`l7` 两个变体都退**，但 A **不是白出**——它的院内密度正是 `l7` 缺的那一块（10+ 座建筑 + 市集摊位 + 水井 + 圆形主堡，压过 `city_l6`）。两个问题都在别处：
+
+1. **比例掉回去了**：A=1.340 / B=1.210，比现在线上的 `city_l7`（2.082）还高得多。折算绘制高度 A=5.57 格 / B=6.13 格，而 `city_l6` 才 4.08、`city_l8` 才 4.05——采用等于在 7×7 档里造一个新的倒挂，并把刚修完的高度推回去。根因是地台又画陡了，加上墙体和角楼偏高。
+2. **暖色归零**：A/B 的暖色像素占比都是 **0.0%**。石堡系列每一张都留着 6–30% 的暖色点缀（`l6` 30.2 / `l7` 16.0 / `l8` 5.8 / `l10` 8.4），全冷色会在图集里显得发灰、跟邻级断档。
+
+**这一轮的教训（接着上一轮那条往下走）**：上一轮的结论是"每个在乎的维度都得各自给一条可数的硬指标"。这一轮发现还有下半句——**加了密度指标之后，比例反而退了**。建筑堆多了，外接框自然被顶高，两条指标在打架。所以 v3 必须**同时**写死两条，并明确告诉它冲突时怎么让步（压扁地台和墙高，别删建筑）。这跟 playerbase 子回合 E 是同一个坑：那次也是"尖顶/旗杆把外接框顶高"，靠补一条数字自检才救回来。
+
+两个退稿已移入 `art/leftover/city_l7_cand_2026-09-21_variant{A,B}_rejected-*.webp`，未删——A 的院内布局是 v3 的构图参照。
+
+#### `city_l7` v3 — Lv 7「石堡加固」（7×7，Tier3 中段）
+
+比 v2 多三件事：比例与密度**并列**写死并给出冲突时的让步方向、显式要求暖色屋顶、点名参照 A 稿的院内布局。出图时把 `city_l8.png`（比例参照）、`city_l6.webp`（暖色与密度参照）和 A 稿一起喂进去。
+
+```
+A loose hand-drawn ink DOODLE sketch on graph paper — NOT a detailed painted
+illustration, NOT realistic shading, NOT rendered texture with light/dark
+gradients. Flat, scratchy fountain-pen blue ink outlines with occasional
+cross-hatching for texture ONLY, filled with simple FLAT single-tone
+watercolor washes — match the exact medium, flatness and line weight of
+city_l8.png.
+
+TWO HARD REQUIREMENTS. Both must hold at once. If they fight, obey the
+first and give way on the second by FLATTENING, never by removing buildings.
+
+(1) PROPORTION. The whole fortress sits on ONE wide rotated-diamond
+isometric ground plate seen from above at a shallow tilt, like a diamond
+playing-card symbol. NOT a front elevation, NOT a tabletop diorama, no
+horizon. The plate's top corner sits about 1/4 down the canvas and its
+bottom corner about 3/4 down — a flat 2:1 diamond, twice as wide as it is
+deep. Draw an imaginary tight box around EVERYTHING non-white, including
+every tower, spire and flag: its width must be AT LEAST 1.75 times its
+height. city_l8.png's own box is 1.84 wide-to-tall; match it. The outer
+walls must be LOW — roughly one sixth of the total box height — and the
+central keep must not exceed one third of it. If the box comes out too
+tall, lower the walls, shorten the towers and flatten the ground plate.
+Do NOT delete courtyard buildings to make it fit.
+
+(2) DENSITY. The courtyard must be LIVED-IN, not an empty walled yard.
+Inside the walls draw AT LEAST 8 distinct occupied structures besides the
+keep — barracks, stables, a smithy with a chimney, storehouses, market
+stalls, a well, a chapel, garden plots — packed the way city_l6.webp packs
+its own courtyard. Count the buildings inside city_l6.webp's walls and draw
+MORE: it is the level directly below this one and must never look busier or
+more inhabited than this one.
+
+COLOR. Mostly cool grey-blue stone, BUT the roofs of the courtyard
+buildings must be warm orange-brown, the same warm accent city_l6.webp uses
+— roughly one fifth of the drawing should read warm. An all-blue,
+all-monochrome fortress is WRONG and will be rejected.
+
+Subject: a reinforced stone fortress — thick crenellated outer walls with a
+second inner wall ring (both clearly visible from above as concentric
+diamonds), three corner towers, a central keep with a low peaked roof, a
+stone gatehouse with double portcullis, banners on the towers, and the
+packed courtyard described above. It must read as bigger than city_l6.webp
+through SPREAD, the second wall ring and more inner buildings, never through
+height. Heavy cross-hatching on stone for texture.
+
+hand-drawn doodle illustration on graph paper, fountain pen blue ink lines,
+slightly scratchy student sketch strokes, light watercolor marker fill,
+isolated on transparent background, 512x512px, notebook doodle aesthetic,
+no text, no labels
+```
+
+### 当前全链读数（2026-09-21 收盘）
+
+从合并后的 `world_atlas.png` 抠实际像素：
+
+| | Lv1 | Lv2 | Lv3 | Lv4 | Lv5 | Lv6 | Lv7 | Lv8 | Lv9 | Lv10 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 宽高比 | 2.02 | **1.49** | 1.67 | 2.08 | 1.89 | 1.77 | 2.08 | 1.84 | 1.84 | 1.86 |
+| 绘制高(格) | 1.53 | 2.10 | 3.04 | 2.50 | 2.75 | 4.08 | 3.56 | 4.05 | 5.21 | 5.18 |
+| 高/地块屏幕高 | 1.02 | **1.40** | 1.22 | 1.00 | 1.10 | 1.17 | 1.02 | 1.16 | 1.16 | 1.15 |
+
+`city_l2` 是唯一还超过 1.2 的，`cityAtlasContentTop.ui.ts` 的 `HEIGHT_BUDGET_K` 因此从 1.6 收紧到 **1.45**（本轮换掉的旧帧都在 2.03–2.13，仍分得很开）。`l2` 是 3×3 起手小营地、没人反馈过，**不排队**；真要动它再把 K 收到 playerbase 自己用的 1.2。
+
+`city_l7` 的内容缺陷（院内太空）在 v3 出图前**仍然在线上**——它比例达标、不违反任何硬性门禁，只是读起来比 Lv6 简单。

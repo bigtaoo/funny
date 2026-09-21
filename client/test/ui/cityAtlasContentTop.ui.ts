@@ -76,11 +76,13 @@ describe('cityAtlasLoader.getCityContentTopFracForLevel (real atlas data)', () =
     // width; the 2026-08-13 audit had missed it because its criterion (cw/ch >= 0.9375) only checks
     // plot-WIDTH fill and has no height ceiling. Mirrors the playerbase height-budget test above.
     //
-    // K is deliberately loose for now: l2 (1.40) and l4 (1.54) are the two frames still on
-    // pre-2026-09-21 art and are the next re-roll (design/product/city-image-prompts.md
-    // § 高度审计 2026-09-21). Every frame the 2026-09-21 batch replaced sat at 2.03-2.13, so 1.6
-    // still separates fixed from broken; tighten to the playerbase's own 1.2 once l2/l4 land.
-    const HEIGHT_BUDGET_K = 1.6;
+    // K is as tight as the current art allows: `city_l2` (1.40) is the last frame still on
+    // pre-2026-09-21 art, and nothing else exceeds 1.22. Every frame the 2026-09-21 batch
+    // replaced sat at 2.03-2.13, so this still separates fixed from broken by a wide margin.
+    // Tighten to the playerbase's own 1.2 if l2 is ever redrawn — it is a 3×3 starter camp
+    // nobody has complained about, so that is a nice-to-have, not a queued fix
+    // (design/product/city-image-prompts.md § 高度审计 2026-09-21).
+    const HEIGHT_BUDGET_K = 1.45;
     for (let lv = 1; lv <= 10; lv++) {
       const footprint = cityFootprint(lv);
       const drawnTiles = (1 - getCityContentTopFracForLevel(lv)) * citySpriteTiles(footprint, BASE_SPRITE_TILES);
