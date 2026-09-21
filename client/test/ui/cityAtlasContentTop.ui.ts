@@ -12,7 +12,7 @@
 // comments), so this needs neither loadCityAtlas() nor loadPlayerBaseAtlas().
 
 import { describe, it, expect } from 'vitest';
-import { BASE_FOOTPRINT } from '@nw/shared';
+import { BASE_FOOTPRINT, cityFootprint, citySpriteTiles } from '@nw/shared';
 import { getCityContentTopFracForLevel } from '../../src/render/atlas/cityAtlasLoader';
 import { getPlayerBaseContentTopFracForLevel, getPlayerBaseContentWidthFracForLevel } from '../../src/render/atlas/playerBaseAtlasLoader';
 import { ISO_RATIO } from '../../src/render/isoGrid';
@@ -52,12 +52,41 @@ describe('cityAtlasLoader.getCityContentTopFracForLevel (real atlas data)', () =
     expect(getCityContentTopFracForLevel(999)).toBe(getCityContentTopFracForLevel(10));
   });
 
-  it('a low-tier camp (lv1) has a much larger contentTop than a top-tier citadel (lv10) — this gap is the bug', () => {
-    // Direct assertion of the reported bug's shape: a lv1 camp's art fills far less of the cell
-    // than a lv10 citadel's, which is exactly why a flat "90% of full cell height" offset floated
-    // the bar over empty padding for low-level bases.
-    expect(getCityContentTopFracForLevel(1)).toBeGreaterThan(0.3);
-    expect(getCityContentTopFracForLevel(10)).toBeLessThan(0.1);
+  it('contentTop varies widely across levels — this spread is the bug a flat offset cannot absorb', () => {
+    // Direct assertion of the reported bug's shape: levels fill very different fractions of their
+    // fixed cell, which is exactly why a flat "90% of full cell height" offset floated the bar over
+    // empty padding on the frames whose art is short.
+    //
+    // This used to be pinned as "lv1 > 0.3 AND lv10 < 0.1", i.e. "a top-tier citadel nearly fills
+    // its cell". That direction was an artefact of the 2026-09-21 height defect, not a contract: a
+    // frame only fills its square cell vertically by being drawn as tall as its plot is wide. Now
+    // that l3/l5/l7/l8/l9/l10 are wide-and-low, every frame legitimately leaves 26-50% of its cell
+    // empty and no level is the designated "full" one. The spread is what the fix depends on.
+    const tops = Array.from({ length: 10 }, (_, i) => getCityContentTopFracForLevel(i + 1));
+    expect(Math.max(...tops) - Math.min(...tops)).toBeGreaterThan(0.15);
+  });
+
+  it('no frame is drawn taller than its own plot plus a spire allowance (2026-09-21)', () => {
+    // The city sprite is scaled to a SQUARE citySpriteTiles(footprint, BASE_SPRITE_TILES) tiles on a
+    // side (WorldMapRenderer/city.ts), so on-map drawn height in tiles is
+    // (1 - contentTop) * footprint/BASE_FOOTPRINT * BASE_SPRITE_TILES — i.e. purely a property of the
+    // source art's aspect ratio, with no code-side knob. An N×N plot is only N * ISO_RATIO tiles tall
+    // on screen, so art drawn near-square (aspect ≈ 1.0) renders a castle taller than its own plot is
+    // wide. That is what shipped until 2026-09-21, when the 9×9 world centre measured 1.05× its plot
+    // width; the 2026-08-13 audit had missed it because its criterion (cw/ch >= 0.9375) only checks
+    // plot-WIDTH fill and has no height ceiling. Mirrors the playerbase height-budget test above.
+    //
+    // K is deliberately loose for now: l2 (1.40) and l4 (1.54) are the two frames still on
+    // pre-2026-09-21 art and are the next re-roll (design/product/city-image-prompts.md
+    // § 高度审计 2026-09-21). Every frame the 2026-09-21 batch replaced sat at 2.03-2.13, so 1.6
+    // still separates fixed from broken; tighten to the playerbase's own 1.2 once l2/l4 land.
+    const HEIGHT_BUDGET_K = 1.6;
+    for (let lv = 1; lv <= 10; lv++) {
+      const footprint = cityFootprint(lv);
+      const drawnTiles = (1 - getCityContentTopFracForLevel(lv)) * citySpriteTiles(footprint, BASE_SPRITE_TILES);
+      const plotScreenTiles = footprint * ISO_RATIO;
+      expect(drawnTiles, `city_l${lv} drawn height in tiles`).toBeLessThanOrEqual(plotScreenTiles * HEIGHT_BUDGET_K + 0.02);
+    }
   });
 });
 

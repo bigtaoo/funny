@@ -486,3 +486,81 @@ towers.
 7. 实机截图复核（客户端 9090 端口 + 真实 Chrome），世界中心那张要能看到城堡高度明显低于地块宽度
 
 **待办（本轮未做，等图落地后一起）**：把 `1.75 ≤ cw/ch` 这条判据钉进 `client/test/ui/cityAtlasContentTop.ui.ts`——现在加会直接红 6 条，等 6 张图换完再加，让它从此挡住这类回归。
+
+### 落地（2026-09-21 同日）——6 张全部采用，实测全部达标
+
+用户按上面的 prompt 出了 6 张，**一次过**，无废稿。用真实打包管线（`makeCell` 里的 `cutBackground` 区域生长去背，不是肉眼）核对，再从**合并后的 `world_atlas.png` 按帧坐标 extract 实际像素**复量：
+
+| 帧 | 地块 | 旧宽高比 | 新宽高比 | 宽度填充 | 旧绘制高(格) | 新绘制高(格) |
+|---|---|---|---|---|---|---|
+| `city_l3` | 5×5 | 1.03 | **1.67** | 0.953 | 5.19 | **3.04** |
+| `city_l5` | 5×5 | 1.00 | **1.89** | 0.973 | 5.33 | **2.75** |
+| `city_l7` | 7×7 | 1.02 | **2.08** | 0.992 | 7.09 | **3.56** |
+| `city_l8` | 7×7 | 1.01 | **1.84** | 1.000 | 7.41 | **4.05** |
+| `city_l9` | 9×9 | 1.00 | **1.84** | 1.000 | 9.19 | **5.21** |
+| `city_l10` | 9×9 | 1.00 | **1.86** | 1.000 | 9.49 | **5.18** |
+
+世界中心（Lv10）绘制高度从 **1.05 × 地块宽** 降到 **0.58 ×**，正是用户反馈的那一项。宽度填充全部 ≥ 0.9375，没有为了压高度牺牲铺满度。`city_l3` 的 1.67 略低于 1.75 目标，但跟 `playerbase` 最矮的那张（1.66）同档，收下。
+
+**落地动作**：6 个 UUID 源图改名为 `city_l{3,5,7,8,9,10}`；旧源图移入 `art/leftover/city_l*_pre-2026-09-21-height-fix.*`（未删）；`city_l10` 源格式由 `.webp` 换成 `.png`，`pack_city_atlas.js` 的 `FILES` 同步改；重跑打包 + `patchMergedAtlas.js` 补丁进 `client/src/assets/slg/world_atlas.{png,json}`，`tools/map-editor/src/assets/slg/city_atlas.{png,json}` 由打包脚本自动同步。打包脚本顺手写出的 `client/src/assets/slg/city_atlas.{png,json}` 是中间产物（client 只读 `world_atlas`），已删除未入库。
+
+**实机核对**：map-editor（9095，真实 Chrome）跟用户原始截图是**同一个界面、同一个 seed `preview`**，可直接前后对比——城堡现在矮宽地铺在地块上，护城河外缘与黄色地块菱形贴合，没有溢出到邻格，塔尖也没被 mask 切掉。
+
+**测试**：`cityAtlasContentTop.ui.ts` 原有一条断言 `getCityContentTopFracForLevel(10) < 0.1`（"顶级城几乎填满整格"）**被这次修复打红了**——那条断言编码的正是这次要修掉的缺陷形状，不是契约。已改成断言 `contentTop` 在各级之间的**跨度** > 0.15（HP 条修复真正依赖的性质）。同时新增一条高度上限守卫，跟 `playerbase` 那条同形：绘制高度 ≤ 地块屏幕高 × K。**K 暂定 1.6**（本轮换掉的 6 帧旧值都在 2.03–2.13，新值最高 1.54，1.6 干净分开），等 `l2`/`l4` 补完后收紧到 playerbase 自己用的 1.2。client UI 全套 274 文件 2773 例绿，`tsc --noEmit`（client + map-editor）+ webpack production 构建全过。
+
+### 第二轮待出：`city_l4`（高度倒挂）+ `city_l7`（内容太空）
+
+换上新图后重新扫全链，冒出两处**新的**问题：
+
+**① `city_l4` 现在是 5×5 档里最高的一张。** 上一轮判它"不造成倒挂、本轮不动"，那个判断的前提是旧 `l5` 还停在 1.00。`l5` 修好之后：
+
+| | Lv3(新) | **Lv4(旧)** | Lv5(新) |
+|---|---|---|---|
+| 宽高比 | 1.67 | **1.33** | 1.89 |
+| 绘制高(格) | 3.04 | **3.85** | 2.75 |
+
+同档位里低级的比高级的高 40%。（`city_l2` 宽高比 1.50 / 2.10 格，在 3×3 档里高于 Lv1 的 1.53 格，方向是对的，**不用动**。）
+
+**② `city_l7` 内容明显比 `city_l6` 空。** 比例达标（2.08，全系列最扁），但院内只有一圈内墙 + 一个主堡 + 两个小棚；`city_l6` 院里塞满兵营、半木房、摊位、带橙顶的高主堡。同为 7×7、同样精灵尺寸，玩家会读成"升到 Lv7 城反而变简单"——跟 2026-08-14 记过的"Lv6 比 Lv5 简单"是同一类。**根因在 prompt**：`l8`/`l9`/`l10` 都写了"更多塔 / 更密"，`l7` 那条只约束了比例和同心环，**没给内容密度下限**——这次的教训是，"数字自检"这一招用在比例上有效，但比例达标不蕴含密度达标，两个维度都得各自给一条可数的硬指标。
+
+下面两条 prompt 的前两段（风格 + 比例）与上一轮**完全相同**，只改 Subject 段，并各补一条可数的密度硬指标。
+
+#### `city_l4` v2 — Lv 4「木寨扩镇」（5×5，Tier2 中段）
+
+```
+[共用前置块，原样复制]
+
+Subject: a growing wooden town — a rectangular palisade wall with a raised
+fighting walk running out to the edges of the ground plate, AT LEAST 6
+distinct blocky houses inside, two watchtowers (one slightly taller than the
+other, neither rising above about a third of the total box height), a
+reinforced double-leaf wooden gate, several chimneys with smoke. Busier and
+denser than city_l3.png — count the buildings in that reference and draw
+MORE — but clearly less developed than city_l5.png, which adds stone and a
+market square. Blue ink, warm orange-brown wood fill.
+[+ style]
+```
+
+#### `city_l7` v2 — Lv 7「石堡加固」（7×7，Tier3 中段）
+
+```
+[共用前置块，原样复制]
+
+Subject: a reinforced stone fortress with a LIVED-IN courtyard, not an empty
+walled yard — thicker crenellated outer walls with a second inner wall ring
+(both clearly visible from above as concentric diamonds), three corner
+towers, a central keep with a low peaked roof, a stone gatehouse with double
+portcullis, banners on the towers. Inside the walls there must be AT LEAST 6
+distinct occupied structures besides the keep — barracks, stables, a smithy
+with a chimney, storehouses, market stalls, a well — packed into the
+courtyard the way city_l6.webp packs its own. Match or beat city_l6.webp's
+building count and detail density; it is the level right below this one and
+must never look busier. The keep must not stand taller than roughly a third
+of the total box height — this reads as bigger than city_l6.webp through
+SPREAD, the second wall ring and more inner buildings, never through height.
+Heavier cross-hatching for stone texture. Blue ink outline, cool grey-blue
+stone fill.
+[+ style]
+```
+
+**这两张落地后**：把 `cityAtlasContentTop.ui.ts` 的 `HEIGHT_BUDGET_K` 从 1.6 收紧到 1.2。

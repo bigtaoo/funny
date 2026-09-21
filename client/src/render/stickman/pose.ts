@@ -39,10 +39,19 @@ export function applyPose(host: PoseHost): void {
     // ── Normal bone sprite — composite formula (matches animator Renderer.ts)
     //   sprite.x        = bone_pivot.x + kf.translateX
     //   sprite.y        = bone_pivot.y + kf.translateY
-    //   sprite.rotation = (bone_wa + kf.rotation + binding.rotation) * PI/180
+    //   sprite.rotation = (bone_wa + binding.rotation) * PI/180
     //   sprite.scale    = kf.scale × binding.scale  (× -1 for flipX)
     // Any static positional correction lives in binding.anchorX/anchorY, which may
     // fall outside 0–1 for exactly that purpose.
+    //
+    // `bone_wa` ALREADY contains this keyframe's rotation — `Skeleton.computeFK` adds each
+    // bone's `transforms.get(id).rotation` into the world angle it returns. Adding `kf.rotation`
+    // here as well (which this file did, with a comment saying the animator does the same, until
+    // 2026-09-21) turns every authored delta into twice its value on the SPRITE while the bone
+    // chain underneath keeps the authored one — art slides off its own skeleton, by an amount
+    // proportional to how far the clip rotates that bone. Small deltas (the ±30° humanoid clips)
+    // only look like loose, scribbly animation; the runner's +93° spine, which lays a quadruped's
+    // body flat, drew the body bolt upright with the head detached beside it.
     const pose    = worldPos.get(boneId);
     const binding = host.asset.bindings.get(boneId);
     const xform   = transforms.get(boneId);
@@ -51,9 +60,7 @@ export function applyPose(host: PoseHost): void {
     sprite.x = pose.sx + (xform?.translateX ?? 0);
     sprite.y = pose.sy + (xform?.translateY ?? 0);
 
-    sprite.rotation = (
-      (pose.wa + (xform?.rotation ?? 0) + binding.rotation) * Math.PI
-    ) / 180;
+    sprite.rotation = ((pose.wa + binding.rotation) * Math.PI) / 180;
 
     sprite.scale.set(
       (binding.flipX ? -1 : 1) * (xform?.scaleX ?? 1) * binding.scaleX,

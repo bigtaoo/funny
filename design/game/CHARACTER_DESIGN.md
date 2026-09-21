@@ -206,7 +206,8 @@ Anna 三人随偶数章出场（[characters.md](../product/characters.md)：Ch2/
   ① **绑定**：`l_upper_arm`/`l_lower_arm` 之外的六根肢体骨（`r_upper_arm`/`r_lower_arm` + 四根腿骨）anchor 全偏在画稿外，后腿的骨头压根不在画出来的腿上（编辑器里开 skeleton overlay 一眼可见），骨长也彼此差 23%——而四个"上肢"PNG 与四个"下肢"PNG **md5 完全相同**，本来就该同长同锚点。现已统一按那两根正确的前肢绑定复制（上肢 72.0px / 下肢 69.7px），`boneLengthScales` 同步。
   ② **clip**：除 `walk` 的两个端点帧外，全部 6 条都还是 `tools/animator/src/animation/presets.ts` 的人形预设（spine 竖直＝像人一样直立行走）。现按四足重写：`walk` 改成**对角小跑（trot）**，`idle`/`attack`/`hurt`/`death`/`spawn` 全部以 spine≈+92°（躯干水平）为基准姿重做，脚位用两骨 IK 落在同一条地平线上（离胯 130px）。
   ③ **attachment**：shadow 从 `(0,106)` 挪到 `(80,130)` 并加宽（`shadowW` 105→115）——四足的影子要落在四只爪子下、以身体中段为心；hit 点从肩上挪到背中（`spine` 端点 `(-75,-6)`）。
-  **剩下的步骤**：`runner.taoeditor` 只是母版，**游戏里还是 9 月 1 日那份 `client/src/assets/units/runner.tao`**；要上线得在 animator 里打开母版 → `⬇ Export .tao` → 覆盖 `client/src/assets/units/runner.tao`（导出会重烤 spritesheet + 重算 `naturalHeight`，脚本没法替代）。
+  ④ **已上线**（同日）：母版在 animator 里按 **S 档**（`UNIT_SIZE_TIER[Runner] = Small`，此前烤的是 M 档）重导出，`art/units/runner/runner.tao` 与 `client/src/assets/units/runner.tao` 同步覆盖（两者按 `unitRigsAreBaked.test.ts` 必须逐字节相同）。`naturalHeight` 509 → 314，狗在场上比原先那个直立人形矮一半——它本来就是「全场最小最矮」的 S 档。
+  ⑤ 上线时还揪出一个**所有单位都中招的运行时 bug**：`pose.ts` 把 keyframe 旋转加了两次（详见 `design/tools/animator/REQUIREMENTS.md` §贴图绑定 的公式注）。修完连步兵/弓手/盾兵/穷奇的姿态都正了（盾兵原本头是歪着的、弓歪在手外）。
   **死亡 clip 的天花板**：rig 的 root 钉在胯上、运行时不平移 root，所以狗永远趴不下去——`death` 只能做成"前身垮下去、胯还在原高度"的前扑式，后半身抬着是这套骨架的物理下限，不是没调。
 - [ ] **卫安（Medic）绑骨没做完，战斗里仍是旧的淡线稿**（2026-09-03 核对）：v7 新图早在 `f05ad876a`（2026-07-29）就出了，卡面图也已随 2026-08-20 那批 `exportUnitCardArt.mjs` 上线；但 `client/src/assets/units/medic.tao` 与**归档的旧 rig** `art/units/old/medic/medic.tao` **md5 完全相同**——也就是上线的战斗骨骼还是被显式标为 old 的那一份。`art/units/medic/` 目前只有 `medic.xcf`，图层零件还没导出。**剩下的步骤**：GIMP 图层导出 → animator 绑骨（照 Runner 那轮）→ 导出 `.tao` 覆盖 `client/src/assets/units/medic.tao`。**核对方式别看文件日期**（资产重组/压缩批次会刷新时间戳），用上面那个 md5 对比。
 
