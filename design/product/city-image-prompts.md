@@ -351,6 +351,8 @@ playerbase 的 fix-2 已经证过：**一个标量修不了长宽比**。只能�
 
 ## 重出图 Prompt（2026-09-21，6 张：l3 / l5 / l7 / l8 / l9 / l10）
 
+> **ℹ 参照图的前提（2026-09-21 第三轮发现）**：下面这批 prompt（以及 `l4`/`l7` 的 v2）都点名了 `city_l6.webp` 之类的**参照文件**。用户用网页版出图工具时**附不了参照图**，这些句子就是空指。给网页版写 prompt 请直接用最下方的 **v4** 写法：全自包含，所有参照都翻译成文字描述和数字。
+
 三条经验直接套用 playerbase 那轮排名靠前的做法：**① 可核验的数字 > 形容词；② 点名一个已经达标的同系列具体文件去对齐，胜过再写一段散文；③ 机位/比例这种决定成败的约束必须放在 prompt 最前面，并配具体的负面排除。**
 
 每条 prompt 都是**自包含的**（风格 + 比例约束已前置在正文里），末尾照旧附**通用 Style** 段。参照文件 `art/slg/slg-building/city_l6.webp` 请一并喂给出图工具。
@@ -701,3 +703,103 @@ no text, no labels
 `city_l2` 是唯一还超过 1.2 的，`cityAtlasContentTop.ui.ts` 的 `HEIGHT_BUDGET_K` 因此从 1.6 收紧到 **1.45**（本轮换掉的旧帧都在 2.03–2.13，仍分得很开）。`l2` 是 3×3 起手小营地、没人反馈过，**不排队**；真要动它再把 K 收到 playerbase 自己用的 1.2。
 
 `city_l7` 的内容缺陷（院内太空）在 v3 出图前**仍然在线上**——它比例达标、不违反任何硬性门禁，只是读起来比 Lv6 简单。
+
+### 第三轮（2026-09-21 同日）——`l7` 又退，但定位到了**唯一**的病灶：地台角度
+
+**⚠️ 前提变了：用户用的是网页版出图工具，无法附参照图。** 前面所有 prompt 里的「match `city_l8.png`」「count the buildings inside `city_l6.webp`」这类**点名参照文件的写法在这个环境下全部失效**——模型根本看不到那些图。playerbase 那轮总结的「点名一个已达标的同系列具体文件，胜过再写一段散文」这条经验**有前提**：参照图必须真的喂得进去。写给网页版的 prompt 必须**完全自包含**，所有参照都得翻译成文字描述或数字。
+
+v3 出的两张：
+
+| 候选 | 宽高比 | **地台前半深/地台宽**（2:1 应 = 0.25） | 塔尖高出地台最宽线/地台宽 | 暖色% | 密度 |
+|---|---|---|---|---|---|
+| r3 变体 A | 1.279 | **0.361** ❌ | 0.417 | 23.0 ✅ | ~10 座 ✅ |
+| r3 变体 B | 1.142 | **0.432** ❌ | 0.440 | 31.3 ✅ | ~18 座 + 内墙环 ✅ |
+| 线上 10 帧 | 1.49–2.08 | **0.223–0.258** | 0.228–0.414 | 5.8–30.2 | — |
+
+**密度和颜色这轮完全达标**（暖色 23%/31% 对上 `city_l6` 的 30.2%，橙顶院落、市集摊位、菜畦、内墙环全画出来了）。**坏的只剩一条：地台画成了旋转 45° 的正方形，不是压扁的 2:1 菱形**——前半深比标准深了 45–73%，光这一项就吃掉了全部超高。
+
+**新的拆解方式（比「外接框宽高比」好用得多）**。设地台宽 `W`，则绘制高度 = `地台前半深` + `塔尖高出最宽线的部分`。线上好帧是 `0.25W + 0.28W ≈ 0.53W` → 外接框宽高比 ≈ 1.85。候选 A 是 `0.361W + 0.417W = 0.778W` → 1.29。**两个分量各自独立、各自可画可量，比让模型自己算外接框靠谱**——这就是 v4 的写法。
+
+**为什么前三轮的说法没落地**：
+- 「外接框宽必须 ≥ 1.75 × 高」——要求模型自己在脑子里算外接框，它算不准；而且比例达标不蕴含地台正确（`city_l4` 就是地台对、比例也对）。
+- 「地台上顶点约在画布 1/4 处、下顶点约 3/4 处」——**有歧义**，「上顶点」会被读成城堡顶端而不是地台后角；而且它把地台绑在画布上，画布一换成正方形就全乱。
+- 通用 style 尾巴里的 `512x512px` **在帮倒忙**：正方形画布上，一个 1.85:1 的构图要空掉 45% 的画面，模型会本能地把主体撑满。线上成功的石堡帧源图都是横幅（`city_l7`/`l8` 是 1536×1024，`city_l6` 是 2560×1440），这轮两张都是 1920×1920 正方形。
+
+**现成的解：整图垂直压缩**。地台角度错等价于相机仰角错，整图按 `0.25 / 实测前半深比` 垂直缩放即可校正。实测过，两张压完全部落位：
+
+| | 压缩系数 | 宽高比 | 前半深/宽 | 塔尖/宽 | 绘制高(格) |
+|---|---|---|---|---|---|
+| A 压缩后 | 0.693 | **1.839** | **0.250** | 0.290 | 4.00 |
+| B 压缩后 | 0.579 | **1.961** | **0.253** | 0.253 | 3.70 |
+
+真实 cell 尺寸下肉眼复核过，两张都读得对、跟 `l6`/`l8` 同族，塔略敦实但 256px 下看不出来。**用户选择再出一版，未采用压缩版**；两张原稿存在 `art/leftover/city_l7_cand_2026-09-21_r3_variant{A,B}_rejected-plate-aspect*.webp`，配上上表的系数随时可以复现。
+
+#### `city_l7` v4 — Lv 7「石堡加固」（7×7，Tier3 中段）
+
+**完全自包含**：不引用任何图片文件，画风、比例、密度、颜色全部写成文字和数字；画布明确要求横幅；两条硬性数字都只跟菱形自身比。
+
+```
+A loose hand-drawn ink DOODLE sketch on graph paper, in the style of a
+student's notebook margin drawing: flat, scratchy fountain-pen BLUE ink
+outlines, occasional cross-hatching for texture, filled with simple FLAT
+single-tone watercolour washes. NOT a detailed painted illustration, NOT
+realistic shading, NOT smooth gradients, NOT a game-art render, NOT a book
+illustration. Every outline is blue ink; no black outlines.
+
+IMAGE SHAPE: draw on a WIDE LANDSCAPE canvas, about 3 units wide to 2 units
+tall (for example 1536 x 1024). Do NOT use a square canvas.
+
+THE GROUND PLATE — read this twice; it is the rule that keeps getting
+broken. The whole fortress stands on ONE flat diamond-shaped ground plate
+seen from above, like the diamond symbol on a playing card. The diamond has
+four corners: left, right, top and bottom.
+
+  Measure the diamond's WIDTH from its LEFT corner to its RIGHT corner.
+  Measure its HEIGHT from its TOP corner to its BOTTOM corner.
+  THE HEIGHT MUST BE EXACTLY HALF THE WIDTH. If the diamond is 1000 pixels
+  wide it must be 500 pixels tall — not 700, not 1000.
+
+  So the diamond is SQUASHED FLAT. It is NOT a square rotated by 45
+  degrees. A diamond as tall as it is wide is the single most common
+  mistake in this drawing and is WRONG. Draw this flat diamond first and
+  check the ratio before you draw anything standing on it.
+
+HOW TALL THINGS MAY BE. Call the diamond's width W. Draw a horizontal line
+through the diamond's left and right corners. NOTHING in the whole picture
+— no wall, tower, spire, roof or flag — may rise more than 0.3 x W above
+that line. The outer walls should reach only about 0.1 x W above it, and
+the tallest tower about 0.3 x W. This fortress is WIDE and LOW, spread flat
+across its plate; it is never a tall vertical castle portrait.
+
+THE COURTYARD MUST BE LIVED-IN, not an empty walled yard. Inside the walls
+draw AT LEAST 8 distinct occupied structures besides the central keep:
+barracks, stables, a smithy with a chimney, storehouses, market stalls with
+striped awnings, a well, a chapel, garden plots. Pack them so the courtyard
+reads busy and inhabited when seen from above.
+
+COLOUR. Mostly cool grey-blue stone, BUT the roofs of the courtyard
+buildings must be warm ORANGE-BROWN, and roughly one fifth of the whole
+drawing should read warm. An all-blue, all-monochrome fortress is WRONG.
+
+SUBJECT: a reinforced stone fortress. Thick crenellated outer walls running
+right out to the four corners of the ground plate; a SECOND, lower inner
+wall ring inside them, so from above you see two concentric flat diamonds;
+a round tower at each corner; a central keep with a low peaked roof; a
+gatehouse at the diamond's bottom corner with twin towers, a double
+portcullis and a drawbridge; banners on the towers; heavy cross-hatching on
+all stone surfaces.
+
+BEFORE YOU FINISH, CHECK BOTH NUMBERS:
+  1. the diamond's height is half its width — a flat diamond, not a
+     rotated square;
+  2. nothing rises more than 0.3 x W above the left-to-right corner line.
+If either check fails, flatten the diamond and lower the walls and towers.
+Do NOT delete courtyard buildings to make it fit.
+
+hand-drawn doodle illustration on graph paper, fountain pen blue ink lines,
+slightly scratchy student sketch strokes, light watercolor marker fill,
+isolated on transparent background, notebook doodle aesthetic, no text,
+no labels
+```
+
+**核对新图时先量这两个数**（脚本口径：`makeCell` 输出的 cell 里，取最宽的那一行作地台左右角连线）：`前半深/地台宽` 要落在 0.22–0.26，`塔尖高出最宽线/地台宽` 要 ≤ 0.35。这两项过了，外接框宽高比自然落在 1.75–2.2。
