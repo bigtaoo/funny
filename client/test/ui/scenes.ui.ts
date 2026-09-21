@@ -30,6 +30,7 @@ import { CardCodexScene } from '../../src/scenes/CardCodexScene';
 import { StatsScene } from '../../src/scenes/StatsScene';
 import { TitlesScene } from '../../src/scenes/TitlesScene';
 import { RoomScene, CODE_ALPHABET } from '../../src/scenes/RoomScene';
+import { codeEntryLayout } from '../../src/scenes/RoomScene/views';
 import { FriendsScene } from '../../src/scenes/FriendsScene';
 import { ChatScene } from '../../src/scenes/ChatScene';
 import { ResultScene } from '../../src/scenes/ResultScene';
@@ -1443,17 +1444,21 @@ function buildRoomCodeEntry(w: number, h: number, joinRoom: (code: string) => vo
   return { scene, layout };
 }
 
-// Hit order inside the code-entry view is back, then one key per CODE_ALPHABET char, then
-// clear / backspace / confirm. Every tap re-renders and rebuilds the array, so re-read it.
+// Hit order inside the code-entry view is back, then one key per digit IN KEYPAD ORDER (which is
+// the dial-pad's 1-9-0 in portrait, not the charset's 0-9), then clear / backspace / confirm.
+// Every tap re-renders and rebuilds the array, so re-read it.
 const roomHits = (scene: RoomScene) => (scene as any).hits as Array<{ fn: () => void }>;
-const tapDigit = (scene: RoomScene, d: string): void => { roomHits(scene)[1 + CODE_ALPHABET.indexOf(d)]!.fn(); };
+const tapDigit = (scene: RoomScene, d: string): void => {
+  const { keys } = codeEntryLayout((scene as any).w, (scene as any).h);
+  roomHits(scene)[1 + keys.indexOf(d)]!.fn();
+};
 const tapClear = (scene: RoomScene): void => { roomHits(scene)[1 + CODE_ALPHABET.length]!.fn(); };
 const tapBackspace = (scene: RoomScene): void => { roomHits(scene)[2 + CODE_ALPHABET.length]!.fn(); };
 const tapConfirm = (scene: RoomScene): void => { roomHits(scene)[3 + CODE_ALPHABET.length]!.fn(); };
 const entered = (scene: RoomScene): string => ((scene as any).codeChars as string[]).join('');
 
 describe('RoomScene — code-entry keypad', () => {
-  it('charset is the 10 digits = 2 rows of 5', () => {
+  it('charset is the 10 digits (2 rows of 5 in landscape, a 3-wide dial-pad in portrait)', () => {
     // Must match server matchsvc CODE_ALPHABET — its test asserts the same literal.
     expect(CODE_ALPHABET).toBe('0123456789');
     expect(CODE_ALPHABET).toHaveLength(10);

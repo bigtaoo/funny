@@ -113,53 +113,73 @@ export function drawConnecting(host: RoomViewHost, connectingKey: TranslationKey
 export interface CodeEntryLayout {
   /** One entered-code box, and the row's left edge / top. */
   boxW: number; boxH: number; boxGap: number; rowX: number; rowY: number;
-  /** Keypad grid: `rows` × `perRow` square cells of `kW`, top-left at (kX0, kY). */
-  perRow: number; rows: number; kX0: number; kY: number; kW: number; kGap: number;
+  /** Keypad: `keys` in draw order, laid out `perRow` per row over `rows` rows of kW × kH cells,
+   *  top-left at (kX0, kY). A short trailing row is centred (the dial-pad's lone "0"). */
+  keys: string[]; perRow: number; rows: number; kX0: number; kY: number;
+  kW: number; kH: number; kGap: number;
   /** Bottom action row (clear / backspace / confirm): 3 cells of aW × aH from aX0. */
   aX0: number; aY: number; aW: number; aH: number; aGap: number;
 }
 
+/** Portrait key order — a phone dial-pad, not 0-first, because that is the shape a 3-wide grid of
+ *  digits is read as everywhere else. Landscape keeps the plain 0→9 run across its two rows. */
+const DIALPAD_ORDER = '1234567890';
+
 export function codeEntryLayout(w: number, h: number): CodeEntryLayout {
-  // Entered-code boxes. Width is also capped against the height budget: on a wide-and-short
-  // landscape window a pure w*0.10 box is ~28% of the screen height and runs into the keypad.
-  const boxW = Math.min(Math.round(w * 0.10), Math.round(h * 0.14));
-  const boxH = Math.round(boxW * 1.25);
+  const landscape = w > h;
+
+  // Entered-code boxes — the six of them share the same 0.84w budget as the keypad and the action
+  // row, so the three rows read as one column. Capped against the height budget too: on a
+  // wide-and-short landscape window a box that wide is ~28% of the screen height and runs into
+  // the keypad (which is why landscape ends up on the h * 0.14 cap and portrait on the width).
   const boxGap = Math.round(w * 0.02);
+  const boxW = Math.min(
+    Math.floor((w * 0.84 - (CODE_LEN - 1) * boxGap) / CODE_LEN),
+    Math.round(h * 0.14),
+  );
+  const boxH = Math.round(boxW * 1.25);
   const rowW = CODE_LEN * boxW + (CODE_LEN - 1) * boxGap;
   const rowX = (w - rowW) / 2;
   const rowY = Math.round(h * 0.23);
 
-  // Digit keypad (5 per row -> 2 rows). Cells are square and sized to fit the vertical budget
-  // between the code boxes and the bottom action row, so the grid never overflows / pushes the
-  // actions off-screen in landscape.
-  const perRow = 5;
-  const rows = Math.ceil(CODE_ALPHABET.length / perRow);
-  // Below the code boxes, never on top of them — h * 0.40 alone is not enough clearance once the
-  // box row is tall (landscape).
-  const kY = Math.max(Math.round(h * 0.40), rowY + boxH + Math.round(h * 0.04));
-  const kGap = Math.round(w * 0.015);
-  const aH = Math.round(h * 0.08);            // bottom action row height
-  const gapBeforeAction = Math.round(h * 0.02);
-  const bottomMargin = Math.round(h * 0.04);
-  const vBudget = h - kY - gapBeforeAction - aH - bottomMargin;
-  const cellByW = (w * 0.84 - (perRow - 1) * kGap) / perRow;
-  const cellByH = vBudget / rows - kGap;
-  const kW = Math.floor(Math.min(cellByW, cellByH));
-  const kX0 = (w - (perRow * kW + (perRow - 1) * kGap)) / 2;
-
-  const aY = kY + rows * (kW + kGap) + gapBeforeAction;
+  // Bottom action row, pinned to the bottom edge rather than parked under the keypad: stacking it
+  // under a width-limited grid left the bottom third of a portrait screen empty.
+  const aH = Math.round(h * 0.08);
   const aGap = Math.round(w * 0.03);
   const aW = Math.round((w * 0.84 - 2 * aGap) / 3);
   const aX0 = (w - (3 * aW + 2 * aGap)) / 2;
+  const aY = h - Math.round(h * 0.04) - aH;
 
-  return { boxW, boxH, boxGap, rowX, rowY, perRow, rows, kX0, kY, kW, kGap, aX0, aY, aW, aH, aGap };
+  // The keypad owns the whole band between the code boxes and the action row. Landscape spreads
+  // the ten digits over two wide rows; portrait stacks them 3-per-row, which is the only shape
+  // that fills a tall screen with keys big enough to hit.
+  const perRow = landscape ? 5 : 3;
+  const rows = Math.ceil(CODE_ALPHABET.length / perRow);
+  const keys = (landscape ? CODE_ALPHABET : DIALPAD_ORDER).split('');
+  const kGap = Math.round(w * 0.015);
+  const bandTop = rowY + boxH + Math.round(h * 0.04);
+  const bandH = aY - Math.round(h * 0.03) - bandTop;
+  const cellByW = (w * 0.84 - (perRow - 1) * kGap) / perRow;
+  const cellByH = (bandH - (rows - 1) * kGap) / rows;
+  // Keys grow out to the action row's width, but never past 1.8:1 (a 2.6:1 window would otherwise
+  // stretch them into letterboxes) and never stand taller than they are wide.
+  const maxH = Math.max(1, Math.floor(cellByH));
+  const kW = Math.max(1, Math.floor(Math.min(cellByW, maxH * 1.8)));
+  const kH = Math.min(maxH, kW);
+  const kX0 = (w - (perRow * kW + (perRow - 1) * kGap)) / 2;
+  const kY = bandTop + Math.max(0, Math.floor((bandH - (rows * kH + (rows - 1) * kGap)) / 2));
+
+  return {
+    boxW, boxH, boxGap, rowX, rowY,
+    keys, perRow, rows, kX0, kY, kW, kH, kGap,
+    aX0, aY, aW, aH, aGap,
+  };
 }
 
 export function drawCodeEntry(host: RoomViewHost): void {
   const { w, h } = host;
-  const { boxW, boxH, boxGap, rowX, rowY, perRow, kX0, kY, kW, kGap, aX0, aY, aW, aH, aGap } =
+  const { boxW, boxH, boxGap, rowX, rowY, keys, perRow, kX0, kY, kW, kH, kGap, aX0, aY, aW, aH, aGap } =
     codeEntryLayout(w, h);
-  const kH = kW;
 
   const prompt = txt(t('room.enterCode'), FS.title, C.dark, true);
   prompt.anchor.set(0.5, 0.5); prompt.x = w / 2; prompt.y = Math.round(h * 0.18);
@@ -178,11 +198,13 @@ export function drawCodeEntry(host: RoomViewHost): void {
     host.container.addChild(cl);
   }
 
-  for (let i = 0; i < CODE_ALPHABET.length; i++) {
-    const ch = CODE_ALPHABET[i]!;
+  for (let i = 0; i < keys.length; i++) {
+    const ch = keys[i]!;
     const r = Math.floor(i / perRow);
     const c = i % perRow;
-    const kx = kX0 + c * (kW + kGap);
+    // A short last row is centred on the full grid, which puts the dial-pad's lone "0" under the 8.
+    const inRow = Math.min(perRow, keys.length - r * perRow);
+    const kx = kX0 + ((perRow - inRow) * (kW + kGap)) / 2 + c * (kW + kGap);
     const ky = kY + r * (kH + kGap);
     addButton(host, ch, kx, ky, kW, kH, C.paper, C.line, () => {
       if (host.codeChars.length < CODE_LEN) { host.codeChars.push(ch); host.render(); }
