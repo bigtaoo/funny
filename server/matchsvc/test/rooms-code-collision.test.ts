@@ -33,4 +33,20 @@ describe('RoomRegistry.uniqueCode collision fallback', () => {
     expect(codeB).toMatch(/^[0-9]{6}$/); // the probe stays inside the digits-only charset
     expect(registry.size).toBe(2); // both rooms created successfully despite the collision
   });
+
+  // The fallback this replaced returned `'00' + Date.now().toString(36).slice(-4)` without ever
+  // checking byCode, so two rooms falling back inside the same millisecond got the SAME code and
+  // the second one silently overwrote the first's byCode entry. The probe has to skip taken codes.
+  it('consecutive fallbacks never hand out the same code twice', () => {
+    const pushed: { acc: string; msg: PushMsg }[] = [];
+    const matchStarter: MatchStarterPort = { start: () => {} };
+    const registry = new RoomRegistry({ push: (acc, msg) => pushed.push({ acc, msg }), redis: null, matchStarter });
+
+    for (let i = 0; i < 8; i++) registry.roomCreate(`acc${i}`, `P${i}`, `${i}`);
+
+    const codes = pushed.filter((p) => p.msg.kind === 'room_state').map((p) => (p.msg as { code: string }).code);
+    expect(codes.length).toBeGreaterThanOrEqual(8);
+    expect(new Set(codes).size).toBe(8); // one per room, all distinct
+    expect(registry.size).toBe(8);
+  });
 });

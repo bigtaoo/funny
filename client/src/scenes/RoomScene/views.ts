@@ -108,13 +108,18 @@ export function drawConnecting(host: RoomViewHost, connectingKey: TranslationKey
   host.spinnerText = label;
 }
 
-export function drawCodeEntry(host: RoomViewHost): void {
-  const { w, h } = host;
+/** Pure geometry of the code-entry view — split out of drawCodeEntry so the box row / keypad /
+ *  action row can be asserted against each other without a render (test/ui/roomCodeEntryLayout). */
+export interface CodeEntryLayout {
+  /** One entered-code box, and the row's left edge / top. */
+  boxW: number; boxH: number; boxGap: number; rowX: number; rowY: number;
+  /** Keypad grid: `rows` × `perRow` square cells of `kW`, top-left at (kX0, kY). */
+  perRow: number; rows: number; kX0: number; kY: number; kW: number; kGap: number;
+  /** Bottom action row (clear / backspace / confirm): 3 cells of aW × aH from aX0. */
+  aX0: number; aY: number; aW: number; aH: number; aGap: number;
+}
 
-  const prompt = txt(t('room.enterCode'), FS.title, C.dark, true);
-  prompt.anchor.set(0.5, 0.5); prompt.x = w / 2; prompt.y = Math.round(h * 0.18);
-  host.container.addChild(prompt);
-
+export function codeEntryLayout(w: number, h: number): CodeEntryLayout {
   // Entered-code boxes. Width is also capped against the height budget: on a wide-and-short
   // landscape window a pure w*0.10 box is ~28% of the screen height and runs into the keypad.
   const boxW = Math.min(Math.round(w * 0.10), Math.round(h * 0.14));
@@ -123,6 +128,43 @@ export function drawCodeEntry(host: RoomViewHost): void {
   const rowW = CODE_LEN * boxW + (CODE_LEN - 1) * boxGap;
   const rowX = (w - rowW) / 2;
   const rowY = Math.round(h * 0.23);
+
+  // Digit keypad (5 per row -> 2 rows). Cells are square and sized to fit the vertical budget
+  // between the code boxes and the bottom action row, so the grid never overflows / pushes the
+  // actions off-screen in landscape.
+  const perRow = 5;
+  const rows = Math.ceil(CODE_ALPHABET.length / perRow);
+  // Below the code boxes, never on top of them — h * 0.40 alone is not enough clearance once the
+  // box row is tall (landscape).
+  const kY = Math.max(Math.round(h * 0.40), rowY + boxH + Math.round(h * 0.04));
+  const kGap = Math.round(w * 0.015);
+  const aH = Math.round(h * 0.08);            // bottom action row height
+  const gapBeforeAction = Math.round(h * 0.02);
+  const bottomMargin = Math.round(h * 0.04);
+  const vBudget = h - kY - gapBeforeAction - aH - bottomMargin;
+  const cellByW = (w * 0.84 - (perRow - 1) * kGap) / perRow;
+  const cellByH = vBudget / rows - kGap;
+  const kW = Math.floor(Math.min(cellByW, cellByH));
+  const kX0 = (w - (perRow * kW + (perRow - 1) * kGap)) / 2;
+
+  const aY = kY + rows * (kW + kGap) + gapBeforeAction;
+  const aGap = Math.round(w * 0.03);
+  const aW = Math.round((w * 0.84 - 2 * aGap) / 3);
+  const aX0 = (w - (3 * aW + 2 * aGap)) / 2;
+
+  return { boxW, boxH, boxGap, rowX, rowY, perRow, rows, kX0, kY, kW, kGap, aX0, aY, aW, aH, aGap };
+}
+
+export function drawCodeEntry(host: RoomViewHost): void {
+  const { w, h } = host;
+  const { boxW, boxH, boxGap, rowX, rowY, perRow, kX0, kY, kW, kGap, aX0, aY, aW, aH, aGap } =
+    codeEntryLayout(w, h);
+  const kH = kW;
+
+  const prompt = txt(t('room.enterCode'), FS.title, C.dark, true);
+  prompt.anchor.set(0.5, 0.5); prompt.x = w / 2; prompt.y = Math.round(h * 0.18);
+  host.container.addChild(prompt);
+
   for (let i = 0; i < CODE_LEN; i++) {
     const bx = rowX + i * (boxW + boxGap);
     const g = sketchPanel(boxW, boxH, {
@@ -136,24 +178,6 @@ export function drawCodeEntry(host: RoomViewHost): void {
     host.container.addChild(cl);
   }
 
-  // Digit keypad (5 per row → 2 rows). Cells are square and sized to fit the
-  // vertical budget between the code boxes and the bottom action row, so the
-  // grid never overflows / pushes the actions off-screen in landscape.
-  const perRow = 5;
-  const rows = Math.ceil(CODE_ALPHABET.length / perRow);
-  // Below the code boxes, never on top of them — h * 0.40 alone is not enough clearance once the
-  // box row is tall (landscape).
-  const kY = Math.max(Math.round(h * 0.40), rowY + boxH + Math.round(h * 0.04));
-  const kGap = Math.round(w * 0.015);
-  const aH = Math.round(h * 0.08);            // bottom action row height (mirrors below)
-  const gapBeforeAction = Math.round(h * 0.02);
-  const bottomMargin = Math.round(h * 0.04);
-  const vBudget = h - kY - gapBeforeAction - aH - bottomMargin;
-  const cellByW = (w * 0.84 - (perRow - 1) * kGap) / perRow;
-  const cellByH = vBudget / rows - kGap;
-  const kW = Math.floor(Math.min(cellByW, cellByH));
-  const kH = kW;
-  const kX0 = (w - (perRow * kW + (perRow - 1) * kGap)) / 2;
   for (let i = 0; i < CODE_ALPHABET.length; i++) {
     const ch = CODE_ALPHABET[i]!;
     const r = Math.floor(i / perRow);
@@ -166,11 +190,6 @@ export function drawCodeEntry(host: RoomViewHost): void {
   }
 
   // Bottom action row: clear / backspace / confirm.
-  const aY = kY + rows * (kH + kGap) + gapBeforeAction;
-  const aGap = Math.round(w * 0.03);
-  const aW = Math.round((w * 0.84 - 2 * aGap) / 3);
-  const aX0 = (w - (3 * aW + 2 * aGap)) / 2;
-
   addButton(host, t('room.clear'), aX0, aY, aW, aH, C.paper, C.mid, () => {
     host.codeChars = []; host.render();
   }, C.dark, Math.round(aH * 0.32), 'eraser');

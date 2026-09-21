@@ -1433,15 +1433,24 @@ describe('LevelPrepScene — layout invariants', () => {
 // fell off the bottom (no scroll, canvas keypad rejects the OS keyboard). Fix:
 // 21-char charset (10 digits + 11 letters) = 3 rows, cells bounded by the
 // vertical budget. Charset must equal the server generator (matchsvc).
-function buildRoomCodeEntry(w: number, h: number) {
+function buildRoomCodeEntry(w: number, h: number, joinRoom: (code: string) => void = () => {}) {
   const layout = createLayout(w, h);
   const scene = new RoomScene(layout, new InputManager(), {
-    onBack() {}, createRoom() {}, joinRoom() {}, setReady() {},
+    onBack() {}, createRoom() {}, joinRoom, setReady() {},
     startMatch() {}, createRanked() {}, cancelQueue() {}, available: true,
   });
   (scene as any).onJoinPressed(); // → 'codeEntry' view, re-renders the keypad
   return { scene, layout };
 }
+
+// Hit order inside the code-entry view is back, then one key per CODE_ALPHABET char, then
+// clear / backspace / confirm. Every tap re-renders and rebuilds the array, so re-read it.
+const roomHits = (scene: RoomScene) => (scene as any).hits as Array<{ fn: () => void }>;
+const tapDigit = (scene: RoomScene, d: string): void => { roomHits(scene)[1 + CODE_ALPHABET.indexOf(d)]!.fn(); };
+const tapClear = (scene: RoomScene): void => { roomHits(scene)[1 + CODE_ALPHABET.length]!.fn(); };
+const tapBackspace = (scene: RoomScene): void => { roomHits(scene)[2 + CODE_ALPHABET.length]!.fn(); };
+const tapConfirm = (scene: RoomScene): void => { roomHits(scene)[3 + CODE_ALPHABET.length]!.fn(); };
+const entered = (scene: RoomScene): string => ((scene as any).codeChars as string[]).join('');
 
 describe('RoomScene — code-entry keypad', () => {
   it('charset is the 10 digits = 2 rows of 5', () => {
@@ -1470,6 +1479,37 @@ describe('RoomScene — code-entry keypad', () => {
       scene.destroy();
     });
   }
+
+  it('keys append in tap order and stop at CODE_LEN', () => {
+    const { scene } = buildRoomCodeEntry(...PORTRAIT);
+    for (const d of '1234567') tapDigit(scene, d);
+    expect(entered(scene)).toBe('123456'); // the 7th tap is swallowed, not wrapped around
+    scene.destroy();
+  });
+
+  it('backspace drops the last digit, clear drops all of them', () => {
+    const { scene } = buildRoomCodeEntry(...PORTRAIT);
+    for (const d of '907') tapDigit(scene, d);
+    tapBackspace(scene);
+    expect(entered(scene)).toBe('90');
+    tapClear(scene);
+    expect(entered(scene)).toBe('');
+    tapBackspace(scene); // backspace on an empty code is a no-op, not a throw
+    expect(entered(scene)).toBe('');
+    scene.destroy();
+  });
+
+  it('confirm only joins once the code is complete', () => {
+    const joined: string[] = [];
+    const { scene } = buildRoomCodeEntry(...PORTRAIT, (code) => joined.push(code));
+    for (const d of '12345') tapDigit(scene, d);
+    tapConfirm(scene);
+    expect(joined).toEqual([]); // 5 digits — the button is drawn disabled and does nothing
+    tapDigit(scene, '6');
+    tapConfirm(scene);
+    expect(joined).toEqual(['123456']);
+    scene.destroy();
+  });
 });
 
 // ── EquipmentScene: domain wiring ─────────────────────────────────────────────

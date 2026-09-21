@@ -103,6 +103,8 @@ matchsvc 配对/分配后给每玩家签一张，经 gateway 推给客户端。g
 - friendly：`room/create` 生成 6 位房间码存内存房间；`room/join` 输码入房；双方 ready → `room/start`（房主）→ 从 game 注册表挑一台空闲 game → 签两张 ticket。
   - **房间码字符集（2026-09-21 改为纯数字）**：`CODE_ALPHABET = '0123456789'`，6 位 → 10^6 个码。**服务端生成器（`matchsvc/src/matchsvc/types.ts` + `rooms.ts`）与客户端输码键盘（`client/src/scenes/RoomScene/types.ts`）必须一字不差**，否则服务器会发出键盘打不出来的码；两侧各有单测断言同一字面量。改纯数字的理由：报码/抄码时没有字母与数字互认的歧义（原来 21 字符集已经要跳过 `I/O/L`），客户端键盘也从 3 行 × 7 列缩成 2 行 × 5 列；键盘格子仍按竖直预算取正方形以防横屏溢出。
   - **房间码去重**：`RoomRegistry.uniqueCode()` 先随机抽 16 次，每次都查 `byCode`；16 次全撞则从 `Date.now() % 10^6` 起线性探测（`String(n).padStart(6,'0')`），只要码空间还有空位就一定能找到——不再像旧实现那样「放弃后返回一个可能已被占用的时间戳码」。整个空间占满时 `roomCreate` 推 `room_error{code:'NO_ROOM_CODE'}`（客户端落到通用错误文案），实践中不可达。
+    测试：`rooms-code-collision.test.ts`（`randomInt` 全 0 → 连开 8 间房，码必须互不相同，钉的正是旧兜底「同一毫秒内两间房拿到同一个码」）、`rooms-code-exhausted.test.ts`（mock `CODE_LEN=2` 把空间缩到 100，占满后第 101 间拿 `NO_ROOM_CODE`）、`matchsvc.test.ts`（字符集字面量 + 单 registry 连开 500 间房去重）。
+  - **输码键盘的几何**：纯算的那部分抽成 `codeEntryLayout(w, h)`（`client/src/scenes/RoomScene/views.ts`），`test/ui/roomCodeEntryLayout.ui.ts` 按四种宽高比断言「输码框行 → 键盘 → 底部动作行」三段互不重叠、都在屏内、键不小于短边 7%。**横屏曾经是叠着的**：输码框按宽定尺寸（`w*0.10`，高是它 1.25 倍），键盘却写死从 `h*0.40` 起。
 - ranked：`enqueue` 进队，matchsvc `tick` 邻近配对成功 → 直接挑 game 签 ticket（无 ready/房主，等价现 `beginRanked`）。
 - game 分配：按注册表 `load/capacity` 挑负载最低且健康的实例，把其 `wsUrl` 写进 ticket 的 `game_url`——**两条 WS（gateway 控制面 + game 数据面）凭同一 ticket 落同一 game 实例**，天然房间亲和，无需一致性哈希。
 
