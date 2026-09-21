@@ -27,11 +27,11 @@
  * https URLs (see {@link legalUrl}).
  */
 import * as PIXI from 'pixi.js-legacy';
-import { makeText } from '../../render/pixiText';
+import { makeText, monospaceWidth } from '../../render/pixiText';
 import type { Scene } from '../../scenes/SceneManager';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../../render/sketchUi';
 import { drawButtonLabel } from '../widgets/buttonLabel';
-import { snapFont } from '../../render/fontScale';
+import { snapFont, fitFont } from '../../render/fontScale';
 import { t } from '../../i18n/index';
 import { tapHandler } from '../hits';
 import { isNativeShell } from '../../platform/nativeShell';
@@ -214,14 +214,48 @@ export class ConsentDialog implements Scene {
    * pass is trying to predict.
    */
   private measure(unit: number, cardHmin: number, cardW: number, choice: boolean, nBtns: number) {
-    const title = txt(t('consent.title'), snapFont(Math.round(unit * 0.07)), C.dark, true);
+    // The text column both text nodes live in. The body has always wrapped at it; the title had
+    // no width bound at all, and `unit * 0.07` is a size only the SHORTEST of the three titles
+    // fits at: de's "Datenschutz & Datennutzung" came out 858 design px against an 821 px card on
+    // a desktop landscape window (1920x911 → a 2276x1080 design rect, screenshot 2026-09-21) and
+    // spilled ~18px past each hand-drawn edge. Both modes, identically — the size never depended
+    // on the mode. Fitting it HERE rather than at draw time also keeps the offsets below honest:
+    // they are all measured off the title that actually gets drawn, so a fitted title moves the
+    // whole block up with it.
+    const innerW = cardW * 0.84;
+
+    // Step the SIZE down the shared scale, never `scale.set()` on the built node: the same answer
+    // the buttons give (widgets/buttonLabel.ts), and for the same reason — an arbitrary shrink
+    // factor lands the text wherever it lands, which on a phone is under the legibility floor.
+    //
+    // `monospaceWidth` is the lower bound that keeps this branch REAL in the UI suite, whose stub
+    // `measureText` reports `chars * 7` whatever the size (§56.3, and that helper's own header):
+    // without it the title is a third of its width there, the branch is pinned to "it fits", and a
+    // test asserting the fit passes whether or not this code does anything. In a browser the
+    // measurement is the truth and wins the `Math.max`.
+    //
+    // Not `txtFit`: its last resort is an ellipsis, which is right for a server-supplied mail
+    // subject and wrong for the heading of a consent gate — "Datenschutz & Datennut…" is its own
+    // bug. No locale comes near the floor here, and if one ever does, overflowing loudly is what
+    // sends the fix to the translation (buttonLabel.ts makes the same call).
+    const titleLabel = t('consent.title');
+    const titleSize = snapFont(Math.round(unit * 0.07));
+    let title = txt(titleLabel, titleSize, C.dark, true);
+    const titleW = Math.max(title.width, monospaceWidth(titleLabel, titleSize));
+    if (titleW > innerW) {
+      const fitted = fitFont(titleSize, titleW, innerW);
+      if (fitted < titleSize) {
+        title.destroy({ texture: true, baseTexture: true });
+        title = txt(titleLabel, fitted, C.dark, true);
+      }
+    }
     title.anchor.set(0.5, 0);
 
     // The two modes make different promises, so they cannot share a sentence: accept-only says
     // analytics follows from accepting, choice has to say what the second button actually does.
     const body = makeText(t(choice ? 'consent.bodyChoice' : 'consent.body'), {
       fontSize: snapFont(Math.round(unit * 0.04)), fill: C.dark, fontFamily: 'monospace',
-      wordWrap: true, wordWrapWidth: cardW * 0.84, breakWords: true, lineHeight: Math.round(unit * 0.06),
+      wordWrap: true, wordWrapWidth: innerW, breakWords: true, lineHeight: Math.round(unit * 0.06),
     });
     body.anchor.set(0.5, 0);
 

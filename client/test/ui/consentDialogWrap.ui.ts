@@ -16,10 +16,11 @@
 // style-flag check, the actual wrapped line widths are asserted.
 // Run: npm run test:ui
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterAll } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
 import { ConsentDialog } from '../../src/ui/dialogs/ConsentDialog';
-import { initI18n, t } from '../../src/i18n';
+import { monospaceWidth } from '../../src/render/pixiText';
+import { initI18n, setLocale, t } from '../../src/i18n';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -115,5 +116,89 @@ describe('ConsentDialog body text wraps instead of overflowing (2026-08-11)', ()
       expect(got.y).toBeGreaterThanOrEqual(base.y);
       expect(got.y + got.height).toBeLessThanOrEqual(base.y + base.height);
     });
+  }
+});
+
+// ── The title has to fit the card too (2026-09-21) ───────────────────────────────────────────
+//
+// Same failure as the body above, one node over: the title was drawn at a flat `unit * 0.07` with
+// no width bound at all, so de's "Datenschutz & Datennutzung" came out 858 design px inside an
+// 821px card on a desktop landscape window and spilled past both hand-drawn edges. zh and en fit
+// at that size, which is why it took a German screenshot to find, and both modes were affected
+// identically — the size never depended on the mode.
+//
+// Widths here are `Math.max(node.width, monospaceWidth(...))`, the same bound the dialog fits
+// against, because the harness's `measureText` reports `chars * 7` whatever the font size: a bare
+// `node.width` is a third of the truth here and pins the assertion to "it fits" no matter what the
+// dialog does. See monospaceWidth's header, and UI_DESIGN_LOG_2026-09.md §56.3.
+
+/**
+ * The title Text node: the first node WITHOUT wordWrap, which the build order makes unambiguous
+ * (card → title → body → the two links → the buttons; only the body wraps).
+ */
+function findTitleText(root: PIXI.Container): PIXI.Text | null {
+  let found: PIXI.Text | null = null;
+  const walk = (c: PIXI.Container): void => {
+    for (const ch of c.children) {
+      if (found) return;
+      if (ch instanceof PIXI.Text && !ch.style.wordWrap) { found = ch; return; }
+      if (ch instanceof PIXI.Container) walk(ch);
+    }
+  };
+  walk(root);
+  return found;
+}
+
+/**
+ * The card's geometry for a viewport, mirroring ConsentDialog.build(). `inner` is the text column
+ * both the title and the body are laid out in (the body's `wordWrapWidth`); `cardW` is the card's
+ * own outer width, i.e. the edges the title visibly crossed.
+ */
+function cardGeometry(w: number, h: number): { cardW: number; inner: number } {
+  const landscape = w > h;
+  const cardHmin = landscape
+    ? Math.round(h * 0.8)
+    : Math.round(Math.min(h * 0.72, w * 0.9 * 1.15));
+  const cardW = landscape
+    ? Math.round(Math.min(cardHmin * 0.95, w * 0.7))
+    : Math.round(w * 0.9);
+  return { cardW, inner: cardW * 0.84 };
+}
+
+/** What the node will really be, in a browser as well as here. */
+function shownWidth(node: PIXI.Text): number {
+  return Math.max(node.width, monospaceWidth(node.text, node.style.fontSize as number));
+}
+
+describe('ConsentDialog title fits the card (2026-09-21)', () => {
+  afterAll(() => { setLocale('zh'); });
+
+  for (const locale of ['zh', 'en', 'de'] as const) {
+    for (const [w, h, label] of [
+      [2276, 1080, 'desktop landscape (the design rect a 1920x911 window maps to)'],
+      [1620, 1080, 'narrower landscape window'],
+      [1080, 2337, 'portrait phone'],
+      [2337, 1080, 'phone on its side'],
+    ] as const) {
+      for (const mode of ['accept-only', 'choice'] as const) {
+        it(`[${locale}] ${label} ${w}x${h}, ${mode}: the title stays inside the card`, () => {
+          setLocale(locale);
+          const dlg = new ConsentDialog(w, h, { onAccept: () => {}, onDecline: () => {} }, mode);
+          const title = findTitleText(dlg.container);
+          expect(title).not.toBeNull();
+
+          // Not truncated to fit: the size steps down the shared scale, and no locale comes near
+          // the legibility floor. A consent gate headed "Datenschutz & Datennut…" is its own bug.
+          expect(title!.text).toBe(t('consent.title'));
+
+          const { cardW, inner } = cardGeometry(w, h);
+          // The bug: wider than the card, spilling past both hand-drawn edges (it is centred).
+          expect(shownWidth(title!)).toBeLessThanOrEqual(cardW);
+          // The fix: inside the text column the body already wraps at, so the two share a measure.
+          expect(shownWidth(title!)).toBeLessThanOrEqual(inner);
+          dlg.destroy();
+        });
+      }
+    }
   }
 });
