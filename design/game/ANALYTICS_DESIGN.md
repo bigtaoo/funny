@@ -289,9 +289,12 @@ Art 7(1) 的举证留痕，不是遥测。
 不发 `gdpr_consent`——设置页里重新打开不是首启转化，算进漏斗会把同意数冲歪。
 
 覆盖：`client/test/consentGate.test.ts`（两种形态各出一次、拒绝后进得去、拒绝记得住、拒绝零上报、
-拒绝仍落账号、拒绝那次与之后每次启动各 tick 一次且接受时不 tick、时区表逐条）
+拒绝仍落账号、拒绝那次与之后每次启动各 tick 一次、接受时不 tick、**设置页撤回也不 tick**、时区表逐条）
++ `client/test/analyticsDeclinedLaunch.test.ts`（计数规则本身：一次启动只 tick 一次、
+下一次 `init()` 重新武装、离线不发、base 剥掉 `/api`、微信构建报 `wechat`）
 + `analyticsvc/test/bootAndLoadTime.e2e.test.ts` / `analytics.e2e.test.ts`（`?d=1` 只动 `declined`
-不动 `count`、tick 先到时 `count` 补 0、并发不丢、漏斗把 `declined` 单列出来）+ `client/test/ui/consentDialogWrap.ui.ts`（`choice` 的长文案在三种
+不动 `count`、tick 先到时 `count` 补 0 且字段仍只有那六列、并发不丢、漏斗把 `declined` 单列出来、
+`reach_rate` 分母不变、`?d=1` 上平台白名单照样生效）+ `client/test/ui/consentDialogWrap.ui.ts`（`choice` 的长文案在三种
 视口都不溢出——横屏矮屏原本 de 溢出 56px，靠 `ConsentDialog.build` 的二次量算回来）+
 `client/test/ui/settingsDataSaverRow.ui.ts`（两个开关并排那一行，三语言四视口互不相撞）。
 
