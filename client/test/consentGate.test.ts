@@ -170,6 +170,32 @@ describe('consent gate', () => {
     expect(seen.filter((r) => r.url.includes('d=1'))).toEqual([]);
   });
 
+  it('does not tick the counter when consent is withdrawn in Settings — that launch is already in `Sessions`', async () => {
+    // The only rule of this counter is that it stays comparable with the launch count it gets
+    // subtracted from. This launch accepted, emitted `session_start` and is counted under
+    // `Sessions`; marking it a refused launch too would remove it from the funnel twice. Their NEXT
+    // launch ticks it, from the gate — and nothing but the absence of a call enforces that here,
+    // since the once-per-launch guard has not fired yet on a launch that consented.
+    withTimeZone('Europe/Berlin');
+    const seen: NetRequest[] = [];
+    setNetTransport({
+      request: async (req) => {
+        seen.push(req);
+        return { ok: true, status: 200, json: async () => ({ ok: true, data: { save: {} } }), text: async () => '' };
+      },
+    });
+
+    const { views } = launch({}, { nw_api_base: 'http://api.test', [TOKEN_KEY]: 'tok-1' });
+    views.consent!.onAccept();
+    await until(() => views.screen === 'lobby');
+
+    views.lobby!.onOpenProfile();
+    views.settings!.onSetAnalyticsConsent!(false);
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(seen.filter((r) => r.url.includes('d=1'))).toEqual([]);
+  });
+
   it('mirrors the refusal to the account, which is record-keeping and not telemetry', async () => {
     withTimeZone('Europe/Berlin');
     const seen: NetRequest[] = [];
@@ -182,11 +208,15 @@ describe('consent gate', () => {
 
     const { views } = launch({}, { nw_api_base: 'http://api.test', [TOKEN_KEY]: 'tok-1' });
     views.consent!.onDecline();
-    await until(() => seen.some((r) => r.url.includes('gdpr')));
+    // Matched by BODY, not just by URL: a test before this one leaves its own app core running, and
+    // its late `{ consent: true }` write lands in whatever transport is installed when it finally
+    // gets through the rate gate — which is this test's. Asking "did any gdpr request happen" reads
+    // that neighbour's answer as this test's.
+    const answers = (): unknown[] => seen.filter((r) => r.url.includes('gdpr')).map((r) => JSON.parse(r.body!));
+    await until(() => answers().some((a) => (a as { consent: boolean }).consent === false));
 
-    const post = seen.find((r) => r.url.includes('gdpr'));
-    expect(post, 'the answer has to leave the device or it is lost on the next install').toBeDefined();
-    expect(JSON.parse(post!.body!)).toEqual({ consent: false });
+    expect(answers(), 'the answer has to leave the device or it is lost on the next install')
+      .toContainEqual({ consent: false });
   });
 
   it('still lets an acceptance through unchanged', async () => {
