@@ -280,7 +280,7 @@ alpha 命中 + 选中优先落地后补的测试（`ImageController.test.ts` 新
 | 文件 | 职责 |
 |---|---|
 | `src/App.ts` | 组合根，连接所有模块，主循环 |
-| `src/rendering/Renderer.ts` | PixiJS 渲染（骨骼 + sprite + 挂点） |
+| `src/rendering/Renderer.ts` | PixiJS 渲染（骨骼 + sprite + 挂点）。两次超 500 行都是拆而非进 baseline：2026-08-29 出 `skinHandles.ts`（→481）、2026-09-21 出 `bonePrimitives.ts`+`shadowAssets.ts`（519→460） |
 | `src/skeleton/Skeleton.ts` | 骨骼定义 + FK 计算 |
 | `src/animation/AnimationController.ts` | clip CRUD + 播放 + 关键帧操作 |
 | `src/animation/interpolate.ts` | `sampleClip` 插值（无依赖，游戏侧共享） |
@@ -301,3 +301,5 @@ alpha 命中 + 选中优先落地后补的测试（`ImageController.test.ts` 新
 | `src/interaction/commands.ts` | 骨骼/贴图 Undo 命令（旋转关键帧、加/删关键帧、长度、贴图属性）——零 canvas/DOM，2026-08-29 从 InteractionController 拆出 |
 | `src/rendering/skinHandles.ts` | Skin 模式手柄绘制（长度方块 + 贴图四角轮廓 + 旋转旋钮），2026-08-29 从 Renderer 拆出的自由函数 |
 | `src/rendering/spriteGeometry.ts` | 贴图世界坐标四角/旋转手柄位置/点在四边形内测试/**两点绑定反解**（`solveTwoPointBind`），纯函数零依赖，供 Renderer 画手柄与 InteractionController 命中测试共用 |
+| `src/rendering/bonePrimitives.ts` | 无状态火柴人绘制原语（`drawTubularBone`/`drawHead`/`drawJoint`），2026-09-21 从 Renderer 拆出——三者本来就不碰 `this`，只收 `PIXI.Graphics` + 数字 |
+| `src/rendering/shadowAssets.ts` | 程序化阴影资源（`defaultShadowSize`/`shadowTexture`），2026-09-21 从 Renderer 拆出——本来就是模块级函数 + 进程级缓存，与 Renderer 实例无关 |
