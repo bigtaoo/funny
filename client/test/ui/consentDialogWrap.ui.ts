@@ -20,6 +20,7 @@ import { describe, it, expect, afterAll } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
 import { ConsentDialog } from '../../src/ui/dialogs/ConsentDialog';
 import { monospaceWidth } from '../../src/render/pixiText';
+import { snapFont, currentFontFloor } from '../../src/render/fontScale';
 import { initI18n, setLocale, t } from '../../src/i18n';
 
 const memStore = (() => {
@@ -154,7 +155,7 @@ function findTitleText(root: PIXI.Container): PIXI.Text | null {
  * both the title and the body are laid out in (the body's `wordWrapWidth`); `cardW` is the card's
  * own outer width, i.e. the edges the title visibly crossed.
  */
-function cardGeometry(w: number, h: number): { cardW: number; inner: number } {
+function cardGeometry(w: number, h: number): { cardW: number; inner: number; unit: number } {
   const landscape = w > h;
   const cardHmin = landscape
     ? Math.round(h * 0.8)
@@ -162,7 +163,20 @@ function cardGeometry(w: number, h: number): { cardW: number; inner: number } {
   const cardW = landscape
     ? Math.round(Math.min(cardHmin * 0.95, w * 0.7))
     : Math.round(w * 0.9);
-  return { cardW, inner: cardW * 0.84 };
+  return { cardW, inner: cardW * 0.84, unit: cardHmin };
+}
+
+/** Every Text node the card draws on ONE line — i.e. everything but the body. */
+function unwrappedTexts(root: PIXI.Container): PIXI.Text[] {
+  const out: PIXI.Text[] = [];
+  const walk = (c: PIXI.Container): void => {
+    for (const ch of c.children) {
+      if (ch instanceof PIXI.Text) { if (!ch.style.wordWrap) out.push(ch); continue; }
+      if (ch instanceof PIXI.Container) walk(ch);
+    }
+  };
+  walk(root);
+  return out;
 }
 
 /** What the node will really be, in a browser as well as here. */
@@ -196,9 +210,74 @@ describe('ConsentDialog title fits the card (2026-09-21)', () => {
           expect(shownWidth(title!)).toBeLessThanOrEqual(cardW);
           // The fix: inside the text column the body already wraps at, so the two share a measure.
           expect(shownWidth(title!)).toBeLessThanOrEqual(inner);
+
+          // The title was one of FIVE single-line nodes on this card sized off a bare fraction, and
+          // the other four were never looked at: the two links still compute their own
+          // `snapFont(cardH * 0.042)` with no bound at all, and the button labels ride on
+          // `drawButtonLabel`'s promise to fit itself. All of them fit today in all three locales —
+          // this is what makes that a fact rather than an assumption, and it is the same "check the
+          // neighbours that still pass" the 2026-08-25 repaint fix earned.
+          for (const node of unwrappedTexts(dlg.container)) {
+            expect(shownWidth(node), `"${node.text}" is wider than the card`).toBeLessThanOrEqual(cardW);
+            // The two links share the title's column (they are centred prose, not a button label
+            // bounded by its own box), so hold them to the same edge the title now respects. `· `
+            // is how `addLink` builds them and the only marker they carry.
+            if (node.text.startsWith('· ')) {
+              expect(shownWidth(node), `link "${node.text}" leaves the text column`).toBeLessThanOrEqual(inner);
+            }
+          }
           dlg.destroy();
         });
       }
     }
+  }
+
+  // ── What the fit must NOT do ────────────────────────────────────────────────────────────────
+  //
+  // The cases above are an upper bound, and an upper bound alone is satisfied by drawing the title
+  // at the legibility floor in every locale. These two say the rest of it: shrink only what has to
+  // shrink, and shrink by re-minting rather than by scaling the node that was already built.
+
+  for (const locale of ['zh', 'en', 'de'] as const) {
+    it(`[${locale}] the title is re-minted at a smaller SIZE, never scaled down`, () => {
+      setLocale(locale);
+      const dlg = new ConsentDialog(2276, 1080, { onAccept: () => {}, onDecline: () => {} }, 'choice');
+      const title = findTitleText(dlg.container)!;
+      // `scale.set(avail / need)` is the reflex this whole fit exists to avoid: it multiplies the
+      // size by an arbitrary float and lands under the floor the scale just promised (fontScale.ts,
+      // UI_DESIGN_LOG_2026-09 §50.12). A fitted title must still be scale 1 at a table size.
+      expect(title.scale.x).toBe(1);
+      expect(title.scale.y).toBe(1);
+      const size = title.style.fontSize as number;
+      expect(size).toBe(snapFont(size));            // still on the shared scale
+      expect(size).toBeGreaterThanOrEqual(currentFontFloor());
+      dlg.destroy();
+    });
+
+    it(`[${locale}] the title keeps its natural size unless that size does not fit`, () => {
+      setLocale(locale);
+      const { inner, unit } = cardGeometry(2276, 1080);
+      const dlg = new ConsentDialog(2276, 1080, { onAccept: () => {}, onDecline: () => {} }, 'choice');
+      const title = findTitleText(dlg.container)!;
+      const body = findWrappedText(dlg.container)!;
+      const natural = snapFont(Math.round(unit * 0.07));
+
+      // Only meaningful while the card lays out in ONE pass; the second pass (a card too tall for
+      // the screen) rescales `unit` for everything, and then `natural` is not the size this title
+      // was ever offered. The body still being at ITS natural size is exactly that condition.
+      expect(body.style.fontSize).toBe(snapFont(Math.round(unit * 0.04)));
+
+      const size = title.style.fontSize as number;
+      expect(size).toBeLessThanOrEqual(natural);
+      if (monospaceWidth(t('consent.title'), natural) <= inner) {
+        // zh and en: nothing was wrong with them, so nothing may change for them.
+        expect(size).toBe(natural);
+      } else {
+        // de: smaller, but only as far as it had to go — one tier further up would not have fitted.
+        expect(size).toBeLessThan(natural);
+        expect(monospaceWidth(t('consent.title'), size)).toBeLessThanOrEqual(inner);
+      }
+      dlg.destroy();
+    });
   }
 });

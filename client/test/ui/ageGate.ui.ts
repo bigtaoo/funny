@@ -13,6 +13,7 @@ import { describe, it, expect } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
 import { initI18n, t, setLocale, type Locale } from '../../src/i18n';
 import { AgeGateDialog, type AgeGateMode } from '../../src/ui/dialogs/AgeGateDialog';
+import { monospaceWidth } from '../../src/render/pixiText';
 
 initI18n('en');
 
@@ -235,4 +236,79 @@ describe('AgeGateDialog — blocked', () => {
       expect(n.b.x + n.b.width, `"${n.text}" spills right`).toBeLessThanOrEqual(w);
     }
   });
+});
+
+// ── ...and it must fit SIDEWAYS, in every locale (2026-09-21) ─────────────────────────────────
+//
+// The file header's first promise ("it must FIT") was only ever about the vertical: rows not
+// drawing over each other, the blocked card staying on screen. Nothing here has ever built this
+// card in more than one language, and the horizontal check that does exist reads `getBounds()`,
+// which under this harness is `chars * 7` at every font size — a third of the truth, pinned to
+// "it fits" whatever the code does (see monospaceWidth's header, UI_DESIGN_LOG_2026-09 §56.3).
+//
+// This card is a copy of ConsentDialog's, down to `snapFont(Math.round(unit * 0.07))` for the
+// title and the same `cardW * 0.84` column for the body — and that title is exactly what spilled
+// past both edges in German on 2026-09-21 (§59). It does NOT spill here: every AgeGate string is
+// short in all three locales, at every viewport below. That is the point of writing it down — the
+// two cards drifted apart the moment one of them learned to fit, and a German string one word
+// longer than "Nicht verfügbar" is all it would take for the copy to repeat it.
+describe('AgeGateDialog — every single-line label fits the card, in all three locales', () => {
+  /** Every Text the card draws on one line (i.e. all but the wrapped body), with its live style. */
+  function oneLiners(root: PIXI.Container): PIXI.Text[] {
+    const out: PIXI.Text[] = [];
+    const walk = (n: PIXI.Container): void => {
+      for (const ch of n.children) {
+        if (ch instanceof PIXI.Text) { if (!ch.style.wordWrap) out.push(ch); continue; }
+        if (ch instanceof PIXI.Container) walk(ch);
+      }
+    };
+    walk(root);
+    return out;
+  }
+
+  /** The card's width for a viewport — the same two lines AgeGateDialog.build() runs. */
+  function cardWidth(w: number, h: number): number {
+    const landscape = w > h;
+    const cardHmin = landscape
+      ? Math.round(h * 0.8)
+      : Math.round(Math.min(h * 0.72, w * 0.9 * 1.15));
+    return landscape ? Math.round(Math.min(cardHmin * 0.95, w * 0.7)) : Math.round(w * 0.9);
+  }
+
+  const shown = (n: PIXI.Text): number =>
+    Math.max(n.width, monospaceWidth(n.text, n.style.fontSize as number));
+
+  const VIEWPORTS: Array<[number, number]> = [[2276, 1080], [1080, 2337], [2337, 1080]];
+
+  for (const locale of ['zh', 'en', 'de'] as Locale[]) {
+    for (const [w, h] of VIEWPORTS) {
+      it(`[${locale}] ${w}x${h}: ask, confirm and blocked all stay inside the card`, () => {
+        setLocale(locale);
+        try {
+          const cardW = cardWidth(w, h);
+          const check = (dlg: AgeGateDialog, tag: string): void => {
+            for (const n of oneLiners(dlg.container)) {
+              expect(shown(n), `${tag}: "${n.text}" is wider than the ${cardW}px card`)
+                .toBeLessThanOrEqual(cardW);
+            }
+          };
+
+          const ask = build('ask', w, h);
+          check(ask.dlg, 'ask');
+          // The confirm card is the same dialog after two taps, and it is the one with a number
+          // interpolated into it — the only string here whose length is not fixed by translation.
+          tap(ask.dlg, '+10'); tap(ask.dlg, '+10'); tap(ask.dlg, '−1'); tap(ask.dlg, '−1');
+          tap(ask.dlg, t('ageGate.confirm'));
+          check(ask.dlg, 'confirm');
+          ask.dlg.destroy();
+
+          const blocked = build('blocked', w, h);
+          check(blocked.dlg, 'blocked');
+          blocked.dlg.destroy();
+        } finally {
+          setLocale('en');
+        }
+      });
+    }
+  }
 });
