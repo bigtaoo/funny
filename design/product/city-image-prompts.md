@@ -289,3 +289,200 @@ v2 把风格约束（"是涂鸦速写不是精细插画"）挪到全文最前面
 **验证**：`tsc -b shared`（server）+ `tsc --noEmit`（client、map-editor）三处全绿；client UI 测试套件 177 个文件 1594 例全绿（含改过的 2 个文件）；map-editor 测试套件 7 个文件 125 例全绿。
 
 **不属于这次改动范围、刻意没动的东西**：`design/game/SLG_DESIGN_LOG.md`、`design/DECISIONS.md`、`design/tools/map-editor/DESIGN.md` 里提到 `city_lv1..4`/`cityTier` 的历史记录条目——那些是带日期的过程记录，写的是"当时发生了什么"，不是"现在架构是什么"，不应该被事后改写；只更新了 `WORLD_MAP_ART_SPEC.md` 里那条**当前状态**参考表（改成 `city_l1..l10`）和本文档的"接入说明"。
+
+---
+
+## 高度审计（2026-09-21）——判据一直是单边的，6 帧画得太高，需重出图
+
+用户看世界中心（`city_l10`，9×9 地块）的实机截图，反馈"是不是太大太高了"。量下来**占地不是问题，高度是真缺陷**，而且 2026-08-13 那次铺格审计漏掉它是判据本身的问题，不是执行的问题。
+
+### 实机量测（用户截图，1025×717）
+
+按黄色地块菱形的三个顶点定位：左右顶点 x=204 / 783（y≈509），前顶点 (494, 655)。
+
+- 地块宽 **579 px**，半深 146 px → 深宽比 **0.504**，正是 `ISO_RATIO=0.5`，确认是 9×9 世界中心地块，`tp≈64.3 px`
+- 城堡绘制高度 **约 605 px**，即 **1.05 × 自己地块的宽度**
+
+跟渲染公式对得上：`WorldMapRenderer/city.ts` 把精灵按 `citySpriteTiles(9, 3.2) × tp = 9.6 tp` **等比画成正方形**（宽=高），所以**绘制高度不是一个可调参数，完全由源图自身的内容外接框长宽比决定**。
+
+### 全 10 帧高度审计
+
+从线上 `client/src/assets/slg/world_atlas.png` 按帧坐标 extract、测 alpha>10 的内容外接框（同 2026-08-13 审计的方法）：
+
+| 帧 | 地块 | 外接框 (px) | 宽高比 w/h | 绘制高度（地块宽的倍数） | 判定 |
+|---|---|---|---|---|---|
+| `city_l1` | 3×3 | 246×122 | 2.02 | 0.51 | ✅ |
+| `city_l2` | 3×3 | 251×168 | 1.49 | 0.70 | ⚠ 偏高 |
+| `city_l3` | 5×5 | 256×249 | **1.03** | **1.04** | ❌ 太高 |
+| `city_l4` | 5×5 | 247×185 | 1.34 | 0.77 | ⚠ 偏高 |
+| `city_l5` | 5×5 | 256×256 | **1.00** | **1.07** | ❌ 太高 |
+| `city_l6` | 7×7 | 248×140 | **1.77** | 0.58 | ✅ **本系列唯一达标的中高级帧，当参照** |
+| `city_l7` | 7×7 | 247×243 | **1.02** | **1.01** | ❌ 太高 |
+| `city_l8` | 7×7 | 256×254 | **1.01** | **1.06** | ❌ 太高 |
+| `city_l9` | 9×9 | 244×245 | **1.00** | **1.02** | ❌ 太高 |
+| `city_l10` | 9×9 | 254×253 | **1.00** | **1.05** | ❌ 太高 |
+
+对照玩家主城 `playerbase_l1..l10`（2026-08-13 那轮十几个子回合专门调出来的标准）：宽高比 **1.66 / 2.16 / 2.14 / 1.88 / 1.66 / 1.71 / 1.72 / 1.66 / 1.80 / 1.83**，全部落在 1.7–1.9 带附近。**NPC 城池这 6 帧比自家标准高了约 1.75 倍。**
+
+再往里一层，`city_l10` 自带的等距地台是 250 × 164 px → 地台比例 **1.52**，而不是地图网格的 **2.0**——地台本身就比网格陡 36%（折算到屏幕：地台深 395 px，真实地块深只有 290 px）。这正是 playerbase 那轮踩过的"菱形画太陡"。
+
+### 为什么 2026-08-13 那次审计放过了
+
+那次的判据是**单边的**：`内容外接框宽高比 cw/ch ≥ 0.9375`，只回答"铺没铺满地块宽度"，**不设高度上限**。`city_l10` 以 1.000 PASS，因为它确实铺满了宽度——只是同时高得离谱。
+
+**判据补丁（本次）**：改成 `1.75 ≤ cw/ch`（下限即新标准，它自动蕴含旧的 ≥0.9375 宽度条件），并把 `> 2.2` 标为"扁过头"需人工复核——防 playerbase 那轮出现过的"靠画扁作弊达标、结果 Lv10 比 Lv9 还矮"的候选。
+
+### 为什么不能只重出 l9 / l10
+
+只修世界中心这两帧会**造成等级倒挂**：l10 改到 1.75 后绘制高度降到 5.49 格，而 l8（7×7，现 1.01）还停在 7.41 格——Lv8 会比 Lv10 明显更高，直接违反本文档一直在守的"越级越宏伟、绝不反而变小"规则。
+
+所以范围是**同一缺陷类的 6 帧一起重出：`city_l3` / `city_l5` / `city_l7` / `city_l8` / `city_l9` / `city_l10`**。统一到 1.75 后各档绘制高度为：3×3 档 1.83 格 → 5×5 档 3.05 格 → 7×7 档 4.27 格 → 9×9 档 5.49 格，**跨档单调递增**——"越级越宏伟"由**占地格数 + 细节密度**承担（本来就是 `cityFootprint` 的设计意图），不再由"把城画得越来越高"承担。
+
+`city_l2`（1.49）/ `city_l4`（1.34）只是偏高、绘制高度仍在地块宽度的 0.7–0.8，且它们所在档位的其它帧改完后不会造成倒挂，**本轮不动**。
+
+### 不能靠改代码解决
+
+- 单独压精灵高度（`sprite.height = w × k`）会把自带地台一起压扁：l10 的 1.52 地台压到 2.67，比网格还扁，透视直接崩
+- 调 `BASE_SPRITE_TILES` 会连宽度一起缩，地块又铺不满，回到 2026-08-08 那个坑
+
+playerbase 的 fix-2 已经证过：**一个标量修不了长宽比**。只能重出图。
+
+---
+
+## 重出图 Prompt（2026-09-21，6 张：l3 / l5 / l7 / l8 / l9 / l10）
+
+三条经验直接套用 playerbase 那轮排名靠前的做法：**① 可核验的数字 > 形容词；② 点名一个已经达标的同系列具体文件去对齐，胜过再写一段散文；③ 机位/比例这种决定成败的约束必须放在 prompt 最前面，并配具体的负面排除。**
+
+每条 prompt 都是**自包含的**（风格 + 比例约束已前置在正文里），末尾照旧附**通用 Style** 段。参照文件 `art/slg/slg-building/city_l6.webp` 请一并喂给出图工具。
+
+下面 6 条里的前两段（`A loose hand-drawn ink DOODLE...` 和 `CAMERA AND PROPORTION...`）是**共用前置块**，每条都要原样带上，不能省，也不能挪到结尾——挪到结尾正是 2026-08-14 那次画风跑偏的根因。
+
+### 共用前置块（每条 prompt 开头原样复制）
+
+```
+A loose hand-drawn ink DOODLE sketch on graph paper — NOT a detailed painted
+illustration, NOT realistic shading, NOT rendered texture with light/dark
+gradients. Flat, scratchy fountain-pen blue ink outlines with occasional
+cross-hatching for texture ONLY, filled with simple FLAT single-tone
+watercolor washes — match the exact medium, flatness and line weight of
+city_l6.webp.
+
+CAMERA AND PROPORTION — check this before drawing anything else: the whole
+settlement sits on ONE wide rotated-diamond isometric ground plate seen from
+above at a shallow tilt, like a diamond playing-card symbol. NOT a front
+elevation, NOT a tabletop diorama, no horizon. The plate's top corner sits
+about 1/4 down the canvas and its bottom corner about 3/4 down — a flat 2:1
+diamond, twice as wide as it is deep. Do not draw a steeper diamond. Then
+draw an imaginary tight box around EVERYTHING non-white, including every
+tower, spire, flag and chimney: its width must be AT LEAST 1.75 times its
+height. If it is not, shorten the towers and flatten the roofs until it is.
+This is a WIDE, LOW, sprawling settlement seen from above — never a tall
+vertical castle portrait. Reference: city_l6.webp's own box is 1.77 wide-to-
+tall; yours must match or beat it.
+```
+
+### `city_l3` — Lv 3「木寨小镇」（5×5）
+
+```
+[共用前置块]
+
+Subject: a small walled town — a rough rectangular wooden palisade wall
+(vertical plank lines) filling most of the ground plate edge to edge, 3-4
+blocky buildings inside, one central watchtower only slightly taller than the
+surrounding roofs, a wooden gate with crossbar, tiny smoke wisps from a
+chimney. Charming and slightly messy. Blue ink, warm orange-brown fill for
+wood.
+[+ style]
+```
+
+### `city_l5` — Lv 5「木寨大镇」（5×5，Tier2 顶，向石堡过渡）
+
+```
+[共用前置块]
+
+Subject: a large fortified wooden town beginning to add stone — a mixed wood-
+and-stone perimeter wall running right out to the edges of the ground plate,
+a stone base under the central watchtower, 7-8 buildings, a market square
+hinted with tiny stalls, twin gate towers. The most developed wooden
+settlement, just short of a true stone castle. Grandeur here comes from
+COVERING MORE OF THE PLATE and packing in MORE buildings, not from height —
+keep every roof and tower low. Blue ink, warm wood fill with grey-blue stone
+accents at the base.
+[+ style]
+```
+
+### `city_l7` — Lv 7「石堡加固」（7×7，Tier3 中段）
+
+```
+[共用前置块]
+
+Subject: a reinforced stone fortress — thicker crenellated walls with a
+second inner wall ring, three corner towers, a larger central keep with a low
+peaked roof, a stone gatehouse with double portcullis, banners on the towers.
+Heavier cross-hatching for stone texture. The inner ring and the outer wall
+must both be clearly visible from above as concentric diamonds, spreading
+SIDEWAYS across the plate — the keep must not stand taller than roughly a
+third of the total box height. Blue ink outline, cool grey-blue stone fill.
+[+ style]
+```
+
+### `city_l8` — Lv 8「要塞重城」（7×7，Tier3 顶）
+
+```
+[共用前置块]
+
+Subject: a massive stone stronghold — high double curtain walls with many
+towers, a central keep flanked by two smaller spires, a fortified barbican
+gate, arrow slits and machicolations, a moat drawn as a wavy blue outline
+running around the outer edge of the ground plate. Imposing, nearly a
+citadel — but imposing SIDEWAYS: read as bigger than city_l7 by having more
+towers, a wider footprint on the plate and the extra moat ring, NOT by making
+the keep taller. Blue ink, cool grey-blue stone fill, faint blue moat.
+[+ style]
+```
+
+### `city_l9` — Lv 9「书院大城」（9×9，Tier4 入门）
+
+```
+[共用前置块]
+
+Subject: an elaborate multi-tower citadel — four towers at the four corners
+of the ground plate connected by high stone walls, a central spire with a
+pennant flag that rises only modestly above the wall line, layered
+battlements, dense cross-hatching and ruler-straight parallel lines
+suggesting a grand fortress. This must read as the grandest thing yet seen,
+achieved by SPREAD and DETAIL DENSITY across a very wide plate — the four
+corner towers should sit right at the plate's left and right corners. Deep
+blue ink, multiple layers of detail, slight gold accent on the spire tip.
+[+ style]
+```
+
+### `city_l10` — Lv 10「王都巨城」（9×9，Tier4 顶，全图最宏伟）
+
+```
+[共用前置块]
+
+Subject: the grandest capital citadel on the map — concentric layered walls
+covering the whole ground plate, six or more towers spread along the outer
+ring, a central golden spire crowned with a large pennant that rises only
+modestly above the surrounding towers, tiered battlements, a monumental
+gatehouse at the plate's near corner, dense ruler-straight parallel lines and
+cross-hatching everywhere suggesting overwhelming scale. It must read as more
+magnificent than city_l9 through MORE rings, MORE towers and DENSER detail
+spread across the plate — explicitly NOT through a taller central spire. Deep
+blue ink, multiple detail layers, prominent gold accents on the tallest
+towers.
+[+ style]
+```
+
+### 出图后的核对清单
+
+1. 跑打包管线本身的去背（`node art/slg/slg-building/pack_city_atlas.js`），不要肉眼判断去背是否干净
+2. **从合并后的 `world_atlas.png` 按帧坐标 extract 实际像素**再量宽高比（不是只信打包脚本打印的数字，也不是量源图）——2026-08-14 那轮就是这么抓到取整误差的
+3. 判据：`1.75 ≤ cw/ch ≤ 2.2`；超过 2.2 要人工看一眼是不是"画扁作弊"
+4. 跨档单调性：绘制高度 = `ch/256 × (footprint/3 × 3.2)` 格，确认 3×3 < 5×5 < 7×7 < 9×9
+5. `patchMergedAtlas.js` 补丁进 `client/src/assets/slg/world_atlas.{png,json}`，`tools/map-editor/src/assets/slg/` 由打包脚本自动同步
+6. 旧源图移入 `art/leftover/`（保留原名 + 日期后缀），不删
+7. 实机截图复核（客户端 9090 端口 + 真实 Chrome），世界中心那张要能看到城堡高度明显低于地块宽度
+
+**待办（本轮未做，等图落地后一起）**：把 `1.75 ≤ cw/ch` 这条判据钉进 `client/test/ui/cityAtlasContentTop.ui.ts`——现在加会直接红 6 条，等 6 张图换完再加，让它从此挡住这类回归。
