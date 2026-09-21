@@ -196,16 +196,22 @@ export interface DauRow {
  * One (date, platform) row of the launch funnel (ANALYTICS_DESIGN §3.6b) — the only view that has a
  * denominator for the players who never answer the age / consent gates.
  *
- * All three numbers count **launches**, not devices, so they are directly comparable:
- * `boots` from the unauthenticated counter on `GET /analytics/config`, `sessions` from the
- * `session_start` event count, `consents` from `gdpr_consent`. `boots − sessions` is the cohort that
- * opened the game and left before anything could be recorded about them.
+ * All four numbers count **launches**, not devices, so they are directly comparable:
+ * `boots` and `declined` from the unauthenticated counters on `GET /analytics/config`, `sessions`
+ * from the `session_start` event count, `consents` from `gdpr_consent`.
+ *
+ * `boots − sessions − declined` is the cohort that opened the game and left before anything could be
+ * recorded about them. The `declined` term is what ANALYTICS_DESIGN §3.6c costs and pays back: since
+ * refusing analytics no longer refuses the game, those players launch, play and report nothing, and
+ * without their own counter they sit in the gap looking exactly like a player who closed the tab.
  */
 export interface BootFunnelRow {
   date: string;
   platform: string;
   boots: number;
   sessions: number;
+  /** Launches by players who chose "essentials only" — a subset of `boots` (§3.6c). */
+  declined: number;
   consents: number;
   /** sessions / boots — the share of launches that got far enough to report anything at all. */
   reach_rate?: number;

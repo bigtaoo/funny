@@ -51,6 +51,7 @@ export class AnalyticsService {
   queryRetention(...args: Parameters<TrafficService['queryRetention']>) { return this.traffic.queryRetention(...args); }
   queryFirstSession(...args: Parameters<TrafficService['queryFirstSession']>) { return this.traffic.queryFirstSession(...args); }
   countBoot(...args: Parameters<TrafficService['countBoot']>) { return this.traffic.countBoot(...args); }
+  countDeclinedLaunch(...args: Parameters<TrafficService['countDeclinedLaunch']>) { return this.traffic.countDeclinedLaunch(...args); }
   queryBootFunnel(...args: Parameters<TrafficService['queryBootFunnel']>) { return this.traffic.queryBootFunnel(...args); }
 
   // ── funnel ──
