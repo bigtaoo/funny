@@ -100,8 +100,9 @@ export interface DuelInvite {
 }
 
 // MUST stay identical to client RoomScene.ts (its keypad can only type these
-// chars). 10 digits + 11 letters; letters skip I/O/L so they don't read as 0/1.
-export const CODE_ALPHABET = '0123456789ABCDEFGHJKM';
+// chars). Digits only: nothing to mistake for a letter when a code is read out
+// loud or typed on a phone keypad. 10^6 codes, and uniqueCode() dedupes anyway.
+export const CODE_ALPHABET = '0123456789';
 export const CODE_LEN = 6;
 export const REAP_MS = 60_000; // grace period to keep the room after all players disconnect
 export const DUEL_TIMEOUT_MS = 60_000; // friend-challenge response window (ADR: friends-duel-confirm)

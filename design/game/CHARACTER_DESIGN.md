@@ -202,6 +202,13 @@ Anna 三人随偶数章出场（[characters.md](../product/characters.md)：Ch2/
 - [ ] 是否要落 ADR（本节拍板的阵营归属属于会造成漂移的决定）——**等用户过目两侧设计后一并记**
 - [x] **跑兵/医疗兵墨线过淡，实战几乎看不清**（2026-07-29 用户截图反馈，同日已解决）：对比 `client/src/assets/units/{medic,runner,infantry,ironclad}.tao` 的 spritesheet 发现，步兵/穷奇的骨骼部件有交叉排线打阴影，视觉重量够；跑兵（獬豸）/医疗兵（卫安）只有极细空心轮廓、几乎纯白，糊进米黄方格纸背景（`art-direction.md §3.1` `#F5F0E8`）里辨识度很差。**最终方案**（迭代到 v5/v7 才定稿，见 §7.6）：黑墨水钢笔线稿（不是铅笔排线，避免跟穷奇撞媒材）+ 识别特征实心马克笔上色（獬豸角/尾巴青色、卫安药箱/十字/布条绿色）+ 全身淡色荧光笔浅扫（把实心色块跟身体统一，不再像贴纸）。中途还顺带修了两个连带问题：獬豸 prompt 里混进的"耳朵"描述（模板残留，从没设计过耳朵）、卫安"双手举在身前"被误画成交握心虚的姿态（改成双手分开伸向病人）。GIMP 抠件 → animator 绑骨为下一步，不在本次会话范围内。
 - [x] **獬豸（Runner）出图 → 抠件 → 绑骨 → 上线**：✅ 2026-08-30/31（`3ae644d5b`）——`art/units/runner/` 全套部件 + `runner.taoeditor` 工程，`client/src/assets/units/runner.tao` 与母版逐字节一致。
+- [x] **獬豸（Runner）四足化：修绑定 + 全部 6 条 clip 重做**（2026-09-21）：`3ae644d5b` 那轮只到"能出图、能导出"，骨骼与动画其实都还是人形模板——
+  ① **绑定**：`l_upper_arm`/`l_lower_arm` 之外的六根肢体骨（`r_upper_arm`/`r_lower_arm` + 四根腿骨）anchor 全偏在画稿外，后腿的骨头压根不在画出来的腿上（编辑器里开 skeleton overlay 一眼可见），骨长也彼此差 23%——而四个"上肢"PNG 与四个"下肢"PNG **md5 完全相同**，本来就该同长同锚点。现已统一按那两根正确的前肢绑定复制（上肢 72.0px / 下肢 69.7px），`boneLengthScales` 同步。
+  ② **clip**：除 `walk` 的两个端点帧外，全部 6 条都还是 `tools/animator/src/animation/presets.ts` 的人形预设（spine 竖直＝像人一样直立行走）。现按四足重写：`walk` 改成**对角小跑（trot）**，`idle`/`attack`/`hurt`/`death`/`spawn` 全部以 spine≈+92°（躯干水平）为基准姿重做，脚位用两骨 IK 落在同一条地平线上（离胯 130px）。
+  ③ **attachment**：shadow 从 `(0,106)` 挪到 `(80,130)` 并加宽（`shadowW` 105→115）——四足的影子要落在四只爪子下、以身体中段为心；hit 点从肩上挪到背中（`spine` 端点 `(-75,-6)`）。
+  ④ **已上线**（同日）：母版在 animator 里按 **S 档**（`UNIT_SIZE_TIER[Runner] = Small`，此前烤的是 M 档）重导出，`art/units/runner/runner.tao` 与 `client/src/assets/units/runner.tao` 同步覆盖（两者按 `unitRigsAreBaked.test.ts` 必须逐字节相同）。`naturalHeight` 509 → 314，狗在场上比原先那个直立人形矮一半——它本来就是「全场最小最矮」的 S 档。
+  ⑤ 上线时还揪出一个**所有单位都中招的运行时 bug**：`pose.ts` 把 keyframe 旋转加了两次（详见 `design/tools/animator/REQUIREMENTS.md` §贴图绑定 的公式注）。修完连步兵/弓手/盾兵/穷奇的姿态都正了（盾兵原本头是歪着的、弓歪在手外）。
+  **死亡 clip 的天花板**：rig 的 root 钉在胯上、运行时不平移 root，所以狗永远趴不下去——`death` 只能做成"前身垮下去、胯还在原高度"的前扑式，后半身抬着是这套骨架的物理下限，不是没调。
 - [ ] **卫安（Medic）绑骨没做完，战斗里仍是旧的淡线稿**（2026-09-03 核对）：v7 新图早在 `f05ad876a`（2026-07-29）就出了，卡面图也已随 2026-08-20 那批 `exportUnitCardArt.mjs` 上线；但 `client/src/assets/units/medic.tao` 与**归档的旧 rig** `art/units/old/medic/medic.tao` **md5 完全相同**——也就是上线的战斗骨骼还是被显式标为 old 的那一份。`art/units/medic/` 目前只有 `medic.xcf`，图层零件还没导出。**剩下的步骤**：GIMP 图层导出 → animator 绑骨（照 Runner 那轮）→ 导出 `.tao` 覆盖 `client/src/assets/units/medic.tao`。**核对方式别看文件日期**（资产重组/压缩批次会刷新时间戳），用上面那个 md5 对比。
 
 ### 7.6 涛阵营三个新英雄（具名+背景+视觉，2026-07-02 定稿）

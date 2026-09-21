@@ -160,7 +160,7 @@
         "w": 256,
         "h": 256
       },
-      "contentTop": 0.2578125
+      "contentTop": 0.51171875
     },
     "city_l5": {
       "frame": {
@@ -181,7 +181,7 @@
         "w": 256,
         "h": 256
       },
-      "contentTop": 0
+      "contentTop": 0.46484375
     },
     "city_l7": {
       "frame": {
@@ -202,7 +202,7 @@
         "w": 256,
         "h": 256
       },
-      "contentTop": 0.00390625
+      "contentTop": 0.48828125
     },
     "city_l8": {
       "frame": {
@@ -223,7 +223,7 @@
         "w": 256,
         "h": 256
       },
-      "contentTop": 0.0078125
+      "contentTop": 0.4375
     },
     "city_l10": {
       "frame": {
@@ -244,7 +244,7 @@
         "w": 256,
         "h": 256
       },
-      "contentTop": 0.0078125
+      "contentTop": 0.44140625
     },
     "playerbase_l1": {
       "frame": {
@@ -2076,7 +2076,7 @@
         "w": 256,
         "h": 256
       },
-      "contentTop": 0.0078125
+      "contentTop": 0.40625
     },
     "city_l6": {
       "frame": {
@@ -2118,7 +2118,7 @@
         "w": 256,
         "h": 256
       },
-      "contentTop": 0.01953125
+      "contentTop": 0.4375
     },
     "icon_arrowTower": {
       "frame": {

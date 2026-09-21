@@ -180,10 +180,13 @@ Notebook Wars 使用程序化骨骼角色（stickman）作为战斗单位，由 
 
 **渲染合成公式：**
 ```
-sprite.rotation = bone_FK_angle + keyframe.rotation + binding.rotation
+sprite.rotation = bone_FK_angle + binding.rotation
 sprite.x        = bone_pivot.x  + keyframe.translateX
 sprite.scale    = keyframe.scaleX × binding.scaleX
 ```
+
+> **`bone_FK_angle` 里已经含了 `keyframe.rotation`**（`Skeleton.computeFK` 把每根骨的 `transforms.get(id).rotation` 加进它返回的世界角），所以这一行**不能再加一次**。
+> 本文档此前写的是 `bone_FK_angle + keyframe.rotation + binding.rotation`，游戏运行时 `client/src/render/stickman/pose.ts` 照着实现了，动画编辑器 `Renderer.updateSprites` 没有——**于是同一个 `.tao` 在编辑器里和在战斗里长得不一样**，每根骨的贴图都比骨架多转了一倍的 keyframe 角度。人形的 ±30° 只表现为「动作松垮、零件有点错位」，没人察觉；獬豸 walk 的 spine +93°（把四足躯干放平的那一下）才把它顶出来：身体被画成竖着的，头脱在旁边。2026-09-21 修正，回归用例 `client/test/render/stickmanPoseRotation.test.ts`（钉的不是数值而是不变量：`sprite.rotation − binding.rotation === 该骨的 FK 世界角`）。
 
 #### 两点绑定（Two-Point Bind，2026-09-20）
 

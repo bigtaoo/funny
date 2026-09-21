@@ -41,6 +41,11 @@ export class RoomRegistry {
       return;
     }
     const code = this.uniqueCode();
+    if (code === null) {
+      log.error('room code space exhausted', { rooms: this.rooms.size });
+      this.deps.push(accountId, { kind: 'room_error', code: 'NO_ROOM_CODE', message: 'try again later' });
+      return;
+    }
     const roomId = randomUUID();
     const room: Room = {
       roomId,
@@ -277,7 +282,8 @@ export class RoomRegistry {
     }
   }
 
-  private uniqueCode(): string {
+  /** A free room code, or null when every code in the space is taken (unreachable in practice). */
+  private uniqueCode(): string | null {
     for (let attempt = 0; attempt < 16; attempt++) {
       let code = '';
       for (let i = 0; i < CODE_LEN; i++) {
@@ -285,6 +291,15 @@ export class RoomRegistry {
       }
       if (!this.byCode.has(code)) return code;
     }
-    return CODE_ALPHABET[0]!.repeat(CODE_LEN - 4) + Date.now().toString(36).slice(-4).toUpperCase();
+    // 16 random picks all collided: linear-probe from a timestamp-derived start, which finds a
+    // free code whenever one exists instead of handing out a possibly-taken fallback.
+    const space = CODE_ALPHABET.length ** CODE_LEN;
+    let n = Date.now() % space;
+    for (let i = 0; i < space; i++) {
+      const code = String(n).padStart(CODE_LEN, '0');
+      if (!this.byCode.has(code)) return code;
+      n = (n + 1) % space;
+    }
+    return null;
   }
 }

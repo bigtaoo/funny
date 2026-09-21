@@ -41,13 +41,13 @@ const FILES = [
   { file: 'city_l1.png',   name: 'city_l1'  },
   { file: 'city_l2.png',   name: 'city_l2'  },
   { file: 'city_l3.png',   name: 'city_l3'  },
-  { file: 'city_l4.png',   name: 'city_l4'  },
+  { file: 'city_l4.webp',  name: 'city_l4'  },
   { file: 'city_l5.png',   name: 'city_l5'  },
   { file: 'city_l6.webp',  name: 'city_l6'  },
-  { file: 'city_l7.png',   name: 'city_l7'  },
+  { file: 'city_l7.webp',  name: 'city_l7'  },
   { file: 'city_l8.png',   name: 'city_l8'  },
   { file: 'city_l9.png',   name: 'city_l9'  },
-  { file: 'city_l10.webp', name: 'city_l10' },
+  { file: 'city_l10.png',  name: 'city_l10' },
 ];
 
 // Remove background in-place (set alpha=0) via region-growing flood fill from the border.
