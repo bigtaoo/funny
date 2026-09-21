@@ -551,7 +551,7 @@ describe('Stage-level "blocking full-screen card" dialogs — dim backdrop swall
   describe('ConsentDialog', () => {
     for (const [label, w, h] of SIZES) {
       it(`${label}: dim backdrop is static and hit-tests the full screen`, () => {
-        const scene = new ConsentDialog(w, h, { onAccept() {} });
+        const scene = new ConsentDialog(w, h, { onAccept() {}, onDecline() {} });
         expectFullScreenDim(scene.container, w, h);
         scene.destroy();
       });

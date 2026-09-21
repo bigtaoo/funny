@@ -50,9 +50,13 @@
 | 私聊文本 | social | 是（通信） | 敏感词过滤 |
 
 ### 3.3 同意与撤回
-- **EU/UK 玩家**：埋点/广告类非必要数据采集需**事先同意**（opt-in），不能默认开。复用 `analyticsvc` 顶层 `enabled` 开关（ANALYTICS §10）作为撤回闸门——但需在前端补**首次同意弹窗**（按地区/IP 粗判是否弹）。
+- **两件事，两种法律依据，不能绑在一个按钮上**（2026-09-21 落地，细节见 ANALYTICS §3.6c）：
+  - **协议 + 隐私政策** = 缔约必要（Art 6(1)(b)），**可以硬门**，拒绝就是不玩；
+  - **埋点** = 只能靠 consent，而把服务访问权绑在它上面就不算「自由给出」（Art 7(4) / Recital 43），所以**拒绝之后必须照样能进游戏**。
+- **EU/EEA/UK/CH + US**：首启弹窗给「全部接受」/「仅必要」两个按钮，两个都进游戏。其余地区（含微信）看单按钮版，埋点随协议一起接受——**不显示一个点了不算数的假按钮**。地区靠 IANA 时区粗判（`client/src/platform/consentRegion.ts`），偏向多问。
+- 微信小游戏另有平台强制的《用户隐私保护指引》弹窗，那道门归微信管，我们不重复弹。
 - Web 端如用 cookie/localStorage 做分析，需 cookie 同意条。
-- **撤回 = 关采集 + 可请求删除**：analyticsvc 已支持按 `user_id` 批删事件;account/save/commercial 侧的删除走 §3.5。
+- **撤回 = 关采集 + 可请求删除**：设置页「匿名数据」开关两个方向都能改（Art 7(3)：撤回要和给出一样容易），写 `flags.gdprConsent` + `POST /account/gdpr-consent`；analyticsvc 顶层 `enabled` 开关（ANALYTICS §10）仍是服务端总闸；按 `user_id` 批删事件已支持，account/save/commercial 侧的删除走 §3.5。
 
 ### 3.4 儿童（COPPA / GDPR-K）
 - **已拍板（ADR-018，2026-06-21）：自我定级为「13+ / 不面向儿童」**，规避 COPPA/家长同意的重负担。
@@ -164,7 +168,7 @@
 
 | 项 | 已有 | 待建 |
 |---|---|---|
-| 埋点同意/删除 | analyticsvc `enabled` 开关 + 按 user_id 删（ANALYTICS §10） | 首次同意弹窗（按地区） |
+| 埋点同意/删除 | analyticsvc `enabled` 开关 + 按 user_id 删（ANALYTICS §10）；首启同意弹窗（按地区两形态）+ 设置页撤回开关，2026-09-21 补齐 | 拒绝人数的无鉴权计数（现在混在 ANALYTICS §3.6b 的 `Lost` 里） |
 | 抽卡掉率数据 | commercial `GachaPool.weight` + pity | 公示页 + `displayRates` 回执字段 + i18n |
 | 内购 | `iapVerify` dev 桩 | 平台 IAP/Billing SDK + 真票据校验 |
 | 账号删除 | account 模型 + `DELETE /account` 契约（SERVER_API §2.10；订正 2026-09-03，与本文 §3.5 清单口径统一） | meta 编排实现（删/匿名化 + 跨服务联动） |
@@ -179,6 +183,6 @@
 2. **抽卡概率公示页**（审核最易卡，且数据已就位，工程量小）。
 3. **删除账号入口 + 端点**（iOS 强制）。
 4. **平台 IAP/Billing 接入**（替换 dev 桩——变现前必须）。
-5. **EU/UK 同意弹窗**（地区粗判 + 复用 analytics 开关）。
+5. ~~**EU/UK 同意弹窗**（地区粗判 + 复用 analytics 开关）~~ ✅ 2026-09-21 已完成，见 §3.3 / ANALYTICS §3.6c。
 6. ~~举报入口 + displayName 过滤（社交治理补齐）~~ ✅ 2026-07-27 已完成，见 §7。
 7. 分级问卷 / 数据表 / 隐私标签填写（上架表单阶段，依赖 §3.2 定稿）。

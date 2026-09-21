@@ -8,7 +8,7 @@ import { showToastMessage } from '../../net/log';
 import type { AppCtx, Nav } from '../appCtx';
 import {
   SEEN_INTRO_FLAG, TOKEN_KEY, PLAYER_NAME_KEY, PLAYER_PUBLIC_ID_KEY, PLAYER_AVATAR_KEY, RENAME_COST,
-  FREE_RENAME_KEY,
+  FREE_RENAME_KEY, GDPR_CONSENT_FLAG,
 } from '../appConstants';
 
 /**
@@ -122,6 +122,15 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
       ...(loggedIn && !!api ? { onDeleteAccount: doDeleteAccount } : {}),
       // Replay tutorial (ONBOARDING_DESIGN §3.4): directly re-runs the dedicated tutorial level (never fails, can be skipped again).
       onReplayTutorial: () => nav.goTutorial(),
+      // Analytics consent, withdrawable and re-grantable (COMPLIANCE_GLOBAL §3.3). Same three
+      // writes the consent gate makes, minus the `gdpr_consent` event: re-granting here is not a
+      // first-launch conversion and would distort the funnel's consent count (ANALYTICS §3.6c).
+      getAnalyticsConsent: () => saveManager.getFlag(GDPR_CONSENT_FLAG) === true,
+      onSetAnalyticsConsent: (granted: boolean) => {
+        saveManager.setFlag(GDPR_CONSENT_FLAG, granted);
+        analytics.setConsent(granted);
+        if (api) void api.recordGdprConsent(granted).catch(() => { /* best-effort; flag still syncs via SaveManager */ });
+      },
       // Safe-area diagnostics (layout/viewportGeometry.ts): the only place a player on a device we
       // do not hold can read back the numbers the layout was built from.
       getViewportGeometry: () => platform.getViewportGeometry?.(),

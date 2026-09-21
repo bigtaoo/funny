@@ -40,6 +40,17 @@ export interface SettingsSceneCallbacks {
   /** Replay the onboarding tutorial (ONBOARDING_DESIGN §3.4); absent = not shown. */
   onReplayTutorial?(): void;
   /**
+   * Analytics consent as it stands (`save.flags.gdprConsent`), for the privacy toggle.
+   *
+   * This pair is what makes the consent gate's "essentials only" answer reversible in both
+   * directions — GDPR Art 7(3) wants withdrawal to be as easy as giving, and a player who refused
+   * on first launch otherwise has no way back. Absent → the toggle is not drawn (the headless test
+   * harnesses pass neither).
+   */
+  getAnalyticsConsent?(): boolean;
+  /** Persist a new analytics consent value (local flag + `POST /account/gdpr-consent`). */
+  onSetAnalyticsConsent?(granted: boolean): void;
+  /**
    * Raw viewport/safe-area readout for the diagnostic line at the bottom of this screen
    * (`layout/viewportGeometry.ts`, drawn by `panels.drawViewportDiagnostics`). Absent → no line:
    * WeChat has no DOM to read it from, and the test harnesses do not pass one. Present but

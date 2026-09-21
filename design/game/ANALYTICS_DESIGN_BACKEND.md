@@ -491,7 +491,7 @@ cohort（某日活跃设备）
 现在 `track()` 在「没同意」或「还没 init」两种状态下一律缓冲，`init()` 也改成**先补发再发
 `session_start`**，让队列保持时间顺序。
 
-**没做也不打算在这里做的**：`showConsent` 的「拒绝」分支（§3.6b 末尾）——拒绝之后还能不能玩是产品/合规决定，不是埋点决定。
+**已经在客户端做掉的**：`showConsent` 的「仅必要」分支（2026-09-21，ANALYTICS §3.6c）——拒绝埋点照样进游戏，服务端这边没有新端点，只是 `POST /account/gdpr-consent` 现在也会收到 `false`。**这里仍然没做的**：把拒绝的人从 §3.6b 的 `Lost` 里拆出来，要再加一列同样只有「日期/平台/计数」的无鉴权计数。
 
 新增覆盖：`client/test/analyticsBootTimeline.test.ts`（8）、`analyticsIdleWatch.test.ts`（7）、
 `analyticsConsentBuffer.test.ts` 加两条 pre-init 用例、`anomaly-chain.test.ts` 加三条 sid 用例、
