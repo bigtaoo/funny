@@ -525,42 +525,87 @@ towers.
 
 下面两条 prompt 的前两段（风格 + 比例）与上一轮**完全相同**，只改 Subject 段，并各补一条可数的密度硬指标。
 
+下面两条是**完整自包含**的（风格 + 比例 + 通用 style 都已展开，不需要再拼前置块）。参照文件按「最像的那个已达标兄弟」选，不再统一指向 `city_l6`：`l4` 对标刚落地的 `city_l5.png`（同为木寨、同 5×5、1.89），`l7` 的比例对标 `city_l8.png`（同为石堡、1.84），密度对标 `city_l6.webp`。出图时把对应参照图一起喂进去。
+
 #### `city_l4` v2 — Lv 4「木寨扩镇」（5×5，Tier2 中段）
 
 ```
-[共用前置块，原样复制]
+A loose hand-drawn ink DOODLE sketch on graph paper — NOT a detailed painted
+illustration, NOT realistic shading, NOT rendered texture with light/dark
+gradients. Flat, scratchy fountain-pen blue ink outlines with occasional
+cross-hatching for texture ONLY, filled with simple FLAT single-tone
+watercolor washes — match the exact medium, flatness and line weight of
+city_l5.png.
+
+CAMERA AND PROPORTION — check this before drawing anything else: the whole
+settlement sits on ONE wide rotated-diamond isometric ground plate seen from
+above at a shallow tilt, like a diamond playing-card symbol. NOT a front
+elevation, NOT a tabletop diorama, no horizon. The plate's top corner sits
+about 1/4 down the canvas and its bottom corner about 3/4 down — a flat 2:1
+diamond, twice as wide as it is deep. Do not draw a steeper diamond. Then
+draw an imaginary tight box around EVERYTHING non-white, including every
+tower, flag and chimney: its width must be AT LEAST 1.75 times its height.
+If it is not, shorten the towers and flatten the roofs until it is. This is
+a WIDE, LOW, sprawling settlement seen from above — never a tall vertical
+town portrait. Reference: city_l5.png's own box is 1.89 wide-to-tall; match
+it.
 
 Subject: a growing wooden town — a rectangular palisade wall with a raised
-fighting walk running out to the edges of the ground plate, AT LEAST 6
-distinct blocky houses inside, two watchtowers (one slightly taller than the
-other, neither rising above about a third of the total box height), a
-reinforced double-leaf wooden gate, several chimneys with smoke. Busier and
-denser than city_l3.png — count the buildings in that reference and draw
-MORE — but clearly less developed than city_l5.png, which adds stone and a
-market square. Blue ink, warm orange-brown wood fill.
-[+ style]
+fighting walk, running right out to the edges of the ground plate, AT LEAST
+6 distinct blocky houses inside, two watchtowers (one slightly taller than
+the other; neither may rise above about a third of the total box height), a
+reinforced double-leaf wooden gate, several chimneys with smoke. Count the
+buildings inside city_l3.png and draw MORE than that — but stay clearly less
+developed than city_l5.png, which adds stone walls and a market square.
+Blue ink, warm orange-brown wood fill.
+
+hand-drawn doodle illustration on graph paper, fountain pen blue ink lines,
+slightly scratchy student sketch strokes, light watercolor marker fill,
+isolated on transparent background, 512x512px, notebook doodle aesthetic,
+no text, no labels
 ```
 
 #### `city_l7` v2 — Lv 7「石堡加固」（7×7，Tier3 中段）
 
 ```
-[共用前置块，原样复制]
+A loose hand-drawn ink DOODLE sketch on graph paper — NOT a detailed painted
+illustration, NOT realistic shading, NOT rendered texture with light/dark
+gradients. Flat, scratchy fountain-pen blue ink outlines with occasional
+cross-hatching for texture ONLY, filled with simple FLAT single-tone
+watercolor washes — match the exact medium, flatness and line weight of
+city_l8.png.
+
+CAMERA AND PROPORTION — check this before drawing anything else: the whole
+settlement sits on ONE wide rotated-diamond isometric ground plate seen from
+above at a shallow tilt, like a diamond playing-card symbol. NOT a front
+elevation, NOT a tabletop diorama, no horizon. The plate's top corner sits
+about 1/4 down the canvas and its bottom corner about 3/4 down — a flat 2:1
+diamond, twice as wide as it is deep. Do not draw a steeper diamond. Then
+draw an imaginary tight box around EVERYTHING non-white, including every
+tower, spire and flag: its width must be AT LEAST 1.75 times its height. If
+it is not, shorten the towers until it is. This is a WIDE, LOW, sprawling
+fortress seen from above — never a tall vertical castle portrait. Reference:
+city_l8.png's own box is 1.84 wide-to-tall; match it.
 
 Subject: a reinforced stone fortress with a LIVED-IN courtyard, not an empty
 walled yard — thicker crenellated outer walls with a second inner wall ring
 (both clearly visible from above as concentric diamonds), three corner
 towers, a central keep with a low peaked roof, a stone gatehouse with double
-portcullis, banners on the towers. Inside the walls there must be AT LEAST 6
-distinct occupied structures besides the keep — barracks, stables, a smithy
-with a chimney, storehouses, market stalls, a well — packed into the
-courtyard the way city_l6.webp packs its own. Match or beat city_l6.webp's
-building count and detail density; it is the level right below this one and
-must never look busier. The keep must not stand taller than roughly a third
-of the total box height — this reads as bigger than city_l6.webp through
-SPREAD, the second wall ring and more inner buildings, never through height.
-Heavier cross-hatching for stone texture. Blue ink outline, cool grey-blue
-stone fill.
-[+ style]
+portcullis, banners on the towers. Inside the walls draw AT LEAST 6 distinct
+occupied structures besides the keep — barracks, stables, a smithy with a
+chimney, storehouses, market stalls, a well — packed into the courtyard the
+way city_l6.webp packs its own. Count the buildings inside city_l6.webp's
+walls and draw MORE: it is the level directly below this one and must never
+look busier or more inhabited than this one. The keep must not stand taller
+than roughly a third of the total box height — this must read as bigger than
+city_l6.webp through SPREAD, the second wall ring and more inner buildings,
+never through height. Heavier cross-hatching for stone texture. Blue ink
+outline, cool grey-blue stone fill.
+
+hand-drawn doodle illustration on graph paper, fountain pen blue ink lines,
+slightly scratchy student sketch strokes, light watercolor marker fill,
+isolated on transparent background, 512x512px, notebook doodle aesthetic,
+no text, no labels
 ```
 
 **这两张落地后**：把 `cityAtlasContentTop.ui.ts` 的 `HEIGHT_BUDGET_K` 从 1.6 收紧到 1.2。
