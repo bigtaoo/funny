@@ -403,7 +403,6 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
         joinRoom() {},
         setReady() {},
         startMatch() {},
-        createRanked() {},
         cancelQueue() {},
         available: true,
       }),
@@ -1438,7 +1437,7 @@ function buildRoomCodeEntry(w: number, h: number, joinRoom: (code: string) => vo
   const layout = createLayout(w, h);
   const scene = new RoomScene(layout, new InputManager(), {
     onBack() {}, createRoom() {}, joinRoom, setReady() {},
-    startMatch() {}, createRanked() {}, cancelQueue() {}, available: true,
+    startMatch() {}, cancelQueue() {}, available: true,
   });
   (scene as any).onJoinPressed(); // → 'codeEntry' view, re-renders the keypad
   return { scene, layout };
@@ -1513,6 +1512,66 @@ describe('RoomScene — code-entry keypad', () => {
     tapDigit(scene, '6');
     tapConfirm(scene);
     expect(joined).toEqual(['123456']);
+    scene.destroy();
+  });
+});
+
+// ── RoomScene: picker contents + how the queue is left ──────────────────────
+// Two rules that only exist as button wiring, and would regress silently (both screens still
+// render, just with the wrong contents / the wrong exit):
+//   1. The friend-room picker offers create + join and nothing else. The ranked button that used
+//      to sit above them is gone — ranked is entered from the lobby's match tile (autoRanked).
+//   2. Cancelling the search leaves the scene entirely (back to the lobby) instead of falling
+//      through to that picker, which the player never asked for.
+function buildRoomPicker(opts: { autoRanked?: boolean } = {}) {
+  const calls = { createRoom: 0, cancelQueue: 0, onBack: 0 };
+  const scene = new RoomScene(createLayout(...PORTRAIT), new InputManager(), {
+    onBack() { calls.onBack++; },
+    createRoom() { calls.createRoom++; },
+    joinRoom() {}, setReady() {}, startMatch() {},
+    cancelQueue() { calls.cancelQueue++; },
+    available: true,
+    ...opts,
+  });
+  return { scene, calls };
+}
+
+describe('RoomScene — picker contents + how the queue is left', () => {
+  it('idle picker is exactly back / create / join — no ranked entry', () => {
+    const { scene, calls } = buildRoomPicker();
+    expect((scene as any).view).toBe('idle');
+    const hits = roomHits(scene);
+    expect(hits.length).toBe(3); // header back + the two buttons
+
+    hits[1]!.fn();
+    expect(calls.createRoom).toBe(1);
+    expect((scene as any).view).toBe('connecting');
+
+    const again = buildRoomPicker();
+    roomHits(again.scene)[2]!.fn();
+    expect((again.scene as any).view).toBe('codeEntry');
+    again.scene.destroy();
+    scene.destroy();
+  });
+
+  it('cancelling the search unqueues and returns to the lobby, not to the picker', () => {
+    const { scene, calls } = buildRoomPicker({ autoRanked: true });
+    expect((scene as any).view).toBe('searching');
+    const hits = roomHits(scene);
+    expect(hits.length).toBe(2); // header back + cancel
+
+    hits[1]!.fn(); // cancel
+    expect(calls.cancelQueue).toBe(1);
+    expect(calls.onBack).toBe(1);
+    expect((scene as any).view).not.toBe('idle');
+    scene.destroy();
+  });
+
+  it('the header back button in the searching view unqueues too (same exit as cancel)', () => {
+    const { scene, calls } = buildRoomPicker({ autoRanked: true });
+    roomHits(scene)[0]!.fn(); // header back
+    expect(calls.cancelQueue).toBe(1);
+    expect(calls.onBack).toBe(1);
     scene.destroy();
   });
 });

@@ -18,9 +18,10 @@ export interface RoomSceneCallbacks {
   joinRoom(code: string): void;
   setReady(ready: boolean): void;
   startMatch(): void;
-  /** Enter ranked matchmaking queue (S1-R). */
-  createRanked(): void;
-  /** Cancel ranked search. */
+  /**
+   * Leave the ranked matchmaking queue. There is no `createRanked` counterpart: the queue is
+   * joined by app/nav once the gateway opens (see `autoRanked`), never by a button in this scene.
+   */
   cancelQueue(): void;
   /** False when no online server is configured → actions surface "unavailable". */
   available: boolean;

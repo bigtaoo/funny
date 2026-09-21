@@ -284,8 +284,6 @@ export const zh = {
   'room.creating': '创建房间中',
   'room.joining': '加入中',
   'room.rankedTitle': '排位匹配',
-  'room.ranked': '排位赛',
-  'room.rankedDesc': '匹配同水平对手，胜负影响段位',
   'room.searching': '匹配中',
   'room.searchingHint': '正在寻找势均力敌的对手…',
   'room.cancelSearch': '取消匹配',

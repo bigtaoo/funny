@@ -126,17 +126,6 @@ describe('room.ts — goRoom() basic wiring', () => {
     expect(session!.cancelQueue).toHaveBeenCalledTimes(1);
   });
 
-  it('createRanked(): tracks pvp_room_create(mode:ranked) and queues with the resolved deck', () => {
-    const { nav, views, session } = buildRoomNav({ deck: ['a', 'b'] });
-    const trackSpy = vi.spyOn(analytics, 'track');
-    nav.goRoom();
-
-    views.room!.createRanked();
-
-    expect(trackSpy).toHaveBeenCalledWith('pvp_room_create', { mode: 'ranked' });
-    expect(session!.createRanked).toHaveBeenCalledWith(['a', 'b']);
-  });
-
   it('onBack(): closes the session, resets handlers to just onMatchStart, and returns to the lobby', () => {
     const { nav, views, session } = buildRoomNav();
     nav.goRoom();

@@ -89,6 +89,11 @@
 - 状态机：`idle → creating/joining → in-room(waiting) → both-ready → countdown → GameScene`。
 - 网络态：连接中 spinner、加入失败（房间不存在/已满）Toast、对手掉线提示。
 - i18n：`room.*`。
+- **排位不在这张页上（2026-09-21）**：`idle` 视图**只有**创建房间 / 加入房间两颗按钮（上图即最终形态）。
+  排位匹配唯一的入口是大厅那块「开始匹配」按钮——它带 `autoRanked` 直接落在本场景的 `searching` 视图，
+  跳过 `idle`。因此 `searching` 的「取消匹配」（和标题栏返回键）走 `cancelQueue()` + `onBack()`，**直接回大厅**，
+  不落到 `idle`；只有排位**出错**（`RANKED_UNAVAILABLE` 等）或连接永久断开才会退到 `idle` + toast。
+  详见 [`UI_DESIGN_LOG_2026-09.md`](UI_DESIGN_LOG_2026-09.md) §61。
 
 ### 4.3 ShopScene（商店，S2）
 ```
