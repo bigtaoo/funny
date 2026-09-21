@@ -157,3 +157,68 @@ export function alphaAt(mask: AlphaMask, texW: number, texH: number, px: number,
   if (mx < 0 || my < 0 || mx >= mask.w || my >= mask.h) return 0;
   return mask.data[my * mask.w + mx];
 }
+
+// ── Two-point bind ────────────────────────────────────────────────────────────
+
+/** The binding parameters `solveTwoPointBind` derives, plus the raw image-space
+ *  measurement the caller needs to fit the bone to the image instead. */
+export interface TwoPointBind {
+  anchorX:  number;
+  anchorY:  number;
+  rotation: number;   // degrees, for SpriteBinding.rotation
+  scale:    number;   // uniform magnitude; caller folds flipX back in as a sign on scaleX
+  spanPx:   number;   // distance between the two picked points, in texture pixels
+}
+
+/** Minimum texture-pixel distance between the two picks. Below this the direction
+ *  is noise and `scale` explodes, so the solve is refused instead. */
+export const MIN_BIND_SPAN_PX = 2;
+
+/**
+ * Invert `localPixelToWorld` for the one case that matters to an artist: "this pixel
+ * is the near joint, that pixel is the far joint — make them land on the bone's ends."
+ *
+ * `p1` (the near joint) pins to the bone's pivot, `p2` (the far joint) to its tip.
+ * Reading the composite formula
+ *
+ *     world = pivot + R(boneWA + rotation) · S(scale) · (pixel − anchor × texSize)
+ *
+ * gives each parameter directly:
+ *
+ * • `anchor` is "which texture pixel sits at the pivot", so it is just `p1` as a
+ *   fraction of the texture size. Note this is exact regardless of rotation/scale —
+ *   at `pixel === anchor × texSize` the rotated-scaled term is zero and `world === pivot`.
+ *   That is what makes the three outputs independent rather than a system to iterate on.
+ * • `scale` is uniform (`scaleX === scaleY` up to flipX's sign): two points constrain
+ *   one distance, and a non-uniform pair would have infinitely many solutions.
+ * • `rotation` cancels the (positive) scale out of the atan2, but NOT flipX's sign —
+ *   a mirrored sprite reaches its far joint from the opposite side.
+ *
+ * Returns null when the two picks are effectively the same pixel (see MIN_BIND_SPAN_PX)
+ * or the texture/bone is degenerate.
+ */
+export function solveTwoPointBind(
+  p1: Vec2, p2: Vec2,
+  texW: number, texH: number,
+  boneLen: number,
+  flipX: boolean,
+): TwoPointBind | null {
+  if (texW <= 0 || texH <= 0 || boneLen <= 0) return null;
+
+  const dx = p2.x - p1.x;
+  const dy = p2.y - p1.y;
+  const spanPx = Math.hypot(dx, dy);
+  if (spanPx < MIN_BIND_SPAN_PX) return null;
+
+  const scale = boneLen / spanPx;
+  // atan2 of the SCALED offset; the positive uniform scale cancels, flipX's sign does not.
+  const imgAngleRad = Math.atan2(dy, flipX ? -dx : dx);
+
+  return {
+    anchorX:  p1.x / texW,
+    anchorY:  p1.y / texH,
+    rotation: (-imgAngleRad * 180) / Math.PI,
+    scale,
+    spanPx,
+  };
+}

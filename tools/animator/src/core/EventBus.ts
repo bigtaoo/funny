@@ -37,6 +37,9 @@ export interface AppEvents {
   // Editor mode (skin vs animate)
   'editor:mode':    'skin' | 'animate';
 
+  // Two-point bind: pick started / first point taken / cancelled or solved
+  'bindpick:change': void;
+
   // Project library (auto-save to IndexedDB)
   'project:list':   void;                                    // library changed (create/delete/rename/save)
   'project:active': { id: string; name: string };            // active project switched

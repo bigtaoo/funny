@@ -25,6 +25,10 @@ export class IOController {
   private editorFileHandle: WritableFileHandle | null = null;
   /** Browser-only: remembered `.tao` save target so repeat exports don't re-prompt. */
   private taoFileHandle: WritableFileHandle | null = null;
+  /** Active library project's name, mirrored off `project:active` (AutoSaveController owns
+   *  the library). Only used to suggest a filename on a first save/export, so a stale value
+   *  can at worst pre-fill a dialog the artist is looking at. */
+  private projectName = 'Untitled';
 
   constructor(
     private readonly state:     AppState,
@@ -43,6 +47,8 @@ export class IOController {
       if (file) this.loadEditorProject(file);
       (e.target as HTMLInputElement).value = '';
     });
+
+    bus.on('project:active', ({ name }) => { this.projectName = name; });
   }
 
   private editorProjectHost(): EditorProjectHost {
@@ -53,6 +59,7 @@ export class IOController {
       imageCtrl: this.imageCtrl,
       cmdManager: this.cmdManager,
       bus: this.bus,
+      get projectName() { return self.projectName; },
       get editorFilePath() { return self.editorFilePath; },
       set editorFilePath(v: string | null) { self.editorFilePath = v; },
       get editorFileHandle() { return self.editorFileHandle; },
@@ -69,6 +76,7 @@ export class IOController {
       animCtrl: this.animCtrl,
       imageCtrl: this.imageCtrl,
       bus: this.bus,
+      get projectName() { return self.projectName; },
       get editorFilePath() { return self.editorFilePath; },
       get editorFileHandle() { return self.editorFileHandle; },
       get taoFileHandle() { return self.taoFileHandle; },

@@ -106,3 +106,29 @@ export interface AttachmentPoint {
   shadowW?:   number;
   shadowH?:   number;
 }
+
+// ── Two-point bind ────────────────────────────────────────────────────────────
+
+/** One point picked during a two-point bind, kept in both spaces it is needed in:
+ *  `tex` (texture pixels) is what the solve consumes, `world` (stage px) is where the
+ *  marker draws. Both are captured at pick time against the binding as it stood then —
+ *  the solve reads two points that must share one frame of reference, so nothing may
+ *  touch the binding between the first pick and the second. */
+export interface BindPickPoint {
+  tex:   { x: number; y: number };
+  world: { x: number; y: number };
+}
+
+/** An in-progress two-point bind: the artist points at a joint in the image, then at the
+ *  joint on the far end, and the binding that makes those two pixels land on the bone's
+ *  own two ends is solved directly (see `solveTwoPointBind`).
+ *
+ *  `fitLength` picks which side gives way when the picked span and the bone disagree:
+ *  false (default) scales the IMAGE to the bone and cannot disturb existing animation;
+ *  true stretches the BONE to the image and leaves the image's scale alone, which is what
+ *  you want when the artwork — not the rig — holds the character's true proportions. */
+export interface BindPick {
+  boneId:    string;
+  fitLength: boolean;
+  first:     BindPickPoint | null;
+}
