@@ -7,8 +7,8 @@
     "required": "all"
   },
   "enemyScale": {
-    "hp": 1.05,
-    "damage": 1.03
+    "hp": 1.12,
+    "damage": 1.066
   },
   "loadout": [
     "max_1",

@@ -7,8 +7,8 @@
     "durationTicks": 2400
   },
   "enemyScale": {
-    "hp": 1.12,
-    "damage": 1.09
+    "hp": 0.982,
+    "damage": 1.021
   },
   "loadout": [
     "infantry_1",

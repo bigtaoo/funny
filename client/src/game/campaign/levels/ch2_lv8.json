@@ -6,8 +6,8 @@
     "kind": "survive"
   },
   "enemyScale": {
-    "hp": 1.18,
-    "damage": 1.12
+    "hp": 1.377,
+    "damage": 1.211
   },
   "loadout": [
     "max_1",

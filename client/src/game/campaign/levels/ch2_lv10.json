@@ -6,8 +6,8 @@
     "kind": "destroy_base"
   },
   "enemyScale": {
-    "hp": 1.39,
-    "damage": 1.26
+    "hp": 1.636,
+    "damage": 1.37
   },
   "loadout": [
     "max_1",
