@@ -10,7 +10,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { makeText } from '../../render/pixiText';
 import { ILayout, Rect } from '../../layout/ILayout';
-import { drawHpBar, HP_BAR_W } from '../../render/HUDView/hpBar';
+import { HpBarView, HP_BAR_W } from '../../render/HUDView/hpBar';
 import { factionInk } from '../../render/theme';
 import { buildIcon, preloadInkIconTextures } from '../../render/icons';
 import { FS, snapFont } from '../../render/fontScale';
@@ -34,7 +34,7 @@ const CLOCK_W = 150;
 
 /** One side's strip widgets. */
 interface SideStrip {
-  hp: PIXI.Graphics;
+  hp: HpBarView;
   inkIcon: PIXI.Container;
   inkText: PIXI.Text;
 }
@@ -93,7 +93,7 @@ export class StatePlayerHud {
       const strip = this.sides[base.owner];
       if (!strip) continue;
       const color = base.owner === 0 ? factionInk.friend : factionInk.enemy;
-      drawHpBar(strip.hp, base.hp, Math.max(1, base.maxHp), color, pulse, pulseFast);
+      strip.hp.sync(base.hp, Math.max(1, base.maxHp), pulse, pulseFast);
     }
 
     // v1 streams carry no `res` — leave the ink group hidden rather than showing a fake 0.
@@ -138,9 +138,9 @@ export class StatePlayerHud {
     label.y = r.y + r.h / 2;
 
     const board = this.layout.boardRect;
-    const hp = new PIXI.Graphics();
-    hp.x = Math.round(board.x + (board.w - HP_BAR_W) / 2);
-    hp.y = Math.round(r.y + (r.h - HP_CELL_H) / 2);
+    const hp = new HpBarView(color);
+    hp.container.x = Math.round(board.x + (board.w - HP_BAR_W) / 2);
+    hp.container.y = Math.round(r.y + (r.h - HP_CELL_H) / 2);
 
     const inkText = makeText('0', { fontSize: FS.title, fill: 0x222222, fontFamily: 'monospace' });
     inkText.anchor.set(1, 0.5);
@@ -154,7 +154,7 @@ export class StatePlayerHud {
     this.fillInkIcon(strip, side);
     this.positionInk(strip);
 
-    this.container.addChild(label, hp, inkIcon, inkText);
+    this.container.addChild(label, hp.container, inkIcon, inkText);
     return strip;
   }
 

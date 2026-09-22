@@ -167,9 +167,12 @@ describe('StatePlayerScene — shared replay renders skins / animation / HUD', (
     scene.update(1 / 30);
     const hud = hudOf(scene);
 
-    // Both HP bars have actual geometry (drawHpBar ran for owner 0 and owner 1).
+    // Both HP bars have actual geometry (HpBarView.sync ran for owner 0 and owner 1). No bake
+    // renderer in this headless suite (see vitest.ui.config.ts's header), so HpBarView always takes
+    // its live-Graphics fallback path — the fill layer's geometry is what "actually drew" means here.
     for (const owner of [0, 1] as const) {
-      expect(hud.sides[owner].hp.geometry.graphicsData.length).toBeGreaterThan(0);
+      const fillGfx = (hud.sides[owner].hp as unknown as { fillGfx: PIXI.Graphics }).fillGfx;
+      expect(fillGfx.geometry.graphicsData.length).toBeGreaterThan(0);
     }
     // Ink: 7 for the bottom player, 3 for the top one.
     expect(visibleCounts(hud.container).sort()).toEqual(['3', '7']);
@@ -188,7 +191,7 @@ describe('StatePlayerScene — shared replay renders skins / animation / HUD', (
     expect(hud.sides[0].inkText.text).toBe('7');
     expect(hud.sides[1].inkText.text).toBe('3');
     for (const [owner, band] of [[0, layout.hudBottomLeftRect], [1, layout.hudTopRect]] as const) {
-      for (const gfx of [hud.sides[owner].hp, hud.sides[owner].inkText]) {
+      for (const gfx of [hud.sides[owner].hp.container, hud.sides[owner].inkText]) {
         expect(overlapsBand(gfx.getBounds(), band)).toBe(true);
       }
     }
@@ -297,8 +300,10 @@ describe('StatePlayerScene — transport chrome clears the HUD strips', () => {
     const scene = new StatePlayerScene(createLayout(...PORTRAIT), mkShared({ res: false }), CB);
     scene.update(1 / 30);
     expect(visibleCounts(hudOf(scene).container)).toEqual([]);
-    // HP still renders — it was always in the stream.
-    expect(hudOf(scene).sides[0].hp.geometry.graphicsData.length).toBeGreaterThan(0);
+    // HP still renders — it was always in the stream. No bake renderer here either (see the other
+    // "actual geometry" assertion above), so the fallback fill layer is what to check.
+    const fillGfx0 = (hudOf(scene).sides[0].hp as unknown as { fillGfx: PIXI.Graphics }).fillGfx;
+    expect(fillGfx0.geometry.graphicsData.length).toBeGreaterThan(0);
     scene.destroy();
   });
 });
