@@ -217,7 +217,7 @@ export class WorldMapContext {
   overlayInkDirty = false;
   /** Signature (fog.ts `overlayInkSignature`) the overlay ink was last painted for; -1 until then. */
   overlayInkSig = -1;
-  /** Seconds accumulated toward the next shield-bubble redraw (lifecycle.ts SHIELD_ANIM_FPS). */
+  /** Seconds accumulated toward the next shield-bubble animation step (lifecycle.ts SHIELD_ANIM_FPS). */
   shieldAnimAcc = 0;
   cityLayer!: PIXI.Container;
   citySprites: Map<string, PIXI.Container> = new Map();
@@ -228,9 +228,10 @@ export class WorldMapContext {
    *  the time, reading as a flat static overlay rather than an active field (2026-08-08 follow-up:
    *  "现在就叠加了一张图，不太能懂用途是什么"). See WorldMapRenderer/shieldFx.ts. */
   shieldGeom: Map<string, { cx: number; cy: number; rx: number; ry: number; tp: number }> = new Map();
-  /** Seconds elapsed, feeds drawShieldDome/drawShieldGlow's rotation/pulse phase — a plain
-   *  accumulator (not Date.now()) so shield animation stays deterministic/testable like the rest
-   *  of update(dt). */
+  /** Seconds elapsed, feeds animateShield's rotation/pulse phase — a plain accumulator (not
+   *  Date.now()) so shield animation stays deterministic/testable like the rest of update(dt).
+   *  Held (not just unread) while decorationsQuiet(), so resuming never snaps the ring to a new
+   *  angle — see the gate in lifecycle.update. */
   shieldAnimT = 0;
   /** cacheKey → one-shot "shield just broke" pop flash in progress (borrowed from daydayup's
    *  shield_break flash, 2026-08-08 follow-up). `age` is seconds since the break was first
