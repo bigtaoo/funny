@@ -6,7 +6,9 @@
 import * as PIXI from 'pixi.js-legacy';
 import { Side, UnitType } from '@nw/engine/types';
 import { targetScreenHeight } from '../unitSize';
-import { factionInk } from '../theme';
+import { factionInk, fx } from '../theme';
+import { barSprite } from '../barSprite';
+import { bakeLazy } from '../bake';
 import infantryTaoUrl from '../../assets/units/infantry.tao';
 import archerTaoUrl from '../../assets/units/archer.tao';
 import shieldBearerTaoUrl from '../../assets/units/shieldbearer.tao';
@@ -181,23 +183,66 @@ export function drawFactionMarker(
   g.beginFill(color, 0.55); g.drawEllipse(cx + 1.5, cy + 0.6, rx * 0.5,  ry * 0.5);  g.endFill();
 }
 
+/**
+ * Padding around the marker's own bounds, in bake pixels — the widest ring drawn by
+ * {@link drawFactionMarker} is `rx * 1.12` / `ry * 1.12`, plus a few px for the `+1.5/+0.6` core-disc
+ * offset. Kept apart from {@link markerBakeSize} so both agree by construction.
+ */
+const MARKER_PAD = 6;
+
+/** Bake-texture size for a faction marker of half-extents `(rx, ry)` — see {@link factionMarkerTexture}. */
+export function markerBakeSize(rx: number, ry: number): { w: number; h: number } {
+  return { w: Math.ceil(rx * 1.12 * 2) + MARKER_PAD * 2, h: Math.ceil(ry * 1.12 * 2) + MARKER_PAD * 2 };
+}
+
+/**
+ * Baked texture of the faction ground marker, drawn locally centered (the returned texture is
+ * positioned by the caller with `anchor.set(0.5)` at the real `(cx, cy)`, so the bake itself never
+ * depends on where the marker ends up on screen).
+ *
+ * `drawFactionMarker` is only ever called once per unit — at spawn, or when a pooled stickman
+ * wrapper is reused for the opposite side (never per-frame) — so this is a spawn-time earcut
+ * removed, not a per-frame one. `(cx, cy)` are still folded into the key (not just `rx`/`ry`) so a
+ * shape that ever comes to depend on its absolute position can't silently share a stale bake; the
+ * variant count stays bounded regardless, since both the circle-placeholder path (2 constants) and
+ * the stickman path (`getShadowGround()` sampled at `time === 0` — see `StickmanRuntime.reset`) are
+ * deterministic per `(unitType, side)`, ~24 combinations total.
+ *
+ * Returns null with no bake renderer wired (headless tests); the caller must then fall back to
+ * drawing {@link drawFactionMarker} live.
+ */
+export function factionMarkerTexture(
+  side: Side, cx: number, cy: number, rx: number, ry: number,
+): PIXI.Texture | null {
+  const { w, h } = markerBakeSize(rx, ry);
+  const key = `faction ground marker ${side}:${cx.toFixed(1)}:${cy.toFixed(1)}:${rx.toFixed(1)}:${ry.toFixed(1)}`;
+  return bakeLazy(key, () => {
+    const g = new PIXI.Graphics();
+    drawFactionMarker(g, side, w / 2, h / 2, rx, ry);
+    return g;
+  }, w, h);
+}
+
 // ── Pool factory / resetter (circle placeholder for non-stickman unit types) ───
 
 export function createUnitContainer(): PIXI.Container {
   const c = new PIXI.Container();
 
-  const body   = new PIXI.Graphics(); body.name   = 'body';
-  const ring   = new PIXI.Graphics(); ring.name   = 'ring';
-  const hpBg   = new PIXI.Graphics(); hpBg.name   = 'hpBg';
-  const hpFill = new PIXI.Graphics(); hpFill.name = 'hpFill';
-
-  hpBg.beginFill(0xcccccc, 0.7);
-  hpBg.drawRect(-HP_BAR_WIDTH / 2, HP_BAR_Y, HP_BAR_WIDTH, HP_BAR_HEIGHT);
-  hpBg.endFill();
+  // body/ring each get a Sprite (the bake path) + a Graphics (the headless fallback — no bake
+  // renderer, see render/bake.ts). Exactly one of the pair is visible at a time; the pool resetter
+  // must not leave both showing, or a reused container double-draws its figure.
+  const bodySprite = new PIXI.Sprite(); bodySprite.name = 'bodySprite'; bodySprite.anchor.set(0.5);
+  const bodyGfx     = new PIXI.Graphics(); bodyGfx.name  = 'body';
+  const ringSprite = new PIXI.Sprite(); ringSprite.name = 'ringSprite'; ringSprite.anchor.set(0.5);
+  const ringGfx     = new PIXI.Graphics(); ringGfx.name  = 'ring';
+  const hpBg   = barSprite(-HP_BAR_WIDTH / 2, HP_BAR_Y, HP_BAR_WIDTH, HP_BAR_HEIGHT, 0xcccccc, 0.7);
+  const hpFill = barSprite(-HP_BAR_WIDTH / 2, HP_BAR_Y, HP_BAR_WIDTH, HP_BAR_HEIGHT, fx.hpHigh);
+  hpBg.name   = 'hpBg';
+  hpFill.name = 'hpFill';
   hpBg.visible  = false;
   hpFill.visible = false;
 
-  c.addChild(body, ring, hpBg, hpFill);
+  c.addChild(bodySprite, bodyGfx, ringSprite, ringGfx, hpBg, hpFill);
   return c;
 }
 
@@ -206,7 +251,8 @@ export function resetUnitContainer(c: PIXI.Container): void {
   c.alpha   = 1;
   c.scale.set(1);
   c.visible = false;
-  (c.getChildByName('hpFill') as PIXI.Graphics).clear();
-  (c.getChildByName('hpBg')   as PIXI.Graphics).visible  = false;
-  (c.getChildByName('hpFill') as PIXI.Graphics).visible  = false;
+  (c.getChildByName('bodySprite') as PIXI.Sprite).visible   = false;
+  (c.getChildByName('ringSprite') as PIXI.Sprite).visible   = false;
+  (c.getChildByName('hpBg')   as PIXI.Sprite).visible = false;
+  (c.getChildByName('hpFill') as PIXI.Sprite).visible = false;
 }

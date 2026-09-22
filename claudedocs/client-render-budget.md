@@ -57,7 +57,9 @@ art-direction §5.4 本来就要「帧率保留手绘的跳跃感，不必追求
 
 历史：大厅曾有**自己一份** `sketchPanel`/`drawBtn`（实时 `SketchPen.rect`），这就是 §1 那 82% 的来源。世界地图 HUD 2026-08 已经搬过一次（132,300 顶点 → 704），大厅只是没跟上。`render/avatar.ts` 的铅笔圆环同理已烘焙（46 px 圆环 6,048 索引，而成员列表/聊天/地图 token 会同屏摆几十个）；它的 **seed 量化到 8 个变体**，否则按 `publicId`/行号播种会给每个见过的玩家永久留一张 RenderTexture。
 
-仍然在实时描边、且**故意不改**的：`CampaignMapScene/drawing.ts` 的地图涂鸦（胶带、圈注——不是矩形边框，图集帮不上）。这是**唯一一处**了。
+仍然在实时描边、且**故意不改**的（面板边框这一类）：`CampaignMapScene/drawing.ts` 的地图涂鸦（胶带、圈注——不是矩形边框，图集帮不上）。这是这一类里**唯一一处**了。
+
+战斗屏本身直到 2026-09-22 才轮到——`GameScene` 是 `paint: 'live'`，ADR-083/085/086 都绕过了它，`test/liveStrokedInkCallSites.test.ts` 的 `GAMEPLAY` 桶那句「redrawn every frame by design」曾经是字面意思。量出来发现桶里九成不是「设计如此」，是没人量过：HUD 血条/按钮/升级光环、单位与建筑血条、单位火柴人草图与阵营地印、基地危急环，全部**每帧**重建，却因为写法和别处每一个 `SketchPen` 调用长得一样，在代码评审里全部隐身。修法与 §12 那次同源（一次性描边/烘图 + 只写 `scale`/`alpha`/`frame`），数字与门禁见 §13；`GAMEPLAY` 桶现在只剩真正**按事件**（一次命中、一次升级）重绘的那几处。
 
 `SettingsScene` 的六个控件框曾经在这一行里，注明「不在热路径上」——**那个判断是错的**，2026-09-09 量出来它们值 125,844 索引，而且这个屏幕的 `render()` 每次重建整棵树。连同它自己那份从不 `bake()` 的纸背景一起，见 §12。
 
@@ -412,3 +414,44 @@ ADR-086 收尾后回头找「客户端还有什么能在本机量的」，量到
 顺带量出一个此前没人量过的数：`render/equipmentGlyph.ts` 的空槽位图标，44px 时 **2,010–2,922 索引**、96px 时 **3,720–5,496**。它们不是「几百」那一档（我一开始就是这么假设的，量完才发现错），但每次建树只画一次，而且图集提供不了这些形状，所以留着 —— 期望表里记成 `ICON` 并写上数字，装备类屏幕哪天超预算先看这里。
 
 **教训**：ADR-083 之后大家默认「实时描边的问题已经扫过了」。那一轮扫的是一个**helper 名字**（`sketchPanel`/`drawBtn`），不是一个**成本**。`SettingsScene` 这两处都躲开了那个名字 —— 一处叫 `drawBackground`，一处叫 `addButton`。所以 §5 那句「守的是一个**数字**，不是一条关于该调哪个 helper 的规则」不只是门禁的写法说明，也是找活儿的方法：**下一次要找这类东西，就把每个场景的 `indexCount` 逐个打一遍**，别按 helper 名字 grep。
+
+## 13. 战斗屏：`GAMEPLAY` 桶里九成不是「设计如此」（2026-09-22）
+
+前面十二节扫过大厅、设置页、世界地图，唯独没扫过玩家停留时间最长的那一屏——`GameScene` 是 `paint: 'live'`，`test/liveStrokedInkCallSites.test.ts` 把它整体归进 `GAMEPLAY` 桶，注释写着「redrawn every frame by design」，于是没人去量它，`test/ui/sceneGeometryBudget.ui.ts`（§5 表格）也没有它的条目——跟设置页当年熬过一整天渲染预算工作是同一个洞：**门禁只守「有人想到要放进去」的屏幕**。
+
+**实测**（headless 1280×631，真打一局 AI，120 帧，`GraphicsGeometry.updateBatches()` 数索引）：一帧 **96,534** 索引，其中 **10,173** 每帧重新三角化——这批数字发生在 headless 下 `.tao` 解不开、单位走 `drawStickmanDraft` 兜底的路径上，真实客户端渲染的是 sprite，静态索引约 **20,166**，血条占其中 45%。
+
+| 节点 | 索引/帧 | 重建频率 | 几何真的在变吗 |
+|---|---|---|---|
+| `HUD.enemyHpGfx` | 4,560 | 120/120 | 否，只有 alpha 闪 |
+| `HUD.playerHpGfx` | 4,013 | 120/120 | 否 |
+| `HUDView.refreshBtnBg` | 330 | 120/120 | 否，variant 只有 2–3 种 |
+| `HUDView.upgradeBtnBg` | 330 | 120/120 | 否 |
+| `HUD.upgradeGlow` | 270 | 120/120 | 是（圆角矩形逐帧长大） |
+| 单位 `hpFill` | 48 | ~8 次/帧 | 是（一个 `drawRect`） |
+| 手牌 `bar` | 13 | 133/120 | 是（已有签名节流，不用动） |
+| `body`（火柴人草图） | 9,546 /每个单位 | 出生瞬间 | 否，`(side,targetH,seed)` 全确定 |
+| `ring`（阵营地印） | 312 /每个单位 | 出生瞬间 | 否 |
+
+九个节点里只有三个（单位 `hpFill`、手牌 `bar`、`upgradeGlow` 的形状本身）是真的在变形；其余全是「同一个多边形集反复喂给 earcut」——和 `render/GuideOverlay.ts` 那条 2026-09-08 修过的脉冲环（ADR-085 §7）同一种缺陷：一个 alpha 动画穿着几何动画的外衣。
+
+**修法**，跟 §12 那次同源（一次性描边/烘图 + 只写 `scale`/`alpha`/`frame`/`tint`），没有新技巧：
+
+- **HUD 血条**（`render/HUDView/hpBar.ts`，`HpBarView`）：十个空心 + 一个白心 + `⚠` 烘进一张图集（`bakeLazy('hud hp pip atlas', …)`）。十个空心是一张静态 sprite；十个填充心是 `tint` 上阵营色的 sprite，`sync()` 只挪 `texture.frame.width`（原地改、不新建 `Rectangle`）做左裁剪，`alpha` 走闪烁。没有 bake renderer 时的兜底仍是 Graphics，但也不是每帧重描——底层静态 + 填充层只在 HP 真变时重描（HP 分数取整到千分位当签名），闪烁挪到图层 `alpha`。
+- **HUD 按钮与光环**（`render/HUDView.ts`）：`upgradeBtnVariant`/`refreshBtnVariant` 两个字段缓存，variant 没变直接 `return`；`upgradeGlow` 在 build 时按最大呼吸幅度描一次，`animateUpgradeFx` 只写 `scale.x`/`scale.y`（分轴，宽高呼吸幅度不同）+ `alpha`。
+- **单位与建筑血条**（`render/barSprite.ts`）：`PIXI.Texture.WHITE` + `tint` + `width`，一个 1×1 baseTexture 撑起全场每一条血条，`setBarRatio()` 两次数字写入、零三角化。
+- **单位火柴人草图 + 阵营地印**（`render/stickmanDraft.ts::draftTexture`、`render/UnitView/assets.ts::factionMarkerTexture`）：出生时的一次性 9,546/312 索引突刺（同一帧出两三个单位就是近 3 万索引挤在 33ms 的预算里）改成 `bakeLazy` 按 `(side, targetH, seed)` / `(side, cx, cy, rx, ry)` 键烘图，缓存后同类型+同侧的单位复用同一张纹理（上界 ≈ 单位类型数 × 2 侧，个位数十张）。容器里 sprite 与 Graphics 两个节点并存，按有没有 bake renderer 切换可见性——headless UI 测试没有 bake renderer 是既有契约（`render/sketchUi.ts` 同款），不是权宜之计。
+- **基地危急环**（`render/BoardView/bases.ts::applyCriticalRing`）：以前是危急态下逐帧 `clear()` + `drawRoundedRect()`，`pad` 从 6 变到 15。现在按 `pad=15`（最宽的那一圈）描一次，`applyCriticalRing` 只写 `scale.x`/`scale.y`（`(rect.w+2·pad)/(rect.w+2·PAD_MAX)`，与 `upgradeGlow` 同一个公式）+ `alpha`；`setBaseCritical(false)` 时 `visible=false` 而不是 `clear()`。
+
+**唯一一处非严格等价的改动**：HP 心形图集把「满心的灰描边」并进了底层空心图里（原来是彩色填充之上再描一遍灰边）。真 Chrome 里核对过满心边缘没有变糊或变重；`design/`/代码注释里都没有另外记一笔是因为它对最终像素没有可感知影响,只是描边顺序换了。
+
+**门禁**：`test/ui/sceneGeometryBudget.ui.ts` 新增「battle screen (GameRenderer) per-frame geometry」两条用例，构造方式与 `gameRendererEvents.ui.ts` 的 `buildRenderer()` 一致（`getLevel('ch1_lv1')` → `createLocalMatch` → `new GameRenderer(...)` → `init()`），必须 `stubBakeRenderer()`（否则量的是兜底路径）：
+
+- **静态**：热身 600 帧后量一帧，headless 实测 **9,090** 索引（`.tao` 解不开，量的是圆形占位路径），预算 18,000（~2 倍余量）。
+- **每帧重建**：120 帧累计的 `geometry.dirty` 变化索引数 / 帧，headless 实测 **89**，预算 1,500——远低于修复前的 10,173，但比实测留足余量（更多单位同时受伤、更多血条同时可见）。
+
+两条都做过变异验证：把 `HpBarView` 的 sprite 分支和 `fillGfx` 的签名节流一起去掉，强制走「每帧全量重描」的修复前路径，两条断言应声转红（重建从 89 跳到 4,687/帧）。
+
+新增的三处 `bakeLazy` 站点（`hpBar.ts`、`stickmanDraft.ts`、`UnitView/assets.ts`）已在 `pageBakeCallSites.test.ts` 里登记为 `pageScale: false`（单位/HUD 级的小块 chrome，且都骑在会 `scale` 的容器上，device-exact 会糊——ADR-073 那句话原样适用）。
+
+**为什么血条是 sprite 而不是节流重绘**：血条的 HP 分数几乎每帧都在变（尤其持续受击的基地），节流重绘（像手牌 `bar` 那样按签名判断是否重描）只能把重绘频率从 120/120 降到「HP 真的变了才描」，仍然是逐帧潜在成本；而 sprite 路径把这份成本从「重新三角化」降成「改一个数字」，两者不是同一个数量级。手牌 `bar` 留着节流是因为它的形状变化频率本来就低（拖拽时才变），血条不是。

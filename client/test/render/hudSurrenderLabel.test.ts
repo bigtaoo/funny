@@ -47,6 +47,7 @@ vi.mock('pixi.js-legacy', () => {
     drawRoundedRect(): this { return this; }
     drawEllipse(): this { return this; }
     drawCircle(): this  { return this; }
+    drawPolygon(): this { return this; }
     moveTo(): this { return this; }
     lineTo(): this { return this; }
     arc(): this    { return this; }
@@ -85,6 +86,9 @@ vi.mock('pixi.js-legacy', () => {
   }
   class FakeSpritesheet { textures: Record<string, unknown> = {}; async parse(): Promise<void> {} }
   class FakeRectangle { constructor(_x = 0, _y = 0, _w = 0, _h = 0) {} }
+  // Needed since the HP bar (hpBar.ts) moved its fallback pip outline to `drawPolygon` over
+  // `PIXI.Point`s (2026-09-22 sprite-bake rewrite) — this mock previously never needed one.
+  class FakePoint { constructor(public x = 0, public y = 0) {} }
   return {
     Container: FakeContainer,
     Sprite: FakeSprite,
@@ -95,6 +99,7 @@ vi.mock('pixi.js-legacy', () => {
     Texture: FakeTexture,
     Spritesheet: FakeSpritesheet,
     Rectangle: FakeRectangle,
+    Point: FakePoint,
     settings: { ADAPTER: {} },
     LINE_CAP: { ROUND: 'round', SQUARE: 'square', BUTT: 'butt' },
     LINE_JOIN: { ROUND: 'round', MITER: 'miter', BEVEL: 'bevel' },

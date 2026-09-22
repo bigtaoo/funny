@@ -10,10 +10,11 @@ import type { TaoAsset, GearGlyphSpec } from './stickman/StickmanRuntime';
 import { TICK_RATE } from '@nw/engine';
 import type { EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import { fx } from './theme';
-import { drawStickmanDraft } from './stickmanDraft';
+import { drawStickmanDraft, draftTexture } from './stickmanDraft';
 import { targetScreenHeight } from './unitSize';
+import { barSprite, setBarRatio } from './barSprite';
 import {
-  STICKMAN_ASSETS, resolveSkinOverrides, DRAFT_SEED, drawFactionMarker, stickmanHpBarY,
+  STICKMAN_ASSETS, resolveSkinOverrides, DRAFT_SEED, drawFactionMarker, factionMarkerTexture, stickmanHpBarY,
   createUnitContainer, resetUnitContainer,
   RADIUS, MARKER_Y, HP_BAR_WIDTH, HP_BAR_HEIGHT, HP_BAR_Y, HP_TOTAL_FRAMES, HP_FADE_FRAMES,
 } from './UnitView/assets';
@@ -105,7 +106,7 @@ export class UnitView {
     createUnitContainer,
     resetUnitContainer,
     20,
-    // Circle placeholder container: body/ring/hpBg/hpFill — 4 Graphics + the container.
+    // Circle placeholder container: bodySprite/body/ringSprite/ring/hpBg/hpFill + the container.
     { label: 'unit.circle', bytesEach: 8 * 1024 },
   );
 
@@ -282,10 +283,57 @@ export class UnitView {
    * (slightly larger than the shadow so it reads as a colored patch under it).
    * Falls back to a default ground ellipse when the shadow ground is unavailable.
    */
-  private drawUnitMarker(marker: PIXI.Graphics, runtime: StickmanRuntime, side: Side): void {
+  private drawUnitMarker(markerSprite: PIXI.Sprite, markerGfx: PIXI.Graphics, runtime: StickmanRuntime, side: Side): void {
     const g = runtime.getShadowGround();
-    if (g) drawFactionMarker(marker, side, g.x, g.y, g.rx * 1.3, g.ry * 1.3);
-    else   drawFactionMarker(marker, side, 0, MARKER_Y, 12, 4.4);
+    if (g) this.paintMarker(markerSprite, markerGfx, side, g.x, g.y, g.rx * 1.3, g.ry * 1.3);
+    else   this.paintMarker(markerSprite, markerGfx, side, 0, MARKER_Y, 12, 4.4);
+  }
+
+  /**
+   * Show a faction ground marker at `(cx, cy)` with half-extents `(rx, ry)`: the bake-texture sprite
+   * when a bake renderer is available (real client, on-screen), the live `drawFactionMarker` fallback
+   * otherwise (headless tests — same contract as `render/bake.ts`'s other callers). Exactly one of
+   * `sprite`/`gfx` ends up visible.
+   */
+  private paintMarker(
+    sprite: PIXI.Sprite, gfx: PIXI.Graphics, side: Side, cx: number, cy: number, rx: number, ry: number,
+  ): void {
+    const tex = factionMarkerTexture(side, cx, cy, rx, ry);
+    if (tex) {
+      sprite.texture = tex;
+      sprite.x = cx;
+      sprite.y = cy;
+      sprite.visible = true;
+      gfx.visible = false;
+      gfx.clear();
+    } else {
+      sprite.visible = false;
+      gfx.clear();
+      drawFactionMarker(gfx, side, cx, cy, rx, ry);
+      gfx.visible = true;
+    }
+  }
+
+  /**
+   * Show the procedural draft figure (`stickmanDraft.ts`) for a circle-placeholder unit: the
+   * bake-texture sprite when a bake renderer is available, the live `drawStickmanDraft` fallback
+   * otherwise. Same two-node contract as {@link paintMarker}.
+   */
+  private paintDraftBody(
+    sprite: PIXI.Sprite, gfx: PIXI.Graphics, side: Side, targetHeight: number, seed: number,
+  ): void {
+    const tex = draftTexture(side, targetHeight, seed);
+    if (tex) {
+      sprite.texture = tex;
+      sprite.visible = true;
+      gfx.visible = false;
+      gfx.clear();
+    } else {
+      sprite.visible = false;
+      gfx.clear();
+      drawStickmanDraft(gfx, side, targetHeight, seed);
+      gfx.visible = true;
+    }
   }
 
   /** Bundles what gear.ts's functions need instead of them closing over `this`. */
@@ -343,13 +391,13 @@ export class UnitView {
       pooled.wrapper.alpha   = 1;
       pooled.wrapper.scale.set(1);
       // A pooled wrapper may be reused for the opposite side — recolor + reposition.
-      const marker = pooled.wrapper.getChildByName('factionMarker') as PIXI.Graphics | null;
-      if (marker) this.drawUnitMarker(marker, pooled.runtime, side);
-      const hpBg   = pooled.wrapper.getChildByName('hpBg')   as PIXI.Graphics;
-      const hpFill = pooled.wrapper.getChildByName('hpFill') as PIXI.Graphics;
+      const markerSprite = pooled.wrapper.getChildByName('factionMarkerSprite') as PIXI.Sprite | null;
+      const markerGfx     = pooled.wrapper.getChildByName('factionMarker') as PIXI.Graphics | null;
+      if (markerSprite && markerGfx) this.drawUnitMarker(markerSprite, markerGfx, pooled.runtime, side);
+      const hpBg   = pooled.wrapper.getChildByName('hpBg')   as PIXI.Sprite;
+      const hpFill = pooled.wrapper.getChildByName('hpFill') as PIXI.Sprite;
       hpBg.visible = false;
       hpFill.visible = false;
-      hpFill.clear();
       this.applyGear(pooled.runtime, unit);
       this.stickmanRuntimes.set(unit.id, pooled.runtime);
       return pooled.wrapper;
@@ -359,30 +407,27 @@ export class UnitView {
     wrapper.visible = true;
 
     // Faction ground marker — drawn first so it sits behind the figure (under the shadow).
-    const marker = new PIXI.Graphics();
-    marker.name = 'factionMarker';
+    const markerSprite = new PIXI.Sprite(); markerSprite.name = 'factionMarkerSprite'; markerSprite.anchor.set(0.5);
+    const markerGfx     = new PIXI.Graphics(); markerGfx.name = 'factionMarker';
 
     const runtime = new StickmanRuntime(asset, { mirrorX, targetHeight });
     this.stickmanRuntimes.set(unit.id, runtime);
     this.applyGear(runtime, unit);
-    this.drawUnitMarker(marker, runtime, side);
+    this.drawUnitMarker(markerSprite, markerGfx, runtime, side);
 
     // ── HP bar (positioned above the character's head) ────────────────────
     // Tier-aware: clears the crown at the unit's rendered height (see stickmanHpBarY).
     const HP_BAR_Y_STICKMAN = stickmanHpBarY(unit.unitType);
 
-    const hpBg = new PIXI.Graphics();
-    hpBg.name = 'hpBg';
-    hpBg.beginFill(0xcccccc, 0.7);
-    hpBg.drawRect(-HP_BAR_WIDTH / 2, HP_BAR_Y_STICKMAN, HP_BAR_WIDTH, HP_BAR_HEIGHT);
-    hpBg.endFill();
+    const hpBg = barSprite(-HP_BAR_WIDTH / 2, HP_BAR_Y_STICKMAN, HP_BAR_WIDTH, HP_BAR_HEIGHT, 0xcccccc, 0.7);
+    hpBg.name    = 'hpBg';
     hpBg.visible = false;
 
-    const hpFill = new PIXI.Graphics();
+    const hpFill = barSprite(-HP_BAR_WIDTH / 2, HP_BAR_Y_STICKMAN, HP_BAR_WIDTH, HP_BAR_HEIGHT, fx.hpHigh);
     hpFill.name    = 'hpFill';
     hpFill.visible = false;
 
-    wrapper.addChild(marker, runtime.container, hpBg, hpFill);
+    wrapper.addChild(markerSprite, markerGfx, runtime.container, hpBg, hpFill);
     return wrapper;
   }
 
@@ -391,16 +436,20 @@ export class UnitView {
   private buildCircleContainer(unit: Unit): PIXI.Container {
     const c = this.pool.acquire();
     c.visible = true;
+    const side = this.renderSide(unit);
 
-    const body = c.getChildByName('body') as PIXI.Graphics;
-    body.clear();
     // Procedural skeleton draft (§5.5) in faction ink — blue = us / red = enemy.
     // Keyed off render side so the joiner's own units stay "us"-colored.
-    drawStickmanDraft(body, this.renderSide(unit), targetScreenHeight(unit.unitType), DRAFT_SEED[unit.unitType]);
+    this.paintDraftBody(
+      c.getChildByName('bodySprite') as PIXI.Sprite, c.getChildByName('body') as PIXI.Graphics,
+      side, targetScreenHeight(unit.unitType), DRAFT_SEED[unit.unitType],
+    );
 
     // Faction ground marker (also grounds the figure on the board).
-    const ring = c.getChildByName('ring') as PIXI.Graphics;
-    drawFactionMarker(ring, this.renderSide(unit), 0, MARKER_Y, RADIUS * 1.1, RADIUS * 0.42);
+    this.paintMarker(
+      c.getChildByName('ringSprite') as PIXI.Sprite, c.getChildByName('ring') as PIXI.Graphics,
+      side, 0, MARKER_Y, RADIUS * 1.1, RADIUS * 0.42,
+    );
 
     return c;
   }
@@ -412,18 +461,13 @@ export class UnitView {
     sprite.x = x;
     sprite.y = y;
 
-    // HP bar fill — always up-to-date so it's correct when made visible
-    const hpFill = sprite.getChildByName('hpFill') as PIXI.Graphics | null;
+    // HP bar fill — always up-to-date so it's correct when made visible. Two number writes, no
+    // geometry: the bar's Y offset is baked into the sprite at build time (stickman containers use
+    // their own, see stickmanHpBarY), so only the width and the colour move.
+    const hpFill = sprite.getChildByName('hpFill') as PIXI.Sprite | null;
     if (!hpFill) return;
-    hpFill.clear();
     const ratio = Math.max(0, unit.hp_fp / unit.maxHp_fp);
-    hpFill.beginFill(ratio > 0.4 ? fx.hpHigh : fx.hpLow);
-
-    // Determine HP bar Y offset: stickman containers have their own y offset baked in.
-    const isStickman = this.stickmanRuntimes.has(unit.id);
-    const barY = isStickman ? stickmanHpBarY(unit.unitType) : HP_BAR_Y;
-    hpFill.drawRect(-HP_BAR_WIDTH / 2, barY, HP_BAR_WIDTH * ratio, HP_BAR_HEIGHT);
-    hpFill.endFill();
+    setBarRatio(hpFill, ratio, HP_BAR_WIDTH, ratio > 0.4 ? fx.hpHigh : fx.hpLow);
   }
 
   // ─── HP bar visibility ────────────────────────────────────────────────────
@@ -431,8 +475,8 @@ export class UnitView {
   private setHpBarVisible(unitId: number, visible: boolean, alpha: number): void {
     const sprite = this.sprites.get(unitId);
     if (!sprite) return;
-    const hpBg   = sprite.getChildByName('hpBg')   as PIXI.Graphics | null;
-    const hpFill = sprite.getChildByName('hpFill') as PIXI.Graphics | null;
+    const hpBg   = sprite.getChildByName('hpBg')   as PIXI.Sprite | null;
+    const hpFill = sprite.getChildByName('hpFill') as PIXI.Sprite | null;
     if (hpBg)   { hpBg.visible   = visible; hpBg.alpha   = alpha; }
     if (hpFill) { hpFill.visible = visible; hpFill.alpha = alpha; }
   }

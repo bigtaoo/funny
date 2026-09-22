@@ -200,17 +200,27 @@ function fakeState(baseHp: number): GameState {
   } as unknown as GameState;
 }
 
-/** The colored (non-base-gray) fills drawn for one HP bar's Graphics object. */
-function coloredFills(gfx: unknown): FillCall[] {
-  const fake = gfx as { fills: FillCall[] };
-  return fake.fills.filter(f => f.color !== 0xdddddd);
+/**
+ * `HUDView.playerHpBar` is an `HpBarView` (2026-09-22 sprite-bake rewrite — see hpBar.ts's file
+ * header). This mock has no bake renderer, so it always builds the live-Graphics FALLBACK path: a
+ * static base layer (the ten gray pip outlines) plus a `fillGfx` layer that is re-stroked only when
+ * HP crosses a pip boundary. The colored heart polygons this test cares about are all on `fillGfx`.
+ */
+function fillGfxOf(hud: HUDView): { fills: FillCall[]; alpha: number } {
+  const bar = (hud as unknown as { playerHpBar: { fillGfx: { fills: FillCall[]; alpha: number } } }).playerHpBar;
+  return bar.fillGfx;
+}
+
+/** The colored (non-base-gray) fills drawn on the fill layer. */
+function coloredFills(gfx: { fills: FillCall[] }): FillCall[] {
+  return gfx.fills.filter(f => f.color !== 0xdddddd);
 }
 
 describe('HUDView heart HP bar', () => {
   it('full HP: all 10 hearts get a full-width colored polygon', () => {
     const hud = new HUDView(fakeLayout());
     hud.sync(fakeState(BASE_HP));
-    const fills = coloredFills((hud as unknown as { playerHpGfx: unknown }).playerHpGfx);
+    const fills = coloredFills(fillGfxOf(hud));
     expect(fills).toHaveLength(10);
     for (const f of fills) expect(f.color).toBe(factionInk.friend);
   });
@@ -218,7 +228,7 @@ describe('HUDView heart HP bar', () => {
   it('zero HP: no heart gets a colored polygon (base gray only)', () => {
     const hud = new HUDView(fakeLayout());
     hud.sync(fakeState(0));
-    const fills = coloredFills((hud as unknown as { playerHpGfx: unknown }).playerHpGfx);
+    const fills = coloredFills(fillGfxOf(hud));
     expect(fills).toHaveLength(0);
   });
 
@@ -226,7 +236,7 @@ describe('HUDView heart HP bar', () => {
     // 44/100 * 10 cells = 4.4 → 4 full hearts + a 40%-filled 5th + 5 empty.
     const hud = new HUDView(fakeLayout());
     hud.sync(fakeState(44));
-    const fills = coloredFills((hud as unknown as { playerHpGfx: unknown }).playerHpGfx);
+    const fills = coloredFills(fillGfxOf(hud));
     expect(fills).toHaveLength(5); // 4 full + 1 partial; the remaining 5 hearts have no colored fill
 
     const fullWidth = Math.max(...fills[0]!.polygon.map(p => p.x)) - Math.min(...fills[0]!.polygon.map(p => p.x));
@@ -238,14 +248,18 @@ describe('HUDView heart HP bar', () => {
     expect(widths[4]).toBeGreaterThan(fullWidth * 0.1);
   });
 
-  it('critical HP (last heart only): the danger fill alpha never hits the full 0.9 rest-alpha', () => {
+  it('critical HP (last heart only): the danger blink never hits the full 0.9 rest-alpha', () => {
     // 5/100 * 10 = 0.5 → only the first heart partially fills; this is the
     // "critical" tier (filledCeil <= 1), which blinks via a reduced alpha instead
     // of turning red (faction hue must stay fixed — see drawHpBar's doc comment).
+    // The blink now lives on the FILL LAYER's alpha (hpBar.ts's sprite/fallback split), not on each
+    // polygon's own fill alpha — this is the one place that moved; the intent (danger genuinely
+    // blinks) is unchanged.
     const hud = new HUDView(fakeLayout());
     hud.sync(fakeState(5));
-    const fills = coloredFills((hud as unknown as { playerHpGfx: unknown }).playerHpGfx);
+    const bar = fillGfxOf(hud);
+    const fills = coloredFills(bar);
     expect(fills).toHaveLength(1);
-    expect(fills[0]!.alpha).toBeLessThan(0.9);
+    expect(bar.alpha).toBeLessThan(0.9);
   });
 });

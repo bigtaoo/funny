@@ -48,8 +48,14 @@ const SRC = join(__dirname, '..', 'src');
  *   BAKED    — stroked once into a texture via `bake()`; the tree gets a sprite. Costs nothing per
  *              frame, and the call site is separately registered in `pageBakeCallSites.test.ts`.
  *   DOODLE   — not a UI frame. Tape, a boxed chapter label: shapes the atlas cannot supply.
- *   GAMEPLAY — inside the battle renderer, redrawn every frame by design. `GameScene` is
- *              `paint: 'live'` and was deliberately left alone by ADR-083/085/086.
+ *   GAMEPLAY — inside the battle renderer, and genuinely redrawn on its own event, not on every
+ *              frame — a base's hit-pulse outline scrawls a fresh seed per hit, its upgrade-effect
+ *              ring per upgrade. `GameScene` is `paint: 'live'` (ADR-083/085/086 left it alone), but
+ *              that no longer means "anything in the battle screen is exempt": the 2026-09-22 pass
+ *              (§13, client-render-budget.md) found and baked everything that really WAS redrawn
+ *              every frame — HUD HP bars/buttons/upgrade glow, unit/building HP bars, unit body
+ *              sketches and faction markers, the base critical ring. What is left in this bucket
+ *              only fires per gameplay event, which is what makes it GAMEPLAY and not a regression.
  *   ICON     — a small hand-drawn glyph with no atlas equivalent. NOT free: measured 2026-09-09,
  *              an empty equipment slot costs 2,010–2,922 indices at 44px and 3,720–5,496 at 96px.
  *              They are drawn once per scene build (not per frame) and there is nothing cheaper to
