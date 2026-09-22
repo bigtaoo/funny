@@ -34,6 +34,8 @@ CI（`.github/workflows/ci.yml`）的 `client unit tests` 步已切到 `npm run 
 
 **⚠️ 2026-08-15：模拟类套件拆出去了（`vitest.sim.config.ts`）**。`test/difficulty/**`（ch1-6 + core）和 `test/pvpSim.test.ts` 跑的是整场无头战斗模拟，占这套件 188s 里的 ~175s，且插桩税按引擎 tick 线性叠加——带 `--coverage` 时整套从 188s 涨到 668s，几乎全部由它们贡献。实测把它们排除后 **client 行覆盖只掉 0.05 个百分点（91.20% → 91.15%）**：它们碰到的 `src/game/**` 早被单元测试覆盖了，它们的真实价值是行为/平衡回归（"第 6 章还打得过吗"），不是覆盖率来源。所以：`vitest.config.ts` 的 `exclude` 排掉这两处，新增 `vitest.sim.config.ts` 专收它们（不带 coverage），`package.json` 里 `test` 和 `test:coverage` **都在末尾链一条 `npm run test:sim`**——一个测试文件都没少跑，只是不再给最贵的那批插桩。带 coverage 的那半从 668s 掉到 ~13s，这才让 CI 有条件在 **PR 和 push-to-main 两端都跑 coverage**（此前 PR 上不跑，导致覆盖率回归和时序 flake 只能在合并后的 main 上暴露，连带挡掉部署——见 `claudedocs/server.md` "CI 稳定性"节）。新增只跑模拟的入口：`npm run test:sim`。
 
+**2026-09-22：`test/difficulty/**` 现在是门禁，不再只是报告。** 在此之前它**只打印**矩阵，唯一的断言是「至少有一关能过」——车道溢出侧移把 61 关里 19 关的通关门槛推掉一档，仓库里每个测试都是绿的，是人肉 diff 两份报告才发现的。现在整张矩阵精确钉在 `test/difficulty/baseline.json`（确定性模拟，逐字复现）。**它红了说明战役难度真的动了**：先判断是本意还是副作用，确认有意后用 `NW_UPDATE_DIFFICULTY_BASELINE=1 npx vitest run --config vitest.sim.config.ts` 重生成，并和引起改动的提交放在一起——规矩同 `goldenReplay` fixture。配套还有 `test/campaignLevelInvariants.test.ts`（60 关共享同一份 lanePunish、`enemyScale` 不越界且 `damage ≤ hp`、波次只落在合法车道），它抓的是批量脚本改关卡时**只错一部分**的那类事故——它上线当天就抓到 8 关 `damage > hp`。
+
 ### 分支覆盖率补齐：91.05% → 97.53%（2026-09-03）
 
 行覆盖率有 CI 门禁盯着，**分支覆盖率此前没有**——一个包可以行 96% 过关、分支 91% 而不会有任何东西报出来。2026-09-03 给 `checkCoverageThreshold.mjs` 加了第二条线（分支同样卡 90%，见 [`server-testing-tooling.md`](server-testing-tooling.md)），随后把全仓 19 个包逐个补齐；client 这一轮的记录在 [`server-testing-coverage.md`](server-testing-coverage.md) 的「client 补测」一节（连同 engine 那一半——client 的 `vitest.config.ts` 把 `@nw/engine` alias 到 engine 源码，「逻辑」这一层两边测的是同一批断言的两侧）。
