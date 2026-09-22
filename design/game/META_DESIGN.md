@@ -384,6 +384,19 @@ message Replay {
 
 **✅ 2026-07-28 补：metaserver 访问日志按状态码分级 + 4xx/5xx 带 body**——此前 `app.ts` 的 `onResponse` 访问日志钩子对所有响应（2xx~5xx）统一打 `info`，且从不带请求体；排障一个具体失败请求（如"这次 404 CARD_NOT_FOUND 到底发的是哪个卡 ID"）只能指望报告者自己截 DevTools Network 面板，访问日志本身完全没有这个信息。现改为：状态码 ≥500 → `error`，≥400 → `warn`（都附带 `body`），其余仍是 `info`（不带 body，避免正常流量日志体积/敏感信息双重膨胀）。`setErrorHandler`（Fastify 抛出型错误——schema 校验失败、security handler 抛错）同步补上 body。body 经 `redactedBodyForLog` 处理：按 key（大小写不敏感）红线掉 `password`/`newPassword`/`oldPassword`/`receipt`/`token`/`secret`，序列化后超 4000B 直接整体替换成"体积超限"提示（不做部分截断，避免拼出非法 JSON）。落地 = `server/metaserver/src/app.ts`，回归测试 `server/metaserver/test/access-log.test.ts`。
 
+**✅ 2026-09-22 补：没匹配到路由的 4xx 降回 `info`**——上面这条「≥400 → warn」把**扫描器**也一起收了进来：
+线上两周的 WARN 里常驻 `GET /.env`、`/v1/.env`、`/v2/.env`、`/dev/.env`、`/staging/.env`，
+以及 09-18 那 10 条 `POST /auth/signin`（**本仓库从来没有过这条路由**），约 4 条/天。
+WARN 这一级的用处恰恰在于「一个运维能从头读到尾」，掺进公网噪声就废了。
+
+判据用 Fastify 自己已经算好的 **`req.routeOptions.url`：路由匹配上时是字符串，什么都没匹配上时是 `undefined`**，
+不是一张扫描器路径黑名单（那种表每来一个新扫描器就得改一次，而且迟早漏）。
+这样**不会误降任何一条真实拒绝**——我们自己提供的每条路由在这里都有 `url`，
+业务 404（`CARD_NOT_FOUND` 一类）仍然是 WARN 并带 body。
+
+`access-log.test.ts` 里这两条是一对，必须同时成立：「路由内 404 → warn（带 body）」与「未匹配 404 → info」。
+只钉后者的话，一次过度收紧就能把真实 4xx 全吞掉而测试照样绿。
+
 ---
 
 ## 7. G — 元系统 UI / 场景

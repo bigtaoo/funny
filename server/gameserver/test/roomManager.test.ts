@@ -232,4 +232,29 @@ describe('RoomManager (ticket relay)', () => {
     expect(() => mgr.handle(asConn(c0), { case: 'room_create', mode: MatchMode.FRIENDLY })).not.toThrow();
     expect(c0.outbox).toEqual([]); // no reply of any kind
   });
+
+  // 2026-09-22: these two numbers are what the liveness heartbeat now carries (index.ts). The
+  // distinction that earns `waiting` its own field is the one the 2026-09-13/14 stall would have
+  // needed: a half-completed join (first ticket in, opponent's never arrived) sits in `waiting`
+  // while `rooms` also counts it, so "rooms climbing with waiting" reads as joins going nowhere
+  // and "rooms climbing with waiting flat" reads as finished rooms not being reaped.
+  it('stats(): a half-joined room counts as waiting; the second ticket moves it out', () => {
+    const mgr = newManager();
+    expect(mgr.stats()).toEqual({ rooms: 0, waiting: 0 });
+    const c0 = makeConn('R', 0, 'a');
+    mgr.join(asConn(c0), 'a', '', SEED, MatchMode.FRIENDLY);
+    expect(mgr.stats()).toEqual({ rooms: 1, waiting: 1 });
+    const c1 = makeConn('R', 1, 'b');
+    mgr.join(asConn(c1), 'b', '', SEED, MatchMode.FRIENDLY);
+    expect(mgr.stats()).toEqual({ rooms: 1, waiting: 0 }); // match started — no longer pre-match
+  });
+
+  it('stats(): destroyAll() empties both counts (a reaped room stops being counted)', () => {
+    const mgr = newManager();
+    mgr.join(asConn(makeConn('R1', 0, 'a')), 'a', '', SEED, MatchMode.FRIENDLY);
+    mgr.join(asConn(makeConn('R2', 0, 'c')), 'c', '', SEED, MatchMode.FRIENDLY);
+    expect(mgr.stats()).toEqual({ rooms: 2, waiting: 2 });
+    mgr.destroyAll();
+    expect(mgr.stats()).toEqual({ rooms: 0, waiting: 0 });
+  });
 });

@@ -4,7 +4,7 @@
 // the match begins. This class only handles "find/create room by roomId + dispatch data-plane
 // messages to the room", and reports match results to meta at game end (via the injected report).
 import { Room, type EloBySide, type MatchReport } from './Room';
-import { MatchMode, type ClientMsg, type MatchModeVal } from './proto/transport';
+import { MatchMode, RoomPhase, type ClientMsg, type MatchModeVal } from './proto/transport';
 import type { Connection } from './Connection';
 
 export interface RoomManagerDeps {
@@ -20,6 +20,21 @@ export class RoomManager {
   /** Whether a live room exists for this roomId (used to tell reconnects from initial joins). */
   roomExists(roomId: string): boolean {
     return this.rooms.has(roomId);
+  }
+
+  /**
+   * Live room counts for the liveness heartbeat. `waiting` is the pre-match bucket (a first ticket
+   * arrived, the opponent's has not) — a room only leaves it once both sides are in, so a rising
+   * `waiting` with a flat `rooms` means joins are being half-completed, while both rising together
+   * means rooms are not being reaped at all. Neither is visible from process memory alone, which is
+   * all the heartbeat used to carry.
+   */
+  stats(): { rooms: number; waiting: number } {
+    let waiting = 0;
+    for (const room of this.rooms.values()) {
+      if (room.phase < RoomPhase.IN_MATCH) waiting++;
+    }
+    return { rooms: this.rooms.size, waiting };
   }
 
   /**
