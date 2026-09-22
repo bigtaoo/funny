@@ -121,12 +121,20 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
   // (redacted, size-capped) request body — previously every response logged at `info` with no body at
   // all, so diagnosing a specific failed request (e.g. "which card id did this 404 CARD_NOT_FOUND
   // actually send?") required the reporter's own DevTools Network tab; the access log alone had nothing.
+  // A 4xx on a route that does not exist is not a client of ours getting refused, it is the public
+  // internet rattling the doorknob — `GET /.env`, `/v1/.env`, `POST /auth/signin` (a route this
+  // codebase has never had). Those arrived at ~4 lines/day of WARN, which is exactly the level an
+  // operator is meant to be able to read end to end. `routeOptions.url` is the discriminator Fastify
+  // already computes: a string when the router matched a handler, undefined when nothing matched. It
+  // beats an allowlist of scanner paths, which would need editing every time a new scanner shows up,
+  // and it cannot accidentally demote a real refusal — every route we serve has a url here.
   app.addHook('onResponse', async (req, reply) => {
     if (req.url === '/health') return;
     const ms = Math.round(reply.elapsedTime ?? 0);
     const msg = `${req.method} ${req.url} -> ${reply.statusCode}`;
+    const unrouted = req.routeOptions?.url === undefined;
     if (reply.statusCode >= 500) log.error(msg, { ms, body: redactedBodyForLog(req.body) });
-    else if (reply.statusCode >= 400) log.warn(msg, { ms, body: redactedBodyForLog(req.body) });
+    else if (reply.statusCode >= 400 && !unrouted) log.warn(msg, { ms, body: redactedBodyForLog(req.body) });
     else log.info(msg, { ms });
   });
 
