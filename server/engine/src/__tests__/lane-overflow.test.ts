@@ -16,10 +16,11 @@ import { test } from 'node:test';
 
 import { GameState } from '../GameState';
 import { Unit, resetUnitIds } from '../Unit';
+import { Building } from '../Building';
 import { MovementSystem } from '../systems/MovementSystem';
-import { OVERFLOW_DETOUR_WAIT_TICKS } from '../config';
+import { OVERFLOW_DETOUR_WAIT_TICKS, TOP_BUILDING_ROW } from '../config';
 import { fp, toFp } from '../math/fixed';
-import { Side, UnitState, UnitType } from '../types';
+import { BuildingType, Side, UnitState, UnitType } from '../types';
 
 /** Bottom-side queue in `col` at the given rows, plus a Top unit at `enemyRow` if given. */
 function queuedLane(col: number, rows: number[], enemyRow?: number) {
@@ -137,4 +138,46 @@ test('lane overflow: the wait counter resets as soon as a unit advances again', 
 
   assert.equal(follower.waitingTicks, 0);
   assert.equal(follower.state, UnitState.Moving);
+});
+
+test('lane overflow: a unit queued while Crossing never side-steps', () => {
+  resetUnitIds();
+  const state  = new GameState(1);
+  const system = new MovementSystem();
+
+  // Crossing queues are deliberately outside the side-step's scope: that stretch of road is
+  // a few cells long and a unit that stepped sideways there would leave the row it is
+  // crossing along. Structurally `tryOverflowDetour` is only reachable from moveForward, so
+  // this test's job is to make the trigger condition genuinely hold and show nothing fires.
+  //
+  // An enemy building one cell ahead is what makes the queue real: the leader stops to
+  // attack it (moveCrossing's building branch) and the follower is stuck behind it for far
+  // longer than OVERFLOW_DETOUR_WAIT_TICKS. Without the building both units simply walk to
+  // the base columns and despawn inside the wait window, and the test proves nothing.
+  const blocker = new Building(BuildingType.ArrowTower, Side.Top, 2, TOP_BUILDING_ROW);
+  state.board.addBuilding(blocker);
+
+  // Both are parked ON the crossing threshold and left in their default state: moveForward's
+  // first act is the threshold check, so the engine flips them to Crossing itself on tick 1.
+  // Setting `state` by hand here would also narrow its type to the literal and make the
+  // "never Detour" comparison below unreachable as far as tsc is concerned.
+  const leader = new Unit(UnitType.Infantry, Side.Bottom, 1, TOP_BUILDING_ROW);
+  leader.y_fp = toFp(TOP_BUILDING_ROW);
+  leader.x_fp = toFp(1);
+  const follower = new Unit(UnitType.Infantry, Side.Bottom, 0, TOP_BUILDING_ROW);
+  follower.y_fp = toFp(TOP_BUILDING_ROW);
+  follower.x_fp = fp(200); // 0.2 — touching the leader's rear, so it is blocked at once
+  state.board.addUnit(leader);
+  state.board.addUnit(follower);
+
+  let everDetoured = false;
+  for (let t = 0; t < OVERFLOW_DETOUR_WAIT_TICKS + 30; t++) {
+    system.tick(state);
+    if (leader.state === UnitState.Detour || follower.state === UnitState.Detour) everDetoured = true;
+  }
+
+  assert.equal(everDetoured, false, 'the side-step must never fire from the crossing row');
+  assert.ok(follower.crossingBlocked, 'precondition: the follower really was stuck behind the leader');
+  assert.equal(follower.row, TOP_BUILDING_ROW, 'and it stayed on the row it is crossing along');
+  assert.equal(follower.waitingTicks, 0, 'the forward-queue counter has no business running while Crossing');
 });

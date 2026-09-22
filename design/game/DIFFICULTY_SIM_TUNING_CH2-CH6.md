@@ -337,6 +337,18 @@ flying 敌人。`types.ts:22`/`types.ts:303` 的设计注释明确写"只有箭�
 
 **复现**：`cd client && npx vitest run --config vitest.sim.config.ts`。**注意 `DIFFICULTY_SIM.md` 开头写的 `npx vitest run test/difficulty` 已经失效**——主 config 把 `test/difficulty/**` exclude 掉了，那条命令报 "No test files found"。
 
+**重配循环的一个坑（2026-09-22 事后修）**：`damage` 按 `hp` 的半速跟随，这在**加强**方向是对的（damage 涨得慢），在**放宽**方向却会反转——`hp` 降 10% 时 `damage` 只降 5%，于是 `damage > hp`。8 关中招（全是被放宽的那批），由新加的 `campaignLevelInvariants.test.ts` 抓出来。修法是把 `damage` 钳到 `≤ hp`；钳完有 3 关的通关门槛掉了一档（`ch4_lv7` T5→T4、`ch5_lv7` T4→T3、`ch5_lv10` T6→T5），按门禁的提示逐关把 `hp` 补回去，最终**零门槛位移**、只剩 6 关的个别星级格子有升有降。**写这类反馈循环时，两个方向都要验一遍。**
+
+### 难度回归门禁（2026-09-22）
+
+这一整轮之所以全靠人肉 diff 两份矩阵报告，是因为 `chapterReport.ts` 从来只**打印**矩阵、不断言任何东西（唯一的断言是「至少有一关能过」）。车道溢出侧移把 19 关的门槛推掉一档，仓库里每一个测试都是绿的。
+
+现在矩阵被**精确钉死**在 `client/test/difficulty/baseline.json`（60 关 × 门槛 + 6 档单元格）。敢精确钉是因为模拟是确定性的：固定 `EVAL_SEEDS` + 定点引擎，同样的关卡和引擎逐字复现。
+
+- **它红了 = 战役的难度动了**，先判断是你这次改动的本意还是副作用，**再**决定要不要动那份 pin；
+- 确认是有意的：`cd client && NW_UPDATE_DIFFICULTY_BASELINE=1 npx vitest run --config vitest.sim.config.ts`，把重生成的 `baseline.json` 和引起改动的那次提交放在一起——和 `goldenReplay` fixture 的规矩一样。为了让红变绿而重生成，等于把这道门禁拆了。
+- **它做过变异验证**（两个方向都验）：改一关的 `enemyScale` → 红并精确报出那一关哪几档变了；把 `OVERFLOW_DETOUR_WAIT_TICKS` 从 90 改成 45（即这道门禁存在的那一类改动）→ ch1 十关全报、其中 3 关门槛位移。
+
 
 ---
 
