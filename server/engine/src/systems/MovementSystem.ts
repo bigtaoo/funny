@@ -3,7 +3,10 @@ import {
   ATTACK_MULT_THRESHOLD_TICKS,
   BASE_COLS,
   BOARD_COLS,
+  BOARD_ROWS,
   BOTTOM_BUILDING_ROW,
+  OVERFLOW_DETOUR_MIN_ENEMY_GAP,
+  OVERFLOW_DETOUR_WAIT_TICKS,
   TOP_BUILDING_ROW,
 } from '../config';
 import { addFp, fromFp, mulFp, scaleFp, subFp, TICK_DT_FP, toFp, type Fp } from '../math/fixed';
@@ -69,6 +72,11 @@ export class MovementSystem {
   private moveForward(unit: Unit, state: GameState): void {
     const board    = state.board;
     const isBottom = unit.side === Side.Bottom;
+    // Cleared here and re-armed only by the friendly-collision branch below, so
+    // every other outcome of this tick (advancing, detouring, crossing) resets
+    // the lane-overflow countdown without each path having to remember to.
+    const waitedTicks = unit.waitingTicks;
+    unit.waitingTicks = 0;
     // Bottom moves toward row 17 (+1); Top moves toward row 0 (-1).
     const direction = isBottom ? 1 : -1;
     // The building row of the opponent — reaching it triggers crossing.
@@ -141,7 +149,10 @@ export class MovementSystem {
             ? subFp(subFp(frontUnit.y_fp, frontUnit.radius_fp), unit.radius_fp)
             : addFp(addFp(frontUnit.y_fp, frontUnit.radius_fp), unit.radius_fp);
         }
-        unit.state = UnitState.Waiting;
+        unit.state        = UnitState.Waiting;
+        unit.waitingTicks = waitedTicks + 1;
+        // Stuck deep in a lane queue — bleed off sideways instead of waiting forever.
+        this.tryOverflowDetour(unit, state);
         return;
       }
     }
@@ -177,6 +188,79 @@ export class MovementSystem {
     const advanced = newY !== unit.y_fp;
     unit.y_fp  = newY;
     unit.state = advanced ? UnitState.Moving : UnitState.Waiting;
+  }
+
+  // ─── Lane overflow (queue side-step) ───────────────────────────────────────
+
+  /**
+   * A unit parked behind friendlies for {@link OVERFLOW_DETOUR_WAIT_TICKS} with
+   * clear road ahead side-steps into the emptier neighbouring lane rather than
+   * queueing indefinitely. Returns true when a Detour was started.
+   *
+   * Melee range is 1, so only the front two of a column ever swing: without this
+   * a lane queue was free stored ink that instantly refilled the front rank.
+   * The {@link OVERFLOW_DETOUR_MIN_ENEMY_GAP} guard is what keeps a push from
+   * dissolving on contact — units holding the line stay, only the deep tail moves.
+   */
+  private tryOverflowDetour(unit: Unit, state: GameState): boolean {
+    if (unit.waitingTicks < OVERFLOW_DETOUR_WAIT_TICKS) return false;
+    if (this.enemyWithin(unit, state, OVERFLOW_DETOUR_MIN_ENEMY_GAP)) return false;
+
+    const board   = state.board;
+    const left    = unit.col - 1;
+    const right   = unit.col + 1;
+    const leftOk  = board.isUsableLane(left)  && this.canEnterLane(unit, left, state);
+    const rightOk = board.isUsableLane(right) && this.canEnterLane(unit, right, state);
+    if (!leftOk && !rightOk) return false;
+
+    let dir: 1 | -1;
+    if (leftOk && rightOk) {
+      const nLeft  = board.countSideUnitsInColumn(left, unit.side);
+      const nRight = board.countSideUnitsInColumn(right, unit.side);
+      // Emptier lane wins; on a tie head toward the board centre, matching the
+      // blocked-cell detour's tie-break.
+      dir = nLeft === nRight
+        ? ((unit.col < 5.5 ? 1 : -1) as 1 | -1)
+        : ((nLeft < nRight ? -1 : 1) as 1 | -1);
+    } else {
+      dir = leftOk ? -1 : 1;
+    }
+
+    unit.detourDir       = dir;
+    unit.detourTargetCol = unit.col + dir;
+    unit.state           = UnitState.Detour;
+    unit.waitingTicks    = 0;
+    return true;
+  }
+
+  /** True if an enemy unit or building sits within `rows` ahead of `unit` in its own lane. */
+  private enemyWithin(unit: Unit, state: GameState, rows: number): boolean {
+    const board    = state.board;
+    const isBottom = unit.side === Side.Bottom;
+
+    const enemy = board.getEnemyUnitAhead(unit);
+    if (enemy) {
+      const gapFp = isBottom
+        ? subFp(enemy.y_fp, unit.y_fp)
+        : subFp(unit.y_fp, enemy.y_fp);
+      if (gapFp <= toFp(rows)) return true;
+    }
+
+    const direction = isBottom ? 1 : -1;
+    for (let i = 1; i <= rows; i++) {
+      const row = unit.row + direction * i;
+      if (row < 0 || row >= BOARD_ROWS) break;
+      const building = board.getBuildingAt(unit.col, row);
+      if (building && !building.isDead && building.side !== unit.side) return true;
+    }
+    return false;
+  }
+
+  /** True if `unit` may step into lane `col` at its current row. */
+  private canEnterLane(unit: Unit, col: number, state: GameState): boolean {
+    if (state.tempBlockedCols.has(col)) return false;
+    if (unit.flying) return true;
+    return !state.board.isBlocked(col, unit.row);
   }
 
   // ─── Detour (lateral redirect around blocked cell or crossWaypoint) ─────────

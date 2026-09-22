@@ -84,6 +84,22 @@ export function parseLevelDefinition(raw: unknown, ctx = 'level'): LevelDefiniti
     });
   }
 
+  if (raw.lanePunish !== undefined) {
+    const lp = `${ctx}.lanePunish`;
+    if (!isObject(raw.lanePunish)) fail(lp, 'expected a {units, sustainTicks, cooldownTicks, spell} object');
+    const units         = int(raw.lanePunish.units,         `${lp}.units`);
+    const sustainTicks  = int(raw.lanePunish.sustainTicks,  `${lp}.sustainTicks`);
+    const cooldownTicks = int(raw.lanePunish.cooldownTicks, `${lp}.cooldownTicks`);
+    const spell         = str(raw.lanePunish.spell,         `${lp}.spell`);
+    if (units < 2)         fail(`${lp}.units`,         `must be >= 2, got ${units}`);
+    if (sustainTicks < 1)  fail(`${lp}.sustainTicks`,  `must be >= 1, got ${sustainTicks}`);
+    if (cooldownTicks < 1) fail(`${lp}.cooldownTicks`, `must be >= 1, got ${cooldownTicks}`);
+    if (spell !== 'rockslide' && spell !== 'bridge_collapse') {
+      fail(`${lp}.spell`, `must be 'rockslide' or 'bridge_collapse', got ${spell}`);
+    }
+    level.lanePunish = { units, sustainTicks, cooldownTicks, spell };
+  }
+
   if (raw.enemyScale !== undefined) {
     if (!isObject(raw.enemyScale)) fail(`${ctx}.enemyScale`, 'expected an {hp?, damage?} object');
     const es: NonNullable<LevelDefinition['enemyScale']> = {};

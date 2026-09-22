@@ -114,6 +114,15 @@ export class GameState {
   tempBlockedCols: Map<number, number> = new Map();
 
   /**
+   * Lane-punish bookkeeping (LevelDef.lanePunish, §4.9.5): col → consecutive
+   * ticks that column has held a player wall. Only populated in PvE levels that
+   * opt in; entries are dropped as soon as the wall thins out.
+   */
+  lanePunishSustain: Map<number, number> = new Map();
+  /** Earliest tick the next lane-punish cast may land (§4.9.5). */
+  lanePunishReadyTick = 0;
+
+  /**
    * Escort units active in this level (§4.9.3). Populated at construction time
    * by GameEngine for campaign/escort levels; empty in PvP and non-escort PvE.
    */

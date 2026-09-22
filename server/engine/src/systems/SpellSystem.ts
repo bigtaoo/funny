@@ -86,12 +86,23 @@ export class SpellSystem {
     });
   }
 
-  /** Damages all units in `col` (PvE-only Rockslide spell, §4.9.2). */
-  castRockslide(side: Side, col: number, state: GameState): void {
+  /**
+   * Damages units in `col` (PvE-only Rockslide spell, §4.9.2).
+   *
+   * `enemyOnly` spares the caster's own units the way Meteor always has. It is
+   * false for the player's own card, whose long-standing behaviour is to hit
+   * BOTH sides (a pinned assertion in spell-system.test.ts, though §4.9.2's
+   * prose says "enemy units in the target column" — an open discrepancy, not
+   * settled here). The scripted lane-punish (§4.9.5) passes true: it casts from
+   * the Top side into a column its own wave units are walking through, and a
+   * rockslide that kills the waves it is supporting is no punishment at all.
+   */
+  castRockslide(side: Side, col: number, state: GameState, enemyOnly = false): void {
     const owner = state.ownerOf(side);
     let hits = 0;
     for (const unit of state.board.units.values()) {
       if (unit.isDead) continue;
+      if (enemyOnly && unit.side === side) continue;
       if (unit.col === col) { unit.takeDamage(toFp(ROCKSLIDE_DAMAGE)); hits++; }
     }
     state.stats[owner].spellHits += hits;

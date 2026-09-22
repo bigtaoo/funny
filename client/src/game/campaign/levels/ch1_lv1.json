@@ -142,5 +142,11 @@
   "briefKey": "campaign.ch1.lv1.brief",
   "story": {
     "introKey": "campaign.ch1.intro"
+  },
+  "lanePunish": {
+    "units": 5,
+    "sustainTicks": 120,
+    "cooldownTicks": 450,
+    "spell": "rockslide"
   }
 }
