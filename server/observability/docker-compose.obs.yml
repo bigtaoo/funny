@@ -84,8 +84,16 @@ services:
   #
   # Under profile "tunnel": default `up -d` only starts loki/alloy/grafana (no token needed, can SSH-tunnel to view logs first);
   # fill CF token in .env then `--profile tunnel up -d` to bring the tunnel up.
+  #
+  # Pin bumped 2026-09-22 (2025.2.1 → 2026.9.1): the old build was ~19 months behind and said so in a
+  # daily "your version is outdated" WRN. It also dropped all four tunnel connections twice in the
+  # preceding fortnight ("timeout: no recent network activity", 2026-09-14 09:09 and 2026-09-20 04:55).
+  # Only grafana.gamestao.com rides this tunnel — api.gamestao.com is a plain A record into Caddy — so
+  # a drop costs dashboard access, not players. Keep the pin explicit: `--no-autoupdate` means the
+  # container never upgrades itself, which is the point (reproducible deploys), but it also means an
+  # unattended pin quietly rots.
   cloudflared:
-    image: cloudflare/cloudflared:2025.2.1
+    image: cloudflare/cloudflared:2026.9.1
     container_name: nw-cloudflared
     profiles: ["tunnel"]
     command: ["tunnel", "--no-autoupdate", "run"]

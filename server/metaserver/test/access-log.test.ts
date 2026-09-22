@@ -65,6 +65,22 @@ describe('access log: level escalation + redacted body on error/warn (2026-07-28
     expect(logSpy.mock.calls.some((c) => String(c[0]).includes('/cards/lock'))).toBe(false);
   });
 
+  // 2026-09-22: a 404 on a path the router never matched is an internet scanner, not a client of ours.
+  // Two weeks of production WARN carried `GET /.env`, `/v1/.env`, `/staging/.env` and `POST /auth/signin`
+  // (a route this codebase has never had) at the same level as real refusals. The discriminator is
+  // Fastify's own `routeOptions.url` — undefined when nothing matched — NOT a list of scanner paths,
+  // which would need editing for every new scanner. The routed-404 case above is the other half of this
+  // pair: both must hold, or the demotion has swallowed a real client error.
+  it('a 404 on an unrouted path (scanner probe) drops to info, body and all', async () => {
+    app = await makeApp();
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const res = await app.inject({ method: 'GET', url: '/.env' });
+    expect(res.statusCode).toBe(404);
+    expect(warnSpy.mock.calls.some((c) => String(c[0]).includes('/.env'))).toBe(false);
+    expect(logSpy.mock.calls.map((c) => String(c[0])).join('\n')).toContain('GET /.env -> 404');
+  });
+
   it('a thrown 401 (missing bearer token) logs at warn level with the (empty) body, via setErrorHandler', async () => {
     app = await makeApp();
     warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
