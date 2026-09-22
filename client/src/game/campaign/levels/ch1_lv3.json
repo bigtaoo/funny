@@ -240,5 +240,11 @@
   },
   "nameKey": "campaign.ch1.lv3.name",
   "briefKey": "campaign.ch1.lv3.brief",
-  "inkRegenMult": 1.55
+  "inkRegenMult": 1.55,
+  "lanePunish": {
+    "units": 5,
+    "sustainTicks": 120,
+    "cooldownTicks": 450,
+    "spell": "rockslide"
+  }
 }

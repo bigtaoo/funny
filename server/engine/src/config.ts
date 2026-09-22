@@ -217,3 +217,22 @@ export const SPELL_CARD_DEFS: ReadonlyMap<string, CardDefinition> = new Map<stri
     spellType: SpellType.BridgeCollapse,
   }],
 ]);
+
+// ─── Lane overflow (queue side-step) ─────────────────────────────────────────
+//
+// A lane holds an unbounded queue: friendly-collision only parks the unit behind
+// its predecessor (MovementSystem), so a player could stack twenty units into one
+// column where melee range 1 lets at most the front two actually swing. The rest
+// were free stored ink that instantly refilled the front rank, which is what made
+// a lane wall unbreakable. Units deep in such a queue now side-step into a
+// neighbouring lane instead of waiting forever.
+//
+// Only units with clear road ahead move: a unit whose nearest enemy (or enemy
+// building) is within OVERFLOW_DETOUR_MIN_ENEMY_GAP rows is holding the line and
+// stays put, so the front ranks keep their depth and a push does not dissolve on
+// contact.
+
+/** Consecutive Waiting ticks before a queued unit side-steps to an adjacent lane. */
+export const OVERFLOW_DETOUR_WAIT_TICKS = 90; // 3 s at 30 Hz
+/** Rows of clear road ahead required before a waiting unit is allowed to side-step. */
+export const OVERFLOW_DETOUR_MIN_ENEMY_GAP = 3;

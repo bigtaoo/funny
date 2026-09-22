@@ -141,5 +141,11 @@
   "story": {
     "introKey": "campaign.ch2.intro"
   },
-  "startInk": 30
+  "startInk": 30,
+  "lanePunish": {
+    "units": 5,
+    "sustainTicks": 120,
+    "cooldownTicks": 450,
+    "spell": "rockslide"
+  }
 }

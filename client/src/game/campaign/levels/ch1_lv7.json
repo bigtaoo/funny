@@ -235,5 +235,11 @@
   "nameKey": "campaign.ch1.lv7.name",
   "briefKey": "campaign.ch1.lv7.brief",
   "startInk": 30,
-  "inkRegenMult": 1.42
+  "inkRegenMult": 1.42,
+  "lanePunish": {
+    "units": 5,
+    "sustainTicks": 120,
+    "cooldownTicks": 450,
+    "spell": "rockslide"
+  }
 }

@@ -191,5 +191,11 @@
   "enemyScale": {
     "hp": 1.065,
     "damage": 1.045
+  },
+  "lanePunish": {
+    "units": 5,
+    "sustainTicks": 120,
+    "cooldownTicks": 450,
+    "spell": "rockslide"
   }
 }

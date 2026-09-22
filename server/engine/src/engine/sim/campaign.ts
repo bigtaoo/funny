@@ -53,6 +53,59 @@ export function spawnEnemyUnit(
   });
 }
 
+/**
+ * Lane-punish (§4.9.5): answer a sustained player wall in one column with a
+ * column spell. No-op unless the level opted in via `lanePunish`.
+ *
+ * Campaign enemies are a wave script with no AI, so a player who packed one lane
+ * could never be punished for it — the queue refilled the front rank faster than
+ * scripted waves could break it and the level was over. This is the scripted
+ * side's one reactive behaviour, and it is deliberately narrow: it reads only the
+ * public board (unit counts per column), fires on a fixed sustain + cooldown, and
+ * targets the column with the most player units — no hand-peeking, no randomness,
+ * so a level stays deterministic for replays and the difficulty sim.
+ */
+export function tickLanePunish(ctx: EngineCtx, tick: number): void {
+  const spec = ctx.level?.lanePunish;
+  if (!spec) return;
+  const { state } = ctx;
+
+  // Count player (Bottom) units per column, then age each column's wall timer.
+  const counts = new Map<number, number>();
+  for (const unit of state.board.units.values()) {
+    if (unit.isDead || unit.side !== Side.Bottom) continue;
+    counts.set(unit.col, (counts.get(unit.col) ?? 0) + 1);
+  }
+
+  let targetCol = -1;
+  let targetCount = 0;
+  for (const col of [...state.lanePunishSustain.keys()]) {
+    if ((counts.get(col) ?? 0) < spec.units) state.lanePunishSustain.delete(col);
+  }
+  for (const [col, count] of counts) {
+    if (count < spec.units) continue;
+    const sustain = (state.lanePunishSustain.get(col) ?? 0) + 1;
+    state.lanePunishSustain.set(col, sustain);
+    if (sustain < spec.sustainTicks) continue;
+    // Thickest wall wins; ties break on the lower column index so the choice is
+    // independent of Map iteration order.
+    if (count > targetCount || (count === targetCount && (targetCol === -1 || col < targetCol))) {
+      targetCol   = col;
+      targetCount = count;
+    }
+  }
+
+  if (targetCol === -1 || tick < state.lanePunishReadyTick) return;
+
+  if (spec.spell === 'rockslide') {
+    ctx.systems.spell.castRockslide(Side.Top, targetCol, state, true);
+  } else {
+    ctx.systems.spell.castBridgeCollapse(Side.Top, targetCol, state, tick);
+  }
+  state.lanePunishReadyTick = tick + spec.cooldownTicks;
+  state.lanePunishSustain.delete(targetCol);
+}
+
 /** Whether any living Top-side (enemy) unit is still on the board. */
 export function hasLivingEnemyUnits(ctx: EngineCtx): boolean {
   for (const unit of ctx.state.board.units.values()) {

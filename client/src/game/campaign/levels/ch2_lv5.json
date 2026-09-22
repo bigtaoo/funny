@@ -168,5 +168,11 @@
   },
   "nameKey": "campaign.ch2.lv5.name",
   "briefKey": "campaign.ch2.lv5.brief",
-  "startInk": 8
+  "startInk": 8,
+  "lanePunish": {
+    "units": 5,
+    "sustainTicks": 120,
+    "cooldownTicks": 450,
+    "spell": "rockslide"
+  }
 }
