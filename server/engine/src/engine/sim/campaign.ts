@@ -98,7 +98,7 @@ export function tickLanePunish(ctx: EngineCtx, tick: number): void {
   if (targetCol === -1 || tick < state.lanePunishReadyTick) return;
 
   if (spec.spell === 'rockslide') {
-    ctx.systems.spell.castRockslide(Side.Top, targetCol, state, true);
+    ctx.systems.spell.castRockslide(Side.Top, targetCol, state);
   } else {
     ctx.systems.spell.castBridgeCollapse(Side.Top, targetCol, state, tick);
   }

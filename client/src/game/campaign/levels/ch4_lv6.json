@@ -222,8 +222,8 @@
   "startInk": 10,
   "inkRegenMult": 1.14,
   "enemyScale": {
-    "hp": 1.09,
-    "damage": 1.06
+    "hp": 1.435,
+    "damage": 1.217
   },
   "lanePunish": {
     "units": 5,

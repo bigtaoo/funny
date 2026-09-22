@@ -301,8 +301,8 @@
   "briefKey": "campaign.ch6.lv9.brief",
   "startInk": 40,
   "enemyScale": {
-    "hp": 1.14,
-    "damage": 1.1
+    "hp": 1.265,
+    "damage": 1.16
   },
   "lanePunish": {
     "units": 5,

@@ -368,8 +368,8 @@
   },
   "startInk": 46,
   "enemyScale": {
-    "hp": 1.12,
-    "damage": 1.08
+    "hp": 1.224,
+    "damage": 1.131
   },
   "lanePunish": {
     "units": 5,

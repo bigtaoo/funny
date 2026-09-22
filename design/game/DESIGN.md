@@ -268,7 +268,7 @@ hudView.container        ← HUD（最顶层）
 - `Crossing`（基地行横移）里的排队**不受影响** —— 那段路本来就短。
 - 回归测试：`server/engine/src/__tests__/lane-overflow.test.ts`（前排留守 vs 队尾侧移的分界、阈值未到不动、选空列、`activeLanes` 困住、基地列/边界列方向、计时清零）。
 - **归因实验**（值得记）：改完 12 份 golden replay 挂了 3 份。把 `OVERFLOW_DETOUR_WAIT_TICKS` 临时调到不可达再跑，12 份**全绿** —— 证明分歧完全来自侧移本身，而不是 `waitingTicks` 字段、`Board` 新方法或同期的 rockslide 改动的副作用。确认之后才重录那 3 份 fixture。
-- **这条规则是一次难度下调**：61 关难度矩阵里 19 关的通关门槛降了一档以上（PvE 是防守，兵自动铺开 = 覆盖更多车道 = 漏怪更少）。数据、与 `lanePunish` 的组合对比、以及画面验证记录都在 [`CAMPAIGN_DESIGN_KNOBS.md §4.9.5`](CAMPAIGN_DESIGN_KNOBS.md)。
+- **这条规则是一次难度下调**：61 关难度矩阵里 19 关的通关门槛降了一档以上（PvE 是防守，兵自动铺开 = 覆盖更多车道 = 漏怪更少）。数据、与 `lanePunish` 的组合对比、以及画面验证记录都在 [`CAMPAIGN_DESIGN_KNOBS.md §4.9.5`](CAMPAIGN_DESIGN_KNOBS.md)；**这个缺口已于 2026-09-22 用全 60 关 `enemyScale` 回归重配补上**（[`DIFFICULTY_SIM_TUNING_CH2-CH6.md`](DIFFICULTY_SIM_TUNING_CH2-CH6.md) 末节）。
 
 ---
 
