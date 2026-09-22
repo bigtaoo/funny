@@ -26,6 +26,9 @@ import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n } from '../../src/i18n';
 import { LobbyScene } from '../../src/scenes/LobbyScene';
 import { SettingsScene } from '../../src/scenes/SettingsScene';
+import { GameRenderer } from '../../src/render/GameRenderer';
+import { createLocalMatch } from '../../src/app/matchEngine';
+import { getLevel } from '../../src/game';
 import { SketchPen } from '../../src/render/sketch';
 import { clearBakeCache, setBakeRenderer } from '../../src/render/bake';
 import { sketchPanel } from '../../src/render/sketchUi';
@@ -220,5 +223,102 @@ describe('settings per-frame geometry', () => {
     }
     pen.line(Math.round(w * 0.09), 0, Math.round(w * 0.09), h, { color: 0xcc4433, width: 2.2, jitter: 1.0, taper: 0.95 });
     expect(indexCount(live)).toBeGreaterThan(SETTINGS_INDEX_BUDGET);
+  });
+});
+
+// ── Battle screen (GameRenderer) — the screen this gate was missing (2026-09-22) ──────────────────
+//
+// The regression this half of the file exists for: HUD HP bars, HUD buttons, the upgrade glow, unit/
+// building HP bars, unit body sketches and faction markers were ALL live-`Graphics`, re-triangulated
+// every single frame — `test/liveStrokedInkCallSites.test.ts` even had them in a bucket labeled
+// "GAMEPLAY — redrawn every frame by design", so nothing here ever looked like a bug in review.
+// Measured 2026-09-22 in real Chrome (1280x631, vs-AI match, 120 frames): 96,534 indices in one
+// frame, 10,173 of them re-triangulated on EVERY frame — the battle screen never had a budget at
+// all, which is exactly how the lobby/settings regressions above went undetected as long as they
+// did. See claudedocs/client-render-budget.md for the full accounting.
+//
+// A local-vs-AI campaign match (ch1_lv1) is used instead of a synthetic scene so every layer that
+// spawns real geometry (HUD, board, at least the AI's own units/buildings) gets exercised the same
+// way a real match would — same shape as gameRendererEvents.ui.ts's buildRenderer(). `.tao` decode
+// fails in this headless harness (no real zip/DOM), so units render via the circle-placeholder path
+// (stickmanDraft.ts's draft figure + the faction marker) — the exact geometry this change bakes.
+
+/** Same shape as gameRendererEvents.ui.ts's buildRenderer(): a real local-vs-AI campaign match. */
+function buildBattleRenderer(): { renderer: GameRenderer } {
+  const level = getLevel('ch1_lv1')!;
+  const { engine } = createLocalMatch({ level });
+  const layout = createLayout(1280, 631);
+  const input = new InputManager();
+  const renderer = new GameRenderer(engine, layout, input);
+  renderer.init();
+  return { renderer };
+}
+
+/**
+ * Indices re-triangulated across `frames` calls to `tick()`, divided by `frames` — the per-frame
+ * average rebuild cost. A `Graphics`' `geometry.dirty` counter (protected in the type defs, real at
+ * runtime — see GraphicsGeometry.js) increments once per `drawShape`/`clear()` call, so comparing it
+ * frame to frame is exactly "did this node get re-triangulated just now", with no renderer needed to
+ * observe it. Only counted the frame it actually changes — unlike {@link indexCount}, this must NOT
+ * charge every frame for geometry that hasn't moved, or it would just be `indexCount` in a loop.
+ */
+function perFrameRebuildIndices(root: PIXI.DisplayObject, frames: number, tick: () => void): number {
+  const lastDirty = new WeakMap<object, number>();
+  let total = 0;
+  const visit = (o: PIXI.DisplayObject): void => {
+    const geom = (o as PIXI.Graphics).geometry as (PIXI.Graphics['geometry'] & { dirty?: number }) | undefined;
+    if (geom && typeof geom.updateBatches === 'function' && typeof geom.dirty === 'number') {
+      const prev = lastDirty.get(geom);
+      if (prev !== geom.dirty) {
+        lastDirty.set(geom, geom.dirty);
+        geom.updateBatches();
+        total += geom.indices.length;
+      }
+    }
+    const kids = (o as PIXI.Container).children;
+    if (kids) for (const k of kids) visit(k);
+  };
+  for (let i = 0; i < frames; i++) {
+    tick();
+    visit(root);
+  }
+  return total;
+}
+
+/**
+ * Static submitted geometry for one battle frame, in indices.
+ *
+ * Measured 9,090 in this harness (a stub renderer, so the sprite/bake paths this change adds are the
+ * ones counted — see this file's shared `stubBakeRenderer()`; `.tao` decode fails headless, so this
+ * is the circle-placeholder path's cost, not the real client's `.tao` sprites). Budget leaves ~2x
+ * headroom for ordinary match variance (more units alive, more HUD chrome) — raise it only with a
+ * measurement.
+ */
+const BATTLE_STATIC_INDEX_BUDGET = 18_000;
+
+/**
+ * Per-frame REBUILD geometry for the battle screen, in indices/frame — the number this whole change
+ * exists to shrink. Measured 89/frame in this harness after the fix (10,173/frame in real Chrome
+ * before it — see file-header comment); budget is set well below the pre-fix number so a HUD bar /
+ * unit bar / upgrade glow regressing back to a per-frame `clear()`+redraw fails this test long
+ * before it reaches a user's battery, with headroom over the measured 89 for ordinary match
+ * variance (units taking damage, more bars visible at once).
+ */
+const BATTLE_REBUILD_INDEX_BUDGET = 1_500;
+
+describe('battle screen (GameRenderer) per-frame geometry', () => {
+  it('static: one frame after warm-up stays inside the budget', () => {
+    const { renderer } = buildBattleRenderer();
+    for (let i = 0; i < 600; i++) renderer.update(1 / 30);
+    const indices = indexCount(renderer.container);
+    expect(indices, `battle static geometry = ${indices} indices (budget ${BATTLE_STATIC_INDEX_BUDGET})`)
+      .toBeLessThan(BATTLE_STATIC_INDEX_BUDGET);
+  });
+
+  it('per-frame rebuild: stays far below the pre-fix 10,173/frame', () => {
+    const { renderer } = buildBattleRenderer();
+    const avg = perFrameRebuildIndices(renderer.container, 120, () => renderer.update(1 / 30)) / 120;
+    expect(avg, `battle rebuild geometry = ${avg.toFixed(0)} indices/frame (budget ${BATTLE_REBUILD_INDEX_BUDGET})`)
+      .toBeLessThan(BATTLE_REBUILD_INDEX_BUDGET);
   });
 });

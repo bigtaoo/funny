@@ -43,6 +43,9 @@ const EXPECTED: Record<string, boolean> = {
   'render/panelFrame.ts::panel frame atlas':                    false,
   'ui/widgets/uiCache.ts::shared UI chrome (getCachedTexture)': false,
   'ui/widgets/uiCache.ts::shared UI chrome (sized variant)':    false,
+  'render/HUDView/hpBar.ts::hud hp pip atlas':                  false,
+  'render/stickmanDraft.ts::stickman draft figure':             false,
+  'render/UnitView/assets.ts::faction ground marker':           false,
 };
 
 /** Human label per (file, occurrence index) — keeps the map above readable. */
@@ -58,6 +61,9 @@ const LABELS: Record<string, string[]> = {
   'render/boil.ts':                 ['per-frame boil offsets'],
   'render/panelFrame.ts':           ['panel frame atlas'],
   'ui/widgets/uiCache.ts':          ['shared UI chrome (getCachedTexture)', 'shared UI chrome (sized variant)'],
+  'render/HUDView/hpBar.ts':        ['hud hp pip atlas'],
+  'render/stickmanDraft.ts':        ['stickman draft figure'],
+  'render/UnitView/assets.ts':      ['faction ground marker'],
 };
 
 function walk(dir: string, out: string[] = []): string[] {
