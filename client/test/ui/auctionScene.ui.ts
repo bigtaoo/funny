@@ -1474,11 +1474,48 @@ describe('AuctionScene — buy race', () => {
     await flush();
     toastMsgs.length = 0;
 
-    await scene.bid.doBid('auc_1', 150);
+    await scene.bid.doBid(makeAuction(), 150);
 
     expect(worldApi.placeBid).toHaveBeenCalledWith('auc_1', 150);
     expect(toastMsgs).toContain(t('auction.bidPlaced'));
     expect(worldApi.listAuctions).toHaveBeenCalledTimes(2); // constructor's initial load + doBid's refresh
+    scene.destroy();
+  });
+
+  // Buy-now says what was bought (2026-09-22): trade.ts "5. Buyout" settles a bid immediately, server-side,
+  // once `amount >= buyoutPrice` — the same path a plain bid takes, so both the buyout button and a manual
+  // bid that happens to clear buyoutPrice must toast the purchase, not "bid placed". The response's
+  // `status` is what actually tells the two apart (docToView(doc.status)); it flips to 'sold' only when
+  // this call is the one that closed the listing.
+  it('buy-now: a bid that settles the auction (status: sold) toasts the purchase, not "bid placed"', async () => {
+    const auc = makeAuction({ itemType: 'equipment', item: { instance: { defId: 'foilCover', level: 0 } }, buyoutPrice: 500 });
+    const worldApi = stubWorldApi({
+      placeBid: vi.fn(async () => makeAuction({ ...auc, status: 'sold', buyerId: 'acc_me', topBid: { bidderId: 'acc_me', amount: 500, ts: Date.now() } })),
+    });
+    const scene = buildScene({ worldApi });
+    await flush();
+    toastMsgs.length = 0;
+
+    await scene.bid.doBid(auc, 500);
+
+    expect(toastMsgs).toContain(t('shop.boughtNamed', { name: auctionLabelText(auc) }));
+    expect(toastMsgs).not.toContain(t('auction.bidPlaced'));
+    scene.destroy();
+  });
+
+  it('buy-now: a normal bid that does NOT settle the auction (status stays open) still toasts "bid placed"', async () => {
+    const auc = makeAuction({ buyoutPrice: 500 });
+    const worldApi = stubWorldApi({
+      placeBid: vi.fn(async () => makeAuction({ ...auc, topBid: { bidderId: 'acc_me', amount: 150, ts: Date.now() }, price: 150 })),
+    });
+    const scene = buildScene({ worldApi });
+    await flush();
+    toastMsgs.length = 0;
+
+    await scene.bid.doBid(auc, 150);
+
+    expect(toastMsgs).toContain(t('auction.bidPlaced'));
+    expect(toastMsgs).not.toContain(t('shop.boughtNamed', { name: auctionLabelText(auc) }));
     scene.destroy();
   });
 
@@ -1490,7 +1527,7 @@ describe('AuctionScene — buy race', () => {
     await flush();
     toastMsgs.length = 0;
 
-    await scene.bid.doBid('auc_1', 150);
+    await scene.bid.doBid(makeAuction(), 150);
 
     expect(toastMsgs).toContain(t('auction.err.closed'));
     expect(worldApi.listAuctions).toHaveBeenCalledTimes(2); // stale card refreshed off
@@ -1505,7 +1542,7 @@ describe('AuctionScene — buy race', () => {
     await flush();
     toastMsgs.length = 0;
 
-    await scene.bid.doBid('auc_1', 1);
+    await scene.bid.doBid(makeAuction(), 1);
 
     expect(toastMsgs).toContain(t('auction.err.bidTooLow'));
     expect(worldApi.listAuctions).toHaveBeenCalledTimes(1);

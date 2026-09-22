@@ -1474,3 +1474,31 @@ Daily 另外三个 tab、拍卖行的 `mine`/`bids` 两个 tab 全没审过。
 实拍：大厅「开始匹配」→「匹配中」页 → 点「取消匹配」→ **直接回到大厅**；社交 →「联机对战」→ 页面上只剩
 「创建房间」「加入房间」两颗 + 「把房间码发给好友」。
 `tsc --noEmit`、`npx vitest run`（310 文件 / 3859 例）、`test:ui`（275 文件 / 2799 例）、`npm run build:web` 全绿。
+
+## 62. 拍卖行「一口价」按钮报错了结果（2026-09-22）
+
+**起因**：`AuctionScene/bid.ts` 的出价弹窗里，一口价按钮把 `core.bidAmount` 设成
+`auc.buyoutPrice` 后直接调 `confirmBid(auc)`——跟普通出价走的是同一条路径。服务端
+`auctionsvc/src/auctionService/trade.ts`「5. Buyout」在 `amount >= doc.buyoutPrice` 时会立即
+`settleAuctionWin`，也就是**东西已经买到手了**，但客户端的 `doBid` 一律 `await placeBid(...)` 后
+丢掉返回值、只吐 `auction.bidPlaced`（「出价成功」）——玩家一口价买下装备，看到的却是「出价成功」，
+不知道自己已经拿到东西、钱也扣了。
+
+**修法**：`placeBid` 的返回值（`AuctionView`）本身就分得清两种结果——`docToView` 把
+`doc.status` 原样带出来，只有这一次调用真的把拍卖结算掉时才会是 `'sold'`（服务端在 CAS 失败时会
+整个 `AUCTION_CLOSED` 抛出，不会拿别人的结算结果冒充这次的返回），不需要额外带账号 id 去比对
+`buyerId`。于是 `doBid` 现在看 `res.status === 'sold'`：结算了就照抄 `tradeActions.ts doBuy` 现在的
+写法——`t('shop.boughtNamed', { name })`，`name` 取 `auctionLabelText(auc)`；没结算（真的只是
+出价，`topBid` 抬高但 `status` 仍 `open`）才吐原来的 `auction.bidPlaced`。
+
+**没有按「点了哪个按钮」分支**：普通「出价」按钮理论上也能把 `core.bidAmount` 手动加到
+`≥buyoutPrice`（`addNumInput`/+1/+5/+10 都不封顶），这时服务端一样会立即结算——按钮身份不可靠，
+服务端返回的 `status` 才是权威信号，两个按钮共用同一条 `confirmBid → doBid` 路径,分支落在响应上。
+
+**门禁**：`auctionScene.ui.ts` 的「buy race」一组 +2 例——一口价把响应喂成
+`{status:'sold', buyerId:'acc_me', ...}` 只能拿到 `shop.boughtNamed` 而不是 `bidPlaced`；反过来
+`status` 仍 `open` 的普通出价只能拿到 `bidPlaced` 而不是 `boughtNamed`。两例都做过 mutation
+check：把实现改回「永远 `bidPlaced`」和改成「永远 `boughtNamed`」分别只转红其中一例、另一例仍绿，
+确认两条断言各自守住自己的分支而不是互相包庇。
+
+`tsc --noEmit`、`npm run build:web`、`test:ui`（`auctionScene.ui.ts` 90 例 + 全量 275 文件 / 2813 例）全绿。
