@@ -41,6 +41,9 @@ function buildHarness(opts: { buy?: () => Promise<unknown>; shopPanelOpen?: bool
   const refreshWallet = vi.fn(async () => {});
   const panels = {
     showToast: vi.fn(),
+    // The success toast names the bought item, so it goes back through the panel's own label
+    // formatter — stub it the way WorldMapPanels.shopLabel would render these two.
+    shopLabel: vi.fn((it: { kind: string }) => (it.kind === 'battle_pass' ? 'Battle pass' : 'Train speedup 24h')),
     renderShopPanel: vi.fn(),
     renderTerritoryPanel: vi.fn(),
     renderHud: vi.fn(),
@@ -49,6 +52,10 @@ function buildHarness(opts: { buy?: () => Promise<unknown>; shopPanelOpen?: bool
   const ctx = {
     bt: new BusyTracker(),
     me: { joined: true },
+    shopItems: [
+      { id: 'sp1', kind: 'troop_speedup', cost: 3600, effect: { duration_sec: 86_400 } },
+      { id: 'slg_battle_pass', kind: 'battle_pass', cost: 5000, effect: {} },
+    ],
     shopPanelOpen: opts.shopPanelOpen ?? true,
     territoryPanelOpen: false,
     territoryTab: 'overview',
@@ -108,6 +115,23 @@ describe('doBuyShopItem — post-purchase refresh', () => {
     expect(panels.renderHud).toHaveBeenCalledTimes(1);
     // The adopted `me` is what makes the battle-pass card flip to "Active" on that re-render.
     expect((ctx.me as { hasBattlePass?: boolean }).hasBattlePass).toBe(true);
+  });
+
+  it('names the bought item in the success toast, in the lobby shop green', async () => {
+    const { ctx, panels } = buildHarness();
+    await doBuyShopItem(ctx, 'sp1');
+    expect(panels.showToast).toHaveBeenCalledWith(
+      'Purchased: Train speedup 24h',
+      expect.any(Number),
+      true, // filled box, like GlobalToast's success banner
+    );
+  });
+
+  it('falls back to the bare confirmation when the catalog is not cached yet', async () => {
+    const { ctx, panels } = buildHarness();
+    (ctx as { shopItems: unknown[] }).shopItems = [];
+    await doBuyShopItem(ctx, 'sp1');
+    expect(panels.showToast).toHaveBeenCalledWith('Purchased', expect.any(Number), true);
   });
 
   it('does not re-render the shop panel when it is closed', async () => {

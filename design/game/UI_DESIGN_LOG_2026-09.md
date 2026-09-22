@@ -1474,3 +1474,34 @@ Daily 另外三个 tab、拍卖行的 `mine`/`bids` 两个 tab 全没审过。
 实拍：大厅「开始匹配」→「匹配中」页 → 点「取消匹配」→ **直接回到大厅**；社交 →「联机对战」→ 页面上只剩
 「创建房间」「加入房间」两颗 + 「把房间码发给好友」。
 `tsc --noEmit`、`npx vitest run`（310 文件 / 3859 例）、`test:ui`（275 文件 / 2799 例）、`npm run build:web` 全绿。
+
+## 62. 世界地图商店的「购买成功」：说清买的是什么，用大厅商店那身绿（2026-09-22）
+
+**起因**：用户截图——SLG 商店面板里点 Buy，弹出来的是一块深色 toast，上面只有 `Purchased` 一个词。
+两个问题：①买的是哪张卡、得到了什么效果，toast 一个字都不说，而面板里同时摆着六七张卡（三档加速、
+三档资源包、两档护盾），手一抖点错了根本看不出来；②大厅商店（`ShopScene`）买完是一条**绿色实心**
+的成功横幅（`GlobalToast` 的 `success` 分支：`fill`/`border` 同色、0.95 alpha），世界地图这块深色框
+反而更像一条错误提示。
+
+| 位置 | 改了什么 |
+|---|---|
+| `worldmap/net/structures.ts` `doBuyShopItem` | 文案从 `world.shopBought`（光秃秃的「购买成功」）换成大厅商店同款 `shop.boughtNamed`（「购买成功：{name}」），`{name}` 直接复用面板自己的 `panels.shopLabel(it)`——卡片上写的就是它（`训练加速 24 时` / `资源包（各 200000）` / `保护罩 8 时`），效果已经在名字里，不必再造一套「你获得了 X」的说法。目录（`ctx.shopItems`）万一没缓存上就退回原来那句 |
+| `WorldMapPanels/core.ts` `showToast` | 第三个参数 `filled`：为真时整块按 `color` 填充（0.95 alpha），即 `GlobalToast` 成功横幅那身绿；默认仍是深色框 + 彩色描边，其余所有调用点（全部是通知/报错）一个像素都没动 |
+| 同上 | 高度从写死的 84 改成 `max(84, 文字高 + 32)`，并给标签加 `align: 'center'` |
+
+**为什么顺手动高度**：`shop.boughtNamed` 把文案从 1 个词撑到近 40 字符，在 720 设计宽的框里
+（标签折行宽 672、字号 `FS.headline`=42）必然折成两行——旧的固定 84 会把第二行切掉一半。
+折行后标签默认左对齐，两行会整体偏左挂着，所以一并设 `align: 'center'`。
+这两处对**已有**的长 toast（`push.ts` 的战报行、`world.err.notConnected` 这类长句）同样是修复——
+它们此前就在同一个 84px 里被裁，只是没人报。
+
+**门禁**（`test/ui/worldMapShopBuyFlow.ui.ts`，+2 例，harness 补上 `shopItems`/`shopLabel`）：
+①买 `sp1` 后 `showToast` 收到的正是 `Purchased: Train speedup 24h` + `filled=true`；
+②目录为空时退回 `Purchased`，且照样 `filled=true`。
+
+**怎么核的**：真 Chrome + `preview_start` 的 9090。世界地图商店要登录 + 有基地才进得去，所以走
+[`worldmap-modal-visual-verify`](../../claudedocs/README.md) 那套办法——`app.ts` 里临时挂一个
+`#toastdemo` hash 分支，手搓 ctx 调**真的** `showToast`，核完 `git checkout --` 撤掉。
+实拍四张：英文一行（绿色实心）、德文一行（`Gekauft: Ausbildung +24h`）、英文最长那条
+（`Purchased: Resource pack (200000 each)`，两行、居中、框跟着长高）、以及原来的深色错误 toast
+（同样两行不再被裁）。`tsc --noEmit` + `npm run build:web` + 相关 3 个 ui 测试文件全绿。

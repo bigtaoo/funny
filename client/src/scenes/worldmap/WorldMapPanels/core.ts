@@ -286,7 +286,14 @@ export class WorldMapPanelsCore {
     drawLoadingOverlay(bl, this.ctx.w, this.ctx.h, this.ctx.bt.dots, t('common.processing'));
   }
 
-  showToast(msg: string, color: number = C.dark): void {
+  /**
+   * @param color   border colour — C.red for failures, C.dark for a neutral notice.
+   * @param filled  paint the whole box in `color` instead of the dark ink panel, i.e. the solid
+   *                banner GlobalToast draws for a `success` toast (fill and border both the same
+   *                colour at 0.95 alpha). Used by the SLG shop so a purchase here confirms itself
+   *                in the same green as the lobby shop's.
+   */
+  showToast(msg: string, color: number = C.dark, filled = false): void {
     const tl = this.ctx.toastLayer;
     tearDownChildren(tl);
     const { w, h } = this.ctx;
@@ -295,10 +302,15 @@ export class WorldMapPanelsCore {
     // (Moved down from h*2/3 on 2026-08-02: that line sat under modal confirm buttons — e.g. the
     // Equipment enhance dialog's own confirm button — and covered them while the toast was visible.)
     const tw = Math.min(w - 40, 720);
-    const th = 84;
+    const lbl = txt(msg, FS.headline, 0xffffff, false, tw - 48);
+    lbl.style.align = 'center'; // a wrapped second line would otherwise hang off to the left
+    // Grow with the text rather than sitting at a fixed 84: messages that name what was bought
+    // ("Purchased: Train speedup 24h", and longer in German) wrap to two headline lines, which the
+    // old fixed height cropped.
+    const th = Math.max(84, Math.ceil(lbl.height) + 32);
     const box = sketchPanel(tw, th, {
-      fill: C.dark,
-      fillAlpha: 0.88,
+      fill: filled ? color : C.dark,
+      fillAlpha: filled ? 0.95 : 0.88,
       border: color,
       width: 1,
       seed: 7,
@@ -306,7 +318,6 @@ export class WorldMapPanelsCore {
     box.x = (w - tw) / 2;
     box.y = Math.round(h * 0.8 - th / 2);
     tl.addChild(box);
-    const lbl = txt(msg, FS.headline, 0xffffff, false, tw - 48);
     lbl.anchor.set(0.5, 0.5);
     lbl.x = box.x + tw / 2;
     lbl.y = box.y + th / 2;
