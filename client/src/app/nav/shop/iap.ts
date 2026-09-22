@@ -105,6 +105,11 @@ export function createShopIap(ctx: AppCtx): ShopIap {
     onConverted: () => void,
   ): Promise<ShopActionResult> {
     const kind = platform.iapKind();
+    // Measured, not assumed: the toast reports what actually landed in the wallet, which is the tier's
+    // face value *plus* the one-time first-purchase 2x bonus when the account still has it (the server
+    // decides that, and the tier table in ShopScene/coins.ts cannot know). Both branches below adopt or
+    // poll the authoritative save, so the delta is the credited amount.
+    const coinsBefore = saveManager.get().wallet.coins;
     try {
       if (kind === 'apple' || kind === 'google') {
         // user-paced native store sheet — unbounded
@@ -114,7 +119,7 @@ export function createShopIap(ctx: AppCtx): ShopIap {
         saveManager.adoptServer(save);
         onConverted();
         analytics.track('iap_purchase', { tier: tierId, platform: kind });
-        return { ok: true };
+        return { ok: true, coins: Math.max(0, save.wallet.coins - coinsBefore) };
       }
       if (kind === 'paddle') {
         const token = featureFlags?.getPaddleClientToken() ?? null;
@@ -125,9 +130,10 @@ export function createShopIap(ctx: AppCtx): ShopIap {
         onConverted();
         analytics.track('iap_purchase', { tier: tierId, platform: 'paddle' });
         // Webhook credits coins asynchronously — poll the authoritative save so the wallet reflects it.
-        const before = saveManager.get().wallet.coins;
-        const credited = await pollForCoinIncrease(before);
-        return credited ? { ok: true } : { ok: false, key: 'shop.rechargePending' };
+        const credited = await pollForCoinIncrease(coinsBefore);
+        return credited
+          ? { ok: true, coins: Math.max(0, saveManager.get().wallet.coins - coinsBefore) }
+          : { ok: false, key: 'shop.rechargePending' };
       }
       return { ok: false, key: 'shop.rechargeError' };
     } catch (e) {

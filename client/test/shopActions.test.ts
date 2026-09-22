@@ -291,6 +291,26 @@ describe('ShopScene — onRecharge() success', () => {
     expect(scene.bt.busy).toBe(false);
   });
 
+  it('names the credited coins when the result reports them, and falls back when it does not', async () => {
+    // The credited amount is the tier's face value plus the one-time first-purchase 2x bonus, so it
+    // is measured server-side (nav/shop/iap.ts returns the wallet delta) rather than read off the
+    // tier table — the toast must print whatever came back, not the price that was clicked.
+    const toast = vi.spyOn(log, 'showToastMessage').mockImplementation(() => {});
+    try {
+      const scene = buildScene();
+      scene.cb.rechargeCoins!.mockResolvedValueOnce({ ok: true, coins: 2400 });
+      await scene.onRecharge('t1999');
+      expect(toast).toHaveBeenCalledWith(t('shop.rechargeSuccessNamed', { n: 2400 }), 'success');
+
+      toast.mockClear();
+      scene.cb.rechargeCoins!.mockResolvedValueOnce({ ok: true }); // older caller, no count
+      await scene.onRecharge('t1999');
+      expect(toast).toHaveBeenCalledWith(t('shop.rechargeSuccess'), 'success');
+    } finally {
+      toast.mockRestore();
+    }
+  });
+
   it('a long-pending recharge (user-paced payment UI) never times out on its own', async () => {
     vi.useFakeTimers();
     try {

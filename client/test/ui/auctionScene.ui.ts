@@ -1412,6 +1412,36 @@ describe('AuctionScene — background poll', () => {
 });
 
 // ── Concurrent-buy race — two buyers, the loser gets refreshed + told ─────────────────────────
+describe('AuctionScene — buy-now says what was bought', () => {
+  // Before 2026-09-22 this toasted a bare `auction.bought` ("Purchase successful"), which in a list
+  // of near-identical rows never told the player which listing the tap had actually charged them for.
+  it('the success toast carries the row label, in the shared shop.boughtNamed wording', async () => {
+    const scene = buildScene();
+    await flush();
+    toastMsgs.length = 0;
+
+    await scene.trade.doBuy('auc_1', 'Foil Cover');
+
+    expect(toastMsgs).toContain(t('shop.boughtNamed', { name: 'Foil Cover' }));
+    scene.destroy();
+  });
+
+  // The half that can silently rot: the toast can only name the item if the row's Buy button passes
+  // its own label down. A fixed-price row's label is "<material> x<qty>" (auctionLabel).
+  it("the row's Buy button hands confirmBuy that row's own label", async () => {
+    const auc = makeAuction({ saleMode: 'fixed', price: 250, item: { material: 'scrap' }, qty: 3 });
+    const scene = buildScene({ worldApi: stubWorldApi({ listAuctions: vi.fn(async () => [auc]) }) });
+    await flush();
+    scene.render();
+    const spy = vi.spyOn(scene.trade, 'confirmBuy');
+
+    tapLabel(scene, scene.container, t('auction.buy'));
+
+    expect(spy).toHaveBeenCalledWith('auc_1', 250, auctionLabelText(auc));
+    scene.destroy();
+  });
+});
+
 describe('AuctionScene — buy race', () => {
   it('on AUCTION_CLOSED refreshes the market and shows the sold-out prompt', async () => {
     let call = 0;
@@ -1424,7 +1454,7 @@ describe('AuctionScene — buy race', () => {
     await flush();
     toastMsgs.length = 0;
 
-    await scene.trade.doBuy('auc_1');
+    await scene.trade.doBuy('auc_1', 'Foil Cover');
 
     expect(toastMsgs).toContain(t('auction.err.soldOut'));
     expect(worldApi.listAuctions).toHaveBeenCalledTimes(2); // refreshed after the lost race
@@ -1441,7 +1471,7 @@ describe('AuctionScene — buy race', () => {
     await flush();
     toastMsgs.length = 0;
 
-    await scene.trade.doBuy('auc_1');
+    await scene.trade.doBuy('auc_1', 'Foil Cover');
 
     expect(toastMsgs).toContain(t('auction.err.soldOut'));
     expect(worldApi.listAuctions).toHaveBeenCalledTimes(2); // refreshed
@@ -1456,7 +1486,7 @@ describe('AuctionScene — buy race', () => {
     await flush();
     toastMsgs.length = 0;
 
-    await scene.trade.doBuy('auc_1');
+    await scene.trade.doBuy('auc_1', 'Foil Cover');
 
     expect(toastMsgs).toContain(t('auction.err.insufficientFunds'));
     expect(worldApi.listAuctions).toHaveBeenCalledTimes(1); // no refresh — the listing is still valid

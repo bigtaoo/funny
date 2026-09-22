@@ -90,8 +90,8 @@ describe('AuctionScene — busy lock prevents duplicate requests', () => {
     const buyAuction = vi.fn(() => new Promise<{ ok: true }>(() => {})); // never resolves
     const scene = buildListScene(stubWorldApi({ buyAuction }), makeAuction());
 
-    void scene.trade.doBuy('auc_1');
-    void scene.trade.doBuy('auc_1'); // busy — must short-circuit before touching worldApi
+    void scene.trade.doBuy('auc_1', 'Foil Cover');
+    void scene.trade.doBuy('auc_1', 'Foil Cover'); // busy — must short-circuit before touching worldApi
     await Promise.resolve();
 
     expect(buyAuction).toHaveBeenCalledTimes(1);
@@ -114,7 +114,7 @@ describe('AuctionScene — busy lock prevents duplicate requests', () => {
     const buyAuction = vi.fn(async () => ({ ok: true as const }));
     const scene = buildListScene(stubWorldApi({ buyAuction }), makeAuction());
 
-    await scene.trade.doBuy('auc_1');
+    await scene.trade.doBuy('auc_1', 'Foil Cover');
 
     expect(buyAuction).toHaveBeenCalledTimes(1);
     expect(scene.core.bt.busy).toBe(false);
@@ -194,7 +194,7 @@ describe('AuctionScene — list-row Buy button greys out while busy', () => {
     expect(pos).not.toBeNull();
     expect(hitUnder(scene.core.hitRects, pos!)).toBeDefined(); // idle: clickable
 
-    void scene.trade.doBuy('auc_1');
+    void scene.trade.doBuy('auc_1', 'Foil Cover');
     expect(hitUnder(scene.core.hitRects, pos!)).toBeUndefined(); // busy: greyed out, no hit rect
   });
 });
@@ -207,7 +207,7 @@ describe('AuctionScene — network timeout recovers cleanly', () => {
       const scene = buildListScene(stubWorldApi({ buyAuction }), makeAuction());
       const showToast = vi.spyOn(scene.core, 'showToast');
 
-      const pending = scene.trade.doBuy('auc_1');
+      const pending = scene.trade.doBuy('auc_1', 'Foil Cover');
       await vi.advanceTimersByTimeAsync(10_001);
       await pending;
 

@@ -1505,3 +1505,48 @@ Daily 另外三个 tab、拍卖行的 `mine`/`bids` 两个 tab 全没审过。
 实拍四张：英文一行（绿色实心）、德文一行（`Gekauft: Ausbildung +24h`）、英文最长那条
 （`Purchased: Resource pack (200000 each)`，两行、居中、框跟着长高）、以及原来的深色错误 toast
 （同样两行不再被裁）。`tsc --noEmit` + `npm run build:web` + 相关 3 个 ui 测试文件全绿。
+
+## 63. 把「买了什么」补进其余几处购买 toast（2026-09-22）
+
+§62 只治了世界地图商店那一块。用户接着说「其他地方的购买 toast 也一起改成这样」——于是把全仓
+每一条**花钱换东西**的成功提示过了一遍。
+
+**先说没改的那一半**：颜色。除世界地图自己画的那块深色框（§62 已修）外，其余所有场景的 toast 都走
+`showToastMessage` → `GlobalToast`，`success` 分支本来就是绿色实心横幅（`app.ts` 里
+`kind === 'success' ? C.green : C.red`），高度也本来就跟着文字长。所以这一轮全部是**文案**的活。
+
+| 位置 | 原来 | 现在 |
+|---|---|---|
+| `AuctionScene/tradeActions.ts` `doBuy` | `auction.bought`（「购买成功」，键已删） | `shop.boughtNamed` + 行自己的标签（`auctionLabelText`，含星级）。`confirmBuy`/`doBuy` 多带一个 `name`，由 `listCell.ts` 从被点的那行传下来 |
+| `BattlePassScene.ts` 买战令 | **一条 toast 都没有**（只靠按钮消失 + 付费轨点亮） | `shop.boughtNamed` + `battlepass.title` |
+| `CityScene/actions.ts` `doSpeedup` / `doSpeedupTraining` | 两处共用 `city.speedupDone`（「已加速」） | 新键 `city.speedupDoneNamed`「已加速：{name}」——建造取 `city.bld.<key>`，练兵取 `city.bld.trainTroops` |
+| `ShopScene/actions.ts` `onRecharge` | `shop.rechargeSuccess`（「金币已到账」，作为兜底保留） | `shop.rechargeSuccessNamed`「支付成功：+{n} 金币」 |
+
+### 63.1 充值那条为什么不能照抄档位面值
+
+`ShopScene/coins.ts` 的 `WEB_COIN_TIERS` 写着每档给多少币，但**首充双倍**是服务端一次性的账号级赠送
+（`wallets.firstPurchasedAt` 的 CAS），客户端的档位表不知道这一次算不算首充。照抄面值的结果就是：
+唯一一次真正多给币的购买，提示跟其它次一模一样，还可能少报一半。
+
+所以数字是**量出来的**：`nav/shop/iap.ts` 的 `doRechargeCoins` 在两条分支开头都先记下
+`coinsBefore = saveManager.get().wallet.coins`，原生分支用 `/iap/verify` 返回并已 adopt 的权威存档、
+Paddle 分支用 webhook 轮询后的存档，各自算差值填进 `ShopActionResult.coins`（这个可选字段早就存在，
+`onWatchAd` 在用）。场景层只负责印出来，拿不到数就退回原来那句。
+
+### 63.2 门禁（+9 例，都做过 mutation check）
+
+- `auctionScene.ui.ts` +2：成功 toast 带的就是调用方传下来的名字；**以及**市场行的 Buy 按钮把**那一行自己的**
+  `auctionLabelText` 交给 `confirmBuy`——后半条才是会烂的那半（名字传不下来时前半条照样绿）。
+  把 `listCell` 改成传空串、把 toast 换成别的键，两例分别转红。
+- `citySpeedupToast.test.ts`（新建，无 PIXI，直接喂 `ActionsHost`）+4：建造加速带建筑名、两个不同 key
+  读出来不一样、练兵加速带练兵名、失败路径仍是报错而不是具名成功。
+- `shopActions.test.ts` +1：结果带 `coins` 就印具名句，不带就退回旧句。
+- `shopNav-purchaseFinish.test.ts` +1（另改 3 处既有断言为 `{ ok: true, coins: 500 }`）：
+  钱包 1000 → 3400 时报 **2400**，不是 3400 也不是档位面值。把实现改成返回余额即转红。
+
+**怎么核的**：同 §62 的 `app.ts` 临时 hash 分支，这次直接喂 `showToastMessage(..., 'success')` 走真
+`GlobalToast`。实拍四张：英文带星级装备名（`Purchased: Foil Cover ★★★★★`）、英文充值
+（`Payment complete: +13500 coins`）、德文建造加速（`Beschleunigt: Graphitmühle`）、中文材料行
+（`购买成功：旧纸片 ×999`）。核完 `git checkout -- client/src/app.ts` 撤掉。
+`tsc --noEmit`、`npx vitest run`（311 文件 / 3865 例）、`test:ui`（275 文件 / 2826 例）、
+`npm run lint`、`npm run build:web` 全绿。

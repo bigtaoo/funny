@@ -9,12 +9,12 @@ import { withTimeout } from '../../ui/busyTracker';
 export class TradeActionsPanel {
   constructor(private readonly core: AuctionSceneCore) {}
 
-  confirmBuy(auctionId: string, price: number): void {
+  confirmBuy(auctionId: string, price: number, name: string): void {
     const msg = t('auction.confirmBuy').replace('{price}', String(price));
-    this.core.showConfirmModal(msg, () => void this.doBuy(auctionId));
+    this.core.showConfirmModal(msg, () => void this.doBuy(auctionId, name));
   }
 
-  async doBuy(auctionId: string): Promise<void> {
+  async doBuy(auctionId: string, name: string): Promise<void> {
     const core = this.core;
     if (core.bt.busy) return;
     core.closeModal();
@@ -22,7 +22,10 @@ export class TradeActionsPanel {
     core.render();
     try {
       await withTimeout(core.cb.worldApi.buyAuction(auctionId));
-      core.showToast(t('auction.bought'));
+      // Name what was bought, same as the lobby/SLG shops: the market list is a wall of similar rows
+      // and `auction.bought` alone ("购买成功") never said which one the tap landed on. The label is
+      // the row's own (auctionLabelText), so the confirmation reads back what the player pointed at.
+      core.showToast(t('shop.boughtNamed', { name }));
       await Promise.all([core.loadData(), core.cb.reloadSave?.()]);
     } catch (e) {
       // Lost the race: another buyer took it (or it closed/expired) in the poll gap since our snapshot.

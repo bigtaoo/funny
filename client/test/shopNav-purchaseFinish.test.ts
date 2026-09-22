@@ -153,7 +153,9 @@ afterEach(() => { vi.useRealTimers(); });
 describe('rechargeCoins (doRechargeCoins) — native', () => {
   it('purchases, verifies the receipt, then adopts the coins the server reports', async () => {
     const { views, log, saveManager } = buildShop({ iapKind: 'apple' });
-    expect(await views.shop!.rechargeCoins!('coins_60')).toEqual({ ok: true });
+    // `coins` is the credited amount the toast prints (ShopScene.onRecharge) — the wallet delta the
+    // adopted save shows, 0 -> 500 here.
+    expect(await views.shop!.rechargeCoins!('coins_60')).toEqual({ ok: true, coins: 500 });
     expect(log).toEqual([
       'purchase:coins_60',
       'iapVerify:apple,receipt-for-coins_60',
@@ -210,7 +212,7 @@ describe('rechargeCoins (doRechargeCoins) — native', () => {
 
   it('google is never finished — Play closes its own purchases', async () => {
     const { views, log } = buildShop({ iapKind: 'google' });
-    expect(await views.shop!.rechargeCoins!('coins_60')).toEqual({ ok: true });
+    expect(await views.shop!.rechargeCoins!('coins_60')).toEqual({ ok: true, coins: 500 });
     expect(log).toEqual(['purchase:coins_60', 'iapVerify:google,receipt-for-coins_60']);
     expect(finishNativeTransaction).not.toHaveBeenCalled();
   });
@@ -223,9 +225,26 @@ describe('rechargeCoins (doRechargeCoins) — web / Paddle', () => {
     armRefresh(grantedSave()); // the webhook has landed by the first poll tick
     const pending = views.shop!.rechargeCoins!('coins_60');
     await vi.advanceTimersByTimeAsync(1000);
-    expect(await pending).toEqual({ ok: true });
+    // Same delta, measured across the webhook poll instead of an adopted save.
+    expect(await pending).toEqual({ ok: true, coins: 500 });
     expect(log).toEqual(['paddleCheckout:coins_60', 'overlay']);
     expect(finishNativeTransaction).not.toHaveBeenCalled(); // nothing to finish off-store
+  });
+
+  it('reports the wallet DELTA, not the balance and not the tier face value', async () => {
+    // A returning buyer already holds coins, and the first purchase on an account is credited at 2x
+    // by the server. Both make "print the tier's number" wrong: only what the wallet actually gained
+    // is true, which is why the count is measured here rather than read off ShopScene's tier table.
+    vi.useFakeTimers();
+    const { views, saveManager, armRefresh } = buildShop({ iapKind: 'paddle' });
+    const base = makeNewSave();
+    const withCoins = (n: number): SaveData => ({ ...base, wallet: { ...base.wallet, coins: n } });
+    saveManager.adoptServer(withCoins(1_000)); // a returning buyer, not an empty wallet
+    armRefresh(withCoins(3_400));              // what the webhook credited, seen by the first poll
+    const pending = views.shop!.rechargeCoins!('coins_60');
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(await pending).toEqual({ ok: true, coins: 2_400 }); // 3400 - 1000, not 3400
   });
 
   it('reports rechargePending — not an error — when the webhook has not landed in ~10s', async () => {
