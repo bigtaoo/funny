@@ -30,6 +30,7 @@ import { CardCodexScene } from '../../src/scenes/CardCodexScene';
 import { StatsScene } from '../../src/scenes/StatsScene';
 import { TitlesScene } from '../../src/scenes/TitlesScene';
 import { RoomScene, CODE_ALPHABET } from '../../src/scenes/RoomScene';
+import { codeEntryLayout } from '../../src/scenes/RoomScene/views';
 import { FriendsScene } from '../../src/scenes/FriendsScene';
 import { ChatScene } from '../../src/scenes/ChatScene';
 import { ResultScene } from '../../src/scenes/ResultScene';
@@ -402,7 +403,6 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
         joinRoom() {},
         setReady() {},
         startMatch() {},
-        createRanked() {},
         cancelQueue() {},
         available: true,
       }),
@@ -1437,23 +1437,27 @@ function buildRoomCodeEntry(w: number, h: number, joinRoom: (code: string) => vo
   const layout = createLayout(w, h);
   const scene = new RoomScene(layout, new InputManager(), {
     onBack() {}, createRoom() {}, joinRoom, setReady() {},
-    startMatch() {}, createRanked() {}, cancelQueue() {}, available: true,
+    startMatch() {}, cancelQueue() {}, available: true,
   });
   (scene as any).onJoinPressed(); // → 'codeEntry' view, re-renders the keypad
   return { scene, layout };
 }
 
-// Hit order inside the code-entry view is back, then one key per CODE_ALPHABET char, then
-// clear / backspace / confirm. Every tap re-renders and rebuilds the array, so re-read it.
+// Hit order inside the code-entry view is back, then one key per digit IN KEYPAD ORDER (which is
+// the dial-pad's 1-9-0 in portrait, not the charset's 0-9), then clear / backspace / confirm.
+// Every tap re-renders and rebuilds the array, so re-read it.
 const roomHits = (scene: RoomScene) => (scene as any).hits as Array<{ fn: () => void }>;
-const tapDigit = (scene: RoomScene, d: string): void => { roomHits(scene)[1 + CODE_ALPHABET.indexOf(d)]!.fn(); };
+const tapDigit = (scene: RoomScene, d: string): void => {
+  const { keys } = codeEntryLayout((scene as any).w, (scene as any).h);
+  roomHits(scene)[1 + keys.indexOf(d)]!.fn();
+};
 const tapClear = (scene: RoomScene): void => { roomHits(scene)[1 + CODE_ALPHABET.length]!.fn(); };
 const tapBackspace = (scene: RoomScene): void => { roomHits(scene)[2 + CODE_ALPHABET.length]!.fn(); };
 const tapConfirm = (scene: RoomScene): void => { roomHits(scene)[3 + CODE_ALPHABET.length]!.fn(); };
 const entered = (scene: RoomScene): string => ((scene as any).codeChars as string[]).join('');
 
 describe('RoomScene — code-entry keypad', () => {
-  it('charset is the 10 digits = 2 rows of 5', () => {
+  it('charset is the 10 digits (2 rows of 5 in landscape, a 3-wide dial-pad in portrait)', () => {
     // Must match server matchsvc CODE_ALPHABET — its test asserts the same literal.
     expect(CODE_ALPHABET).toBe('0123456789');
     expect(CODE_ALPHABET).toHaveLength(10);
@@ -1508,6 +1512,66 @@ describe('RoomScene — code-entry keypad', () => {
     tapDigit(scene, '6');
     tapConfirm(scene);
     expect(joined).toEqual(['123456']);
+    scene.destroy();
+  });
+});
+
+// ── RoomScene: picker contents + how the queue is left ──────────────────────
+// Two rules that only exist as button wiring, and would regress silently (both screens still
+// render, just with the wrong contents / the wrong exit):
+//   1. The friend-room picker offers create + join and nothing else. The ranked button that used
+//      to sit above them is gone — ranked is entered from the lobby's match tile (autoRanked).
+//   2. Cancelling the search leaves the scene entirely (back to the lobby) instead of falling
+//      through to that picker, which the player never asked for.
+function buildRoomPicker(opts: { autoRanked?: boolean } = {}) {
+  const calls = { createRoom: 0, cancelQueue: 0, onBack: 0 };
+  const scene = new RoomScene(createLayout(...PORTRAIT), new InputManager(), {
+    onBack() { calls.onBack++; },
+    createRoom() { calls.createRoom++; },
+    joinRoom() {}, setReady() {}, startMatch() {},
+    cancelQueue() { calls.cancelQueue++; },
+    available: true,
+    ...opts,
+  });
+  return { scene, calls };
+}
+
+describe('RoomScene — picker contents + how the queue is left', () => {
+  it('idle picker is exactly back / create / join — no ranked entry', () => {
+    const { scene, calls } = buildRoomPicker();
+    expect((scene as any).view).toBe('idle');
+    const hits = roomHits(scene);
+    expect(hits.length).toBe(3); // header back + the two buttons
+
+    hits[1]!.fn();
+    expect(calls.createRoom).toBe(1);
+    expect((scene as any).view).toBe('connecting');
+
+    const again = buildRoomPicker();
+    roomHits(again.scene)[2]!.fn();
+    expect((again.scene as any).view).toBe('codeEntry');
+    again.scene.destroy();
+    scene.destroy();
+  });
+
+  it('cancelling the search unqueues and returns to the lobby, not to the picker', () => {
+    const { scene, calls } = buildRoomPicker({ autoRanked: true });
+    expect((scene as any).view).toBe('searching');
+    const hits = roomHits(scene);
+    expect(hits.length).toBe(2); // header back + cancel
+
+    hits[1]!.fn(); // cancel
+    expect(calls.cancelQueue).toBe(1);
+    expect(calls.onBack).toBe(1);
+    expect((scene as any).view).not.toBe('idle');
+    scene.destroy();
+  });
+
+  it('the header back button in the searching view unqueues too (same exit as cancel)', () => {
+    const { scene, calls } = buildRoomPicker({ autoRanked: true });
+    roomHits(scene)[0]!.fn(); // header back
+    expect(calls.cancelQueue).toBe(1);
+    expect(calls.onBack).toBe(1);
     scene.destroy();
   });
 });

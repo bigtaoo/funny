@@ -40,8 +40,15 @@ describe('RoomScene code-entry layout', () => {
 
       it('the action row starts below the last keypad row', () => {
         const g = layoutFor(sw, sh);
-        const keypadBottom = g.kY + g.rows * g.kW + (g.rows - 1) * g.kGap;
+        const keypadBottom = g.kY + g.rows * g.kH + (g.rows - 1) * g.kGap;
         expect(g.aY).toBeGreaterThanOrEqual(keypadBottom);
+      });
+
+      it('the action row sits on the bottom edge, so no band of the screen is left empty', () => {
+        const g = layoutFor(sw, sh);
+        // Within the bottom margin (h * 0.04) of the screen floor — the second half of the
+        // 2026-09-21 fix: parked under the keypad it left a third of a portrait screen blank.
+        expect(g.dh - (g.aY + g.aH)).toBeLessThanOrEqual(Math.round(g.dh * 0.05));
       });
 
       it('nothing runs off the bottom or the sides', () => {
@@ -56,15 +63,37 @@ describe('RoomScene code-entry layout', () => {
         expect(g.aY + g.aH).toBeLessThanOrEqual(g.dh);
       });
 
-      it('keys are square and big enough to hit', () => {
+      it('keys are big enough to hit and never taller than they are wide', () => {
         const g = layoutFor(sw, sh);
         // 7% of the shorter screen edge — below that a finger cannot reliably pick one digit.
-        expect(g.kW).toBeGreaterThan(Math.min(g.dw, g.dh) * 0.07);
+        expect(Math.min(g.kW, g.kH)).toBeGreaterThan(Math.min(g.dw, g.dh) * 0.07);
+        expect(g.kH).toBeLessThanOrEqual(g.kW);
+        expect(g.kW).toBeLessThanOrEqual(g.kH * 1.8); // …nor stretched into a letterbox
       });
 
-      it('the grid holds every digit with no half-empty trailing row', () => {
+      it('the keypad fills the band between the boxes and the actions', () => {
         const g = layoutFor(sw, sh);
-        expect(g.rows * g.perRow).toBe(CODE_ALPHABET.length);
+        const gridH = g.rows * g.kH + (g.rows - 1) * g.kGap;
+        const gridW = g.perRow * g.kW + (g.perRow - 1) * g.kGap;
+        const band = g.aY - (g.rowY + g.boxH);
+        // Two thirds of the free band and of the action row's own width — the keypad is the
+        // point of this screen, it must not shrink into a stamp in the middle of the page.
+        expect(gridH).toBeGreaterThan(band * 0.66);
+        expect(gridW).toBeGreaterThan((3 * g.aW + 2 * g.aGap) * 0.66);
+      });
+
+      it('the grid holds every digit, with at most one short (centred) trailing row', () => {
+        const g = layoutFor(sw, sh);
+        expect(g.keys.slice().sort().join('')).toBe(CODE_ALPHABET.slice().split('').sort().join(''));
+        expect(g.rows * g.perRow).toBeGreaterThanOrEqual(CODE_ALPHABET.length);
+        expect(g.rows * g.perRow - CODE_ALPHABET.length).toBeLessThan(g.perRow);
+      });
+
+      it('landscape spreads the digits over two rows, portrait stacks them as a dial-pad', () => {
+        const g = layoutFor(sw, sh);
+        const landscape = g.dw > g.dh;
+        expect([g.perRow, g.rows]).toEqual(landscape ? [5, 2] : [3, 4]);
+        expect(g.keys.join('')).toBe(landscape ? '0123456789' : '1234567890');
       });
     });
   }

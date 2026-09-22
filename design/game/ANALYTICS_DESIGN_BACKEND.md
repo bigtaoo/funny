@@ -419,7 +419,7 @@ ops 那边扣的是 `Lost = boots − sessions − declined`（§3.6c）。
 | 经济 | `gacha_draw{pool_id,count}` | `goGacha()` draw 成功 |
 | 经济 | `upgrade{upgrade_id,level_after}` | `goLevelPrep()` tryUpgrade 成功 |
 | 社交 | `friend_add` | `goFriends()` respond(accept) 成功 |
-| 社交 | `pvp_room_create{mode}` | `goRoom()` createRoom/createRanked/queueRanked |
+| 社交 | `pvp_room_create{mode}` | `goRoom()` createRoom/queueRanked（2026-09-21：视图级 `createRanked` 回调已随 `RoomScene` idle 的排位按钮一并删除，`mode:'ranked'` 现在只从 `queueRanked()` 这一条路发出） |
 | 社交 | `pvp_match_start{mode}` | `goGameNet()` |
 | 流失 | `tutorial_skip{step}` | `IntroScene` 跳过按钮（`onFinish(skipped)` 回传）——`step:'intro'` 一支已被 §12.5 的专属 `intro_skip` 取代 |
 | 流失 | `login_gate_hit{scene}` | `goFriends`/`goWorldEntry` 离线门控 |

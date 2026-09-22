@@ -88,7 +88,6 @@ function buildRoom(cb: Partial<RoomSceneCallbacks> = {}): RoomScene {
     joinRoom() {},
     setReady() {},
     startMatch() {},
-    createRanked() {},
     cancelQueue() {},
     available: true,
     ...cb,

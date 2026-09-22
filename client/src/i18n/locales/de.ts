@@ -279,8 +279,6 @@ export const de: Record<TranslationKey, string> = {
   'room.creating': 'Erstelle Raum',
   'room.joining': 'Trete bei',
   'room.rankedTitle': 'Ranglistenkampf',
-  'room.ranked': 'RANGLISTE',
-  'room.rankedDesc': 'Gegner nach Können; zählt für den Rang',
   'room.searching': 'Suche',
   'room.searchingHint': 'Suche einen ebenbürtigen Gegner…',
   'room.cancelSearch': 'Abbrechen',
