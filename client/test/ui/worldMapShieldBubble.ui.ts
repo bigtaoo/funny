@@ -177,6 +177,12 @@ describe('WorldMap shield glow layer + break-flash pop (2026-08-08 follow-up, bo
     const { root } = glowParts(ctx, '505:505');
     // x untouched, y squashed by exactly the dome's own ry/rx — rotating a child and only then
     // applying this is what turns a circle into a turning ellipse rather than a wobbling one.
+    //
+    // Known blind spot, kept deliberately: this assertion is ALSO true of an implementation that
+    // draws the ring pre-squashed and then rotates it, i.e. of the wobble this nesting exists to
+    // prevent. It pins one half of the arrangement; the half that decides what the player sees is
+    // pinned by "every dash sits on the dome ellipse" below, which is the one that goes red for
+    // that mutation.
     expect(root.scale.x).toBe(1);
     expect(root.scale.y).toBeCloseTo(ellipses[0].ry / ellipses[0].rx, 6);
   });
@@ -316,5 +322,187 @@ describe('WorldMap shield bubble animates by transform, not by redraw (2026-09-2
     // clock would have drifted to (0.6 rad/s x 30 s = 2.9 revolutions).
     ctx.view.update(STEP + 0.001);
     expect(ring.rotation - held).toBeCloseTo(0.6 * (STEP + 0.001), 6);
+  });
+});
+
+
+// ── Where the ink actually lands ──────────────────────────────────────────────
+//
+// The block above measures the animation in its own units (rotation deltas, step counts). That is
+// worth having, but it is the same shape of test as the one the 2026-09-15 portrait-framing pass
+// had to replace: restating a formula in the formula's own terms. `scale.y === ry/rx` is true of
+// the WRONG implementation too — rotating a pre-squashed ellipse also has `scale.y === ry/rx`; it
+// just wobbles instead of turning. What decides whether the player sees a shield or a strobe is
+// where each drawn point ENDS UP, and how far it moves between two steps.
+//
+// So these drive the real scene, capture what `drawShieldGlow` actually drew, and push those exact
+// points through the real transform chain (`cityC.toLocal(pt, ring)` — PIXI's own matrices, not a
+// re-derivation of ry/rx here).
+describe('WorldMap shield bubble — measured where it lands on screen (2026-09-22)', () => {
+  const STEP = 1 / 30 + 1e-4; // one SHIELD_ANIM_FPS step, plus a hair so the accumulator crosses
+
+  interface Captured {
+    ctx: WorldMapContext;
+    cityC: PIXI.Container;
+    dome: PIXI.Graphics;
+    root: PIXI.Container;
+    ring: PIXI.Graphics;
+    sparks: PIXI.Container;
+    /** The dome ellipse as refreshCityLayer drew it: local centre + radii. */
+    ellipse: { x: number; y: number; rx: number; ry: number };
+    /** Every point `drawShieldGlow` fed into the ring, in the ring's own local space. */
+    dashPts: PIXI.Point[];
+    /** Stroke alpha the dome was drawn with (the breath multiplies this via `dome.alpha`). */
+    domeStrokeAlpha: number;
+  }
+
+  /** Render one protected base and record what each shield layer was actually drawn with. Unlike
+   *  `renderAndSpyShield` these spies CALL THROUGH, so the geometry really gets built and the
+   *  display objects are in the state production leaves them in. */
+  function captureShield(cx: number, cy: number): Captured {
+    const ctx = buildScene();
+    placeBase(ctx, cx, cy, { mine: true, protectedUntil: Date.now() + 3_600_000 });
+    ctx.view.centerAt(cx, cy);
+    ctx.view.invalidatePool();
+
+    const cityC = ctx.citySprites.get(`${cx}:${cy}`)!;
+    const dome = cityC.getChildByName('shieldFx') as PIXI.Graphics;
+    const root = cityC.getChildByName('shieldGlowFx') as PIXI.Container;
+    const ring = root.getChildByName('ring') as PIXI.Graphics;
+    const sparks = root.getChildByName('sparks') as PIXI.Container;
+
+    const ellipseSpy = vi.spyOn(dome, 'drawEllipse');
+    const lineStyleSpy = vi.spyOn(dome, 'lineStyle');
+    const moveSpy = vi.spyOn(ring, 'moveTo');
+    const lineSpy = vi.spyOn(ring, 'lineTo');
+    ctx.view.invalidatePool(); // redraw with the spies attached
+
+    const e = ellipseSpy.mock.calls[0];
+    expect(e, 'the dome should have been drawn').toBeTruthy();
+    const dashPts = [...moveSpy.mock.calls, ...lineSpy.mock.calls]
+      .map(([x, y]) => new PIXI.Point(x as number, y as number));
+    expect(dashPts.length, 'the ring should have drawn its dashes').toBe(32); // 16 dashes x 2 ends
+
+    return {
+      ctx, cityC, dome, root, ring, sparks, dashPts,
+      ellipse: { x: e[0] as number, y: e[1] as number, rx: e[2] as number, ry: e[3] as number },
+      domeStrokeAlpha: lineStyleSpy.mock.calls[0][2] as number,
+    };
+  }
+
+  /** A ring-local point, in the city container's space — through PIXI's real transform chain. */
+  const onScreen = (c: Captured, p: PIXI.Point, from: PIXI.DisplayObject): PIXI.Point =>
+    c.cityC.toLocal(p, from);
+
+  it('every dash sits on the dome ellipse, at every phase of the spin', () => {
+    const c = captureShield(700, 700);
+    const { x: ex, y: ey, rx, ry } = c.ellipse;
+    // The ring is drawn just outside the glass (RING_R) — one scalar, read off the geometry at
+    // phase 0 rather than hard-coded here, so this test is about the SHAPE, not about that constant.
+    const p0 = onScreen(c, c.dashPts[0], c.ring);
+    const ringR = Math.abs(p0.x - ex) / rx;
+    expect(ringR).toBeGreaterThan(1); // outside the dome, not on top of it
+
+    for (let i = 0; i < 24; i++) {
+      c.ctx.view.update(STEP);
+      for (const p of c.dashPts) {
+        const q = onScreen(c, p, c.ring);
+        const u = (q.x - ex) / (rx * ringR);
+        const v = (q.y - ey) / (ry * ringR);
+        // Rotating a pre-squashed ellipse (the bug this nesting exists to avoid) throws points off
+        // this curve by tens of percent everywhere except the two axes.
+        expect(Math.hypot(u, v)).toBeCloseTo(1, 6);
+      }
+    }
+  });
+
+  it('one animation step moves the ink a few px, not a dozen — the strobe threshold', () => {
+    const c = captureShield(710, 710);
+    const travelOf = (pts: PIXI.Point[], from: PIXI.DisplayObject): number => {
+      const before = pts.map((p) => onScreen(c, p, from));
+      c.ctx.view.update(STEP);
+      const after = pts.map((p) => onScreen(c, p, from));
+      return Math.max(...before.map((b, i) => Math.hypot(after[i].x - b.x, after[i].y - b.y)));
+    };
+    const ringTravel = travelOf(c.dashPts, c.ring);
+    const sparkTravel = travelOf(
+      c.sparks.children.map(() => new PIXI.Point(0, 0)),
+      c.sparks.children[0] as PIXI.Graphics,
+    );
+
+    // The user-visible criterion, in the unit the user sees. Measured on this 1280x800 design frame
+    // (rx 155.9, ry 230.1): ring 4.85 px and sparkle 5.98 px per step now, against 14.50 px and
+    // 17.83 px at the old SHIELD_ANIM_FPS = 10, where the bubble read as a strobe rather than a
+    // spin ("这个护盾的动画，看起来不连贯啊"). 8 px sits between the two, so the upper bound goes red
+    // if the rate drops back or the spin speeds up; the lower bound goes red if the animation
+    // freezes, which no upper bound can catch.
+    expect(ringTravel).toBeLessThan(8);
+    expect(ringTravel).toBeGreaterThan(0.5);
+    expect(sparkTravel).toBeLessThan(8);
+    expect(sparkTravel).toBeGreaterThan(0.5);
+  });
+
+  it('the four sparkles twinkle out of phase with each other', () => {
+    const c = captureShield(720, 720);
+    c.ctx.view.update(STEP);
+    const alphas = c.sparks.children.map((s) => +s.alpha.toFixed(4));
+    const scales = c.sparks.children.map((s) => +s.scale.x.toFixed(4));
+    // Hoisting the twinkle out of the per-sparkle loop would make these four move as one bar.
+    expect(new Set(alphas).size).toBeGreaterThanOrEqual(3);
+    expect(new Set(scales).size).toBeGreaterThanOrEqual(3);
+  });
+
+  it('the dome still breathes between the same two brightnesses it did before the rewrite', () => {
+    const c = captureShield(730, 730);
+    // Pre-2026-09-22 the dome was redrawn each step with a stroke alpha of 0.55 + 0.2*breathe.
+    // Now it is stroked once at 0.75 and `dome.alpha` does the breathing, so what a player sees is
+    // the PRODUCT — assert on that, not on either half.
+    const seen: number[] = [];
+    for (let i = 0; i < 160; i++) { // > one full breath (2*PI/1.3 = 4.83 s at 30 steps/s)
+      c.ctx.view.update(STEP);
+      seen.push(c.dome.alpha * c.domeStrokeAlpha);
+    }
+    expect(Math.max(...seen)).toBeCloseTo(0.75, 2);
+    expect(Math.min(...seen)).toBeCloseTo(0.55, 2);
+  });
+
+  it('protection lapsing blanks the whole glow subtree, sparkles included', () => {
+    const c = captureShield(740, 740);
+    const geomCount = (g: PIXI.Graphics): number => g.geometry.graphicsData.length;
+    expect(geomCount(c.ring)).toBeGreaterThan(0);
+    expect(c.sparks.children.every((s) => geomCount(s as PIXI.Graphics) > 0)).toBe(true);
+
+    // City containers are pooled across refreshes, so a lapsed shield has to be actively cleared —
+    // missing the sparkles here would leave four glowing dots floating over an unprotected base.
+    const tile = c.ctx.tileCache.get('740:740')!;
+    c.ctx.tileCache.set('740:740', { ...tile, protectedUntil: Date.now() - 1000 });
+    c.ctx.view.invalidatePool();
+
+    expect(geomCount(c.ring)).toBe(0);
+    expect(c.sparks.children.map((s) => geomCount(s as PIXI.Graphics))).toEqual([0, 0, 0, 0]);
+  });
+
+  it('a zoom change rebuilds the geometry at the new size without losing the phase', () => {
+    const c = captureShield(750, 750);
+    for (let i = 0; i < 5; i++) c.ctx.view.update(STEP);
+    const spun = c.ring.rotation;
+    expect(spun).toBeGreaterThan(0);
+    const rxAtL1 = c.ctx.shieldGeom.get('750:750')!.rx;
+
+    c.ctx.view.setZoom(2);
+    c.ctx.view.invalidatePool();
+    const at2 = c.ctx.citySprites.get('750:750')!.getChildByName('shieldGlowFx') as PIXI.Container;
+    const rxAtL2 = c.ctx.shieldGeom.get('750:750')!.rx;
+    expect(rxAtL2).toBeLessThan(rxAtL1);                       // really rebuilt, not just reused
+    expect(at2.scale.y).toBeCloseTo(c.root.scale.y, 6);        // squash is a ratio, zoom-independent
+    // Rebuilding must re-apply the current phase, or a bubble coming back from a pan/zoom pops to
+    // peak brightness and zero rotation while its neighbours keep spinning.
+    expect((at2.getChildByName('ring') as PIXI.Graphics).rotation).toBe(spun);
+
+    c.ctx.view.setZoom(1);
+    c.ctx.view.invalidatePool();
+    const back = c.ctx.citySprites.get('750:750')!.getChildByName('shieldGlowFx') as PIXI.Container;
+    expect((back.getChildByName('ring') as PIXI.Graphics).rotation).toBe(spun);
+    expect(c.ctx.shieldGeom.get('750:750')!.rx).toBeCloseTo(rxAtL1, 6);
   });
 });
