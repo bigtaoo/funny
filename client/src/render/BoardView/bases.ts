@@ -32,9 +32,11 @@ const BASE_HIT_PULSE_GROW  = 0.18;  // outline expands by this fraction as it fa
 
 // Base critical (last HP): a faction-colored ring throbs around the base — this is
 // where a haste-rush ends the game, so it draws the eye to the board, not the HUD.
-const CRIT_RING_SPEED   = 7.5; // rad/s → fast, urgent throb
-const CRIT_RING_PAD_MIN = 6;   // px outset from the base rect at the throb's narrowest
-const CRIT_RING_PAD_MAX = 15;  // px outset at its widest — also what ringGfx is stroked at (see buildBaseRef)
+// Exported (not just used locally) so applyCriticalRing's scale formula can be pinned against the
+// same numbers the implementation uses, instead of a test duplicating them as separate magic values.
+export const CRIT_RING_SPEED   = 7.5; // rad/s → fast, urgent throb
+export const CRIT_RING_PAD_MIN = 6;   // px outset from the base rect at the throb's narrowest
+export const CRIT_RING_PAD_MAX = 15;  // px outset at its widest — also what ringGfx is stroked at (see buildBaseRef)
 
 // Castle art fill ratio within its 2×2 base rect — see buildBaseRef() for why this isn't 1.0.
 const BASE_ART_INSET = 0.86;
