@@ -69,6 +69,16 @@ This stack is in this directory, **decoupled and independently started/stopped**
 | `grafana/dashboards/server-logs.json` | Starter dashboard "Server Logs" (svc/level/keyword filter + error count + rate) |
 | `.env.example` | Grafana password / CF tunnel token (copy to `.env`) |
 
+**The cloudflared pin needs a human (2026-09-22).** It runs with `--no-autoupdate`, which is the point
+— the deployed version is whatever `docker-compose.obs.yml` says — but it also means the pin rots
+silently. It sat on `2025.2.1` for ~19 months, emitting one "your version is outdated" WRN a day, and
+dropped all four tunnel connections twice in the fortnight to 2026-09-22 (`timeout: no recent network
+activity`, 09-14 09:09 and 09-20 04:55). Bumped to `2026.9.1`. Note what this tunnel is and is not:
+only `grafana.gamestao.com` rides it. `api.gamestao.com` is a plain A record straight into Caddy (see
+`design/product/deploy-cloudflare.md` §DNS — it is grey-cloud, not proxied), so a tunnel drop costs
+dashboard access and nothing a player can see. Do not reach for cloudflared when diagnosing a player-
+facing disconnect.
+
 ### Collection: capturing docker stdout (no file volumes)
 
 **Does not use the Phase 1 JSON file approach**. Instead, Alloy captures **all container stdout** directly via docker socket
