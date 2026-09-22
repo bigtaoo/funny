@@ -36,6 +36,8 @@ CI（`.github/workflows/ci.yml`）的 `client unit tests` 步已切到 `npm run 
 
 **2026-09-22：`test/difficulty/**` 现在是门禁，不再只是报告。** 在此之前它**只打印**矩阵，唯一的断言是「至少有一关能过」——车道溢出侧移把 61 关里 19 关的通关门槛推掉一档，仓库里每个测试都是绿的，是人肉 diff 两份报告才发现的。现在整张矩阵精确钉在 `test/difficulty/baseline.json`（确定性模拟，逐字复现）。**它红了说明战役难度真的动了**：先判断是本意还是副作用，确认有意后用 `NW_UPDATE_DIFFICULTY_BASELINE=1 npx vitest run --config vitest.sim.config.ts` 重生成，并和引起改动的提交放在一起——规矩同 `goldenReplay` fixture。配套还有 `test/campaignLevelInvariants.test.ts`（60 关共享同一份 lanePunish、`enemyScale` 不越界且 `damage ≤ hp`、波次只落在合法车道），它抓的是批量脚本改关卡时**只错一部分**的那类事故——它上线当天就抓到 8 关 `damage > hp`。
 
+**同日给 `test/pvpSim.test.ts` 补了同一套门禁**（`test/pvpBaseline.json` + `pvpBaseline.ts`，环境变量 `NW_UPDATE_PVP_BASELINE=1`）。它之前打印五张表、只钉三个点（cp/ink 标尺、max ≤65% 护栏、runner 2>3 的不等式），**五个用例里有两个是 `expect(true).toBe(true)`**——任何数值改动只要不越过那三条线就静默通过。现在五张表全部逐条钉住：`combatPower`（直接从蓝图算，所以 hp/attack/armor/cost/spawnCount 的任何编辑都先撞这里）、`roundRobin`（钉 `wins` 不钉 `winRate`，22 局固定、整数不会被浮点末位晃动）、harpy/medic 两份报告、cost sweep。**原有那三条手写断言全部保留**：pin 说的是「没动」，手写断言说的是「即使动了也不许越过这条线」——后者是 `BALANCE.md §5.1/§5.2` 的决策，比任何一组具体数字活得久。变异验证：medic hp +40 → `combatPower`/`roundRobin`/`medicReport` 三处同时报出具体字段；splitter hp +25 → 连 `costSweeps` 那条也报出 `cost 5: 40.9% -> 45.5%`。
+
 ### 分支覆盖率补齐：91.05% → 97.53%（2026-09-03）
 
 行覆盖率有 CI 门禁盯着，**分支覆盖率此前没有**——一个包可以行 96% 过关、分支 91% 而不会有任何东西报出来。2026-09-03 给 `checkCoverageThreshold.mjs` 加了第二条线（分支同样卡 90%，见 [`server-testing-tooling.md`](server-testing-tooling.md)），随后把全仓 19 个包逐个补齐；client 这一轮的记录在 [`server-testing-coverage.md`](server-testing-coverage.md) 的「client 补测」一节（连同 engine 那一半——client 的 `vitest.config.ts` 把 `@nw/engine` alias 到 engine 源码，「逻辑」这一层两边测的是同一批断言的两侧）。
