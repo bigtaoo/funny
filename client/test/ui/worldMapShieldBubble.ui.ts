@@ -386,7 +386,10 @@ describe('WorldMap shield bubble — measured where it lands on screen (2026-09-
     return {
       ctx, cityC, dome, root, ring, sparks, dashPts,
       ellipse: { x: e[0] as number, y: e[1] as number, rx: e[2] as number, ry: e[3] as number },
-      domeStrokeAlpha: lineStyleSpy.mock.calls[0][2] as number,
+      // PIXI types `lineStyle`'s FIRST overload as `(options?: ILineStyleOptions)`, so tsc reads
+      // a spy call as a 1-tuple. shieldFx.ts uses the `(width, color, alpha)` overload, where the
+      // dome's stroke alpha — the thing this test is after — is argument 2.
+      domeStrokeAlpha: (lineStyleSpy.mock.calls[0] as unknown as [number, number, number])[2],
     };
   }
 
