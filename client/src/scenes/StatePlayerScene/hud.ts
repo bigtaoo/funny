@@ -92,7 +92,6 @@ export class StatePlayerHud {
     for (const base of frame.bases) {
       const strip = this.sides[base.owner];
       if (!strip) continue;
-      const color = base.owner === 0 ? factionInk.friend : factionInk.enemy;
       strip.hp.sync(base.hp, Math.max(1, base.maxHp), pulse, pulseFast);
     }
 
