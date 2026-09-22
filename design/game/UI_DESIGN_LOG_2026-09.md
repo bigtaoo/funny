@@ -1550,3 +1550,24 @@ Paddle 分支用 webhook 轮询后的存档，各自算差值填进 `ShopActionR
 （`购买成功：旧纸片 ×999`）。核完 `git checkout -- client/src/app.ts` 撤掉。
 `tsc --noEmit`、`npx vitest run`（311 文件 / 3865 例）、`test:ui`（275 文件 / 2826 例）、
 `npm run lint`、`npm run build:web` 全绿。
+
+### 63.3 补门禁：§62 的**画面**那半（2026-09-22，用户追问「有测试可以加吗」）
+
+§62 改的是世界地图自己那块 toast 的外观，当时只有 `worldMapShopBuyFlow.ui.ts` 断言了**调用点**
+（`showToast(..., C.green, true)` 的第三个参数），没有任何测试证明这个 flag 真的改了画出来的东西——
+把 `fill: filled ? color : C.dark` 写回 `C.dark`，那条测试照样绿。新建
+`test/ui/worldMapToastStyle.ui.ts`（5 例，全部 mutation check 过）：
+
+- 购买 toast 整块填成传进来的颜色、alpha > 0.9（不是深色 notice 框）；
+- **反向**：默认 toast 一个像素没动——深色填充 + 该颜色只作描边（把实现改成永远 filled，这条转红）；
+- 一行的通知仍是原来的 84px；
+- 会折行的长文案把框**撑高**而不是被裁（断言里先确认标签真的折了，否则这例什么也没证明）；
+- 标签 `align: 'center'`。
+
+读颜色的办法：`sketchPanel` 的图集描边路径要 renderer，headless 下走它自己写明的回退分支、
+返回裸 `PIXI.Graphics`，于是 `geometry.graphicsData[0].fillStyle` 就是填充
+（同 `dailySceneCheckinFocus.ui.ts` 读格子颜色的路子）。
+
+**测不了的那条，明说**：真实字体的行高。headless 的 `measureText` 是每字符 7px、每行约 10px 的平表，
+所以「84px 到底够不够两行」只能靠实拍（§62 的 en/de/zh 三张）；这里的折行用例是用**行数**堆过 84 的，
+它锁的是「高度跟着文字走」这条规则，不是真实像素。
