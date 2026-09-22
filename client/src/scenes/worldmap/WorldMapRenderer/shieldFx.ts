@@ -20,9 +20,10 @@
 // The first cut rebuilt both Graphics from scratch on every animation step, which capped the step
 // rate at 10 fps to keep that rebuild affordable (client-render-budget.md §2). At 10 fps it read as
 // broken rather than hand-drawn, and the reason is that this is the biggest moving thing on the
-// map: the ring turns 0.6 rad/s at a radius of ~180 px, so a 100 ms step walks each dash ~11 px and
-// each sparkle ~14 px. Travel that far per step strobes; art-direction §5.4's "帧率保留手绘的跳跃感"
-// is about ink that CHANGES SHAPE in place (render/boil.ts), not about something crossing the screen.
+// map: the ring turns 0.6 rad/s at rx = 277 px (measured, landscape L1, tp = 206), so a 100 ms step
+// walked each dash 16.6 px and each sparkle 21.6 px. Travel that far per step strobes;
+// art-direction §5.4's "帧率保留手绘的跳跃感" is about ink that CHANGES SHAPE
+// in place (render/boil.ts), not about something crossing the screen.
 //
 // So the geometry is now built once per layout refresh (`drawShieldDome` / `drawShieldGlow`, called
 // from refreshCityLayer, which is also the only thing that knows rx/ry) and every animation step is
