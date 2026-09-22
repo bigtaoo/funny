@@ -1495,10 +1495,15 @@ Daily 另外三个 tab、拍卖行的 `mine`/`bids` 两个 tab 全没审过。
 `≥buyoutPrice`（`addNumInput`/+1/+5/+10 都不封顶），这时服务端一样会立即结算——按钮身份不可靠，
 服务端返回的 `status` 才是权威信号，两个按钮共用同一条 `confirmBid → doBid` 路径,分支落在响应上。
 
-**门禁**：`auctionScene.ui.ts` 的「buy race」一组 +2 例——一口价把响应喂成
+**门禁**：`auctionScene.ui.ts` 的「buy race」一组 +3 例——一口价把响应喂成
 `{status:'sold', buyerId:'acc_me', ...}` 只能拿到 `shop.boughtNamed` 而不是 `bidPlaced`；反过来
-`status` 仍 `open` 的普通出价只能拿到 `bidPlaced` 而不是 `boughtNamed`。两例都做过 mutation
-check：把实现改回「永远 `bidPlaced`」和改成「永远 `boughtNamed`」分别只转红其中一例、另一例仍绿，
-确认两条断言各自守住自己的分支而不是互相包庇。
+`status` 仍 `open` 的普通出价只能拿到 `bidPlaced` 而不是 `boughtNamed`。这两例都是直接调 `doBid`，
+跳过了「一口价按钮」本身——补第三例：`scene.bid.openBidForm(auc)` 渲染出真实的弹窗，`tapLabel`
+点一口价按钮、断言 `core.bidAmount` 真的被写成 `buyoutPrice`、确认弹出的确认框文案里带的也是
+`buyoutPrice`（不是残留的手输出价值），再点确认框的 OK，验证 `placeBid` 真的拿到 `buyoutPrice` 调用、
+toast 也确实是购买而不是出价——`openBidForm` 在这之前一条 UI 测试都没有，前两例测的是响应→toast
+这一段，这例补的是按钮→确认框→`doBid` 这一段，两段拼起来才是玩家真正点的那条路。三例都做过
+mutation check：把实现改回「永远 `bidPlaced`」和改成「永远 `boughtNamed`」分别只转红对应例、其余
+仍绿，确认每条断言各自守住自己的分支而不是互相包庇。
 
-`tsc --noEmit`、`npm run build:web`、`test:ui`（`auctionScene.ui.ts` 90 例 + 全量 275 文件 / 2813 例）全绿。
+`tsc --noEmit`、`npm run build:web`、`test:ui`（`auctionScene.ui.ts` 91 例 + 全量 275 文件 / 2814 例）全绿。

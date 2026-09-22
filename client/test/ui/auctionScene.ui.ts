@@ -1519,6 +1519,39 @@ describe('AuctionScene — buy race', () => {
     scene.destroy();
   });
 
+  // End-to-end version of the two gates above: drives the actual rendered buyout button through the
+  // confirm dialog, not just doBid() directly — this is the path the two unit-style tests above never
+  // touch (does the button really carry buyoutPrice into confirmBid, does the confirm dialog really
+  // fire doBid?). Before this, openBidForm had zero UI coverage at all.
+  it('buy-now: tapping the rendered buyout button carries buyoutPrice through confirm → doBid → purchase toast', async () => {
+    const auc = makeAuction({
+      auctionId: 'auc_1', price: 100, buyoutPrice: 500,
+      itemType: 'equipment', item: { instance: { defId: 'foilCover', level: 0 } },
+    });
+    const worldApi = stubWorldApi({
+      listAuctions: vi.fn(async () => [auc]),
+      placeBid: vi.fn(async () => makeAuction({ ...auc, status: 'sold', buyerId: 'acc_me', topBid: { bidderId: 'acc_me', amount: 500, ts: Date.now() } })),
+    });
+    const scene = buildScene({ worldApi });
+    await flush();
+    toastMsgs.length = 0;
+
+    scene.bid.openBidForm(auc);
+    // Wrong amount here (a stale typed-in bid, or the input's own value) would mean the buyout button
+    // doesn't actually carry buyoutPrice — this is the bug's own shape, just one call frame earlier.
+    tapLabel(scene, scene.container, t('auction.buyoutNow').replace('{price}', '500'), 'modalHits');
+    expect(scene.core.bidAmount).toBe(500);
+    expect(findLabelPos(scene.container, t('auction.confirmBid').replace('{price}', '500'))).not.toBeNull();
+
+    tapLabel(scene, scene.container, t('common.ok'), 'modalHits');
+    await flush();
+
+    expect(worldApi.placeBid).toHaveBeenCalledWith('auc_1', 500);
+    expect(toastMsgs).toContain(t('shop.boughtNamed', { name: auctionLabelText(auc) }));
+    expect(toastMsgs).not.toContain(t('auction.bidPlaced'));
+    scene.destroy();
+  });
+
   it('a bid on an auction that ended in the gap surfaces the error and refreshes the list', async () => {
     const worldApi = stubWorldApi({
       placeBid: vi.fn(async () => { throw new WorldApiError('AUCTION_CLOSED', 'closed'); }),
