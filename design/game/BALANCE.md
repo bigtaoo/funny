@@ -90,6 +90,8 @@
 > - **infantry：保持不动，判定为竞技场伪迹。** infantry_1 是 cp/ink=1.0 的**标尺单位**（其余单位皆相对它归一），其等墨高胜率是「无 AOE 竞技场过奖廉价高身数」的 swarm 伪迹——与被接受的 splitter 100% 同类（真正克制都是陨石 AOE，模拟器不建模）。且费 4 是 lv1「经济命门」的地基（`DIFFICULTY_SIM`），费 4→5（→59%）的收益不抵其对战役经济的涟漪。故**不改数值**，仅以本注记录判定；`pvpSim.test.ts` 加护栏锁死 max_1 ≤ 65% 防回退。
 > **ghost-fix 后重调（2026-07-17，commit `e31c86a4f`）：Max 攻 14→11，费保持 6。** 上一条的 54.5% 是在一个**有 bug 的竞技场**里测出来的：堆叠单位的索敌缺陷（Board 多占位格修复前）让 swarm 产生「ghost」伪迹，一直在压着 Max 的真实对局胜率。缺陷修掉后 max_1 等墨从 54% 弹到 **73%**，越过 `pvpSim.test.ts` 的 ≤65% 护栏。攻 14→11（现在**低于**普通兵 12——Max 的身份改为完全靠 190 HP + armor 2 + `burstOnSingle` 撑，不靠裸 DPS）把它压回约 54%。**这一条 2026-07-17 就已落在 `blueprintDefs.ts` 与 `pvpSim.test.ts`，但本文的 §5.1 表与 §7 卡表直到 2026-09-03 才补上——文档漂移 7 周，是本文头部那条「改 config.ts 后同步本文」的第一次失效记录。**
 
+> **平衡回归门禁（2026-09-22）**：`pvpSim.test.ts` 此前打印五张表、只钉三个点，**其中两个用例是 `expect(true).toBe(true)`**，于是 §5.1/§5.2 这些结论在数值被改动时没有任何守卫。现在整个竞技场的输出精确钉在 `client/test/pvpBaseline.json`（竞技场是确定性的，两次连跑逐字节一致）。**改任何单位的 hp/attack/armor/cost/spawnCount 都会让它红**，并直接报出是哪张卡的哪个字段、胜场从几变到几。确认是有意的平衡调整后：`cd client && NW_UPDATE_PVP_BASELINE=1 npx vitest run --config vitest.sim.config.ts pvpSim`，把重生成的 pin 和改动放在同一次提交——这同时也是本文 §5.1 末尾那条「文档漂移 7 周」的机械防线：pin 红了就必须回来看一眼本文。
+
 ## 6. 建筑
 
 | 建筑 | HP | 攻 | 攻击间隔 | 射程 | 产兵 | 基础护甲 |

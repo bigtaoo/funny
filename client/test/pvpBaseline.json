@@ -1,0 +1,172 @@
+{
+  "combatPower": {
+    "infantry_1": {
+      "cost": 4,
+      "spawnCount": 2,
+      "hp": 60,
+      "armor": 0,
+      "dps": 15,
+      "cpPerInk": 1
+    },
+    "shieldbearer_1": {
+      "cost": 6,
+      "spawnCount": 1,
+      "hp": 240,
+      "armor": 0,
+      "dps": 6.67,
+      "cpPerInk": 0.44
+    },
+    "archer_1": {
+      "cost": 5,
+      "spawnCount": 1,
+      "hp": 35,
+      "armor": 0,
+      "dps": 15.71,
+      "cpPerInk": 0.31
+    },
+    "max_1": {
+      "cost": 6,
+      "spawnCount": 1,
+      "hp": 190,
+      "armor": 2,
+      "dps": 8.46,
+      "cpPerInk": 0.49
+    },
+    "lena_1": {
+      "cost": 7,
+      "spawnCount": 1,
+      "hp": 150,
+      "armor": 8,
+      "dps": 10,
+      "cpPerInk": 0.64
+    },
+    "mara_1": {
+      "cost": 5,
+      "spawnCount": 1,
+      "hp": 40,
+      "armor": 0,
+      "dps": 9.23,
+      "cpPerInk": 0.26
+    },
+    "runner": {
+      "cost": 3,
+      "spawnCount": 1,
+      "hp": 30,
+      "armor": 0,
+      "dps": 12.86,
+      "cpPerInk": 0.44
+    },
+    "ironclad": {
+      "cost": 8,
+      "spawnCount": 1,
+      "hp": 290,
+      "armor": 3,
+      "dps": 6.67,
+      "cpPerInk": 0.42
+    },
+    "berserker": {
+      "cost": 6,
+      "spawnCount": 1,
+      "hp": 110,
+      "armor": 0,
+      "dps": 16.36,
+      "cpPerInk": 0.47
+    },
+    "splitter": {
+      "cost": 5,
+      "spawnCount": 1,
+      "hp": 65,
+      "armor": 0,
+      "dps": 7,
+      "cpPerInk": 0.28
+    },
+    "harpy": {
+      "cost": 7,
+      "spawnCount": 1,
+      "hp": 26,
+      "armor": 0,
+      "dps": 8.89,
+      "cpPerInk": 0.14
+    },
+    "medic": {
+      "cost": 6,
+      "spawnCount": 1,
+      "hp": 90,
+      "armor": 0,
+      "dps": 3.33,
+      "cpPerInk": 0.19
+    }
+  },
+  "roundRobin": {
+    "infantry_1": {
+      "games": 22,
+      "wins": 17
+    },
+    "shieldbearer_1": {
+      "games": 22,
+      "wins": 10
+    },
+    "archer_1": {
+      "games": 22,
+      "wins": 10
+    },
+    "max_1": {
+      "games": 22,
+      "wins": 10
+    },
+    "lena_1": {
+      "games": 22,
+      "wins": 20
+    },
+    "mara_1": {
+      "games": 22,
+      "wins": 4
+    },
+    "runner": {
+      "games": 22,
+      "wins": 8
+    },
+    "ironclad": {
+      "games": 22,
+      "wins": 14
+    },
+    "berserker": {
+      "games": 22,
+      "wins": 16
+    },
+    "splitter": {
+      "games": 22,
+      "wins": 9
+    },
+    "harpy": {
+      "games": 22,
+      "wins": 0
+    },
+    "medic": {
+      "games": 22,
+      "wins": 10
+    }
+  },
+  "harpyReport": {
+    "line0": "scenario                         winner   ticks  harpyLeft  defLeft",
+    "line1": "harpy vs infantry (no AA)      top        342         1       13",
+    "line2": "harpy vs shieldbearer (no AA)  top        306         0        8",
+    "line3": "harpy vs archer (AA)           top        130         0        7",
+    "line4": "harpy vs mara (AA)             top        278         0        2",
+    "line5": "harpy vs infantry + 2 towers   top        342         4       13",
+    "line6": "harpy vs infantry + 1 tower    top        342         6       13"
+  },
+  "medicReport": {
+    "line0": "composition                       winner   ticks  botHpLeft  defLeft",
+    "line1": "pure infantry (24 bodies)         bottom     796       492        0",
+    "line2": "infantry(20) + 1 medic            bottom     941       450        0"
+  },
+  "costSweeps": {
+    "splitter0": "splitter cost sweep (win rate across the full field):",
+    "splitter1": "  cost 4: 72.7%",
+    "splitter2": "  cost 5: 40.9%",
+    "runner0": "runner cost sweep (win rate across the full field):",
+    "runner1": "  cost 2: 45.5%",
+    "runner2": "  cost 3: 36.4%"
+  }
+}
