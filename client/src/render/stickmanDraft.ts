@@ -110,8 +110,11 @@ export const STICKMAN_DRAFT_ASPECT = FIG_W / FIG_H;
  * centered on the path, so a limb can extend half its width past {@link BOUNDS}) plus `SketchPen`'s
  * hand-drawn jitter. Derived here so the bake size and the draw offset always agree; a caller must
  * NOT hardcode this — see {@link draftBakeSize}.
+ *
+ * Exported so a test can pin {@link draftBakeSize}'s formula against the same number the
+ * implementation uses, instead of duplicating it as a separate magic value.
  */
-const DRAFT_PAD = 8;
+export const DRAFT_PAD = 8;
 
 /**
  * Bake-texture size for a draft figure at `targetH` — the pixel bounds {@link drawStickmanDraft}

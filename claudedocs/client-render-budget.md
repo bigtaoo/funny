@@ -452,6 +452,8 @@ ADR-086 收尾后回头找「客户端还有什么能在本机量的」，量到
 
 两条都做过变异验证：把 `HpBarView` 的 sprite 分支和 `fillGfx` 的签名节流一起去掉，强制走「每帧全量重描」的修复前路径，两条断言应声转红（重建从 89 跳到 4,687/帧）。
 
+三份小颗粒度的单元测试补在同一轮（2026-09-22 晚些）：`test/render/barSprite.test.ts`（`setBarRatio()` 的 [0,1] 钳位、以及它**故意不碰** `visible` 这条契约）、`test/ui/baseCriticalRing.ui.ts`（`applyCriticalRing` 的缩放公式在 `pad` 两端的精确值、`setBaseCritical(false)` 不再 `clear()` 几何这条回归、ring 只描一次——30 次调用后 `geometry.dirty` 不变）、`test/render/unitSpawnBake.test.ts`（`draftBakeSize`/`markerBakeSize` 的尺寸公式、`(side,targetH,seed)`/`(side,cx,cy,rx,ry)` 相同入参命中同一张缓存纹理、不同入参各自独立、无 renderer 时返回 `null`）。三份都做过变异验证。为了让测试能钉住公式而不是重复抄一遍魔法数，`CRIT_RING_SPEED`/`CRIT_RING_PAD_MIN`/`CRIT_RING_PAD_MAX`（`BoardView/bases.ts`）、`DRAFT_PAD`（`stickmanDraft.ts`）、`MARKER_PAD`（`UnitView/assets.ts`）顺手从模块内部常量改成了 `export`。
+
 新增的三处 `bakeLazy` 站点（`hpBar.ts`、`stickmanDraft.ts`、`UnitView/assets.ts`）已在 `pageBakeCallSites.test.ts` 里登记为 `pageScale: false`（单位/HUD 级的小块 chrome，且都骑在会 `scale` 的容器上，device-exact 会糊——ADR-073 那句话原样适用）。
 
 **为什么血条是 sprite 而不是节流重绘**：血条的 HP 分数几乎每帧都在变（尤其持续受击的基地），节流重绘（像手牌 `bar` 那样按签名判断是否重描）只能把重绘频率从 120/120 降到「HP 真的变了才描」，仍然是逐帧潜在成本；而 sprite 路径把这份成本从「重新三角化」降成「改一个数字」，两者不是同一个数量级。手牌 `bar` 留着节流是因为它的形状变化频率本来就低（拖拽时才变），血条不是。

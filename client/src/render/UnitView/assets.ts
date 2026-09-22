@@ -187,8 +187,11 @@ export function drawFactionMarker(
  * Padding around the marker's own bounds, in bake pixels — the widest ring drawn by
  * {@link drawFactionMarker} is `rx * 1.12` / `ry * 1.12`, plus a few px for the `+1.5/+0.6` core-disc
  * offset. Kept apart from {@link markerBakeSize} so both agree by construction.
+ *
+ * Exported so a test can pin {@link markerBakeSize}'s formula against the same number the
+ * implementation uses, instead of duplicating it as a separate magic value.
  */
-const MARKER_PAD = 6;
+export const MARKER_PAD = 6;
 
 /** Bake-texture size for a faction marker of half-extents `(rx, ry)` — see {@link factionMarkerTexture}. */
 export function markerBakeSize(rx: number, ry: number): { w: number; h: number } {
