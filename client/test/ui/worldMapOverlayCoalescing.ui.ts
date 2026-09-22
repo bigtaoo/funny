@@ -20,6 +20,7 @@
 
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
+import { createShieldGlow, drawShieldDome, drawShieldGlow } from '../../src/scenes/worldmap/WorldMapRenderer/shieldFx';
 import {
   DECOR_QUIET_AFTER_MS, RenderPolicy, resetRenderHold, setRenderPolicyClock, type PaintMode,
 } from '../../src/render/renderPolicy';
@@ -275,25 +276,29 @@ describe("world map under a 'reactive' paint policy", () => {
     ctx.marchTokenRuntimes.set(marchId, { mode: 'dot', sprite, kind: 'infantry' });
   }
 
-  /** A protection-shield bubble on one tile: the cached local-space geometry plus the two `Graphics`
-   * children `lifecycle.update` re-draws into. Same shape of fake as `seedToken` — `city.ts` builds
-   * these off a decoded city sprite, which headless has no atlas for, but the animation loop that
-   * re-draws them every 100 ms is the real one. */
+  /** A protection-shield bubble on one tile: the cached local-space geometry plus the dome Graphics
+   * and glow subtree `lifecycle.update` animates. Same shape of fake as `seedToken` — `city.ts`
+   * builds these off a decoded city sprite, which headless has no atlas for, but the animation loop
+   * that steps them is the real one, and so is the subtree it steps (createShieldGlow), whose
+   * `rotation` writes are what the paint policy has to notice. */
   function seedShield(scene: Spied, key: string): void {
     const ctx = scene.ctx as unknown as {
       citySprites: Map<string, PIXI.Container>;
       shieldGeom: Map<string, { cx: number; cy: number; rx: number; ry: number; tp: number }>;
       container: PIXI.Container;
     };
+    const geom = { cx: 0, cy: -20, rx: 30, ry: 22, tp: 64 };
     const cityC = new PIXI.Container();
-    for (const name of ['shieldFx', 'shieldGlowFx']) {
-      const g = new PIXI.Graphics();
-      g.name = name;
-      cityC.addChild(g);
-    }
+    const dome = new PIXI.Graphics();
+    dome.name = 'shieldFx';
+    drawShieldDome(dome, geom);
+    const glow = createShieldGlow();
+    drawShieldGlow(glow, geom);
+    cityC.addChild(dome);
+    cityC.addChild(glow);
     (scene as unknown as { container: PIXI.Container }).container.addChild(cityC);
     ctx.citySprites.set(key, cityC);
-    ctx.shieldGeom.set(key, { cx: 0, cy: -20, rx: 30, ry: 22, tp: 64 });
+    ctx.shieldGeom.set(key, geom);
   }
 
   /** The scene mounted under a policy-driven stage, `tick()` called by hand exactly as
@@ -372,15 +377,17 @@ describe("world map under a 'reactive' paint policy", () => {
     scene.destroy();
   });
 
-  it('keeps painting for a protection shield on an otherwise idle map (~10 fps, not 0)', () => {
+  it('keeps painting for a protection shield on an otherwise idle map (~30 fps, not 0)', () => {
     const scene = buildScene();
     revealMap(scene);
     seedShield(scene, '12:14');
-    // SHIELD_ANIM_FPS is 10 (lifecycle.ts), so one second of frames is ~10 dome+glow redraws — an
-    // order of magnitude below frame rate, and an order of magnitude above frozen.
+    // SHIELD_ANIM_FPS is 30 (lifecycle.ts), so one second of frames is ~30 animation steps — half
+    // frame rate, and the deliberate price of the 2026-09-22 smoothness fix: a step is now free in
+    // CPU terms (transforms, not redraws), so this count IS the whole cost of the bubble. It was 10
+    // before; anything that pushes it back toward 60 is re-opening ADR-085's idle-paint bill.
     const paints = paintsOver(scene, 60);
-    expect(paints).toBeGreaterThanOrEqual(8);
-    expect(paints).toBeLessThanOrEqual(15);
+    expect(paints).toBeGreaterThanOrEqual(26);
+    expect(paints).toBeLessThanOrEqual(34);
     scene.destroy();
   });
 

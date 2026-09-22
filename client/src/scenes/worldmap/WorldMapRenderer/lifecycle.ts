@@ -8,16 +8,26 @@ import { loadTerrainAtlas } from '../../../render/atlas/terrainAtlasLoader';
 import { loadBuildingAtlas } from '../../../render/atlas/buildingAtlasLoader';
 import { tearDownChildren } from '../../../render/sketchUi';
 import { destroyTokenEntry } from './tokens';
-import { drawShieldDome, drawShieldGlow, drawShieldBreakFx, SHIELD_BREAK_LIFE } from './shieldFx';
+import { animateShield, drawShieldBreakFx, SHIELD_BREAK_LIFE } from './shieldFx';
 import { updateLoadingErase, cancelLoadingErase } from './loadingReveal';
 import { overlayInkSignature } from './fog';
 
 /**
- * Redraw rate for the capital-protection shield bubbles (dashed dome + glow pulse). Deliberately
- * far below frame rate: each step rebuilds two `Graphics` per shielded city, and nothing in the
- * animation is fast enough for the difference to be visible.
+ * Animation-step rate for the capital-protection shield bubbles (spinning ring + breathing dome).
+ *
+ * A step no longer costs anything worth measuring — shieldFx.ts builds the geometry once per
+ * layout refresh and a step is a handful of `rotation`/`alpha`/`scale` writes — so what this
+ * number actually buys is PAINTS: the map is a `reactive` scene (ADR-085), so every step the
+ * stage signature sees is a full repaint of the map, and a shield is on screen essentially
+ * whenever the player is looking at their own territory.
+ *
+ * 30 rather than 60: the remaining cost is real (ADR-083 exists because this client was painting a
+ * standing-still picture flat out), and 30 already puts the ring's travel at ~4 px per step, well
+ * inside what reads as continuous. 10 — what this was until 2026-09-22 — did not: at ~11 px per
+ * step the biggest moving thing on the map strobed ("这个护盾的动画，看起来不连贯啊" report), which
+ * is not the same phenomenon as art-direction §5.4's hand-drawn frame-rate jitter. See shieldFx.ts.
  */
-const SHIELD_ANIM_FPS = 10;
+const SHIELD_ANIM_FPS = 30;
 import { t } from '../../../i18n';
 import { tileToScreen, ISO_RATIO } from '../../../render/isoGrid';
 import { BASE_FOOTPRINT, citySpriteTiles, cityGroundFwdPx } from '@nw/shared';
@@ -75,27 +85,34 @@ export class WorldMapRendererLifecycle implements LifecycleHandlers {
     this.vignette.updateVignette(dt);
     this.updateGuide(dt);
     // Protection-shield bubbles (S8-8 follow-up, 2026-08-08): re-animate every active shield's
-    // dashed ring/pulse every frame instead of only on the sporadic redraws refreshCityLayer
+    // ring spin / dome breath continuously instead of only on the sporadic redraws refreshCityLayer
     // gets (pan/zoom/poll) — see WorldMapContext.shieldGeom / WorldMapRenderer/shieldFx.ts.
-    ctx.shieldAnimT += dt;
-    // ...but at SHIELD_ANIM_FPS, not at frame rate. Each shield redraw is two full `Graphics`
-    // rebuilds (a dashed dome ring + a glow), and a slow dash crawl plus a pulse is indistinguishable
-    // stepped 10 times a second from stepped 60 — the same "hand-drawn does not need to be smooth"
-    // call art-direction §5.4 makes for everything else here.
-    ctx.shieldAnimAcc += dt;
-    // ...and not at all once nobody has touched the map for a while: the bubble is ambience, and a
-    // held one stops re-arming the render loop's idle throttle (render/idleQuiet.ts). The break-pop
-    // flashes below are NOT gated — those are one-shot reactions to something that just happened.
-    const shieldStep = ctx.shieldAnimAcc >= 1 / SHIELD_ANIM_FPS && !decorationsQuiet();
-    if (shieldStep) ctx.shieldAnimAcc = 0;
+    //
+    // The whole block is gated on decorationsQuiet(): the bubble is ambience, and a held one stops
+    // re-arming the render loop's idle throttle (render/idleQuiet.ts). The CLOCK is gated too, not
+    // just the drawing — it used to keep running while the bubbles were frozen, so the first step
+    // after the player touched the map again jumped the ring by however far it had drifted in the
+    // meantime (30 s of quiet = 2.9 revolutions, i.e. a visible snap to a random angle). The
+    // break-pop flashes below are NOT gated: those are one-shot reactions to something that just
+    // happened, not ambience.
+    if (!decorationsQuiet()) {
+      ctx.shieldAnimT += dt;
+      ctx.shieldAnimAcc += dt;
+    }
+    // Step at SHIELD_ANIM_FPS, keeping the remainder rather than zeroing it: zeroing quantised the
+    // real interval to whole frames (6 frames at 60 Hz, 7 after any hiccup) while the phase kept
+    // advancing on true `dt`, so evenly-spaced motion got unevenly sampled and jittered on top of
+    // being slow. `%=` also collapses a long stall into one step instead of a burst.
+    const shieldStepSec = 1 / SHIELD_ANIM_FPS;
+    const shieldStep = ctx.shieldAnimAcc >= shieldStepSec;
+    if (shieldStep) ctx.shieldAnimAcc %= shieldStepSec;
     if (shieldStep && ctx.shieldGeom.size > 0) {
-      for (const [key, geom] of ctx.shieldGeom) {
+      for (const [key] of ctx.shieldGeom) {
         const cityC = ctx.citySprites.get(key);
         const shieldFx = cityC?.getChildByName('shieldFx') as PIXI.Graphics | undefined;
-        const shieldGlowFx = cityC?.getChildByName('shieldGlowFx') as PIXI.Graphics | undefined;
+        const shieldGlowFx = cityC?.getChildByName('shieldGlowFx') as PIXI.Container | undefined;
         if (!shieldFx || !shieldGlowFx) { ctx.shieldGeom.delete(key); continue; }
-        drawShieldDome(shieldFx, geom, ctx.shieldAnimT);
-        drawShieldGlow(shieldGlowFx, geom, ctx.shieldAnimT);
+        animateShield(shieldFx, shieldGlowFx, ctx.shieldAnimT);
       }
     }
     // One-shot "shield just broke" pop flashes (2026-08-08 follow-up) — age out and self-remove

@@ -9,7 +9,7 @@ import { SECT_BASE_TINT, ALLY_SECT_BASE_TINT } from '../logic/tileStyle';
 import { HUD_H, BASE_SPRITE_TILES } from '../logic/constants';
 import { t } from '../../../i18n';
 import { makeText } from '../../../render/pixiText';
-import { drawShieldDome, drawShieldGlow } from './shieldFx';
+import { createShieldGlow, drawShieldDome, drawShieldGlow, clearShieldGlow, animateShield } from './shieldFx';
 import type { WorldMapRendererCore } from './core';
 import type { WorldMapRendererPool } from './pool';
 
@@ -109,11 +109,10 @@ export class WorldMapRendererCity implements CityHandlers {
           const shieldFx = new PIXI.Graphics();  // protection-shield dome (S8-8 UI fix, 2026-08-08)
           shieldFx.name = 'shieldFx';
           // Rotating dashed ring + sparkles (2026-08-08 follow-up, borrowed from daydayup's
-          // additive-glow shield accents) — separate Graphics so it can run additive blend
-          // without also blowing out the dome's "glass" fill/stroke above.
-          const shieldGlowFx = new PIXI.Graphics();
-          shieldGlowFx.name = 'shieldGlowFx';
-          shieldGlowFx.blendMode = PIXI.BLEND_MODES.ADD;
+          // additive-glow shield accents) — its own subtree so it can run additive blend without
+          // also blowing out the dome's "glass" fill/stroke above, and so the spin can be a
+          // `rotation` write rather than a redraw (see shieldFx.ts on why it nests).
+          const shieldGlowFx = createShieldGlow();
           // One-shot pop when protection lapses (2026-08-08 follow-up, borrowed from daydayup's
           // shield_break flash) — empty/inert until a shield actually breaks.
           const shieldBreakFx = new PIXI.Graphics();
@@ -230,7 +229,7 @@ export class WorldMapRendererCity implements CityHandlers {
         // translucent bubble dome over the building, with a slow breathing pulse so it reads as "active" at
         // a glance rather than a flat static overlay.
         const shieldFx = cityC.getChildByName('shieldFx') as PIXI.Graphics;
-        const shieldGlowFx = cityC.getChildByName('shieldGlowFx') as PIXI.Graphics;
+        const shieldGlowFx = cityC.getChildByName('shieldGlowFx') as PIXI.Container;
         if ((tile.protectedUntil ?? 0) > Date.now()) {
           const cx = 0;
           const cy = -sprite.height * (1 - contentTopFrac) * 0.5;
@@ -240,15 +239,19 @@ export class WorldMapRendererCity implements CityHandlers {
           // Cache the local-space geometry so lifecycle.update can re-animate this bubble every
           // frame (spin/breathe) without recomputing sprite layout — see WorldMapContext.shieldGeom.
           ctx.shieldGeom.set(cacheKey, geom);
-          drawShieldDome(shieldFx, geom, ctx.shieldAnimT);
-          drawShieldGlow(shieldGlowFx, geom, ctx.shieldAnimT);
+          drawShieldDome(shieldFx, geom);
+          drawShieldGlow(shieldGlowFx, geom);
+          // Put the freshly built geometry at the clock's current phase right away — without this
+          // a bubble that came back from a pan/zoom would sit at peak brightness and zero rotation
+          // until the next animation step, popping visibly out of sync with its neighbours.
+          animateShield(shieldFx, shieldGlowFx, ctx.shieldAnimT);
         } else {
           // Was protected as of the last redraw and just dropped out — pop a one-shot break
           // flash at the same spot (2026-08-08 follow-up, borrowed from daydayup's shield_break).
           const priorGeom = ctx.shieldGeom.get(cacheKey);
           if (priorGeom) ctx.shieldBreakFx.set(cacheKey, { ...priorGeom, age: 0 });
           shieldFx.clear();
-          shieldGlowFx.clear();
+          clearShieldGlow(shieldGlowFx);
           ctx.shieldGeom.delete(cacheKey);
         }
       }
