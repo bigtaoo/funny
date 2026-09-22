@@ -6,8 +6,8 @@
     "kind": "survive"
   },
   "enemyScale": {
-    "hp": 1.18,
-    "damage": 1.12
+    "hp": 1.377,
+    "damage": 1.211
   },
   "loadout": [
     "max_1",
@@ -173,5 +173,11 @@
   "nameKey": "campaign.ch2.lv8.name",
   "briefKey": "campaign.ch2.lv8.brief",
   "startInk": 3,
-  "inkRegenMult": 0.96
+  "inkRegenMult": 0.96,
+  "lanePunish": {
+    "units": 5,
+    "sustainTicks": 120,
+    "cooldownTicks": 450,
+    "spell": "rockslide"
+  }
 }

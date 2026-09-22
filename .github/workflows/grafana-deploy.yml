@@ -99,9 +99,20 @@ jobs:
         run: |
           ssh -i ~/.ssh/deploy_key "${VPS_USER}@${VPS_HOST}" \
             "set -e; \
+             # Both this workflow and the other VPS deploy drive the SAME checkout on the VPS, and both
+             # are triggered by the same CI completion, so without a lock their git fetch / reset --hard
+             # interleave and one of them dies on a stale .git/index.lock (or on a remote-tracking ref the
+             # other just deleted). Serialize every VPS-side deploy on one flock; a deploy takes a
+             # couple of minutes, so a 15-minute wait is generous but still bounded.
+             exec 9>/var/lock/nw-vps-deploy.lock; \
+             flock -w 900 9 || { echo 'timed out waiting for another VPS deploy to release the lock'; exit 1; }; \
              cd '${VPS_DEPLOY_PATH}'; \
+             # Same delete-then-FETCH_HEAD pull as server-deploy: a fetch interrupted by
+             # cancel-in-progress can leave refs/remotes/origin/main with an inconsistent
+             # old value, which makes every later fetch error out until someone logs in.
+             git update-ref -d refs/remotes/origin/main 2>/dev/null || true; \
              git fetch origin main; \
-             git reset --hard origin/main; \
+             git reset --hard FETCH_HEAD; \
              cd server; \
              PROFILE=''; [ '${OBS_TUNNEL_ENABLED}' = 'true' ] && PROFILE='--profile tunnel'; \
              docker compose -f observability/docker-compose.obs.yml --env-file observability/.env \$PROFILE up -d --force-recreate; \

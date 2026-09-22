@@ -87,6 +87,13 @@ export class Unit {
    */
   crossingBlocked: boolean = false;
 
+  /**
+   * Consecutive ticks spent Waiting behind a friendly unit in the same lane.
+   * Reset to 0 by any tick that is not a friendly-collision stall. Drives the
+   * lane-overflow side-step (config `OVERFLOW_DETOUR_WAIT_TICKS`).
+   */
+  waitingTicks: number = 0;
+
   // ── Detour (MidCross) ─────────────────────────────────────────────────────
 
   /** Target column for the current Detour (crossWaypoint or blocked auto-detour). Null when not detouring. */

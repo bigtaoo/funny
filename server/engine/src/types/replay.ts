@@ -9,7 +9,12 @@ import type { GameMode, PlayerCommand } from './config';
  * playback** — `ReplayInputSource` refuses to drive an engine if the replay's
  * `engineVersion` differs, so a mismatch fails loudly instead of replaying garbage.
  */
-export const ENGINE_VERSION = 2;
+export const ENGINE_VERSION = 3;
+// v3 (lane overflow + rockslide friendly fire): a unit parked behind friendlies for
+// OVERFLOW_DETOUR_WAIT_TICKS with clear road ahead now side-steps into the emptier
+// neighbouring lane instead of queueing forever, and Rockslide no longer damages the
+// caster's own units (§4.9.2 always specified enemy-only). Both shift unit positions
+// and combat timing, so any v2 replay would diverge on playback.
 // v2 (projectile system): ranged attacks (archer / arrow tower) no longer apply
 // instant damage — they spawn a homing projectile that travels and resolves
 // damage on impact (config.ts `projectile` flag). This shifts combat timing, so

@@ -20,7 +20,7 @@
 docker compose -f observability/docker-compose.obs.yml --env-file observability/.env up -d
 ```
 
-**自动发布**：`.github/workflows/grafana-deploy.yml`——push 改动落在 `server/observability/**` 时自动 SSH 进 VPS `reset --hard + up -d --force-recreate`（预构建镜像，无 build；与 server-deploy 解耦，互不触发）。复用同套 `VPS_SSH_KEY`/`VPS_HOST`；开关 `OBS_DEPLOY_ENABLED=true`（首次需先在 VPS 手动建 `observability/.env`），可选 `OBS_TUNNEL_ENABLED=true` 才带 cloudflared。`server-deploy.yml` 已 `!server/observability/**` 排除该子树，避免为日志配置白白 rebuild 后端。
+**自动发布**：`.github/workflows/grafana-deploy.yml`——push 改动落在 `server/observability/**` 时自动 SSH 进 VPS `reset --hard + up -d --force-recreate`（预构建镜像，无 build；与 server-deploy 解耦，互不触发）。复用同套 `VPS_SSH_KEY`/`VPS_HOST`；开关 `OBS_DEPLOY_ENABLED=true`（首次需先在 VPS 手动建 `observability/.env`），可选 `OBS_TUNNEL_ENABLED=true` 才带 cloudflared。`server-deploy.yml` 已 `!server/observability/**` 排除该子树，避免为日志配置白白 rebuild 后端。**但两者共用 VPS 上同一个检出**，2026-09-22 起靠 `/var/lock/nw-vps-deploy.lock` 这把 flock 串行，见下文「自动发布（GitHub Action）」小节。
 
 ### 上线记录（2026-06-24 ✅ 已验证）
 
@@ -226,6 +226,10 @@ docker compose -f docker-compose.cloud.yml --env-file .env up -d
 `.github/workflows/server-deploy.yml`：CI 在 `main` 上跑绿、且该 commit 改动落在 `server/**`（`server/observability/**` 除外，那部分走 grafana-deploy）/ 该 workflow 时，自动 SSH 进 VPS 跑 `git fetch + reset --hard origin/main → docker compose -f docker-compose.cloud.yml --env-file .env up -d --build → docker compose restart caddy`；也可在 Actions 页手动 Run（`workflow_dispatch`，跳过 CI 门禁）。触发方式见 client-deploy 小节的 2026-08-12 改动说明。与 client-deploy / ops-deploy 同理念（裸 ssh，不用第三方 action，报错原样可见）。
 
 > `restart caddy` 是必需的、不是可选优化：Caddyfile 走 bind mount，`up` 只在 compose 服务定义本身变化时才重建/重启容器，文件**内容**变了但挂载路径没变，compose 侦测不到，caddy 就会照旧跑着旧配置——2026-07-03 两次 Caddyfile 修复（`/health`、`/sect` `/nation` 反代）都是重启前的修复：合入 main、CI 部署跑完、但 caddy 容器仍在跑 10 天前的旧配置，直到手动 `docker compose restart caddy` 才生效。
+
+> ⚠️ **server-deploy 与 grafana-deploy 共用 VPS 上同一个检出，必须串行**：两者都挂在同一次 CI 完成的 `workflow_run` 上、concurrency group 又是分开的，所以会同时 SSH 进 `/root/funny` 跑 `git fetch` + `reset --hard`。谁慢一步谁就撞上对方的 `.git/index.lock`（或撞上被对方 `update-ref -d` 删掉的 `origin/main`），`exit 128` 当场红。2026-09-15（run 34956544647）和 2026-09-22（run 35709718549）各炸过一次，两次 VPS reflog 都停在 grafana 那条 `reset: moving to origin/main`。**更坑的是失败点在 `docker compose up --build` 之前**：git 检出已经是新 commit、容器却还跑着上一版镜像，只看 `git log` 根本看不出没部署——要看 `docker ps` 的容器年龄。2026-09-22 修法：两个 workflow 的远端命令都先 `exec 9>/var/lock/nw-vps-deploy.lock; flock -w 900 9`，用同一把 flock 串起来（等，不是失败；一次部署几分钟，15 分钟上限足够），grafana 侧同时换成和 server 侧一样的 `update-ref -d` + `reset --hard FETCH_HEAD`。
+
+> 改那段 ssh 字符串时注意两条语法陷阱：整串在 runner 侧是**双引号字符串**，① 里面的反引号会被 runner 的 shell 当命令替换执行（所以已有的 `` \`up\` `` 是转义过的），注释里别写裸反引号；② 行尾 `\` + 换行会被吃掉合并成一行，因此注释行**必须不带行尾 `\`**，靠它自己的换行终止注释，否则注释会把后面整条命令吞掉。
 
 **镜像在 VPS 本机构建**（与手动运维命令一致，2 核机 + 2G swap 扛得住）；`.env` 是 gitignore，`reset --hard` 不动它。同步用 `reset --hard origin/main`（非 `git pull`）以消除 VPS 工作区漂移（如之前 ops 改容器留下的本地变动）。
 

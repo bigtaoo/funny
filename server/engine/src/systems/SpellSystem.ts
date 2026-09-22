@@ -86,12 +86,23 @@ export class SpellSystem {
     });
   }
 
-  /** Damages all units in `col` (PvE-only Rockslide spell, §4.9.2). */
+  /**
+   * Damages every ENEMY unit in `col` (PvE-only Rockslide spell, §4.9.2).
+   *
+   * Friendly units are spared, exactly as Meteor has always spared them. Until
+   * 2026-09-22 this hit BOTH sides: harmless while only the player could cast it
+   * (into a lane the enemy owned), but §4.9.2's prose always said "enemy units
+   * in the target column", and the scripted lane-punish (§4.9.5) casts from the
+   * Top side into a column its own wave walks through — a rockslide that kills
+   * the waves it supports is no punishment at all. The old both-sides behaviour
+   * had a pinned assertion here; it was the implementation, never the design.
+   */
   castRockslide(side: Side, col: number, state: GameState): void {
     const owner = state.ownerOf(side);
     let hits = 0;
     for (const unit of state.board.units.values()) {
       if (unit.isDead) continue;
+      if (unit.side === side) continue; // never hit own units
       if (unit.col === col) { unit.takeDamage(toFp(ROCKSLIDE_DAMAGE)); hits++; }
     }
     state.stats[owner].spellHits += hits;

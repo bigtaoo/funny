@@ -264,7 +264,13 @@
   "briefKey": "campaign.ch5.lv8.brief",
   "startInk": 58,
   "enemyScale": {
-    "hp": 1.08,
-    "damage": 1.04
+    "hp": 1.548,
+    "damage": 1.249
+  },
+  "lanePunish": {
+    "units": 5,
+    "sustainTicks": 120,
+    "cooldownTicks": 450,
+    "spell": "rockslide"
   }
 }

@@ -1412,6 +1412,36 @@ describe('AuctionScene — background poll', () => {
 });
 
 // ── Concurrent-buy race — two buyers, the loser gets refreshed + told ─────────────────────────
+describe('AuctionScene — buy-now says what was bought', () => {
+  // Before 2026-09-22 this toasted a bare `auction.bought` ("Purchase successful"), which in a list
+  // of near-identical rows never told the player which listing the tap had actually charged them for.
+  it('the success toast carries the row label, in the shared shop.boughtNamed wording', async () => {
+    const scene = buildScene();
+    await flush();
+    toastMsgs.length = 0;
+
+    await scene.trade.doBuy('auc_1', 'Foil Cover');
+
+    expect(toastMsgs).toContain(t('shop.boughtNamed', { name: 'Foil Cover' }));
+    scene.destroy();
+  });
+
+  // The half that can silently rot: the toast can only name the item if the row's Buy button passes
+  // its own label down. A fixed-price row's label is "<material> x<qty>" (auctionLabel).
+  it("the row's Buy button hands confirmBuy that row's own label", async () => {
+    const auc = makeAuction({ saleMode: 'fixed', price: 250, item: { material: 'scrap' }, qty: 3 });
+    const scene = buildScene({ worldApi: stubWorldApi({ listAuctions: vi.fn(async () => [auc]) }) });
+    await flush();
+    scene.render();
+    const spy = vi.spyOn(scene.trade, 'confirmBuy');
+
+    tapLabel(scene, scene.container, t('auction.buy'));
+
+    expect(spy).toHaveBeenCalledWith('auc_1', 250, auctionLabelText(auc));
+    scene.destroy();
+  });
+});
+
 describe('AuctionScene — buy race', () => {
   it('on AUCTION_CLOSED refreshes the market and shows the sold-out prompt', async () => {
     let call = 0;
@@ -1424,7 +1454,7 @@ describe('AuctionScene — buy race', () => {
     await flush();
     toastMsgs.length = 0;
 
-    await scene.trade.doBuy('auc_1');
+    await scene.trade.doBuy('auc_1', 'Foil Cover');
 
     expect(toastMsgs).toContain(t('auction.err.soldOut'));
     expect(worldApi.listAuctions).toHaveBeenCalledTimes(2); // refreshed after the lost race
@@ -1441,7 +1471,7 @@ describe('AuctionScene — buy race', () => {
     await flush();
     toastMsgs.length = 0;
 
-    await scene.trade.doBuy('auc_1');
+    await scene.trade.doBuy('auc_1', 'Foil Cover');
 
     expect(toastMsgs).toContain(t('auction.err.soldOut'));
     expect(worldApi.listAuctions).toHaveBeenCalledTimes(2); // refreshed
@@ -1456,7 +1486,7 @@ describe('AuctionScene — buy race', () => {
     await flush();
     toastMsgs.length = 0;
 
-    await scene.trade.doBuy('auc_1');
+    await scene.trade.doBuy('auc_1', 'Foil Cover');
 
     expect(toastMsgs).toContain(t('auction.err.insufficientFunds'));
     expect(worldApi.listAuctions).toHaveBeenCalledTimes(1); // no refresh — the listing is still valid
@@ -1474,11 +1504,81 @@ describe('AuctionScene — buy race', () => {
     await flush();
     toastMsgs.length = 0;
 
-    await scene.bid.doBid('auc_1', 150);
+    await scene.bid.doBid(makeAuction(), 150);
 
     expect(worldApi.placeBid).toHaveBeenCalledWith('auc_1', 150);
     expect(toastMsgs).toContain(t('auction.bidPlaced'));
     expect(worldApi.listAuctions).toHaveBeenCalledTimes(2); // constructor's initial load + doBid's refresh
+    scene.destroy();
+  });
+
+  // Buy-now says what was bought (2026-09-22): trade.ts "5. Buyout" settles a bid immediately, server-side,
+  // once `amount >= buyoutPrice` — the same path a plain bid takes, so both the buyout button and a manual
+  // bid that happens to clear buyoutPrice must toast the purchase, not "bid placed". The response's
+  // `status` is what actually tells the two apart (docToView(doc.status)); it flips to 'sold' only when
+  // this call is the one that closed the listing.
+  it('buy-now: a bid that settles the auction (status: sold) toasts the purchase, not "bid placed"', async () => {
+    const auc = makeAuction({ itemType: 'equipment', item: { instance: { defId: 'foilCover', level: 0 } }, buyoutPrice: 500 });
+    const worldApi = stubWorldApi({
+      placeBid: vi.fn(async () => makeAuction({ ...auc, status: 'sold', buyerId: 'acc_me', topBid: { bidderId: 'acc_me', amount: 500, ts: Date.now() } })),
+    });
+    const scene = buildScene({ worldApi });
+    await flush();
+    toastMsgs.length = 0;
+
+    await scene.bid.doBid(auc, 500);
+
+    expect(toastMsgs).toContain(t('shop.boughtNamed', { name: auctionLabelText(auc) }));
+    expect(toastMsgs).not.toContain(t('auction.bidPlaced'));
+    scene.destroy();
+  });
+
+  it('buy-now: a normal bid that does NOT settle the auction (status stays open) still toasts "bid placed"', async () => {
+    const auc = makeAuction({ buyoutPrice: 500 });
+    const worldApi = stubWorldApi({
+      placeBid: vi.fn(async () => makeAuction({ ...auc, topBid: { bidderId: 'acc_me', amount: 150, ts: Date.now() }, price: 150 })),
+    });
+    const scene = buildScene({ worldApi });
+    await flush();
+    toastMsgs.length = 0;
+
+    await scene.bid.doBid(auc, 150);
+
+    expect(toastMsgs).toContain(t('auction.bidPlaced'));
+    expect(toastMsgs).not.toContain(t('shop.boughtNamed', { name: auctionLabelText(auc) }));
+    scene.destroy();
+  });
+
+  // End-to-end version of the two gates above: drives the actual rendered buyout button through the
+  // confirm dialog, not just doBid() directly — this is the path the two unit-style tests above never
+  // touch (does the button really carry buyoutPrice into confirmBid, does the confirm dialog really
+  // fire doBid?). Before this, openBidForm had zero UI coverage at all.
+  it('buy-now: tapping the rendered buyout button carries buyoutPrice through confirm → doBid → purchase toast', async () => {
+    const auc = makeAuction({
+      auctionId: 'auc_1', price: 100, buyoutPrice: 500,
+      itemType: 'equipment', item: { instance: { defId: 'foilCover', level: 0 } },
+    });
+    const worldApi = stubWorldApi({
+      listAuctions: vi.fn(async () => [auc]),
+      placeBid: vi.fn(async () => makeAuction({ ...auc, status: 'sold', buyerId: 'acc_me', topBid: { bidderId: 'acc_me', amount: 500, ts: Date.now() } })),
+    });
+    const scene = buildScene({ worldApi });
+    await flush();
+    toastMsgs.length = 0;
+
+    scene.bid.openBidForm(auc);
+    // Wrong amount here (a stale typed-in bid, or the input's own value) would mean the buyout button
+    // doesn't actually carry buyoutPrice — this is the bug's own shape, just one call frame earlier.
+    tapLabel(scene, scene.container, t('auction.buyoutNow').replace('{price}', '500'), 'modalHits');
+    expect(scene.core.bidAmount).toBe(500);
+    expect(findLabelPos(scene.container, t('auction.confirmBid').replace('{price}', '500'))).not.toBeNull();
+
+    tapLabel(scene, scene.container, t('common.ok'), 'modalHits');
+    await flush();
+
+    expect(worldApi.placeBid).toHaveBeenCalledWith('auc_1', 500);
+    expect(toastMsgs).toContain(t('shop.boughtNamed', { name: auctionLabelText(auc) }));
+    expect(toastMsgs).not.toContain(t('auction.bidPlaced'));
     scene.destroy();
   });
 
@@ -1490,7 +1590,7 @@ describe('AuctionScene — buy race', () => {
     await flush();
     toastMsgs.length = 0;
 
-    await scene.bid.doBid('auc_1', 150);
+    await scene.bid.doBid(makeAuction(), 150);
 
     expect(toastMsgs).toContain(t('auction.err.closed'));
     expect(worldApi.listAuctions).toHaveBeenCalledTimes(2); // stale card refreshed off
@@ -1505,7 +1605,7 @@ describe('AuctionScene — buy race', () => {
     await flush();
     toastMsgs.length = 0;
 
-    await scene.bid.doBid('auc_1', 1);
+    await scene.bid.doBid(makeAuction(), 1);
 
     expect(toastMsgs).toContain(t('auction.err.bidTooLow'));
     expect(worldApi.listAuctions).toHaveBeenCalledTimes(1);

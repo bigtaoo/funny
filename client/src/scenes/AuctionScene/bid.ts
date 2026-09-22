@@ -115,15 +115,20 @@ export class BidPanel {
   confirmBid(auc: AuctionView): void {
     const amount = this.core.bidAmount;
     const msg = t('auction.confirmBid').replace('{price}', String(amount));
-    this.core.showConfirmModal(msg, () => void this.doBid(auc.auctionId, amount));
+    this.core.showConfirmModal(msg, () => void this.doBid(auc, amount));
   }
 
-  async doBid(auctionId: string, amount: number): Promise<void> {
+  async doBid(auc: AuctionView, amount: number): Promise<void> {
     const core = this.core;
     this.closeBidModal();
     try {
-      await core.cb.worldApi.placeBid(auctionId, amount);
-      core.showToast(t('auction.bidPlaced'));
+      const res = await core.cb.worldApi.placeBid(auc.auctionId, amount);
+      // A bid that reaches/exceeds buyoutPrice settles immediately server-side (trade.ts "5. Buyout") —
+      // `res.status` flips to 'sold' only when THIS call is what closed it (see docToView), so it is the
+      // one place that actually knows whether the player just bought the item outright. Buyout button and
+      // plain "Bid" both land here (a manual bid can also clear buyoutPrice), so branch on the response,
+      // not on which button was tapped.
+      core.showToast(res.status === 'sold' ? t('shop.boughtNamed', { name: auctionLabelText(auc) }) : t('auction.bidPlaced'));
       await core.loadData();
     } catch (e) {
       core.showToast(core.errorMsg(e), C.red);

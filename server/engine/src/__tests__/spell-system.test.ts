@@ -156,7 +156,7 @@ test('castMeteor: a dead enemy unit inside the area is skipped and does not infl
 
 // ── castRockslide ────────────────────────────────────────────────────────────────────────────
 
-test('castRockslide: damages every living unit in the column regardless of side, and skips dead units', () => {
+test('castRockslide: damages every living ENEMY unit in the column, spares friendlies, and skips dead units', () => {
   resetUnitIds();
   const state = new GameState(1);
   const system = new SpellSystem();
@@ -178,13 +178,13 @@ test('castRockslide: damages every living unit in the column regardless of side,
 
   system.castRockslide(Side.Bottom, COL, state);
 
-  assert.equal(bottomUnit.hp_fp, bottomUnit.maxHp_fp - toFp(ROCKSLIDE_DAMAGE), 'friendly units in the column are damaged too');
+  assert.equal(bottomUnit.hp_fp, bottomUnit.maxHp_fp, 'friendly units in the column are spared, same as Meteor');
   assert.equal(topUnit.hp_fp, topUnit.maxHp_fp - toFp(ROCKSLIDE_DAMAGE), 'enemy units in the column are damaged');
   assert.equal(deadUnit.hp_fp, toFp(0), 'dead units are skipped, not re-damaged');
   assert.equal(otherColUnit.hp_fp, otherColHp, 'units in a different column are untouched');
 
   const owner = state.ownerOf(Side.Bottom);
-  assert.equal(state.stats[owner].spellHits, 2, 'spellHits counts the two living units actually hit');
+  assert.equal(state.stats[owner].spellHits, 1, 'spellHits counts only the one living ENEMY unit hit');
   assert.equal(state.stats[owner].castsByType[SpellType.Rockslide], 1);
 
   const events = state.events.filter((e) => e.type === 'spell_cast');

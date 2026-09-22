@@ -27,7 +27,7 @@ import { cardInstanceArtUrl, getArtTexture, unitPortraitUrl } from '../../render
 import { SKIN_TARGET_UNIT } from '../../game/meta/skinDefs';
 import { AUC_CELL_H, AUC_CELL_PAD, AUC_CELL_IMG_GAP, AUC_CELL_IMG_MAX, aucInfoColumnW } from './types';
 import type { AuctionSceneCore } from './core';
-import { itemKind, saleModeKind, auctionLabel, auctionItemLevel, auctionItemMaxLevel } from './itemLabels';
+import { itemKind, saleModeKind, auctionLabel, auctionLabelText, auctionItemLevel, auctionItemMaxLevel } from './itemLabels';
 
 /** Narrow slice of BidPanel a cell's row action needs — opening the bid modal for an auction-mode listing. */
 export interface BidOpener {
@@ -36,7 +36,7 @@ export interface BidOpener {
 
 /** Narrow slice of TradeActionsPanel a cell's row actions need — confirm-then-buy/cancel. */
 export interface TradeOpener {
-  confirmBuy(auctionId: string, price: number): void;
+  confirmBuy(auctionId: string, price: number, name: string): void;
   confirmCancel(auctionId: string): void;
 }
 
@@ -214,7 +214,9 @@ export function renderAuctionCell(
       if (!busy) {
         core.hitRects.push({
           rect: { x: btnX, y: btnY, w: btnW, h: btnH },
-          fn: isAuction ? () => actions.bid.openBidForm(auc) : () => actions.trade.confirmBuy(aucId, auc.price),
+          fn: isAuction
+            ? () => actions.bid.openBidForm(auc)
+            : () => actions.trade.confirmBuy(aucId, auc.price, auctionLabelText(auc)),
         });
       }
     }

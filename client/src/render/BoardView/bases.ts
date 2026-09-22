@@ -32,7 +32,11 @@ const BASE_HIT_PULSE_GROW  = 0.18;  // outline expands by this fraction as it fa
 
 // Base critical (last HP): a faction-colored ring throbs around the base — this is
 // where a haste-rush ends the game, so it draws the eye to the board, not the HUD.
-const CRIT_RING_SPEED = 7.5; // rad/s → fast, urgent throb
+// Exported (not just used locally) so applyCriticalRing's scale formula can be pinned against the
+// same numbers the implementation uses, instead of a test duplicating them as separate magic values.
+export const CRIT_RING_SPEED   = 7.5; // rad/s → fast, urgent throb
+export const CRIT_RING_PAD_MIN = 6;   // px outset from the base rect at the throb's narrowest
+export const CRIT_RING_PAD_MAX = 15;  // px outset at its widest — also what ringGfx is stroked at (see buildBaseRef)
 
 // Castle art fill ratio within its 2×2 base rect — see buildBaseRef() for why this isn't 1.0.
 const BASE_ART_INSET = 0.86;
@@ -80,7 +84,18 @@ function buildBaseRef(parent: PIXI.Container, rect: Rect, mirror: boolean, tex: 
   con.x = rect.x + rect.w / 2;
   con.y = rect.y + rect.h / 2;
 
-  const ringGfx = new PIXI.Graphics(); // critical throb — behind the sprite (halo)
+  // Critical throb ring — behind the sprite (halo). Stroked ONCE at its widest pad, then breathed
+  // via scale + alpha (applyCriticalRing) instead of a per-frame clear()+drawRoundedRect() — same
+  // technique as HUDView's upgradeGlow (ADR-085 §7): an alpha animation wearing a geometry
+  // animation's clothes, this time with the geometry itself also genuinely constant (only the pad
+  // changes, and a rounded rect at a different pad is just this one scaled).
+  const ringGfx = new PIXI.Graphics();
+  ringGfx.lineStyle(4, ringColor, 1);
+  ringGfx.drawRoundedRect(
+    -rect.w / 2 - CRIT_RING_PAD_MAX, -rect.h / 2 - CRIT_RING_PAD_MAX,
+    rect.w + CRIT_RING_PAD_MAX * 2, rect.h + CRIT_RING_PAD_MAX * 2, 12,
+  );
+  ringGfx.visible = false;
   const groundGfx = new PIXI.Graphics(); // idle faction ground patch — under everything
 
   const s = new PIXI.Sprite(tex);
@@ -143,16 +158,22 @@ export function applyHitPulse(base: BaseRef | null, dt: number): void {
   base.pulseGfx.scale.set(1 + (1 - frac) * BASE_HIT_PULSE_GROW);
 }
 
-/** Throb the faction ring while a base is critical (fast, urgent). */
+/**
+ * Throb the faction ring while a base is critical (fast, urgent). `ringGfx` was stroked once, at
+ * `CRIT_RING_PAD_MAX`, by {@link buildBaseRef} — this only writes `scale`/`alpha`/`visible`, never
+ * touches geometry.
+ */
 export function applyCriticalRing(base: BaseRef | null, t: number): void {
   if (!base || !base.critical) return;
   const p   = 0.5 + 0.5 * Math.sin(t * CRIT_RING_SPEED);
-  const pad = 6 + 9 * p;
-  const hw  = base.rect.w / 2, hh = base.rect.h / 2;
+  const pad = CRIT_RING_PAD_MIN + (CRIT_RING_PAD_MAX - CRIT_RING_PAD_MIN) * p;
   const g   = base.ringGfx;
-  g.clear();
-  g.lineStyle(4, base.ringColor, 0.35 + 0.5 * p);
-  g.drawRoundedRect(-hw - pad, -hh - pad, base.rect.w + pad * 2, base.rect.h + pad * 2, 12);
+  g.visible = true;
+  g.scale.set(
+    (base.rect.w + pad * 2) / (base.rect.w + CRIT_RING_PAD_MAX * 2),
+    (base.rect.h + pad * 2) / (base.rect.h + CRIT_RING_PAD_MAX * 2),
+  );
+  g.alpha = 0.35 + 0.5 * p;
 }
 
 /**
@@ -243,7 +264,7 @@ export function setBaseCritical(host: BasesHost, owner: 0 | 1, on: boolean): voi
   const base = baseForOwner(host, owner);
   if (!base || base.critical === on) return;
   base.critical = on;
-  if (!on) base.ringGfx.clear();
+  if (!on) base.ringGfx.visible = false;
 }
 
 /**

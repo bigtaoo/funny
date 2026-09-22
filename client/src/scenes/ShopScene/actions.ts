@@ -139,7 +139,14 @@ export class ActionsPanel implements ActionHandlers {
     // own network calls internally and always resolves with a result key, so the spinner still clears.
     try {
       const res = await core.cb.rechargeCoins(tierId);
-      if (res.ok) showToastMessage(t('shop.rechargeSuccess'), 'success');
+      // Say how many coins landed, not just that they did: the credited amount is the tier's face
+      // value plus the first-purchase 2x bonus when it applies, so "coins credited" alone left the
+      // one purchase where the bonus actually pays out looking identical to every other one.
+      if (res.ok)
+        showToastMessage(
+          res.coins ? t('shop.rechargeSuccessNamed', { n: res.coins }) : t('shop.rechargeSuccess'),
+          'success',
+        );
       else showToastMessage(t(res.key), 'error');
     } catch {
       showToastMessage(t('shop.rechargeError'), 'error');

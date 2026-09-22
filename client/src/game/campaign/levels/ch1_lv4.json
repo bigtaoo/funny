@@ -6,8 +6,8 @@
     "kind": "survive"
   },
   "enemyScale": {
-    "hp": 1.02,
-    "damage": 1.02
+    "hp": 1.175,
+    "damage": 1.095
   },
   "loadout": [
     "infantry_1",
@@ -153,5 +153,11 @@
   "nameKey": "campaign.ch1.lv4.name",
   "briefKey": "campaign.ch1.lv4.brief",
   "startInk": 36,
-  "inkRegenMult": 1.5
+  "inkRegenMult": 1.5,
+  "lanePunish": {
+    "units": 5,
+    "sustainTicks": 120,
+    "cooldownTicks": 450,
+    "spell": "rockslide"
+  }
 }

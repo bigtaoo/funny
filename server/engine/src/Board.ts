@@ -1,4 +1,4 @@
-import { BOARD_COLS, BOARD_ROWS } from './config';
+import { BASE_COLS, BOARD_COLS, BOARD_ROWS } from './config';
 import { Building } from './Building';
 import { Unit } from './Unit';
 import { Side, UnitState } from './types';
@@ -147,6 +147,35 @@ export class Board {
       }
     }
     return null;
+  }
+
+  /**
+   * Living units of `side` currently in column `col`.
+   *
+   * Used by the lane-overflow side-step to pick the emptier of two neighbouring
+   * lanes. Reads the same sorted column list as the collision helpers — O(n_col).
+   */
+  countSideUnitsInColumn(col: number, side: Side): number {
+    const list = this.columnUnits.get(col);
+    if (!list) return 0;
+    let n = 0;
+    for (const u of list) {
+      if (u.side !== side) continue;
+      if (u.isDead || u.state === UnitState.Dead) continue;
+      n++;
+    }
+    return n;
+  }
+
+  /**
+   * True if `col` is a lane units may occupy: inside the board, not a base
+   * column, and — in campaign levels that restrict them — an active lane.
+   */
+  isUsableLane(col: number): boolean {
+    if (col < 0 || col >= BOARD_COLS) return false;
+    if (col === BASE_COLS[0] || col === BASE_COLS[1]) return false;
+    const active = this.activeLanesList;
+    return active === undefined || active.includes(col);
   }
 
   /**

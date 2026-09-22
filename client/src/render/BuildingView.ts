@@ -8,6 +8,7 @@ import { BoardView } from './BoardView';
 import { ObjectPool } from '../cache/ObjectPool';
 import barracksTexUrl from '../assets/buildings/game_infantry_barracks.png';
 import archerTexUrl from '../assets/buildings/game_arrow_tower.png';
+import { barSprite, setBarRatio } from './barSprite';
 
 const SPRITE_SIZE = 56;
 const HP_BAR_Y    = 32;
@@ -56,12 +57,12 @@ function createBuildingContainer(): PIXI.Container {
   sprite.name = 'sprite';
   sprite.anchor.set(0.5);
 
-  const hpBg = new PIXI.Graphics(); hpBg.name = 'hpBg';
-  hpBg.beginFill(0xcccccc, 0.7);
-  hpBg.drawRect(-HP_BAR_W / 2, HP_BAR_Y, HP_BAR_W, 4);
-  hpBg.endFill();
+  const hpBg = barSprite(-HP_BAR_W / 2, HP_BAR_Y, HP_BAR_W, 4, 0xcccccc, 0.7);
+  hpBg.name = 'hpBg';
 
-  const hpFill  = new PIXI.Graphics(); hpFill.name  = 'hpFill';
+  const hpFill = barSprite(-HP_BAR_W / 2, HP_BAR_Y, HP_BAR_W, 4, 0x44cc44);
+  hpFill.name = 'hpFill';
+
   const flagGfx = new PIXI.Graphics(); flagGfx.name = 'flagGfx';
 
   c.addChild(sprite, hpBg, hpFill, flagGfx);
@@ -74,7 +75,6 @@ function resetBuildingContainer(c: PIXI.Container): void {
   c.angle   = 0;
   c.scale.set(1);
   c.visible = false;
-  (c.getChildByName('hpFill')  as PIXI.Graphics).clear();
   (c.getChildByName('flagGfx') as PIXI.Graphics).clear();
   const sp = c.getChildByName('sprite') as PIXI.Sprite;
   sp.x     = 0;   // the fire kick writes sp.x — a pooled container must not inherit a stale offset
@@ -100,7 +100,7 @@ export class BuildingView {
     createBuildingContainer,
     resetBuildingContainer,
     12,
-    // Building container: sprite + hpBg/hpFill/flag Graphics.
+    // Building container: sprite + hpBg/hpFill sprites + flag Graphics.
     { label: 'building', bytesEach: 6 * 1024 },
   );
 
@@ -248,12 +248,9 @@ export class BuildingView {
     c.x = x;
     c.y = y;
 
-    const hpFill = c.getChildByName('hpFill') as PIXI.Graphics;
-    hpFill.clear();
+    const hpFill = c.getChildByName('hpFill') as PIXI.Sprite;
     const ratio = Math.max(0, building.hp_fp / building.maxHp_fp);
-    hpFill.beginFill(ratio > 0.4 ? 0x44cc44 : 0xcc4444);
-    hpFill.drawRect(-HP_BAR_W / 2, HP_BAR_Y, HP_BAR_W * ratio, 4);
-    hpFill.endFill();
+    setBarRatio(hpFill, ratio, HP_BAR_W, ratio > 0.4 ? 0x44cc44 : 0xcc4444);
   }
 
   private updateIdleAnim(c: PIXI.Container, building: Building): void {

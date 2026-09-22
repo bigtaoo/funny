@@ -353,7 +353,10 @@ export class BattlePassScene implements Scene {
           this.bt.start();
           this.render();
           withTimeout(this.cb.onBuy!())
-            .then(() => { this.bt.stop(); this.render(); })
+            // Buying the pass used to confirm itself only by the button vanishing and the paid track
+            // lighting up — which a player who was mid-scroll never saw. Say it, named, in the same
+            // green success banner every other purchase in the game uses.
+            .then(() => { this.bt.stop(); this.render(); this.showToast(t('shop.boughtNamed', { name: t('battlepass.title') })); })
             .catch((e) => { this.bt.stop(); this.render(); this.showToast(e instanceof TimeoutError ? t('common.networkTimeout') : t('battlepass.buyFailed'), 'error'); });
         },
       });

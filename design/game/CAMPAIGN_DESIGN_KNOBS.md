@@ -222,6 +222,59 @@ if (total - dead < needed - arrived) → 无法完成，玩家败
 
 ---
 
+### 4.9.5 lanePunish 车道墙惩罚（2026-09-22 落地）
+
+**问题**：关卡里的敌方**没有大脑**——`engine/sim/step.ts` 的 PvE 分支只按脚本 `spawnEnemyUnit`，`AISystem`（会丢流星、会补箭塔、会挑车道）只在 PvP 分支跑。于是玩家往一条车道里不停丢兵、堆成一堵墙，棋盘上**没有任何东西能惩罚他**：近战射程 1，一条 20 人的队只有最前两个在挥刀，其余是零成本存着的墨水，前排死一个后排立刻补位，前线永不破，关卡当场结束。配套的移动侧改动见 `DESIGN.md §6c`「车道溢出侧移」——那条治的是「排队浪费」，这条治的是「堵住就赢」。
+
+**旋钮**：
+
+```ts
+LevelDef.lanePunish?: {
+  units: number;          // 一列里多少玩家单位算「墙」
+  sustainTicks: number;   // 墙要连续维持多少 tick 才挨打
+  cooldownTicks: number;  // 两次施法之间的冷却（全局，不是每列一份）
+  spell: 'rockslide' | 'bridge_collapse';
+}
+```
+
+| 决策 | 取值与理由 |
+|---|---|
+| 施法方 | Top 侧（owner 1），走既有 `SpellSystem`，事件也是既有的 `spell_cast` —— 客户端的滚石级联扫描 / 封锁覆盖层（§4.9.2「地图效果强化」）**不需要任何改动**就能显示 |
+| 选谁 | 最厚的那一列；并列时取列号小的（不依赖 `Map` 迭代顺序，保确定性） |
+| 冷却 | 全局一份。每列各一份冷却等于「堵几列就挨几发」，惩罚强度随玩家兵力线性上升，太狠 |
+| 本期默认 | 60 关统一 `units 6 / sustain 150(5s) / cooldown 600(20s) / bridge_collapse` |
+| 为什么默认封路而不是滚石 | `ROCKSLIDE_DAMAGE = 80` 一发抹掉一整列 infantry（60 HP），6 个兵 ≈ 24 墨；`bridge_collapse` 只封 8 秒，逼队伍走绕路分支（正好接上 §6c 的侧移），教育玩家而不没收资源。滚石留给以后想加压的关 |
+| 公平性 | 只读公开棋盘（每列玩家单位数），固定 sustain + cooldown，无随机 —— 关卡对回放和难度模拟器保持确定性 |
+| 向后兼容 | 不写这个字段 = 完全关闭。行为与改动前逐 tick 一致，`campaign_*` 的 5 份 golden replay fixture 未变可证 |
+
+**rockslide 从此不打自己人（2026-09-22 拍板）**：`castRockslide` 此前打**列里所有单位、不分敌我**，与 §4.9.2 正文的「对目标列所有**敌方**单位」冲突，`spell-system.test.ts` 还有一条断言把旧行为钉死了。拍板按文档走——**那条断言钉的是实现，从来不是设计**。现在它与 Meteor 一致地跳过己方；测试同步改成断言「己方被放过、spellHits 只数敌方」。lanePunish 因此不再需要那个一次性的 `enemyOnly` 参数（敌方施法时若砸死自己的波次兵，惩罚就不成立）。
+
+**接线**：`LevelDefinition.ts`（`LanePunishSpec`）、`levelSchema.ts`（解析 + 校验）、`GameState.ts`（`lanePunishSustain` / `lanePunishReadyTick`）、`engine/sim/campaign.ts`（`tickLanePunish`）、`engine/sim/step.ts`（PvE 分支调用）、60 个关卡 JSON 经一次性脚本批量改写。回归测试：`server/engine/src/__tests__/lane-punish.test.ts`（触发阈值、墙变薄重新计时、冷却、选最厚列、不误伤己方波次、封路变体、未配置关卡零影响）。
+
+**难度矩阵实测（61 关 × 6 养成 × 5 种子，`vitest --config vitest.sim.config.ts`）**
+
+| 配置 | 通关门槛变易 | 变难 | 星级↑ | 星级↓ | 净 |
+|---|---|---|---|---|---|
+| 只有侧移（§6c，无 lanePunish） | 19 | 3 | 76 | 15 | +61 |
+| + 封路 6/5s/20s | 22 | 3 | 83 | 15 | +68 |
+| + 滚石 6/5s/20s | 20 | 4 | 74 | 16 | +58 |
+| **+ 滚石 5/4s/15s（本期取值）** | **18** | **5** | **65** | **20** | **+45** |
+| + 滚石 4/3s/10s | 13 | 12 | 47 | 32 | +15 |
+
+三条读得出来的结论：
+
+1. **封路当惩罚是反的。** `bridge_collapse` 把玩家的墙推散，而在 PvE 防守里「兵被迫分兵」恰恰是好事（覆盖更多车道 = 漏怪更少），所以它比不加惩罚还更易。默认因此定为滚石。
+2. **侧移本身是一次难度下调**（净 +61），且 lanePunish 抵不掉。原因同上：PvE 是防守，兵自动铺开就是变强。**这个缺口要靠一轮 `enemyScale` / 波次重配平补，不该让惩罚旋钮背**——把 lanePunish 压到 4/3s/10s 虽然能把净值拉到 +15，但「一列 4 个兵超过 3 秒」是正常防守的常态，那是在惩罚所有人。
+3. 取 5/4s/15s 的理由：正常推进达不到「一列 5 个兵连续 4 秒」，堆墙才会。它只改动了 12 关的零星格子，说明**它对正常打法基本无感，只咬退化打法**——这正是设计目标。
+
+> **上表是重配之前的状态。** 那个 +45 的缺口已由 2026-09-22 的全 60 关 `enemyScale` 回归重配补上（总漂移 −1.6，门槛 9 易 / 11 难 / 40 不变），过程、口径与两个需要单独处理的关卡见 [`DIFFICULTY_SIM_TUNING_CH2-CH6.md`](DIFFICULTY_SIM_TUNING_CH2-CH6.md) 末节。
+
+**画面验证（2026-09-22，headless Playwright）**：本机桌面 Chrome 对页面报 `document.hidden === true`（窗口遮挡判定，置顶/恢复最小化都无效），rAF 不跑、引擎 16 秒才推进 1 秒游戏时间，实时验证走不通；改用 headless Chromium 驱动真实点击（dev server 9390）。为了让两个效果落进一段短片，临时把 `OVERFLOW_DETOUR_WAIT_TICKS` 调到 20、把 ch1_lv1 的 lanePunish 调到 2 单位 / 0.5s / 1s 冷却，验证完全部还原。抓到：
+- **滚石**：红色预警线贯穿整条车道 → 下一帧手绘岩块自一端级联铺开 → 该列玩家单位受伤/倒地。敌方（owner 1）施法与玩家施法走的是同一条渲染路径——`GameRenderer/events.ts` 的 `spell_cast` 分支对 Rockslide **不读 owner**，所以这里没有新渲染代码。
+- **侧移**：全部倒在 col 4 的盾兵，27 秒后散布在 col 2/3/4 三条车道上，最靠前、贴着敌人的那个留在原地。「前排守线、队尾铺开」在画面上成立。
+
+---
+
 ## 5. 数据结构草案
 
 > 与现有类型对齐：`PlayerCommand`、`UnitType`、`col/row`、tick 计时。字段名最终以实现为准。

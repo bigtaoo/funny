@@ -7,8 +7,8 @@
     "durationTicks": 1650
   },
   "enemyScale": {
-    "hp": 1,
-    "damage": 1
+    "hp": 0.714,
+    "damage": 0.714
   },
   "loadout": [
     "infantry_1",
@@ -151,5 +151,11 @@
   },
   "nameKey": "campaign.ch1.lv2.name",
   "briefKey": "campaign.ch1.lv2.brief",
-  "inkRegenMult": 1.3
+  "inkRegenMult": 1.3,
+  "lanePunish": {
+    "units": 5,
+    "sustainTicks": 120,
+    "cooldownTicks": 450,
+    "spell": "rockslide"
+  }
 }

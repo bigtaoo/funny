@@ -18,6 +18,7 @@ import type { ResolvedBoneTransform } from './stickman/types';
 import { SketchPen } from './sketch';
 import { palette, factionInk } from './theme';
 import { Side } from '@nw/engine/types';
+import { bakeLazy } from './bake';
 
 const EMPTY_XF: ResolvedBoneTransform = {
   rotation: 0, scaleX: 1, scaleY: 1, translateX: 0, translateY: 0, alpha: 1,
@@ -103,3 +104,46 @@ export function drawStickmanDraft(
 
 /** Natural figure aspect (width / height) for callers sizing a bounding box. */
 export const STICKMAN_DRAFT_ASPECT = FIG_W / FIG_H;
+
+/**
+ * Padding around the scaled figure bounds, in bake pixels — covers the stroke width (pens draw
+ * centered on the path, so a limb can extend half its width past {@link BOUNDS}) plus `SketchPen`'s
+ * hand-drawn jitter. Derived here so the bake size and the draw offset always agree; a caller must
+ * NOT hardcode this — see {@link draftBakeSize}.
+ *
+ * Exported so a test can pin {@link draftBakeSize}'s formula against the same number the
+ * implementation uses, instead of duplicating it as a separate magic value.
+ */
+export const DRAFT_PAD = 8;
+
+/**
+ * Bake-texture size for a draft figure at `targetH` — the pixel bounds {@link drawStickmanDraft}
+ * actually needs, scaled from {@link FIG_W}/{@link FIG_H} (the same normalization the live draw
+ * uses) plus {@link DRAFT_PAD}. Exported so a bone-proportion change can't silently crop the bake:
+ * whoever calls this always gets the size that matches the current skeleton, not a stale constant.
+ */
+export function draftBakeSize(targetH: number): { w: number; h: number } {
+  const scale = targetH / FIG_H;
+  return { w: Math.ceil(FIG_W * scale) + DRAFT_PAD * 2, h: Math.ceil(targetH) + DRAFT_PAD * 2 };
+}
+
+/**
+ * Baked texture of the draft figure — `(side, targetH, seed)` is the whole input, so the same
+ * combination (one per unit type × render side, ~24 total) always hits the cache after the first
+ * spawn. Returns null with no bake renderer wired (headless tests), in which case the caller must
+ * fall back to drawing {@link drawStickmanDraft} live.
+ *
+ * `pageScale` is deliberately NOT passed: this is small per-unit chrome (kilobytes), and the unit
+ * container it rides on animates its own `scale` (spawn pop, hit flash), where a device-exact
+ * texture would visibly soften — the same call as `hpBar.ts`'s atlas (ADR-073).
+ */
+export function draftTexture(side: Side, targetH: number, seed: number): PIXI.Texture | null {
+  const { w, h } = draftBakeSize(targetH);
+  return bakeLazy(`stickman draft ${side}:${targetH}:${seed}`, () => {
+    const g = new PIXI.Graphics();
+    drawStickmanDraft(g, side, targetH, seed);
+    g.x = w / 2;
+    g.y = h / 2;
+    return g;
+  }, w, h);
+}

@@ -10,7 +10,7 @@ import { drawHudButton, hudButtonText, HudButtonVariant } from '../ui/widgets/hu
 import { FS, snapFont } from './fontScale';
 import { factionInk, fx } from './theme';
 import { buildIcon, preloadInkIconTextures } from './icons';
-import { drawHpBar, HP_BAR_W } from './HUDView/hpBar';
+import { HpBarView, HP_BAR_W } from './HUDView/hpBar';
 import { showSurrenderConfirm, hideSurrenderConfirm, showGameOver, type OverlayHost } from './HUDView/overlays';
 
 export { heartPoints, clipPolygonRight } from './HUDView/hpBar';
@@ -33,6 +33,10 @@ const actionLabelStyle = (): Partial<PIXI.ITextStyle> =>
 
 const HP_CELL_H   = 15;
 
+/** Upgrade-affordable glow ring: how far it sits outside the button at the ends of its breath. */
+const GLOW_GROW_MIN = 3;
+const GLOW_GROW_MAX = 7;
+
 // ── HUDView ────────────────────────────────────────────────────────────────────
 
 /**
@@ -54,8 +58,8 @@ export class HUDView {
   private inkText!:         PIXI.Text;
   /** Holder for the ink-well glyph — refilled once its PNG decodes, see `fillInkIcon`. */
   private inkIcon!:         PIXI.Container;
-  private playerHpGfx!:     PIXI.Graphics;
-  private enemyHpGfx!:      PIXI.Graphics;
+  private playerHpBar!:     HpBarView;
+  private enemyHpBar!:      HpBarView;
   private upgradeBtnBg!:    PIXI.Graphics;
   private upgradeBtnLabel!: PIXI.Text;
   private upgradeGlow!:     PIXI.Graphics;
@@ -66,6 +70,16 @@ export class HUDView {
 
   /** Monotonic phase driver for HP-danger blink + upgrade-affordable pulse. */
   private pulseT = 0;
+
+  /**
+   * Last variant each action button was stroked for.
+   *
+   * `sync()` runs every frame and used to re-stroke both button backgrounds unconditionally, but a
+   * variant only flips when affordability does — measured 660 indices/frame of pure waste on the
+   * battle screen (2026-09-22). `null` forces the first draw.
+   */
+  private upgradeBtnVariant: HudButtonVariant | null = null;
+  private refreshBtnVariant: HudButtonVariant | null = null;
 
   /** Pixel size of the bottom action buttons (set in build, per orientation). */
   private actionBtnW = 0;
@@ -145,8 +159,8 @@ export class HUDView {
     // bar blinking, NOT by turning red — otherwise our own low-HP warning would
     // collide with the enemy's red. Critical (last cell) escalates to a fast blink
     // plus an amber ⚠. See drawHpBar.
-    drawHpBar(this.playerHpGfx, fromFp(p.baseHp_fp), BASE_HP, factionInk.friend, pulse, pulseFast);
-    drawHpBar(this.enemyHpGfx,  fromFp(e.baseHp_fp), BASE_HP, factionInk.enemy,  pulse, pulseFast);
+    this.playerHpBar.sync(fromFp(p.baseHp_fp), BASE_HP, pulse, pulseFast);
+    this.enemyHpBar.sync(fromFp(e.baseHp_fp),  BASE_HP, pulse, pulseFast);
 
     const cost = p.nextUpgradeCost;
     if (cost === null) {
@@ -193,11 +207,15 @@ export class HUDView {
       return;
     }
     const r = this._upgradeRect;
-    const grow = 3 + 4 * pulse;
+    const grow = GLOW_GROW_MIN + (GLOW_GROW_MAX - GLOW_GROW_MIN) * pulse;
+    // Per-axis, so the ring's inset from the button edge is exact at both ends of the breath — a
+    // uniform scale would be off by the difference between the button's width and its height.
     this.upgradeGlow.visible = true;
-    this.upgradeGlow.clear();
-    this.upgradeGlow.lineStyle(3, fx.upgrade, 0.35 + 0.5 * pulse);
-    this.upgradeGlow.drawRoundedRect(r.x - grow, r.y - grow, r.w + grow * 2, r.h + grow * 2, 8);
+    this.upgradeGlow.scale.set(
+      (r.w + grow * 2) / (r.w + GLOW_GROW_MAX * 2),
+      (r.h + grow * 2) / (r.h + GLOW_GROW_MAX * 2),
+    );
+    this.upgradeGlow.alpha = 0.35 + 0.5 * pulse;
 
     this.upgradeArrow.visible = true;
     this.upgradeArrow.y = r.y - this.upgradeArrow.height - 2 - 4 * pulse; // bob toward the button
@@ -261,12 +279,13 @@ export class HUDView {
     this.timerText.y = topR.y + (topR.h - this.timerText.height) / 2;
 
     // Enemy HP bar — centered over the board (landscape) or the enemy base (portrait).
-    this.enemyHpGfx   = new PIXI.Graphics();
-    this.enemyHpGfx.y = topR.y + (topR.h - HP_CELL_H) / 2;
-    this.enemyHpGfx.x = isLandscape
+    this.enemyHpBar   = new HpBarView(factionInk.enemy);
+    const enemyHp     = this.enemyHpBar.container;
+    enemyHp.y = topR.y + (topR.h - HP_CELL_H) / 2;
+    enemyHp.x = isLandscape
       ? boardLeft + (board.w - HP_BAR_W) / 2
       : this.baseCenterX() - HP_BAR_W / 2;
-    this._enemyHpRect = { x: this.enemyHpGfx.x, y: this.enemyHpGfx.y, w: HP_BAR_W, h: HP_CELL_H };
+    this._enemyHpRect = { x: enemyHp.x, y: enemyHp.y, w: HP_BAR_W, h: HP_CELL_H };
 
     // Surrender button — visual only, no interactive. Landscape hugs the board's
     // right edge; portrait keeps the strip edge. Hidden entirely during replay
@@ -308,7 +327,8 @@ export class HUDView {
     void preloadInkIconTextures().then(() => { if (!this.inkIcon.destroyed) this.fillInkIcon(); });
 
     // Player HP bar
-    this.playerHpGfx = new PIXI.Graphics();
+    this.playerHpBar = new HpBarView(factionInk.friend);
+    const playerHp   = this.playerHpBar.container;
     if (isLandscape) {
       // Right-anchored within the column (its inner edge, bordering the hand
       // strip) rather than the column's outer/screen edge — the column itself
@@ -317,16 +337,16 @@ export class HUDView {
       this.inkText.anchor.set(1, 0);
       this.inkText.x       = bLR.x + bLR.w - 14;
       this.inkText.y       = bLR.y + bLR.h * 0.22;
-      this.playerHpGfx.x   = bLR.x + bLR.w - HP_BAR_W - 14;
-      this.playerHpGfx.y   = bLR.y + bLR.h * 0.58;
+      playerHp.x           = bLR.x + bLR.w - HP_BAR_W - 14;
+      playerHp.y           = bLR.y + bLR.h * 0.58;
     } else {
       // Shift the count right to leave room for the glyph at the strip's left edge.
       this.inkText.x       = bLR.x + 14 + INK_ICON_S + 8;
       this.inkText.y       = bLR.y + (bLR.h - this.inkText.height) / 2;
-      this.playerHpGfx.x   = this.baseCenterX() - HP_BAR_W / 2;
-      this.playerHpGfx.y   = bLR.y + (bLR.h - HP_CELL_H) / 2;
+      playerHp.x           = this.baseCenterX() - HP_BAR_W / 2;
+      playerHp.y           = bLR.y + (bLR.h - HP_CELL_H) / 2;
     }
-    this._playerHpRect = { x: this.playerHpGfx.x, y: this.playerHpGfx.y, w: HP_BAR_W, h: HP_CELL_H };
+    this._playerHpRect = { x: playerHp.x, y: playerHp.y, w: HP_BAR_W, h: HP_CELL_H };
 
     // Bottom action buttons (refresh + upgrade) — larger than the surrender button,
     // laid out inside the bottom-right rect. Portrait: side by side (wide, short
@@ -375,7 +395,17 @@ export class HUDView {
 
     // Upgrade attention FX (§5): breathing glow ring (behind the button) + a bobbing
     // chevron above it. Both hidden until the upgrade is affordable (animateUpgradeFx).
+    // Stroked ONCE at its widest, then breathed via scale + alpha (see animateUpgradeFx). Drawn
+    // around the origin rather than at `rUpgrade`, because a scale is about the object's origin and
+    // this ring has to breathe around the button's centre.
     this.upgradeGlow = new PIXI.Graphics();
+    this.upgradeGlow.lineStyle(3, fx.upgrade, 1);
+    this.upgradeGlow.drawRoundedRect(
+      -rUpgrade.w / 2 - GLOW_GROW_MAX, -rUpgrade.h / 2 - GLOW_GROW_MAX,
+      rUpgrade.w + GLOW_GROW_MAX * 2, rUpgrade.h + GLOW_GROW_MAX * 2, 8,
+    );
+    this.upgradeGlow.x = rUpgrade.x + rUpgrade.w / 2;
+    this.upgradeGlow.y = rUpgrade.y + rUpgrade.h / 2;
     this.upgradeGlow.visible = false;
     this.upgradeArrow = makeText('▼', {
       fontSize: snapFont(Math.round(rUpgrade.h * 0.5)), fill: fx.upgrade, fontWeight: 'bold', fontFamily: 'monospace',
@@ -391,8 +421,8 @@ export class HUDView {
     this._playerInfoRect = { x: bLR.x, y: bLR.y, w: Math.round(this.layout.designWidth * 0.34), h: bLR.h };
 
     this.container.addChild(
-      topBg, this.timerText, this.enemyHpGfx, this.surrenderBtnBg,
-      this.inkIcon, this.inkText, this.playerHpGfx,
+      topBg, this.timerText, this.enemyHpBar.container, this.surrenderBtnBg,
+      this.inkIcon, this.inkText, this.playerHpBar.container,
       this.refreshBtnBg, this.refreshBtnLabel,
       this.upgradeGlow,                        // behind the upgrade button
       this.upgradeBtnBg, this.upgradeBtnLabel,
@@ -415,6 +445,8 @@ export class HUDView {
 
   private setUpgradeBtnStyle(enabled: boolean): void {
     const variant: HudButtonVariant = enabled ? 'gold' : 'disabled';
+    if (variant === this.upgradeBtnVariant) return;
+    this.upgradeBtnVariant = variant;
     this.upgradeBtnBg.clear();
     drawHudButton(this.upgradeBtnBg, this.actionBtnW, this.actionBtnH, variant, { radius: 6 });
     this.upgradeBtnLabel.style.fill = hudButtonText(variant);
@@ -422,6 +454,8 @@ export class HUDView {
 
   private setRefreshBtnStyle(enabled: boolean): void {
     const variant: HudButtonVariant = enabled ? 'accent' : 'disabled';
+    if (variant === this.refreshBtnVariant) return;
+    this.refreshBtnVariant = variant;
     this.refreshBtnBg.clear();
     drawHudButton(this.refreshBtnBg, this.actionBtnW, this.actionBtnH, variant, { radius: 6 });
     this.refreshBtnLabel.style.fill = hudButtonText(variant);

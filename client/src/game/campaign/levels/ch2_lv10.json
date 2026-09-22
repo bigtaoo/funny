@@ -6,8 +6,8 @@
     "kind": "destroy_base"
   },
   "enemyScale": {
-    "hp": 1.39,
-    "damage": 1.26
+    "hp": 1.636,
+    "damage": 1.37
   },
   "loadout": [
     "max_1",
@@ -216,5 +216,11 @@
     "outroKey": "campaign.ch2.outro",
     "realLayerKey": "campaign.realLayer.ch2"
   },
-  "startInk": 33
+  "startInk": 33,
+  "lanePunish": {
+    "units": 5,
+    "sustainTicks": 120,
+    "cooldownTicks": 450,
+    "spell": "rockslide"
+  }
 }

@@ -55,6 +55,8 @@ export interface LevelDefinition {
   bannedCards?: string[];
   /** PvE-only level spells force-injected into the player's opening hand (§4.9.2). */
   levelSpells?: { cardId: string; initialCount: number }[];
+  /** Scripted answer to a player lane wall (§4.9.5). Omitted → disabled. */
+  lanePunish?: LanePunishSpec;
   /** Friendly escort units the player must protect to the enemy base (§4.9.3). */
   escorts?: EscortSpec[];
   /**
@@ -181,6 +183,29 @@ export interface HazardSpec {
   rangeMod?: number;
   /** For 'lava': damage per second dealt to units inside the zone (default 5). */
   dps?: number;
+}
+
+/**
+/**
+ * Scripted answer to a player lane wall (§4.9.5).
+ *
+ * Campaign enemies are a wave script with no AI (`engine/sim/step.ts` spawns them
+ * and nothing else), so before this knob nothing on the board could ever punish
+ * the player for stacking one lane — the wall held and the level was decided.
+ * When `units` player units sit in one column for `sustainTicks`, the level
+ * answers that column with `spell`, then goes on cooldown for `cooldownTicks`.
+ *
+ * Per-level and opt-in: every level that omits it behaves exactly as before.
+ */
+export interface LanePunishSpec {
+  /** Player units in one column that count as a wall. */
+  units: number;
+  /** Consecutive ticks the wall must hold before the answer lands. */
+  sustainTicks: number;
+  /** Ticks before another answer may be cast (global across columns). */
+  cooldownTicks: number;
+  /** Column spell the level answers with. */
+  spell: 'rockslide' | 'bridge_collapse';
 }
 
 /**

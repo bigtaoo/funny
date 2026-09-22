@@ -7,8 +7,8 @@
     "durationTicks": 2100
   },
   "enemyScale": {
-    "hp": 1.68,
-    "damage": 1.46
+    "hp": 1.707,
+    "damage": 1.473
   },
   "loadout": [
     "max_1",
@@ -267,5 +267,11 @@
     }
   },
   "nameKey": "campaign.ch2.lv7.name",
-  "briefKey": "campaign.ch2.lv7.brief"
+  "briefKey": "campaign.ch2.lv7.brief",
+  "lanePunish": {
+    "units": 5,
+    "sustainTicks": 120,
+    "cooldownTicks": 450,
+    "spell": "rockslide"
+  }
 }

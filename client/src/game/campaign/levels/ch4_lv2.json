@@ -156,7 +156,13 @@
   "startInk": 20,
   "inkRegenMult": 1.26,
   "enemyScale": {
-    "hp": 1.04,
-    "damage": 1.03
+    "hp": 1.141,
+    "damage": 1.08
+  },
+  "lanePunish": {
+    "units": 5,
+    "sustainTicks": 120,
+    "cooldownTicks": 450,
+    "spell": "rockslide"
   }
 }

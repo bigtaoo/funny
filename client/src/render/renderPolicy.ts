@@ -116,7 +116,7 @@ export const IDLE_QUIET_MS = 2_000;
  * (`render/idleQuiet.ts`).
  *
  * This is the half of the idle budget the tick-rate cap alone cannot reach: the lobby's boiling
- * lines (8 fps), its stickman silhouettes (12 fps) and the world map's shield bubbles (10 fps) each
+ * lines (8 fps), its stickman silhouettes (12 fps) and the world map's shield bubbles (30 fps) each
  * change the stage signature on their own schedule, which is what keeps an untouched screen
  * painting 5-12 times a second AND keeps it above the quiet threshold above. With them holding, an
  * untouched screen paints only on the 500 ms floor — twice a second — and the tick cap engages.

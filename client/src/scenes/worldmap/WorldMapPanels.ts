@@ -53,8 +53,8 @@ export class WorldMapPanels {
     this.core.closeModal();
   }
 
-  showToast(msg: string, color?: number): void {
-    this.core.showToast(msg, color);
+  showToast(msg: string, color?: number, filled?: boolean): void {
+    this.core.showToast(msg, color, filled);
   }
 
   showDeployDialog(tx: number, ty: number, kind: DeployKind): void {

@@ -1474,3 +1474,132 @@ Daily 另外三个 tab、拍卖行的 `mine`/`bids` 两个 tab 全没审过。
 实拍：大厅「开始匹配」→「匹配中」页 → 点「取消匹配」→ **直接回到大厅**；社交 →「联机对战」→ 页面上只剩
 「创建房间」「加入房间」两颗 + 「把房间码发给好友」。
 `tsc --noEmit`、`npx vitest run`（310 文件 / 3859 例）、`test:ui`（275 文件 / 2799 例）、`npm run build:web` 全绿。
+
+## 62. 世界地图商店的「购买成功」：说清买的是什么，用大厅商店那身绿（2026-09-22）
+
+**起因**：用户截图——SLG 商店面板里点 Buy，弹出来的是一块深色 toast，上面只有 `Purchased` 一个词。
+两个问题：①买的是哪张卡、得到了什么效果，toast 一个字都不说，而面板里同时摆着六七张卡（三档加速、
+三档资源包、两档护盾），手一抖点错了根本看不出来；②大厅商店（`ShopScene`）买完是一条**绿色实心**
+的成功横幅（`GlobalToast` 的 `success` 分支：`fill`/`border` 同色、0.95 alpha），世界地图这块深色框
+反而更像一条错误提示。
+
+| 位置 | 改了什么 |
+|---|---|
+| `worldmap/net/structures.ts` `doBuyShopItem` | 文案从 `world.shopBought`（光秃秃的「购买成功」）换成大厅商店同款 `shop.boughtNamed`（「购买成功：{name}」），`{name}` 直接复用面板自己的 `panels.shopLabel(it)`——卡片上写的就是它（`训练加速 24 时` / `资源包（各 200000）` / `保护罩 8 时`），效果已经在名字里，不必再造一套「你获得了 X」的说法。目录（`ctx.shopItems`）万一没缓存上就退回原来那句 |
+| `WorldMapPanels/core.ts` `showToast` | 第三个参数 `filled`：为真时整块按 `color` 填充（0.95 alpha），即 `GlobalToast` 成功横幅那身绿；默认仍是深色框 + 彩色描边，其余所有调用点（全部是通知/报错）一个像素都没动 |
+| 同上 | 高度从写死的 84 改成 `max(84, 文字高 + 32)`，并给标签加 `align: 'center'` |
+
+**为什么顺手动高度**：`shop.boughtNamed` 把文案从 1 个词撑到近 40 字符，在 720 设计宽的框里
+（标签折行宽 672、字号 `FS.headline`=42）必然折成两行——旧的固定 84 会把第二行切掉一半。
+折行后标签默认左对齐，两行会整体偏左挂着，所以一并设 `align: 'center'`。
+这两处对**已有**的长 toast（`push.ts` 的战报行、`world.err.notConnected` 这类长句）同样是修复——
+它们此前就在同一个 84px 里被裁，只是没人报。
+
+**门禁**（`test/ui/worldMapShopBuyFlow.ui.ts`，+2 例，harness 补上 `shopItems`/`shopLabel`）：
+①买 `sp1` 后 `showToast` 收到的正是 `Purchased: Train speedup 24h` + `filled=true`；
+②目录为空时退回 `Purchased`，且照样 `filled=true`。
+
+**怎么核的**：真 Chrome + `preview_start` 的 9090。世界地图商店要登录 + 有基地才进得去，所以走
+[`worldmap-modal-visual-verify`](../../claudedocs/README.md) 那套办法——`app.ts` 里临时挂一个
+`#toastdemo` hash 分支，手搓 ctx 调**真的** `showToast`，核完 `git checkout --` 撤掉。
+实拍四张：英文一行（绿色实心）、德文一行（`Gekauft: Ausbildung +24h`）、英文最长那条
+（`Purchased: Resource pack (200000 each)`，两行、居中、框跟着长高）、以及原来的深色错误 toast
+（同样两行不再被裁）。`tsc --noEmit` + `npm run build:web` + 相关 3 个 ui 测试文件全绿。
+
+## 63. 把「买了什么」补进其余几处购买 toast（2026-09-22）
+
+§62 只治了世界地图商店那一块。用户接着说「其他地方的购买 toast 也一起改成这样」——于是把全仓
+每一条**花钱换东西**的成功提示过了一遍。
+
+**先说没改的那一半**：颜色。除世界地图自己画的那块深色框（§62 已修）外，其余所有场景的 toast 都走
+`showToastMessage` → `GlobalToast`，`success` 分支本来就是绿色实心横幅（`app.ts` 里
+`kind === 'success' ? C.green : C.red`），高度也本来就跟着文字长。所以这一轮全部是**文案**的活。
+
+| 位置 | 原来 | 现在 |
+|---|---|---|
+| `AuctionScene/tradeActions.ts` `doBuy` | `auction.bought`（「购买成功」，键已删） | `shop.boughtNamed` + 行自己的标签（`auctionLabelText`，含星级）。`confirmBuy`/`doBuy` 多带一个 `name`，由 `listCell.ts` 从被点的那行传下来 |
+| `BattlePassScene.ts` 买战令 | **一条 toast 都没有**（只靠按钮消失 + 付费轨点亮） | `shop.boughtNamed` + `battlepass.title` |
+| `CityScene/actions.ts` `doSpeedup` / `doSpeedupTraining` | 两处共用 `city.speedupDone`（「已加速」） | 新键 `city.speedupDoneNamed`「已加速：{name}」——建造取 `city.bld.<key>`，练兵取 `city.bld.trainTroops` |
+| `ShopScene/actions.ts` `onRecharge` | `shop.rechargeSuccess`（「金币已到账」，作为兜底保留） | `shop.rechargeSuccessNamed`「支付成功：+{n} 金币」 |
+
+### 63.1 充值那条为什么不能照抄档位面值
+
+`ShopScene/coins.ts` 的 `WEB_COIN_TIERS` 写着每档给多少币，但**首充双倍**是服务端一次性的账号级赠送
+（`wallets.firstPurchasedAt` 的 CAS），客户端的档位表不知道这一次算不算首充。照抄面值的结果就是：
+唯一一次真正多给币的购买，提示跟其它次一模一样，还可能少报一半。
+
+所以数字是**量出来的**：`nav/shop/iap.ts` 的 `doRechargeCoins` 在两条分支开头都先记下
+`coinsBefore = saveManager.get().wallet.coins`，原生分支用 `/iap/verify` 返回并已 adopt 的权威存档、
+Paddle 分支用 webhook 轮询后的存档，各自算差值填进 `ShopActionResult.coins`（这个可选字段早就存在，
+`onWatchAd` 在用）。场景层只负责印出来，拿不到数就退回原来那句。
+
+### 63.2 门禁（+9 例，都做过 mutation check）
+
+- `auctionScene.ui.ts` +2：成功 toast 带的就是调用方传下来的名字；**以及**市场行的 Buy 按钮把**那一行自己的**
+  `auctionLabelText` 交给 `confirmBuy`——后半条才是会烂的那半（名字传不下来时前半条照样绿）。
+  把 `listCell` 改成传空串、把 toast 换成别的键，两例分别转红。
+- `citySpeedupToast.test.ts`（新建，无 PIXI，直接喂 `ActionsHost`）+4：建造加速带建筑名、两个不同 key
+  读出来不一样、练兵加速带练兵名、失败路径仍是报错而不是具名成功。
+- `shopActions.test.ts` +1：结果带 `coins` 就印具名句，不带就退回旧句。
+- `shopNav-purchaseFinish.test.ts` +1（另改 3 处既有断言为 `{ ok: true, coins: 500 }`）：
+  钱包 1000 → 3400 时报 **2400**，不是 3400 也不是档位面值。把实现改成返回余额即转红。
+
+**怎么核的**：同 §62 的 `app.ts` 临时 hash 分支，这次直接喂 `showToastMessage(..., 'success')` 走真
+`GlobalToast`。实拍四张：英文带星级装备名（`Purchased: Foil Cover ★★★★★`）、英文充值
+（`Payment complete: +13500 coins`）、德文建造加速（`Beschleunigt: Graphitmühle`）、中文材料行
+（`购买成功：旧纸片 ×999`）。核完 `git checkout -- client/src/app.ts` 撤掉。
+`tsc --noEmit`、`npx vitest run`（311 文件 / 3865 例）、`test:ui`（275 文件 / 2826 例）、
+`npm run lint`、`npm run build:web` 全绿。
+
+### 63.3 补门禁：§62 的**画面**那半（2026-09-22，用户追问「有测试可以加吗」）
+
+§62 改的是世界地图自己那块 toast 的外观，当时只有 `worldMapShopBuyFlow.ui.ts` 断言了**调用点**
+（`showToast(..., C.green, true)` 的第三个参数），没有任何测试证明这个 flag 真的改了画出来的东西——
+把 `fill: filled ? color : C.dark` 写回 `C.dark`，那条测试照样绿。新建
+`test/ui/worldMapToastStyle.ui.ts`（5 例，全部 mutation check 过）：
+
+- 购买 toast 整块填成传进来的颜色、alpha > 0.9（不是深色 notice 框）；
+- **反向**：默认 toast 一个像素没动——深色填充 + 该颜色只作描边（把实现改成永远 filled，这条转红）；
+- 一行的通知仍是原来的 84px；
+- 会折行的长文案把框**撑高**而不是被裁（断言里先确认标签真的折了，否则这例什么也没证明）；
+- 标签 `align: 'center'`。
+
+读颜色的办法：`sketchPanel` 的图集描边路径要 renderer，headless 下走它自己写明的回退分支、
+返回裸 `PIXI.Graphics`，于是 `geometry.graphicsData[0].fillStyle` 就是填充
+（同 `dailySceneCheckinFocus.ui.ts` 读格子颜色的路子）。
+
+**测不了的那条，明说**：真实字体的行高。headless 的 `measureText` 是每字符 7px、每行约 10px 的平表，
+所以「84px 到底够不够两行」只能靠实拍（§62 的 en/de/zh 三张）；这里的折行用例是用**行数**堆过 84 的，
+它锁的是「高度跟着文字走」这条规则，不是真实像素。
+## 64. 拍卖行「一口价」按钮报错了结果（2026-09-22）
+
+**起因**：`AuctionScene/bid.ts` 的出价弹窗里，一口价按钮把 `core.bidAmount` 设成
+`auc.buyoutPrice` 后直接调 `confirmBid(auc)`——跟普通出价走的是同一条路径。服务端
+`auctionsvc/src/auctionService/trade.ts`「5. Buyout」在 `amount >= doc.buyoutPrice` 时会立即
+`settleAuctionWin`，也就是**东西已经买到手了**，但客户端的 `doBid` 一律 `await placeBid(...)` 后
+丢掉返回值、只吐 `auction.bidPlaced`（「出价成功」）——玩家一口价买下装备，看到的却是「出价成功」，
+不知道自己已经拿到东西、钱也扣了。
+
+**修法**：`placeBid` 的返回值（`AuctionView`）本身就分得清两种结果——`docToView` 把
+`doc.status` 原样带出来，只有这一次调用真的把拍卖结算掉时才会是 `'sold'`（服务端在 CAS 失败时会
+整个 `AUCTION_CLOSED` 抛出，不会拿别人的结算结果冒充这次的返回），不需要额外带账号 id 去比对
+`buyerId`。于是 `doBid` 现在看 `res.status === 'sold'`：结算了就照抄 `tradeActions.ts doBuy` 现在的
+写法——`t('shop.boughtNamed', { name })`，`name` 取 `auctionLabelText(auc)`；没结算（真的只是
+出价，`topBid` 抬高但 `status` 仍 `open`）才吐原来的 `auction.bidPlaced`。
+
+**没有按「点了哪个按钮」分支**：普通「出价」按钮理论上也能把 `core.bidAmount` 手动加到
+`≥buyoutPrice`（`addNumInput`/+1/+5/+10 都不封顶），这时服务端一样会立即结算——按钮身份不可靠，
+服务端返回的 `status` 才是权威信号，两个按钮共用同一条 `confirmBid → doBid` 路径,分支落在响应上。
+
+**门禁**：`auctionScene.ui.ts` 的「buy race」一组 +3 例——一口价把响应喂成
+`{status:'sold', buyerId:'acc_me', ...}` 只能拿到 `shop.boughtNamed` 而不是 `bidPlaced`；反过来
+`status` 仍 `open` 的普通出价只能拿到 `bidPlaced` 而不是 `boughtNamed`。这两例都是直接调 `doBid`，
+跳过了「一口价按钮」本身——补第三例：`scene.bid.openBidForm(auc)` 渲染出真实的弹窗，`tapLabel`
+点一口价按钮、断言 `core.bidAmount` 真的被写成 `buyoutPrice`、确认弹出的确认框文案里带的也是
+`buyoutPrice`（不是残留的手输出价值），再点确认框的 OK，验证 `placeBid` 真的拿到 `buyoutPrice` 调用、
+toast 也确实是购买而不是出价——`openBidForm` 在这之前一条 UI 测试都没有，前两例测的是响应→toast
+这一段，这例补的是按钮→确认框→`doBid` 这一段，两段拼起来才是玩家真正点的那条路。三例都做过
+mutation check：把实现改回「永远 `bidPlaced`」和改成「永远 `boughtNamed`」分别只转红对应例、其余
+仍绿，确认每条断言各自守住自己的分支而不是互相包庇。
+
+`tsc --noEmit`、`npm run build:web`、`test:ui`（`auctionScene.ui.ts` 91 例 + 全量 275 文件 / 2814 例）全绿。

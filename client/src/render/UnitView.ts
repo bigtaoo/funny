@@ -10,17 +10,17 @@ import type { TaoAsset, GearGlyphSpec } from './stickman/StickmanRuntime';
 import { TICK_RATE } from '@nw/engine';
 import type { EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import { fx } from './theme';
-import { drawStickmanDraft } from './stickmanDraft';
 import { targetScreenHeight } from './unitSize';
+import { setBarRatio } from './barSprite';
 import {
-  STICKMAN_ASSETS, resolveSkinOverrides, DRAFT_SEED, drawFactionMarker, stickmanHpBarY,
-  createUnitContainer, resetUnitContainer,
-  RADIUS, MARKER_Y, HP_BAR_WIDTH, HP_BAR_HEIGHT, HP_BAR_Y, HP_TOTAL_FRAMES, HP_FADE_FRAMES,
+  STICKMAN_ASSETS, resolveSkinOverrides, createUnitContainer, resetUnitContainer,
+  HP_BAR_WIDTH, HP_TOTAL_FRAMES, HP_FADE_FRAMES,
 } from './UnitView/assets';
 import {
   setSpellTargetPreview, playHitEffect, playDeathEffect, getHitPoint, NO_SPELL_TARGETS, type EffectsHost,
 } from './UnitView/effects';
 import { applyGear, type GearHost } from './UnitView/gear';
+import { acquireSprite, type BuildHost } from './UnitView/build';
 
 export { STICKMAN_ASSETS, resolveSkinOverrides } from './UnitView/assets';
 
@@ -29,9 +29,10 @@ export { STICKMAN_ASSETS, resolveSkinOverrides } from './UnitView/assets';
 // 2026-08-13: per-unit-type asset URL tables + the pool factory/faction-marker/HP-bar-Y pure
 // helpers were pulled out into UnitView/assets.ts; the event-driven effects (spell-target outline/
 // hit flash/death fade) into UnitView/effects.ts; the equipment-overlay glyph resolution into
-// UnitView/gear.ts — all form① (claudedocs/client-modules.md "单文件 500 行收敛"). This file kept
-// the per-frame sync, stickman pooling/spawn, and sprite-position/HP-bar update logic that ties
-// the three together.
+// UnitView/gear.ts. 2026-09-22: sprite construction (stickman-pool acquire/build, circle-placeholder
+// build, faction-marker/draft-body painting) into UnitView/build.ts — all form① (claudedocs/
+// client-modules.md "单文件 500 行收敛"). This file kept the per-frame sync, stickman spawn wiring,
+// and sprite-position/HP-bar update logic that ties the pieces together.
 
 export class UnitView {
   readonly container: PIXI.Container;
@@ -44,7 +45,7 @@ export class UnitView {
    * the screen bottom. Facing/animation must NOT also key off the raw game side
    * or the joiner's units get mirrored twice (wrong way round). Instead every
    * unit renders relative to the screen: own side = bottom (un-mirrored, like
-   * owner 0 vs AI), enemy = top (mirrored). See {@link renderSide}.
+   * owner 0 vs AI), enemy = top (mirrored). See render/UnitView/build.ts's `renderSide`.
    */
   private readonly localSide: Side;
 
@@ -105,7 +106,7 @@ export class UnitView {
     createUnitContainer,
     resetUnitContainer,
     20,
-    // Circle placeholder container: body/ring/hpBg/hpFill — 4 Graphics + the container.
+    // Circle placeholder container: bodySprite/body/ringSprite/ring/hpBg/hpFill + the container.
     { label: 'unit.circle', bytesEach: 8 * 1024 },
   );
 
@@ -267,25 +268,14 @@ export class UnitView {
 
   // ── Private helpers ───────────────────────────────────────────────────────
 
-  /**
-   * Screen-relative side: the local player always renders at the bottom, the
-   * opponent at the top — regardless of which game side (owner) they are. Drives
-   * both sprite mirroring and faction tint so the joiner's view matches a vs-AI
-   * view (own units face up un-mirrored, enemy units mirrored), never flipped twice.
-   */
-  private renderSide(unit: Unit): Side {
-    return unit.side === this.localSide ? Side.Bottom : Side.Top;
-  }
-
-  /**
-   * Draw the faction ground marker for a stickman unit, aligned to its shadow
-   * (slightly larger than the shadow so it reads as a colored patch under it).
-   * Falls back to a default ground ellipse when the shadow ground is unavailable.
-   */
-  private drawUnitMarker(marker: PIXI.Graphics, runtime: StickmanRuntime, side: Side): void {
-    const g = runtime.getShadowGround();
-    if (g) drawFactionMarker(marker, side, g.x, g.y, g.rx * 1.3, g.ry * 1.3);
-    else   drawFactionMarker(marker, side, 0, MARKER_Y, 12, 4.4);
+  /** Bundles what build.ts's functions need instead of them closing over `this`. */
+  private buildHost(): BuildHost {
+    return {
+      pool: this.pool, stickmanPools: this.stickmanPools, stickmanPoolKeys: this.stickmanPoolKeys,
+      stickmanRuntimes: this.stickmanRuntimes, localSkinAssets: this.localSkinAssets,
+      opponentSkinAssets: this.opponentSkinAssets, assets: this.assets, localSide: this.localSide,
+      applyGear: (runtime: StickmanRuntime, unit: Unit) => this.applyGear(runtime, unit),
+    };
   }
 
   /** Bundles what gear.ts's functions need instead of them closing over `this`. */
@@ -301,108 +291,13 @@ export class UnitView {
   }
 
   /**
-   * Pool bucket key for a unit's stickman (wrapper + runtime) pair. Plain `unitType` for the common
-   * case (no skin override on the relevant side — the vast majority of types, always). Types with a
-   * skin equipped on this unit's own side get a distinct suffixed key so a skinned pooled instance is
-   * never handed back out for a differently-skinned (or unskinned) reuse — `StickmanRuntime` binds its
-   * textures at construction and can't swap them on reset (see {@link acquireSprite}).
-   */
-  private poolKey(unitType: UnitType, isLocal: boolean): string {
-    const skinMap = isLocal ? this.localSkinAssets : this.opponentSkinAssets;
-    return skinMap.has(unitType) ? `${unitType}:${isLocal ? 'local' : 'opp'}` : unitType;
-  }
-
-  /**
    * A skin only ever re-skins its owner's own units (S3-4 rule, 2026-08-01 fix): the local player's
    * equipped skins render on their own side, the opponent's (if known — real PvP only, never AI/bot)
    * render on the opponent's side. A same-type unit on the other side always falls back to the
-   * default look, exactly like an opponent with nothing equipped.
+   * default look, exactly like an opponent with nothing equipped. See render/UnitView/build.ts.
    */
   private acquireSprite(unit: Unit): PIXI.Container {
-    const isLocal = unit.side === this.localSide;
-    const skinned = (isLocal ? this.localSkinAssets : this.opponentSkinAssets).get(unit.unitType);
-    const asset = skinned ?? this.assets.get(unit.unitType);
-    if (asset) return this.buildStickmanContainer(unit, asset, isLocal);
-    return this.buildCircleContainer(unit);
-  }
-
-  // ─── Stickman container (unit type with a loaded .tao asset) ───────────────
-
-  private buildStickmanContainer(unit: Unit, asset: TaoAsset, isLocal: boolean): PIXI.Container {
-    const side    = this.renderSide(unit);
-    const mirrorX = side === Side.Top;
-    const targetHeight = targetScreenHeight(unit.unitType);
-    const poolKey = this.poolKey(unit.unitType, isLocal);
-    this.stickmanPoolKeys.set(unit.id, poolKey);
-
-    // Reuse a pooled (wrapper + runtime) pair of the same bucket when available.
-    const pooled = this.stickmanPools.get(poolKey)?.pop();
-    if (pooled) {
-      pooled.runtime.reset({ mirrorX, targetHeight });
-      pooled.wrapper.visible = true;
-      pooled.wrapper.alpha   = 1;
-      pooled.wrapper.scale.set(1);
-      // A pooled wrapper may be reused for the opposite side — recolor + reposition.
-      const marker = pooled.wrapper.getChildByName('factionMarker') as PIXI.Graphics | null;
-      if (marker) this.drawUnitMarker(marker, pooled.runtime, side);
-      const hpBg   = pooled.wrapper.getChildByName('hpBg')   as PIXI.Graphics;
-      const hpFill = pooled.wrapper.getChildByName('hpFill') as PIXI.Graphics;
-      hpBg.visible = false;
-      hpFill.visible = false;
-      hpFill.clear();
-      this.applyGear(pooled.runtime, unit);
-      this.stickmanRuntimes.set(unit.id, pooled.runtime);
-      return pooled.wrapper;
-    }
-
-    const wrapper = new PIXI.Container();
-    wrapper.visible = true;
-
-    // Faction ground marker — drawn first so it sits behind the figure (under the shadow).
-    const marker = new PIXI.Graphics();
-    marker.name = 'factionMarker';
-
-    const runtime = new StickmanRuntime(asset, { mirrorX, targetHeight });
-    this.stickmanRuntimes.set(unit.id, runtime);
-    this.applyGear(runtime, unit);
-    this.drawUnitMarker(marker, runtime, side);
-
-    // ── HP bar (positioned above the character's head) ────────────────────
-    // Tier-aware: clears the crown at the unit's rendered height (see stickmanHpBarY).
-    const HP_BAR_Y_STICKMAN = stickmanHpBarY(unit.unitType);
-
-    const hpBg = new PIXI.Graphics();
-    hpBg.name = 'hpBg';
-    hpBg.beginFill(0xcccccc, 0.7);
-    hpBg.drawRect(-HP_BAR_WIDTH / 2, HP_BAR_Y_STICKMAN, HP_BAR_WIDTH, HP_BAR_HEIGHT);
-    hpBg.endFill();
-    hpBg.visible = false;
-
-    const hpFill = new PIXI.Graphics();
-    hpFill.name    = 'hpFill';
-    hpFill.visible = false;
-
-    wrapper.addChild(marker, runtime.container, hpBg, hpFill);
-    return wrapper;
-  }
-
-  // ─── Circle container (PvE-only types, or stickman units before asset loads) ──
-
-  private buildCircleContainer(unit: Unit): PIXI.Container {
-    const c = this.pool.acquire();
-    c.visible = true;
-
-    const body = c.getChildByName('body') as PIXI.Graphics;
-    body.clear();
-    // Procedural skeleton draft (§5.5) in faction ink — blue = us / red = enemy.
-    // Keyed off render side so the joiner's own units stay "us"-colored.
-    drawStickmanDraft(body, this.renderSide(unit), targetScreenHeight(unit.unitType), DRAFT_SEED[unit.unitType]);
-
-    // Faction ground marker (also grounds the figure on the board).
-    const ring = c.getChildByName('ring') as PIXI.Graphics;
-    drawFactionMarker(ring, this.renderSide(unit), 0, MARKER_Y, RADIUS * 1.1, RADIUS * 0.42);
-
-    return c;
+    return acquireSprite(this.buildHost(), unit);
   }
 
   // ─── Sprite position update ───────────────────────────────────────────────
@@ -412,18 +307,13 @@ export class UnitView {
     sprite.x = x;
     sprite.y = y;
 
-    // HP bar fill — always up-to-date so it's correct when made visible
-    const hpFill = sprite.getChildByName('hpFill') as PIXI.Graphics | null;
+    // HP bar fill — always up-to-date so it's correct when made visible. Two number writes, no
+    // geometry: the bar's Y offset is baked into the sprite at build time (stickman containers use
+    // their own, see stickmanHpBarY), so only the width and the colour move.
+    const hpFill = sprite.getChildByName('hpFill') as PIXI.Sprite | null;
     if (!hpFill) return;
-    hpFill.clear();
     const ratio = Math.max(0, unit.hp_fp / unit.maxHp_fp);
-    hpFill.beginFill(ratio > 0.4 ? fx.hpHigh : fx.hpLow);
-
-    // Determine HP bar Y offset: stickman containers have their own y offset baked in.
-    const isStickman = this.stickmanRuntimes.has(unit.id);
-    const barY = isStickman ? stickmanHpBarY(unit.unitType) : HP_BAR_Y;
-    hpFill.drawRect(-HP_BAR_WIDTH / 2, barY, HP_BAR_WIDTH * ratio, HP_BAR_HEIGHT);
-    hpFill.endFill();
+    setBarRatio(hpFill, ratio, HP_BAR_WIDTH, ratio > 0.4 ? fx.hpHigh : fx.hpLow);
   }
 
   // ─── HP bar visibility ────────────────────────────────────────────────────
@@ -431,8 +321,8 @@ export class UnitView {
   private setHpBarVisible(unitId: number, visible: boolean, alpha: number): void {
     const sprite = this.sprites.get(unitId);
     if (!sprite) return;
-    const hpBg   = sprite.getChildByName('hpBg')   as PIXI.Graphics | null;
-    const hpFill = sprite.getChildByName('hpFill') as PIXI.Graphics | null;
+    const hpBg   = sprite.getChildByName('hpBg')   as PIXI.Sprite | null;
+    const hpFill = sprite.getChildByName('hpFill') as PIXI.Sprite | null;
     if (hpBg)   { hpBg.visible   = visible; hpBg.alpha   = alpha; }
     if (hpFill) { hpFill.visible = visible; hpFill.alpha = alpha; }
   }

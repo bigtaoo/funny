@@ -9,12 +9,13 @@
 //
 // Runs under the headless PIXI adapter (vitest.ui.config.ts setupFiles).
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n, t } from '../../src/i18n';
 import { BattlePassScene, type BattlePassCallbacks } from '../../src/scenes/BattlePassScene';
+import * as log from '../../src/net/log';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -164,5 +165,31 @@ describe('BattlePassScene — buy loading overlay always clears', () => {
     expect(s.bt.busy).toBe(false);
     expect(hasProcessingOverlay(scene.container)).toBe(false);
     scene.destroy();
+  });
+
+  // Until 2026-09-22 a SUCCESSFUL buy said nothing at all: the only feedback was the Buy button
+  // disappearing and the paid track lighting up, which a player scrolled down the track never saw.
+  it('a successful buy names the pass in the shared purchase toast', async () => {
+    const toast = vi.spyOn(log, 'showToastMessage').mockImplementation(() => {});
+    try {
+      const scene = buildBattlePass({
+        getBattlePass: () => ({ seasonNo: 1, xp: 5400, level: 9, hasPass: false, claimedFree: [], claimedPaid: [] }),
+        onBuy: async () => {},
+      });
+      const s = scene as unknown as { hits: Array<{ rect: { x: number; y: number; w: number; h: number }; fn: () => void }> };
+      const pos = findLabelPos(scene.container, t('battlepass.buy', { coins: '600' }));
+      const hit = s.hits.find(({ rect: r }) =>
+        pos!.x >= r.x && pos!.x <= r.x + r.w && pos!.y >= r.y && pos!.y <= r.y + r.h);
+      hit!.fn();
+      await flush();
+
+      expect(toast).toHaveBeenCalledWith(
+        t('shop.boughtNamed', { name: t('battlepass.title') }),
+        'success',
+      );
+      scene.destroy();
+    } finally {
+      toast.mockRestore();
+    }
   });
 });

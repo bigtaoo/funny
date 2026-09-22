@@ -197,7 +197,17 @@ export async function doBuyShopItem(ctx: WorldMapContext, itemId: string): Promi
     // world state — re-pull the save so the panel's coin readout (and the HUD behind it) show the
     // deducted balance. Mirrors SectScene's post-createSect refreshWallet.
     await ctx.cb.refreshWallet?.();
-    ctx.panels.showToast(t('world.shopBought'));
+    // Name what was bought, the way the lobby shop's onBuy does (ShopScene/actions.ts): a bare
+    // "Purchased" left the player guessing which card the tap landed on — the item labels already
+    // spell the effect out ("Train speedup 24h", "Resource pack (20000 each)"), so reuse them.
+    // Falls back to the bare word if the catalog is somehow not cached. Green filled box, again
+    // matching the lobby's success toast.
+    const item = ctx.shopItems.find((x) => x.id === itemId);
+    ctx.panels.showToast(
+      item ? t('shop.boughtNamed', { name: ctx.panels.shopLabel(item) }) : t('world.shopBought'),
+      C.green,
+      true
+    );
     if (ctx.shopPanelOpen) ctx.panels.renderShopPanel();
     if (ctx.territoryPanelOpen && ctx.territoryTab === 'world') ctx.panels.renderTerritoryPanel();
     ctx.panels.renderHud();

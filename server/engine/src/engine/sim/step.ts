@@ -18,7 +18,7 @@ import {
   sideToOwner,
 } from '../../types';
 import type { EngineCtx } from '../ctx';
-import { spawnEnemyUnit } from './campaign';
+import { spawnEnemyUnit, tickLanePunish } from './campaign';
 import { processCommand } from './commands';
 import { tickHandRefresh } from './hand';
 import { accumulateBuildingSurvival } from './stats';
@@ -74,6 +74,9 @@ export function stepEngine(ctx: EngineCtx, tick: number, commands: readonly Play
     for (const spawn of waveDirector.tick(tick)) {
       spawnEnemyUnit(ctx, spawn.unitType, spawn.col, spawn.isBoss, spawn.crossWaypoints);
     }
+    // The scripted side's only reactive behaviour: answer a player lane wall
+    // (§4.9.5). Opt-in per level; a no-op everywhere `lanePunish` is unset.
+    tickLanePunish(ctx, tick);
   } else if (mode === 'netplay') {
     // Online lockstep PvP (S1-7): both sides are humans. `commands` is the server-
     // confirmed set for this frame (already containing BOTH sides' commands, decoded
