@@ -63,7 +63,13 @@ function main(): void {
   http.listen(env.port, env.host);
   console.log(`gameserver (data-plane relay) listening on ws://${env.host}:${env.port}/ws`);
   console.log(`meta report: ${env.metaBaseUrl ?? 'disabled'}; matchsvc: ${env.matchsvcInternalUrl ?? 'static-fallback'}`);
-  startHeartbeat(log); // Liveness heartbeat: one info log every 5 minutes when idle
+  // Liveness heartbeat: one info log every 5 minutes when idle. It carries the two numbers that
+  // decide whether this process is healthy — open sockets and live rooms. Without them a stall like
+  // 2026-09-13/14 (five windows where the process kept beating but accepted no connection for
+  // minutes, killing 36 matches with a client-side 1006) leaves nothing in the record to tell a
+  // socket/room leak apart from an upstream that stopped delivering: `rssMb` alone is flat either
+  // way. `load` was already being POSTed to matchsvc every 10s — it just never reached a log line.
+  startHeartbeat(log, { extra: () => ({ conns: wss.clients.size, ...manager.stats() }) });
 }
 
 main();

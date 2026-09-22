@@ -166,6 +166,30 @@ sum by (svc) (count_over_time({svc=~".+"} |= "heartbeat" [5m]))  # Heartbeat cou
 The "**Service Liveness**" panel at the top of the dashboard uses the query above: one line per svc; dropping to 0 or breaking means that process is not heartbeating.
 Heartbeat is `info` level, so it won't be filtered out even with `NW_LOG_LEVEL=info` in production. Interval/fields are configurable in `startHeartbeat`.
 
+#### gameserver carries its socket and room counts (2026-09-22)
+
+`uptimeSec` / `rssMb` answer "is the process alive", which is the weaker of the two questions a
+heartbeat can answer. gameserver now also emits `conns` (open WebSockets, `wss.clients.size` — the
+same number it has always POSTed to matchsvc as `load`), `rooms` (live rooms) and `waiting` (rooms
+whose second ticket has not arrived):
+
+```logql
+{svc="game"} |= "heartbeat"     # conns=12 rooms=6 waiting=0
+```
+
+Read it as a pair. `rooms` climbing with `waiting` means joins are half-completing (one player in,
+the opponent never arrives); `rooms` climbing with `waiting` flat means finished rooms are not being
+reaped. Neither is visible in `rssMb`, which sawtooths 60–110MB under normal GC either way.
+
+Why it was worth adding: between 2026-09-13 21:19 and 2026-09-14 10:28 there were five windows of
+1–2 minutes in which gameserver kept heartbeating and kept its 5-minute cadence, while accepting no
+connection at all — matchsvc paired players and pushed `match_found` throughout, and 36 matches died
+with a client-side 1006. The process was demonstrably alive, the edge was demonstrably up (the same
+bots kept reaching gateway over the same hostname), and the connection-terminating path in
+`connectionHandler.ts` logs a `warn` that never appeared. The record simply did not contain the one
+number that separates a socket/room leak from an upstream that stopped delivering. It has not
+recurred since, so this is instrumentation for the next occurrence, not a fix.
+
 ### Cross-process Correlation (correlation id, live)
 
 One game session spans multiple processes. **`roomId`** is used as correlation id across gateway→matchsvc→game→meta:
