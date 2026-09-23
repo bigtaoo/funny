@@ -387,7 +387,7 @@ override 到更高档会让商店页面与三处已定口径（§3.4 自我定�
 > 代价是 eCPM 会低一些，换到的是「标签写的和二进制干的是同一件事」。
 > 详见 [`IOS_RELEASE.md §12`](../../game/IOS_RELEASE.md) 与三语隐私政策 §6.3。
 
-> **✅ 2026-09-08 已在 ASC 填写并发布**，但**只填了 6 个数据类型，还差两个真实收集项**（下面「已发布状态」一节）。
+> **✅ 2026-09-08 已在 ASC 填写并发布，2026-09-23 补齐两项真实收集项后共 8 个数据类型**（下面「已发布状态」一节）。
 
 按 §0.3 填写：
 - **Data Used to Track You**：无（声明不做跨 App 跟踪 → 免 ATT 弹窗）。
@@ -395,22 +395,19 @@ override 到更高档会让商店页面与三处已定口径（§3.4 自我定�
 - **Data Not Linked to You**：诊断（如崩溃日志，假名化）。
 - 是否加密传输：是；是否可请求删除：是（应用内删除账号）。
 
-#### 1.4b 已发布状态与欠账（2026-09-08）
+#### 1.4b 已发布状态（2026-09-08 首发 6 项，2026-09-23 补齐至 8 项）
 
-**已填并发布的 6 项**（设置全部正确）：Email Address（App 功能/关联）、User ID（App 功能/关联）、
+**8 项数据类型全部已填并发布**：Email Address（App 功能/关联）、User ID（App 功能/关联）、
 Device ID（App 功能 **+ 第三方广告** /关联）、Product Interaction（分析/不关联）、
-Crash Data、Performance Data（分析/不关联）。跟踪那一问答「否」。
-**Privacy Policy URL 当天补填** `https://nivara.gamestao.com/privacy`——它是**必填项**，
-发布时是空的（`–`）；User Privacy Choices URL 可选，留空。
+Crash Data、Performance Data（分析/不关联）、**Purchase History**（App 功能/关联，
+代码依据：`commercial/src/db.ts` 的 `orders` `recharges` `ledger` `appleTransactionLinks`
+四个集合都以 accountId 为键）、**Other User Content**（App 功能/关联，代码依据：聊天存在服务端，
+`socialsvc/src/family/chat.ts:68` 往 `familyMessages` `insertOne`，好友会话走
+`friendSvc.getMessages(accountId, convId, before, limit)`，客户端「加载更早的消息」就是它）。
+跟踪那一问全部答「否」。
+**Privacy Policy URL** `https://nivara.gamestao.com/privacy`；User Privacy Choices URL 可选，留空。
 
-**⚠️ 还差两项真实收集项**（用户 2026-09-08 主动延后，提审前必须补，否则是 5.1.2 方向的漏报）：
-
-| 缺的类型 | 该填 | 代码依据 |
-|---|---|---|
-| **Purchases → Purchase History** | App 功能 / 关联 / 不跟踪 | `commercial/src/db.ts` 的 `orders` `recharges` `ledger` `appleTransactionLinks` 四个集合都以 accountId 为键 |
-| **User Content → Other User Content** | App 功能 / 关联 / 不跟踪 | 聊天存在服务端：`socialsvc/src/family/chat.ts:68` 往 `familyMessages` `insertOne`，好友会话走 `friendSvc.getMessages(accountId, convId, before, limit)`（客户端「加载更早的消息」就是它） |
-
-补上后「Data Linked to You」摘要会变成 Identifiers / Contact Info / **Purchases** / **User Content**。
+「Data Linked to You」摘要：Identifiers / Contact Info / **Purchases** / **User Content**。
 
 **两处可选加强（AdMob 口径，同日延后）**：`Usage Data → Advertising Data`（第三方广告/不关联/不跟踪）；
 给 `Product Interaction` 再加一个 `Third-Party Advertising` 用途——Google 的披露指引写明
@@ -606,7 +603,7 @@ cd client && NW_BUILD_VERSION=$(git rev-parse --short HEAD) npm run build:crazyg
 
 | 渠道 | 素材就绪 | 分级问卷 | 隐私标签/数据表 | 合规硬门 | 健康忠告 |
 |---|---|---|---|---|---|
-| iOS | ✅ 图标 + 截图齐（预览视频可选，未做） | §1.3 待填 | §1.4 待填 | §1.5 | 全球版 §5.2 |
+| iOS | ✅ 图标 + 截图齐（预览视频可选，未做） | ✅ §1.3（13+） | ✅ §1.4（8/8 项，2026-09-23 补齐） | §1.5 | 全球版 §5.2 |
 | Google Play | ✅ 图标 + 特征图 + 截图齐 | §2.3 待填 | §2.4 待填 | §2.5 | 全球版 §5.2 |
 | 微信小游戏 | ✅ 图标（既有 logo-512）+ 分享图齐；截图仍是英文版，中文版待跑 | §3.3 待评估 | 隐私政策(CN) | §3.2（依版号） | 中国区 §5.1 |
 | CrazyGames | ✅ 横版缩略图齐；操作说明文案已拟（§4.1b，2026-09-09） | 平台要求 | 隐私政策 | §4.2 四条已修，剩内容政策核对 + 冒烟 | 全球版 §5.2 |

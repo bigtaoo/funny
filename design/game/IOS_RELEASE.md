@@ -655,13 +655,13 @@ OTA 管线**不需要 macOS runner**（无原生编译），`ubuntu-latest` 即�
       `CapgoCapacitorUpdater 6.50.1`，与 committed lock 一致）。**剩下的是真机验收**：等 ASC 处理完进
       TestFlight，装 build 9，按 §5.1 看设置页底部两行读数（判定词 `env-reported`、`inner` = 390x844、
       `env` = 47/0/34/0）。没在设备上看过就不算完，`'never'` 本身在本机无法验证
-- [ ] 填隐私标签 + App 描述（三语）——文案已备齐（`store-assets-checklist §0.1` 短描述 + §0.1b 长描述），
+- [ ] 填 App 描述（三语）——文案已备齐（`store-assets-checklist §0.1` 短描述 + §0.1b 长描述），
       直接复制进 ASC 即可。⚠️ **英文副标题用 `Turn-based notebook strategy`**（§0.1 原稿
       `Turn-based strategy in a notebook` 是 33 字符，超 30 上限）
-  - **隐私标签 2026-09-08 已填并发布，但只填了 6 个数据类型**：还差 `Purchases → Purchase History`
-    与 `User Content → Other User Content` 两个真实收集项（代码依据与该填的用途见
-    [`store-assets-checklist §1.4b`](../product/release/store-assets-checklist.md)），用户主动延后。
-    Privacy Policy URL 当天补填（发布时是空的，而它是必填项）
+- [x] **隐私标签** —— 2026-09-08 首发 6 个数据类型，**2026-09-23 补齐 `Purchases → Purchase History`
+      与 `User Content → Other User Content` 两个真实收集项**，现共 8 项全部发布（代码依据与用途见
+      [`store-assets-checklist §1.4b`](../product/release/store-assets-checklist.md)）。
+      Privacy Policy URL 当天补填（发布时是空的，而它是必填项）
 - [x] **填年龄分级问卷**（Apple 自有问卷）—— **2026-09-08 填完，算出 13+**，Override 留
       `Not Applicable`、Age Suitability URL 留空（理由见 store-assets §1.3）。答案已定在
       [`store-assets-checklist §1.3`](../product/release/store-assets-checklist.md)：模拟赌博/随机付费道具
