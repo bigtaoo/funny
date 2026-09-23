@@ -163,6 +163,7 @@ export const zh = {
   'result.backToMap': '返回地图',
   'result.watchReplay': '观看回放',
   'result.eloDelta': 'ELO {delta} → {after}　段位 {rank}',
+  'result.tomorrowReward': '明天回来签到领第 {day} 天奖励',
   'rank.unranked': '未定级',
   'rank.bronze': '青铜',
   'rank.silver': '白银',

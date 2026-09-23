@@ -11,7 +11,8 @@ import { ApiError } from '../../net/ApiClient';
 import { t } from '../../i18n';
 import { showToastMessage } from '../../net/log';
 import { matchBadgeTelemetry } from '../../scenes/ResultScene';
-import type { EloResult } from '../../scenes/ResultScene';
+import type { EloResult, ResultRetentionPreview } from '../../scenes/ResultScene';
+import { checkinClaimedCount, nextCheckinDay } from '../../game/meta/retention';
 import type { ProfileData } from '../../ui/dialogs/ProfilePopup';
 import { WorldApiClient } from '../../net/WorldApiClient';
 import { allEquippedSkins } from '../../game/meta/skinDefs';
@@ -236,6 +237,41 @@ export function createResultNav(ctx: AppCtx): ResultNav {
     };
   }
 
+  /**
+   * Whether the result screen should even try fetching a retention preview, and which check-in
+   * slot it would be — split out of {@link getRetentionPreview} as a plain sync function so the
+   * overwhelmingly common "no" case (offline, a loss, or the streak already started) costs
+   * `goResult` zero extra microtask ticks: an `await` on an async function's early return is
+   * still an `await`, and campaign-real-layer-interlude-nav.test.ts's un-awaited continuation
+   * after `driveToEnd()` turned out to be timed against exactly that many ticks (2026-09-23).
+   */
+  function retentionPreviewDay(winner: OwnerId | null, localOwner: OwnerId): number | null {
+    if (!api || winner !== localOwner) return null;
+    if (checkinClaimedCount(saveManager.get(), Date.now()) > 0) return null;
+    return nextCheckinDay(saveManager.get(), Date.now());
+  }
+
+  /**
+   * "Come back tomorrow" check-in hook for the result screen (RETENTION_LAUNCH_PLAN.md §3.3).
+   * Deliberately narrow: only on a win, and only while the account hasn't started its check-in
+   * streak yet this month — a simple, robust proxy for "still early" that doesn't need to chase
+   * down every path that could count as a literal "first win" (tutorial graduation never reaches
+   * this screen at all — see ONBOARDING_DESIGN.md §9 item 4). Best-effort: any failure (offline,
+   * request error) just means no hint, never blocks the result screen itself. Returns `undefined`
+   * synchronously (no promise, no extra `await` in `goResult`) whenever {@link retentionPreviewDay}
+   * says there is nothing to fetch — see that function's doc for why that distinction matters.
+   */
+  function getRetentionPreview(winner: OwnerId | null, localOwner: OwnerId): Promise<ResultRetentionPreview | undefined> | undefined {
+    const day = retentionPreviewDay(winner, localOwner);
+    if (day === null) return undefined;
+    return api!.getRetention()
+      .then((retention) => {
+        const reward = retention.defs.rewards[day - 1];
+        return reward ? { day, reward } : undefined;
+      })
+      .catch(() => undefined);
+  }
+
   async function goResult(
     winner: OwnerId | null,
     stats: [PlayerStats, PlayerStats],
@@ -255,6 +291,11 @@ export function createResultNav(ctx: AppCtx): ResultNav {
     // Cheap/stateless (just wraps platform.storage) — the opponent/local profile popups fetch
     // rank/ELO/family/sect straight from socialsvc by publicId, same as the social surfaces.
     const worldApi = api ? new WorldApiClient(platform.storage) : null;
+    // Not `await getRetentionPreview(...)` unconditionally — `await` costs a microtask tick even
+    // on an already-`undefined` value, and the common case (offline/loss/already-claimed) must
+    // cost goResult nothing extra; see retentionPreviewDay's doc.
+    const retentionPreviewP = getRetentionPreview(winner, localOwner);
+    const retentionPreview = retentionPreviewP ? await retentionPreviewP : undefined;
     views.showResult({
       winner,
       stats,
@@ -262,6 +303,7 @@ export function createResultNav(ctx: AppCtx): ResultNav {
       ...(elo ? { elo } : {}),
       ...(profiles ? { profiles } : {}),
       ...(outroTexts ? { outroTexts } : {}),
+      ...(retentionPreview ? { retentionPreview } : {}),
       cb: {
         // Falling through to the lobby (no dedicated "play again") is leaving the match — fades.
         onPlayAgain() { (onPlayAgain ?? (() => nav.goLobby({ fade: true })))(); },

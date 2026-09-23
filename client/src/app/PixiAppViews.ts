@@ -308,6 +308,7 @@ export class PixiAppViews implements AppViews {
       props.elo,
       props.profiles,
       props.outroTexts,
+      props.retentionPreview,
     ));
   }
 

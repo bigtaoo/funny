@@ -41,7 +41,7 @@ import type { LeaderboardCallbacks } from '../scenes/LeaderboardScene';
 import type { BattlePassCallbacks } from '../scenes/BattlePassScene';
 import type { RechargeCallbacks } from '../scenes/RechargeScene';
 import type { ReplaySceneCallbacks } from '../scenes/ReplayScene';
-import type { ResultSceneCallbacks, EloResult } from '../scenes/ResultScene';
+import type { ResultSceneCallbacks, EloResult, ResultRetentionPreview } from '../scenes/ResultScene';
 import type { StatePlayerSceneCallbacks } from '../scenes/StatePlayerScene';
 import type { StateReplay, EncodedStateReplay } from '../game/replay/StateReplay';
 import type { GameSceneCallbacks, GameSceneOptions } from '../scenes/GameScene';
@@ -178,6 +178,12 @@ export interface ResultViewProps {
   cb: ResultSceneCallbacks;
   /** Pre-translated outro story screens, shown as tap-through overlays (in order) before the result. */
   outroTexts?: string[];
+  /**
+   * "Come back tomorrow" check-in hook on a win (RETENTION_LAUNCH_PLAN.md §3.3) — set only when the
+   * core decided this screen should show it (a win, and the account has not started its check-in
+   * streak yet). Never influences anything past display; the actual claim still happens in DailyScene.
+   */
+  retentionPreview?: ResultRetentionPreview;
 }
 
 /**

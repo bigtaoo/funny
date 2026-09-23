@@ -158,6 +158,7 @@ export const de: Record<TranslationKey, string> = {
   'result.backToMap': 'ZURÜCK ZUR KARTE',
   'result.watchReplay': 'WIEDERHOLUNG ANSEHEN',
   'result.eloDelta': 'ELO {delta} → {after}　{rank}',
+  'result.tomorrowReward': 'Komm morgen zurück — Tag {day} Check-in',
   'rank.unranked': 'Unplatziert',
   'rank.bronze': 'Bronze',
   'rank.silver': 'Silber',

@@ -180,6 +180,18 @@ D1 也低(<15%)？                     → 首会话体验，查 3.2
 
 **下一步**：转 Phase 3.3（回访钩子——首胜结算页的「明天回来」话术，复用已有的每日签到系统，不涉及游戏平衡决策）。
 
+### 2026-09-23 Phase 3.3：结算页「明天回来」签到预览
+
+同分支 `feat/retention-phase3`，接着 3.1a 一起做。
+
+- `ResultScene` 新增可选 `retentionPreview?: {day, reward}`：赢的那一局、且本月签到还一天没领时，在主按钮上方画一行「图标+数量+Day N 签到」提示，复用 `DailyScene` 的 `buildRewardIcon` 图标约定（不新起一套画法）。数据来源：`server/shared/src/retention.ts` 的 `CHECKIN_REWARDS` 表（通过既有 `GET /retention`），不新增经济投放。
+- 触发面比"首胜"更宽：门槛是"本地签到状态 `checkinClaimedCount===0`"（本月还没领过），不是字面上的"这是玩家的第一场胜利"——原因见 `ONBOARDING_DESIGN.md` §9 第 4 条的详细记录：教学毕业本身从不经过 `ResultScene`（直接进大厅），真正第一次看到结算页是打完 `ch1_lv1` 之后；用签到状态当信号，不用去追"哪条路径才算首胜"，也不用碰教学关的导航。
+- **性能陷阱踩了一次**：`nav/result.ts` 的 `goResult` 一开始无条件 `await getRetentionPreview(...)`，即使离线/已签到/输了也会多等一个 microtask tick——`campaign-real-layer-interlude-nav.test.ts` 依赖 `driveToEnd()` resolve 后**不额外 await** 就能读到 `views.screen==='result'` 的时序假设因此被打破（screen 还停在 `'game'`）。修法：把"要不要发请求"拆成一个同步函数，只有真要发网络请求（赢+未签到+在线）时才 `await`，其余分支直接同步返回 `undefined`、不占用一次 tick——教训：**给一个已经在产测试里被"隐式时序"依赖的异步链路插入新 await，哪怕逻辑上是"仅在早退分支"，也要检查这类不显式 await 后续操作的测试**。
+- **验证局限**：这条路径需要 `api`（在线）才会显示，本地 dev server 没有真实后端可登录，没能在真实浏览器里走通"赢一局在线对局→看到预览"的完整链路；改用两层自动化覆盖替代——`client/test/result-retention-preview.test.ts`（5 例，直接单测 `createResultNav` 的门槛逻辑：首胜显示/已签到不显示/输了不显示/平局不显示/离线不显示）+ `client/test/ui/resultRetentionPreview.ui.ts`（5 例，真的构造 `ResultScene` 断言图标+文案画出来、不越界、不挡住主按钮，三语言×横竖屏）。
+- 验证：以上两个新文件 + `client` 全量 vitest（3911 例，同一个既有限流 flake）+ 全量 UI 套件（2903 例）+ tsc + `build:web` 均过。
+
+**下一步**：Phase 3.1a + 3.3 完成，合并进当日分支。Phase 3.2（新客匹配保护期，「必要时」——待 Phase 2 `first_battle_result`/`matched_bot` 真实数据判断是否需要）和 3.4（世界地图软门槛是否要降低通关 10 关的门槛，属游戏经济/平衡决策而非纯留存埋线）继续挂起，理由同 3.1 里登录墙的挂起——没有数据或需要产品拍板的都不该盲改。
+
 ---
 
 ## §6 已知阻塞项
