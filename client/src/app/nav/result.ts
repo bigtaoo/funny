@@ -23,7 +23,7 @@ import { log, PLAYER_PUBLIC_ID_KEY } from '../appConstants';
 type ResultNav = Pick<Nav, 'goResult' | 'goReplay' | 'goStatePlayer' | 'goGameNet'>;
 
 export function createResultNav(ctx: AppCtx): ResultNav {
-  const { api, saveManager, platform, state, views, nav, keepReplay, playerName } = ctx;
+  const { api, saveManager, platform, state, views, nav, keepReplay, playerName, featureFlags } = ctx;
 
   function goReplay(replay: Replay, onExit: () => void = () => nav.goLobby()): void {
     state.inLobby = false;
@@ -247,6 +247,7 @@ export function createResultNav(ctx: AppCtx): ResultNav {
    */
   function retentionPreviewDay(winner: OwnerId | null, localOwner: OwnerId): number | null {
     if (!api || winner !== localOwner) return null;
+    if (featureFlags?.isOn('disable_retention_preview')) return null;
     if (checkinClaimedCount(saveManager.get(), Date.now()) > 0) return null;
     return nextCheckinDay(saveManager.get(), Date.now());
   }

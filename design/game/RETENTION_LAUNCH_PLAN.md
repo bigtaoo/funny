@@ -192,6 +192,19 @@ D1 也低(<15%)？                     → 首会话体验，查 3.2
 
 **下一步**：Phase 3.1a + 3.3 完成，合并进当日分支。Phase 3.2（新客匹配保护期，「必要时」——待 Phase 2 `first_battle_result`/`matched_bot` 真实数据判断是否需要）和 3.4（世界地图软门槛是否要降低通关 10 关的门槛，属游戏经济/平衡决策而非纯留存埋线）继续挂起，理由同 3.1 里登录墙的挂起——没有数据或需要产品拍板的都不该盲改。
 
+### 2026-09-23 Phase 4（部分）：3.3 回访预览包 kill switch
+
+Phase 4 原计划是把全部 3.x 改动包 feature flag + 建周度 cohort 复盘节奏。逐条评估后只做了其中一件：
+
+- **只给 3.3（结算页回访预览）包了 kill switch**，3.1a（年龄门+同意墙合屏）刻意不包——理由见下。项目已有成熟的 feature flag 机制（`design/game/FEATURE_FLAGS_DESIGN.md`，F1-F4 全部上线，已有 `match_bot_fallback`/`client_log_*` 等生产用例），这次只是新注册一个 key + 接一个判断点，不是新建机制。
+- 新 flag `disable_retention_preview`（`server/shared/src/featureFlags.ts`），`default:false`——**极性刻意选成"关=正常"**：现有全部已登记 flag（`match_bot_fallback`/`client_log_*`）都是"default false=当前上线行为，翻 true 才变"这个方向，`FeatureFlags.isOn()` 的实现（`client/src/net/featureFlags.ts`）也隐含假设"bootstrap 没提到的 key=false"（因为 F3 的下发规则是"只回和 default 不同的 flag"，如果新 flag 的 default 设成 `true`，多数玩家会拿到空 map，此时 `isOn()` 会把"沉默=命中 default(true)"误读成"沉默=false"，逻辑直接反了）。选 `disable_retention_preview` 这个名字（而不是 `enable_retention_preview` 之类正向命名）就是为了让 default:false 天然对应"预览照常显示"这个已上线行为，翻 true 才是运营主动关闭。
+- 接线点：`client/src/app/nav/result.ts` 的同步门槛函数 `retentionPreviewDay()` 里加一行 `if (featureFlags?.isOn('disable_retention_preview')) return null;`，和已有的"离线/非胜利/已签到"三个早退条件并列，不额外占用 3.3 那条已经修过的 microtask-tick 陷阱（这个判断本身是同步的，不引入新 await）。
+- **为什么 3.1a 不包**：3.1a 不是纯叠加，是**替换**了原来的两段式 `gateAge`+`gateGdpr` 流程；真要做成能一键切回旧版，意味着要把旧的两屏流程原样留着长期维护两套实现（且是合规相关屏幕，两套都要保持法律正确性、都要测），这个长期成本不划算——它已过 53 个 UI 溢出测试 + 真实浏览器走查（Accept all 直达、欠龄二次确认→blocked 死路都验证过），出问题概率低，真出问题一次 `git revert`+重新构建部署的速度也够。**经验法则**：值不值得包 flag，看是否同时满足"纯叠加、不需要维护两套实现"+"要么上线前想留后路要么以后想分流量做实验"——3.3 满足，3.1a 不满足。
+- Phase 4 里"周度 cohort 复盘节奏"是运营流程，不是代码，本轮不涉及；"按比例/账号分流量做 A/B"这类更完整的 Phase 4 能力，现有机制（`rollout.pct`/`allowAccounts`）已经具备，等 CrazyGames 门户有真实流量再用，不需要额外开发。
+- 验证：`server/shared/test/featureFlags.test.ts`（21 例，既有）+ `client/test/result-retention-preview.test.ts`（6 例，新增 1 例断言 kill switch 打开后不显示预览）+ client 全量 vitest（3911/3912，同一个既有限流 flake）+ tsc + `build:web` 均过。这条改动本身默认值不变行为（`disable_retention_preview` 默认 false），无新增可见 UI，未做浏览器走查。
+
+**下一步**：登录墙位置、新客匹配保护期、世界地图软门槛三项仍全部挂起（同上），周度 cohort 复盘节奏待有真实门户流量后再建。
+
 ---
 
 ## §6 已知阻塞项
