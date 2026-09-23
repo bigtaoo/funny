@@ -144,14 +144,42 @@ export function retentionRows<T extends { cohort_size: number }>(rows: readonly 
   return rows.filter((r) => r.cohort_size > 0);
 }
 
-/** One D{n} cell: the rate as text, with the returning-device count as the hover title. */
-export function retentionCell(row: RetentionRow, n: RetentionOffset): { text: string; title: string } {
+/** One D{n} cell: the rate as text, with the returning-device count as the hover title. Structural
+ *  on purpose (no `date`/`value` field) so both RetentionRow and RetentionByRow satisfy it. */
+export function retentionCell(
+  row: { d?: Partial<Record<RetentionOffset, number>>; d_rate?: Partial<Record<RetentionOffset, number>> },
+  n: RetentionOffset,
+): { text: string; title: string } {
   const rate = row.d_rate?.[n];
   const count = row.d?.[n];
   return {
     text: rate !== undefined ? pct(rate) : '—',
     title: count !== undefined ? `${count} devices` : 'insufficient data',
   };
+}
+
+// ── Grouped retention (RETENTION_LAUNCH_PLAN.md §2) ──
+
+/** Dimensions the ops dropdown offers, in the same order as RETENTION_BY_DIMENSIONS in analyticsvc
+ *  (defs.ts) — kept as a literal copy rather than a shared import since ops has no dependency on
+ *  the server workspace; a dimension added there needs this list extended too. */
+export const RETENTION_BY_DIMENSION_LABELS: { value: string; label: string }[] = [
+  { value: 'login_mode', label: 'Login mode (device / login / register / crazygames)' },
+  { value: 'load_time_bucket', label: 'Load time' },
+  { value: 'tutorial_complete', label: 'Finished tutorial' },
+  { value: 'first_battle_result', label: 'First battle result' },
+  { value: 'matched_bot', label: 'First match vs. bot' },
+  { value: 'browser', label: 'Browser' },
+  { value: 'device_type', label: 'Device type' },
+  { value: 'webview', label: 'In-app WebView' },
+  { value: 'geo_country', label: 'Country' },
+];
+
+export interface RetentionByRow {
+  value: string;
+  cohort_size: number;
+  d?: Partial<Record<RetentionOffset, number>>;
+  d_rate?: Partial<Record<RetentionOffset, number>>;
 }
 
 // ── Level funnel ──
@@ -256,6 +284,22 @@ export function loadTimeRows(
 export function ms(v: number | undefined): string {
   if (v === undefined) return '—';
   return v < 1000 ? `${v}ms` : `${(v / 1000).toFixed(1)}s`;
+}
+
+// ── Session duration distribution (RETENTION_LAUNCH_PLAN.md §2 supplementary query) ──
+
+/** seconds as a player would say it: `45s` under a minute, `3m12s` above. */
+export function sec(v: number): string {
+  if (v < 60) return `${v}s`;
+  return `${Math.floor(v / 60)}m${String(v % 60).padStart(2, '0')}s`;
+}
+
+// ── Churn last-scene distribution (RETENTION_LAUNCH_PLAN.md §2 supplementary query) ──
+
+/** Count of `churn_signal` events (not distinct devices — see queryChurnLastScene), most first. */
+export function churnSceneRows(rows: readonly { scene: string; count: number }[]): ShareRow[] {
+  const total = rows.reduce((s, r) => s + r.count, 0);
+  return rows.map((r) => ({ label: r.scene, value: r.count, share: barRatio(r.count, total) }));
 }
 
 // ── Post-match badge distribution pivot ──

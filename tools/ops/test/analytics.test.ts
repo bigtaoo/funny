@@ -7,8 +7,9 @@ import { describe, expect, it } from 'vitest';
 import {
   analyticsUnavailable, badgeModes, badgePivot, barRatio, barWidthPx, distribution, eventCountGrid,
   FUNNEL_STEPS, funnelPivot, funnelPlatforms, LEVEL_FUNNEL_LIMIT, levelFunnelRows, loginHourRows,
-  bootFunnelRows, loadTimeRows, metricRows, ms, ONBOARDING_LABELS, retentionCell, RETENTION_OFFSETS, retentionRows, sectionRows,
-  sectionValue, stepFunnelRows, TUTORIAL_LABELS, type BadgeRow, type FunnelRow, type RetentionRow,
+  bootFunnelRows, churnSceneRows, loadTimeRows, metricRows, ms, ONBOARDING_LABELS, retentionCell,
+  RETENTION_OFFSETS, retentionRows, sec, sectionRows, sectionValue, stepFunnelRows, TUTORIAL_LABELS,
+  type BadgeRow, type FunnelRow, type RetentionByRow, type RetentionRow,
 } from '../src/logic/analytics';
 
 const ok = <T>(value: T): PromiseSettledResult<T> => ({ status: 'fulfilled', value });
@@ -361,5 +362,47 @@ describe('ms', () => {
     expect(ms(1000)).toBe('1.0s');
     expect(ms(3449)).toBe('3.4s');
     expect(ms(undefined)).toBe('—');
+  });
+});
+
+describe('sec', () => {
+  it('switches from seconds to m/s at one minute, zero-padding the seconds remainder', () => {
+    expect(sec(45)).toBe('45s');
+    expect(sec(59)).toBe('59s');
+    expect(sec(60)).toBe('1m00s');
+    expect(sec(192)).toBe('3m12s');
+  });
+});
+
+describe('retentionCell reused for grouped retention (no date field)', () => {
+  it('reads d/d_rate off a RetentionByRow exactly like a RetentionRow', () => {
+    const row: RetentionByRow = { value: 'login', cohort_size: 10, d: { 1: 4 }, d_rate: { 1: 0.4 } };
+    expect(retentionCell(row, 1)).toEqual({ text: '40.0%', title: '4 devices' });
+    expect(retentionCell(row, 7)).toEqual({ text: '—', title: 'insufficient data' });
+  });
+
+  it('filters empty groups the same way retentionRows filters empty cohort-days', () => {
+    const rows: RetentionByRow[] = [
+      { value: 'login', cohort_size: 5, d: {}, d_rate: {} },
+      { value: 'device', cohort_size: 0, d: {}, d_rate: {} },
+    ];
+    expect(retentionRows(rows)).toHaveLength(1);
+  });
+});
+
+describe('churnSceneRows', () => {
+  it('shares churn EVENT counts (not devices) against the total', () => {
+    const rows = churnSceneRows([
+      { scene: 'LobbyScene', count: 6 },
+      { scene: 'GameScene', count: 4 },
+    ]);
+    expect(rows).toEqual([
+      { label: 'LobbyScene', value: 6, share: 0.6 },
+      { label: 'GameScene', value: 4, share: 0.4 },
+    ]);
+  });
+
+  it('is share 0 for every row on an empty list rather than dividing by zero', () => {
+    expect(churnSceneRows([{ scene: 'X', count: 0 }])[0]!.share).toBe(0);
   });
 });

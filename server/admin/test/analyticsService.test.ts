@@ -239,6 +239,18 @@ describe('analyticsQuery with analyticsvc unreachable', () => {
     // proxy's purposes; analyticsvc's own `qs.get('newCohort') === '1'` reads it the same way).
     expect(h.calls).toEqual(['query("retention",7,"crazygames")']);
   });
+
+  // RETENTION_LAUNCH_PLAN.md §2: same conditional-forwarding shape as newCohort above, one param
+  // further out — dimension only means anything to type='retention_by'.
+  it('forwards dimension when set (with newCohort defaulted to false), and omits both when not set', async () => {
+    const h = harness();
+    await h.svc.analyticsQuery('retention_by', 7, 'crazygames', undefined, 'login_mode');
+    expect(h.calls).toEqual(['query("retention_by",7,"crazygames",false,"login_mode")']);
+
+    h.calls.length = 0;
+    await h.svc.analyticsQuery('retention_by', 7, 'crazygames');
+    expect(h.calls).toEqual(['query("retention_by",7,"crazygames")']);
+  });
 });
 
 describe('player lookup guards', () => {

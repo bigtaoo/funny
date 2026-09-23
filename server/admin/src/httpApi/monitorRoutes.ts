@@ -35,7 +35,8 @@ export async function handleMonitorRoutes(ctx: RouteCtx): Promise<boolean> {
     const days = Math.min(90, Math.max(1, Number(url.searchParams.get('days') ?? '7')));
     const platform = url.searchParams.get('platform') ?? undefined;
     const newCohort = url.searchParams.get('newCohort') === '1';
-    send(res, 200, { ok: true, ...(await svc.analyticsQuery(type, days, platform, newCohort)) });
+    const dimension = url.searchParams.get('dimension') ?? undefined;
+    send(res, 200, { ok: true, ...(await svc.analyticsQuery(type, days, platform, newCohort, dimension)) });
     return true;
   }
 

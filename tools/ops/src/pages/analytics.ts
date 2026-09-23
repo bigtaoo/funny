@@ -6,11 +6,11 @@
 // `distribution()`, which is what pulling the arithmetic out made visible.
 import { clear, h, pill } from '../dom';
 import {
-  analyticsUnavailable, badgeModes, badgePivot, barRatio, barWidthPx, bootFunnelRows, distribution,
-  eventCountGrid, funnelPivot, funnelPlatforms, levelFunnelRows, LOAD_TIME_PHASE_LABELS, loadTimeRows,
-  loginHourRows, metricRows, ms, ONBOARDING_LABELS,
-  retentionCell, RETENTION_OFFSETS, retentionRows, sectionRows, sectionValue, type ShareRow,
-  stepFunnelRows, TUTORIAL_LABELS,
+  analyticsUnavailable, badgeModes, badgePivot, barRatio, barWidthPx, bootFunnelRows, churnSceneRows,
+  distribution, eventCountGrid, funnelPivot, funnelPlatforms, levelFunnelRows, LOAD_TIME_PHASE_LABELS,
+  loadTimeRows, loginHourRows, metricRows, ms, ONBOARDING_LABELS,
+  retentionCell, RETENTION_BY_DIMENSION_LABELS, RETENTION_OFFSETS, retentionRows, sec, sectionRows,
+  sectionValue, type ShareRow, stepFunnelRows, TUTORIAL_LABELS,
 } from '../logic/analytics';
 import { pct } from '../logic/shared';
 import { showErr, sparkline, type Ctx } from './shared';
@@ -39,10 +39,11 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
     clear(body);
     const days = Number(daysSel.value);
 
+    const DEFAULT_RETENTION_BY_DIMENSION = RETENTION_BY_DIMENSION_LABELS[0]!.value;
     const [
       summary, evCounts, dau, funnel, regions, osDist, loginHour, retention, firstSession,
       levelFunnel, tutorialFunnel, sceneFunnel, featureGuideFunnel, browserDist, deviceTypeDist, webviewDist, geoDist, badgeDist,
-      bootFunnel, loadTime,
+      bootFunnel, loadTime, retentionBy, sessionDuration, churnScene,
     ] = await Promise.allSettled([
       api.analyticsSummary(),
       api.analyticsEvents('event_counts', days),
@@ -64,6 +65,9 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
       api.analyticsEvents('badge_dist', days),
       api.analyticsEvents('boot_funnel', days),
       api.analyticsEvents('load_time', days),
+      api.analyticsEvents('retention_by', days, undefined, undefined, DEFAULT_RETENTION_BY_DIMENSION),
+      api.analyticsEvents('session_duration_dist', days),
+      api.analyticsEvents('churn_scene_dist', days),
     ]);
 
     // Monitoring overview (self-collected metrics + tickets)
@@ -163,6 +167,44 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
       ));
     }
 
+    // Session-length distribution (RETENTION_LAUNCH_PLAN.md §2 supplementary query): percentiles of
+    // `sessions.duration_sec`, same shape as the load-time card above but for how long the session
+    // itself lasted once it got going, not how long it took to start.
+    const durations = sectionRows(sessionDuration, (v) => v.session_duration_dist);
+    if (durations.length) {
+      const t = h('table', {},
+        h('tr', {},
+          h('th', {}, 'Platform'),
+          h('th', { style: 'text-align:right' }, 'Sessions'),
+          h('th', { style: 'text-align:right' }, 'p50'),
+          h('th', { style: 'text-align:right' }, 'p75'),
+          h('th', { style: 'text-align:right' }, 'p90'),
+          h('th', { style: 'text-align:right' }, 'p95'),
+        ),
+      );
+      for (const r of durations) {
+        t.append(h('tr', {},
+          h('td', {}, r.platform),
+          h('td', { style: 'text-align:right' }, String(r.samples)),
+          h('td', { style: 'text-align:right' }, sec(r.p50_sec)),
+          h('td', { style: 'text-align:right' }, sec(r.p75_sec)),
+          h('td', { style: 'text-align:right' }, sec(r.p90_sec)),
+          h('td', { style: 'text-align:right' }, sec(r.p95_sec)),
+        ));
+      }
+      body.append(h('div', { class: 'card' },
+        h('div', { class: 'muted' }, `Session length — how long a session lasted once it started (last ${days} days)`),
+        t,
+      ));
+    }
+
+    // Churn last-scene distribution (RETENTION_LAUNCH_PLAN.md §2 supplementary query): where sessions
+    // actually end. Counts churn_signal EVENTS, not devices — a scene can appear any number of times.
+    const churnRows = churnSceneRows(sectionRows(churnScene, (v) => v.churn_scene_dist));
+    if (churnRows.length) {
+      body.append(shareCard(`Where sessions end (churn_signal, last ${days} days)`, 'Scene', 'Events', churnRows));
+    }
+
     // DAU trend
     const dauPts = sectionRows(dau, (v) => v.dau);
     if (dauPts.length) {
@@ -233,6 +275,57 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
       // never have anything to show.
       if (initialCohorts.length > 0) {
         renderTable(initialCohorts);
+        body.append(card);
+      }
+    }
+
+    // Grouped retention (RETENTION_LAUNCH_PLAN.md §2): the "why" card — D1–D7 of the new-user cohort
+    // sliced by one property of their first session. Same scoped-fetch-on-change shape as the D1–D7
+    // card above; the dimension dropdown replaces platform+newCohort since retention_by always scopes
+    // to the new-user cohort (grouping only makes sense against a single, comparable cohort).
+    {
+      const initialGroups = retentionRows(sectionRows(retentionBy, (v) => v.retention_by));
+      const dimensionSel = h('select', {},
+        ...RETENTION_BY_DIMENSION_LABELS.map((d) => h('option', { value: d.value }, d.label)),
+      ) as HTMLSelectElement;
+      const tableHost = h('div', {});
+      const card = h('div', { class: 'card' },
+        h('div', { class: 'muted' }, `Retention by first-session property (new-user cohort, last ${days} days, D1–D7 return)`),
+        h('div', { class: 'row', style: 'margin:4px 0' }, h('label', {}, 'Group by', dimensionSel)),
+        tableHost,
+      );
+
+      const renderTable = (groups: typeof initialGroups): void => {
+        clear(tableHost);
+        if (groups.length === 0) { tableHost.append(h('div', { class: 'muted' }, 'No data')); return; }
+        const t = h('table', {},
+          h('tr', {},
+            h('th', {}, 'Value'),
+            h('th', { style: 'text-align:right' }, 'Cohort'),
+            ...RETENTION_OFFSETS.map((n) => h('th', { style: 'text-align:right' }, `D${n}%`)),
+          ),
+        );
+        for (const r of groups) {
+          t.append(h('tr', {},
+            h('td', {}, r.value),
+            h('td', { style: 'text-align:right' }, String(r.cohort_size)),
+            ...RETENTION_OFFSETS.map((n) => {
+              const c = retentionCell(r, n);
+              return h('td', { style: 'text-align:right', title: c.title }, c.text);
+            }),
+          ));
+        }
+        tableHost.append(t);
+      };
+
+      const reloadRetentionByCard = async (): Promise<void> => {
+        const res = await api.analyticsEvents('retention_by', days, undefined, undefined, dimensionSel.value);
+        renderTable(retentionRows(res.retention_by ?? []));
+      };
+      dimensionSel.addEventListener('change', () => void reloadRetentionByCard());
+
+      if (initialGroups.length > 0) {
+        renderTable(initialGroups);
         body.append(card);
       }
     }

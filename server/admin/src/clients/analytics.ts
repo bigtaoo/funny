@@ -47,6 +47,24 @@ export interface AnalyticsGeoRow { country: string; devices: number }
 // Post-match badge/title distribution (ANALYTICS_DESIGN §5.8): count of matches per (mode, result, hero badge).
 export interface AnalyticsBadgeDistRow { mode: string; result: string; badge: string; count: number }
 
+// Grouped retention + supplementary queries (RETENTION_LAUNCH_PLAN.md §2).
+export interface AnalyticsRetentionByRow {
+  value: string;
+  cohort_size: number;
+  d: Partial<Record<AnalyticsRetentionOffset, number>>;
+  d_rate: Partial<Record<AnalyticsRetentionOffset, number>>;
+}
+export interface AnalyticsSessionDurationRow {
+  platform: string;
+  samples: number;
+  p50_sec: number;
+  p75_sec: number;
+  p90_sec: number;
+  p95_sec: number;
+  buckets: { lt_sec: number; count: number }[];
+}
+export interface AnalyticsChurnSceneRow { scene: string; count: number }
+
 export interface AnalyticsQueryResult {
   event_counts?: AnalyticsEventCountRow[];
   dau?: AnalyticsDauRow[];
@@ -64,11 +82,14 @@ export interface AnalyticsQueryResult {
   webview_dist?: AnalyticsWebViewRow[];
   geo_dist?: AnalyticsGeoRow[];
   badge_dist?: AnalyticsBadgeDistRow[];
+  retention_by?: AnalyticsRetentionByRow[];
+  session_duration_dist?: AnalyticsSessionDurationRow[];
+  churn_scene_dist?: AnalyticsChurnSceneRow[];
 }
 
 export interface AnalyticsClient {
   readonly available: boolean;
-  query(type: string, days: number, platform?: string, newCohort?: boolean): Promise<AnalyticsQueryResult>;
+  query(type: string, days: number, platform?: string, newCohort?: boolean, dimension?: string): Promise<AnalyticsQueryResult>;
 }
 
 export class HttpAnalyticsClient implements AnalyticsClient {
@@ -79,14 +100,16 @@ export class HttpAnalyticsClient implements AnalyticsClient {
 
   get available(): boolean { return this.analyticsUrl !== null; }
 
-  /** `newCohort` only means anything to `type='retention'` (RETENTION_LAUNCH_PLAN.md §1.2) — passed
-   *  through unconditionally, same as `platform`, since analyticsvc's own query dispatch is what
-   *  decides which types read it and ignoring an unused query param elsewhere costs nothing. */
-  async query(type: string, days: number, platform?: string, newCohort?: boolean): Promise<AnalyticsQueryResult> {
+  /** `newCohort`/`dimension` only mean anything to `type='retention'`/`type='retention_by'`
+   *  respectively (RETENTION_LAUNCH_PLAN.md §1.2/§2) — passed through unconditionally, same as
+   *  `platform`, since analyticsvc's own query dispatch is what decides which types read them and
+   *  ignoring an unused query param elsewhere costs nothing. */
+  async query(type: string, days: number, platform?: string, newCohort?: boolean, dimension?: string): Promise<AnalyticsQueryResult> {
     if (!this.analyticsUrl) return {};
     const qs = new URLSearchParams({ type, days: String(days) });
     if (platform) qs.set('platform', platform);
     if (newCohort) qs.set('newCohort', '1');
+    if (dimension) qs.set('dimension', dimension);
     type Payload = {
       type: string;
       counts?: AnalyticsEventCountRow[];
@@ -105,6 +128,9 @@ export class HttpAnalyticsClient implements AnalyticsClient {
       webview_dist?: AnalyticsWebViewRow[];
       geo_dist?: AnalyticsGeoRow[];
       badge_dist?: AnalyticsBadgeDistRow[];
+      retention_by?: AnalyticsRetentionByRow[];
+      session_duration_dist?: AnalyticsSessionDurationRow[];
+      churn_scene_dist?: AnalyticsChurnSceneRow[];
     };
     // Degrades to {} on any failure (network / timeout / non-2xx), matching the old
     // try/catch behavior — sampling and dashboards must not 500 on analytics gaps.
@@ -133,6 +159,9 @@ export class HttpAnalyticsClient implements AnalyticsClient {
     if (p.type === 'device_type_dist') return { device_type_dist: p.device_type_dist ?? [] };
     if (p.type === 'geo_dist') return { geo_dist: p.geo_dist ?? [] };
     if (p.type === 'badge_dist') return { badge_dist: p.badge_dist ?? [] };
+    if (p.type === 'retention_by') return { retention_by: p.retention_by ?? [] };
+    if (p.type === 'session_duration_dist') return { session_duration_dist: p.session_duration_dist ?? [] };
+    if (p.type === 'churn_scene_dist') return { churn_scene_dist: p.churn_scene_dist ?? [] };
     return {};
   }
 }

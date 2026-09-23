@@ -415,7 +415,63 @@ export interface QueryResult {
   geo_dist?: GeoRow[];
   boot_funnel?: BootFunnelRow[];
   load_time?: LoadTimeRow[];
+  retention_by?: RetentionByRow[];
+  session_duration_dist?: SessionDurationRow[];
+  churn_scene_dist?: ChurnSceneRow[];
 }
+
+// ── Grouped retention (RETENTION_LAUNCH_PLAN.md §2 — the "why" tool, not the "how much" one) ──────
+
+/**
+ * What a new-cohort device is grouped by before computing its D1–D7 curve. Each value's own
+ * derivation lives in RetentionByService.resolveDimensionValues:
+ *  - browser/device_type/webview/geo_country: read straight off the device's first SessionDoc
+ *    (server-derived fields already computed at ingest, §9.8).
+ *  - load_time_bucket/tutorial_complete/first_battle_result/matched_bot/login_mode: derived from
+ *    that first session's own events (load_time/tutorial_complete/game_end/pvp_match_bot/login_ok
+ *    props) — login_mode is NOT a SessionDoc field; a device with no login_ok event at all (silent
+ *    device-only or silent-portal-bootstrap play, ANALYTICS_DESIGN §5.6) resolves to 'device'.
+ */
+export const RETENTION_BY_DIMENSIONS = [
+  'load_time_bucket', 'tutorial_complete', 'first_battle_result', 'matched_bot',
+  'login_mode', 'browser', 'device_type', 'webview', 'geo_country',
+] as const;
+export type RetentionByDimension = (typeof RETENTION_BY_DIMENSIONS)[number];
+
+/**
+ * One dimension VALUE's own D1–D7 curve. `cohort_size` is the group's full device count; each
+ * offset's `d`/`d_rate` is computed only over the subset of that group whose target day (their own
+ * first-session date + offset, NOT a shared calendar day — group members can have different
+ * first-session dates) has already elapsed — a device whose D+offset hasn't happened yet is excluded
+ * from that offset entirely (neither numerator nor denominator), same "insufficient data → undefined"
+ * convention as RetentionRow, just evaluated per-device instead of per-cohort-day. This means
+ * `d_rate[n]`'s true denominator can be smaller than `cohort_size` when the group spans dates whose
+ * D+n hasn't fully elapsed for every member yet — inherent to grouping cohorts across dates, not a bug.
+ */
+export interface RetentionByRow {
+  value: string;
+  cohort_size: number;
+  d: Partial<Record<RetentionOffset, number>>;
+  d_rate: Partial<Record<RetentionOffset, number>>;
+}
+
+export interface SessionDurationRow {
+  platform: string;
+  samples: number;
+  p50_sec: number;
+  p75_sec: number;
+  p90_sec: number;
+  p95_sec: number;
+  buckets: { lt_sec: number; count: number }[];
+}
+
+/** Histogram resolution for session-duration percentiles, seconds. Reuses percentileFromBuckets
+ *  (dist.ts) — the function only cares about a numeric upper-bound label, not the unit. */
+export const SESSION_DURATION_BUCKET_SEC = 30;
+
+/** Distinct churn_signal count by the scene the player was on when it fired (§5.6) — "where do
+ *  sessions actually end", not a funnel (a scene can appear any number of times per session). */
+export interface ChurnSceneRow { scene: string; count: number }
 
 /**
  * Phases of `load_time`, in the order they happen (see client/src/analytics/bootTimeline.ts). Used
