@@ -277,7 +277,10 @@ B 批上了 StoreKit 2 + `appAccountToken` 之后**依然保留**，而且多了
 实测过（§12）；② ASC 的通知 URL 已配成 `https://api.gamestao.com/api/iap/apple/notifications`
 ——**注意那个 `/api` 前缀**，Caddy 只经 `handle_path /api/*` 暴露 metaserver，裸路径会被兜底规则接走回 200，
 而 200 对 Apple 就是「投递成功」，通知从此静默丢失。共享密钥 `NW_APPLE_PASSWORD` 已作废并删除（§4.2）。
-**剩下的是真机沙盒**：充值对账 + 自动续订演练（§12），等 App Review 通过、商品状态转 Ready to Submit 后才能测（见 [[ios-mobile-only-coin-tiers-2026-09-23]] 的未确认假说）。
+**剩下的是真机沙盒**：充值对账 + 自动续订演练（§12）。
+
+⚠️ **2026-09-23 沙盒首单实测发现并修复**：`invalid_product`/发币失败那个长期未确认的假说被证实是**另一件事**——真正原因是 Apple App Store Server API 的 Production host 在 App **从未发布过正式版本前会对所有请求返回裸 401**（Apple 开发者论坛证实是故意行为，不是我们的配置问题；Paid Apps 协议/银行/税表当时已全部 Active，排除了那个方向）。`appleServerApi.ts` 的环境回退逻辑原本只在"查无此单"时才重试 Sandbox，401 会直接抛错、从不触达 Sandbox——所以哪怕沙盒测试者的密钥/凭据完全正确，验证请求也在第一跳就失败，从未发过币。
+修法：新增 `NW_APPLE_PRE_RELEASE=true` 这个**临时性**运维开关（`fix/apple-prerelease-401-fallback` 分支），只在开着的时候把 Production 401 也纳入重试 Sandbox 的条件；默认关闭以保持"401 必须响亮失败"这条安全设计不变（真实密钥失效不能被静默读成"没这笔单"）。**App 首个版本 Ready for Sale 后必须删掉这个变量**（VPS `.env` + 下方 §12 清单项），否则会掩盖上线后的真实鉴权故障。
 
 > 客户端请求的 Product ID 由 `AppDelegate.swift` 自动派生自 App 的 Bundle ID（`<bundleId>.coins.<tierId>`），与上表一致，无需额外配置。
 
@@ -697,7 +700,11 @@ OTA 管线**不需要 macOS runner**（无原生编译），`ubuntu-latest` 即�
 - [x] **在 ASC 补建 `com.gamestao.nivara.coins.t099`（$0.99）与 `.coins.t199`（$1.99）两个消耗型商品**
       （2026-09-23 完成，见 §4.1 的更正）——两个商品随同其余 7 个 IAP/订阅一起随 App Version 1.0
       提交审核（13 items，2026-09-23，见下方「提交审核」条）
-- [ ] TestFlight 沙盒账号走通一次充值→发币对账（依赖上面的构建 + IAP 商品，以及上一条的两个新商品），
+- [ ] **部署 `NW_APPLE_PRE_RELEASE=true`（VPS `.env` + 重启 `server-commercial-1`）**——解除首发前
+      App Store Server API Production host 恒定 401 挡住沙盒发币的问题（见上方 2026-09-23 更正段），
+      代码在 `fix/apple-prerelease-401-fallback`，待合并部署。
+      **App 首次 Ready for Sale 后必须删掉这个变量**并重启，否则会掩盖上线后的真实鉴权故障
+- [ ] TestFlight 沙盒账号走通一次充值→发币对账（依赖上面的构建 + IAP 商品 + 上面这个 401 回退修复），
       七个币档 + 四个非币商品各买一次。
       **这也是 §4.2b 那个 sandbox 验签回退修复（`13ba7b325`）的第一次真交易验证**——它此前只用
       Apple 的 TEST 通知验过，没有任何一笔真沙盒购买走过那条分支
