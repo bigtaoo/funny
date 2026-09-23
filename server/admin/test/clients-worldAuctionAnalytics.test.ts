@@ -196,6 +196,8 @@ describe('HttpAnalyticsClient', () => {
       ['device_type_dist', { device_type_dist: [] }, { device_type_dist: [] }],
       ['geo_dist', { geo_dist: [] }, { geo_dist: [] }],
       ['badge_dist', { badge_dist: [] }, { badge_dist: [] }],
+      ['boot_funnel', { boot_funnel: [] }, { boot_funnel: [] }],
+      ['load_time', { load_time: [] }, { load_time: [] }],
       ['something_unmapped', {}, {}],
     ];
     for (const [type, payload, expected] of cases) {

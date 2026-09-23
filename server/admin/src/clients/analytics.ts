@@ -46,6 +46,27 @@ export interface AnalyticsWebViewRow { webview: string; devices: number }
 export interface AnalyticsGeoRow { country: string; devices: number }
 // Post-match badge/title distribution (ANALYTICS_DESIGN §5.8): count of matches per (mode, result, hero badge).
 export interface AnalyticsBadgeDistRow { mode: string; result: string; badge: string; count: number }
+// Launch funnel (ANALYTICS_DESIGN §3.6b) and load-time profile (§5.1b).
+export interface AnalyticsBootFunnelRow {
+  date: string;
+  platform: string;
+  boots: number;
+  sessions: number;
+  declined: number;
+  consents: number;
+  reach_rate?: number;
+}
+export interface AnalyticsLoadTimeRow {
+  platform: string;
+  samples: number;
+  p50_ms: number;
+  p75_ms: number;
+  p90_ms: number;
+  p95_ms: number;
+  avg: Record<string, number>;
+  buckets: { lt_ms: number; count: number }[];
+  abandoned: number;
+}
 
 export interface AnalyticsQueryResult {
   event_counts?: AnalyticsEventCountRow[];
@@ -64,6 +85,8 @@ export interface AnalyticsQueryResult {
   webview_dist?: AnalyticsWebViewRow[];
   geo_dist?: AnalyticsGeoRow[];
   badge_dist?: AnalyticsBadgeDistRow[];
+  boot_funnel?: AnalyticsBootFunnelRow[];
+  load_time?: AnalyticsLoadTimeRow[];
 }
 
 export interface AnalyticsClient {
@@ -105,6 +128,8 @@ export class HttpAnalyticsClient implements AnalyticsClient {
       webview_dist?: AnalyticsWebViewRow[];
       geo_dist?: AnalyticsGeoRow[];
       badge_dist?: AnalyticsBadgeDistRow[];
+      boot_funnel?: AnalyticsBootFunnelRow[];
+      load_time?: AnalyticsLoadTimeRow[];
     };
     // Degrades to {} on any failure (network / timeout / non-2xx), matching the old
     // try/catch behavior — sampling and dashboards must not 500 on analytics gaps.
@@ -133,6 +158,8 @@ export class HttpAnalyticsClient implements AnalyticsClient {
     if (p.type === 'device_type_dist') return { device_type_dist: p.device_type_dist ?? [] };
     if (p.type === 'geo_dist') return { geo_dist: p.geo_dist ?? [] };
     if (p.type === 'badge_dist') return { badge_dist: p.badge_dist ?? [] };
+    if (p.type === 'boot_funnel') return { boot_funnel: p.boot_funnel ?? [] };
+    if (p.type === 'load_time') return { load_time: p.load_time ?? [] };
     return {};
   }
 }

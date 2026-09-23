@@ -505,3 +505,13 @@ ops 那边扣的是 `Lost = boots − sessions − declined`（§3.6c）。
 `server/analyticsvc/test/bootAndLoadTime.e2e.test.ts`（12）、`analytics.e2e.test.ts` 加 `?p=` 白名单、
 `metaserver/test/clientLog.test.ts` 加两条 sid 用例、`tools/ops/test/analytics.test.ts` 加 11 条。
 
+### 12.8 admin 客户端漏转发 `boot_funnel` / `load_time`（2026-09-23）
+
+§9.9/§9.10 上线时，`server/analyticsvc` 和 `tools/ops` 两端都已经按 `type=boot_funnel` /
+`type=load_time` 接好了，唯独 `server/admin/src/clients/analytics.ts`（`AnalyticsQueryResult`
++ `HttpAnalyticsClient.query()` 的 `Payload` 类型与 `if (p.type === ...)` 分发链）没跟着加这两个
+分支——上游 analyticsvc 正常返回数据，admin 这一层因为没有匹配分支直接落到分发链末尾的 `return {}`，
+ops 页「Launch funnel」「Load time」两张卡因此永远空着，且不报错。补上两个类型 + 两条分发分支，
+与该文件里其余每个 `type` 的写法保持一致。`test/clients-worldAuctionAnalytics.test.ts` 的表驱动用例
+加两行覆盖。
+
