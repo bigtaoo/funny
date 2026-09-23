@@ -183,6 +183,13 @@ module.exports = (env, argv) => {
         '@nw/shared/battlepass': path.resolve(__dirname, '../server/shared/src/battlepass.ts'),
         '@nw/shared/rechargeMilestone': path.resolve(__dirname, '../server/shared/src/rechargeMilestone.ts'),
         '@nw/shared/titles': path.resolve(__dirname, '../server/shared/src/titles.ts'),
+        // @nw/shared/economy/iapTiers = IAP_TIERS_LIST (IOS_RELEASE.md §4.1/§4.1b, ECONOMY_BALANCE
+        // §2.2) — zero-import, same treatment as the four above. Lets ShopScene/coins.ts read the
+        // `mobileOnly` flag on t099/t199 from the one authoritative table instead of hand-copying a
+        // stale 5-tier subset (2026-09-23: the client used to hardcode only the 5 tiers Paddle can
+        // sell and never showed t099/t199 on native, even though iOS/Android pay Apple/Google's flat
+        // per-txn cut regardless of price — only Paddle's fixed fee makes them uneconomic).
+        '@nw/shared/economy/iapTiers': path.resolve(__dirname, '../server/shared/src/economy/iapTiers.ts'),
         // @nw/shared = browser-safe slice of server/shared. Points directly to slg/index.ts
         // (pure/deterministic, no Node.js built-ins) to avoid pulling in password/logger
         // which import node:crypto / node:fs / node:path and break webpack browser builds.
