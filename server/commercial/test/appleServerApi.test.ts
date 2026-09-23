@@ -110,11 +110,15 @@ function clientsWith(opts: {
 }
 
 /** The module under test, with a real decoder and the given transport. */
-function apiWith(opts: { production: unknown; sandbox?: unknown }) {
+function apiWith(opts: { production: unknown; sandbox?: unknown; preRelease?: boolean }) {
   const { clients, asked } = clientsWith(opts);
   const verifier = realVerifier();
   return {
-    api: makeAppleServerApi({ clients, verifiers: { production: verifier, sandbox: verifier } }),
+    api: makeAppleServerApi({
+      clients,
+      verifiers: { production: verifier, sandbox: verifier },
+      preRelease: opts.preRelease,
+    }),
     asked,
   };
 }
@@ -200,6 +204,40 @@ describe('verifyTransaction', () => {
     const { api, asked } = apiWith({ production: err });
     await expect(api.verifyTransaction('tx-1')).rejects.toThrow();
     expect(asked).toEqual(['production']); // and does not ask sandbox — the other host has the same key
+  });
+
+  // The 2026-09-23 incident: a real sandbox purchase, verified with `preRelease` off (the default at
+  // the time), threw exactly the first case above and never reached sandbox — this app had never
+  // shipped, so PRODUCTION 401s every request (see appleServerApi.ts's "why two environments" doc).
+  describe('with NW_APPLE_PRE_RELEASE on', () => {
+    it('retries sandbox on a production 401 instead of rethrowing', async () => {
+      const { api, asked } = apiWith({
+        production: new APIException(401),
+        sandbox: { signedTransactionInfo: signedTx({ environment: 'LocalTesting' }) },
+        preRelease: true,
+      });
+      expect((await api.verifyTransaction('tx-1'))?.transactionId).toBe('tx-1');
+      expect(asked).toEqual(['production', 'sandbox']);
+    });
+
+    it('still rethrows a rate limit or transport failure — only 401 is widened', async () => {
+      const { api, asked } = apiWith({
+        production: new APIException(429, APIError.RATE_LIMIT_EXCEEDED),
+        preRelease: true,
+      });
+      await expect(api.verifyTransaction('tx-1')).rejects.toThrow();
+      expect(asked).toEqual(['production']);
+    });
+
+    it('still rethrows when SANDBOX also 401s, rather than reporting "no such transaction"', async () => {
+      const { api, asked } = apiWith({
+        production: new APIException(401),
+        sandbox: new APIException(401),
+        preRelease: true,
+      });
+      await expect(api.verifyTransaction('tx-1')).rejects.toThrow(APIException);
+      expect(asked).toEqual(['production', 'sandbox']);
+    });
   });
 
   it('rethrows a real failure the SANDBOX host reports, after production said not-found', async () => {
