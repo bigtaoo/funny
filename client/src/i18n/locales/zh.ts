@@ -1567,6 +1567,12 @@ export const zh = {
   'ageGate.blockedTitle': '暂时无法进入',
   'ageGate.blockedBody': '本游戏面向{min}岁及以上玩家。如果你填错了出生年份，请联系 support@gamestao.com。',
 
+  // Merged age-gate + consent screen (RETENTION_LAUNCH_PLAN.md §3.1) — only used when both are
+  // still unanswered; the standalone ageGate.*/consent.* copy above covers every other case.
+  'entryGate.title': '开始之前',
+  'entryGate.body': '请选择你的出生年份，并接受我们的隐私政策与用户协议以继续——我们会用匿名游玩数据改进游戏。',
+  'entryGate.bodyChoice': '请选择你的出生年份，并阅读同意我们的隐私政策与用户协议。你可以另外选择是否让我们收集匿名游玩数据——选「仅必要」同样可以正常游戏，随时可在设置里改。',
+
   // ── 登录断线重连提示（重新登录后恢复未完成的对局） ───────────────────────────
   'reconnect.title': '未完成的对局',
   'reconnect.body': '你还有一场对局尚未结束，是否重新连接并继续？',

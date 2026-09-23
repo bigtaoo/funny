@@ -56,6 +56,8 @@ import type { DailyCallbacks } from '../../src/scenes/DailyScene';
 import type { EventCallbacks } from '../../src/scenes/EventScene';
 import type { ConsentCallbacks, ConsentMode } from '../../src/ui/dialogs/ConsentDialog';
 import type { AgeGateCallbacks, AgeGateMode } from '../../src/ui/dialogs/AgeGateDialog';
+import type { EntryGateCallbacks, EntryGateMode } from '../../src/ui/dialogs/EntryGateDialog';
+import { MIN_AGE_YEARS } from '../../src/app/appConstants';
 import type { ReconnectPromptCallbacks } from '../../src/ui/dialogs/ReconnectPromptDialog';
 import type { TitlesSceneCallbacks } from '../../src/scenes/TitlesScene';
 import type { CitySceneCallbacks } from '../../src/scenes/CityScene';
@@ -151,9 +153,49 @@ export class HeadlessAppViews implements AppViews {
   showAgeGate(mode: AgeGateMode, cb: AgeGateCallbacks): void { this.screen = 'ageGate'; this.ageGate = { mode, cb }; }
 
   /**
+   * The merged age-gate + consent screen (RETENTION_LAUNCH_PLAN.md §3.1 — see EntryGateDialog).
+   * A real tap answers both at once; this harness still exposes them as the two sequential
+   * `ageGate`/`consent` handles the pre-merge flow had; so every other test that just needs "past
+   * the gate" (`declareAdultAge()` then `consent!.onAccept()`) is untouched. That split is faithful
+   * to what actually commits, not just convenient: an adult answer with consent still pending stages
+   * the birth year and surfaces the consent step WITHOUT writing `AGE_DECLARED_FLAG` yet — the real
+   * dialog does not call back until a consent button is tapped either — while an underage answer (or
+   * an age-only screen, `mode.consent === null`) reports immediately, matching EntryGateDialog's own
+   * confirm-underage shortcut. See test/ageGate.test.ts for the two cases this changed relative to
+   * the old separate `showAgeGate('ask')` + `showConsent()` sequence.
+   */
+  showEntryGate(mode: EntryGateMode, cb: EntryGateCallbacks): void {
+    if (mode.age === 'ask') {
+      this.screen = 'ageGate';
+      this.ageGate = {
+        mode: 'ask',
+        cb: {
+          onDeclared: (birthYear) => {
+            const oldEnough = new Date().getFullYear() - birthYear >= MIN_AGE_YEARS;
+            if (!oldEnough || mode.consent === null) { cb.onAnswered({ birthYear }); return; }
+            this.consentMode = mode.consent;
+            this.screen = 'consent';
+            this.consent = {
+              onAccept: () => cb.onAnswered({ birthYear, granted: true }),
+              onDecline: () => cb.onAnswered({ birthYear, granted: false }),
+            };
+          },
+        },
+      };
+      return;
+    }
+    this.screen = 'consent';
+    this.consentMode = mode.consent ?? undefined;
+    this.consent = {
+      onAccept: () => cb.onAnswered({ granted: true }),
+      onDecline: () => cb.onAnswered({ granted: false }),
+    };
+  }
+
+  /**
    * Answer the age gate as an adult — the step every entry path now runs before the consent gate
-   * (see src/app/createAppCore.ts's gateAge). Tests that are about something else call this to get
-   * past it; the gate's own behaviour is asserted in test/ageGate.test.ts.
+   * (see src/app/createAppCore.ts's gateConsent). Tests that are about something else call this to
+   * get past it; the gate's own behaviour is asserted in test/ageGate.test.ts.
    */
   declareAdultAge(): void {
     this.ageGate?.cb.onDeclared(new Date().getFullYear() - 30);

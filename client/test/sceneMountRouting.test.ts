@@ -48,6 +48,7 @@ const EXPECTED: Record<string, Policy> = {
   // Menu / shop / meta screens and the stage-level dialogs: nothing a constructor cannot redo.
   showConsent: 'rebuilt',
   showAgeGate: 'rebuilt',
+  showEntryGate: 'rebuilt',
   showReconnectPrompt: 'rebuilt',
   showSettings: 'rebuilt',
   showLogin: 'rebuilt',

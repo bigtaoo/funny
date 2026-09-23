@@ -58,6 +58,7 @@ import type { DailyCallbacks } from '../scenes/DailyScene';
 import type { EventCallbacks } from '../scenes/EventScene';
 import type { ConsentCallbacks, ConsentMode } from '../ui/dialogs/ConsentDialog';
 import type { AgeGateCallbacks, AgeGateMode } from '../ui/dialogs/AgeGateDialog';
+import type { EntryGateCallbacks, EntryGateMode } from '../ui/dialogs/EntryGateDialog';
 import type { ReconnectPromptCallbacks } from '../ui/dialogs/ReconnectPromptDialog';
 import type { DeckBuilderCallbacks } from '../scenes/DeckBuilderScene';
 import type { CitySceneCallbacks } from '../scenes/CityScene';
@@ -204,6 +205,12 @@ export interface AppViews {
    * an age below {@link MIN_AGE_YEARS} and never calls back.
    */
   showAgeGate(mode: AgeGateMode, cb: AgeGateCallbacks): void;
+  /**
+   * Merged age gate + consent wall (RETENTION_LAUNCH_PLAN.md §3.1) — one screen for whichever of
+   * the two is still unanswered (both, in the common new-player case). See EntryGateDialog's class
+   * doc; the permanent underage 'blocked' dead end still goes through {@link showAgeGate} instead.
+   */
+  showEntryGate(mode: EntryGateMode, cb: EntryGateCallbacks): void;
   /** Login-reconnect-prompt: "resume your unfinished match?" shown when GET /save reports an activeMatch. */
   showReconnectPrompt(cb: ReconnectPromptCallbacks): void;
   /**

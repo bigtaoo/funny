@@ -59,6 +59,7 @@ import { DailyScene, type DailyCallbacks } from '../scenes/DailyScene';
 import { EventScene, type EventCallbacks } from '../scenes/EventScene';
 import { ConsentDialog, type ConsentCallbacks, type ConsentMode } from '../ui/dialogs/ConsentDialog';
 import { AgeGateDialog, type AgeGateCallbacks, type AgeGateMode } from '../ui/dialogs/AgeGateDialog';
+import { EntryGateDialog, type EntryGateCallbacks, type EntryGateMode } from '../ui/dialogs/EntryGateDialog';
 import { ReconnectPromptDialog, type ReconnectPromptCallbacks } from '../ui/dialogs/ReconnectPromptDialog';
 import { OwnerId, ownerToSide } from '../game';
 import type { Replay, LevelDefinition } from '../game';
@@ -136,6 +137,11 @@ export class PixiAppViews implements AppViews {
   showAgeGate(mode: AgeGateMode, cb: AgeGateCallbacks): void {
     this.mounts.mount('AgeGateDialog', () =>
       new AgeGateDialog(this.layout.designWidth, this.layout.designHeight, mode, cb));
+  }
+
+  showEntryGate(mode: EntryGateMode, cb: EntryGateCallbacks): void {
+    this.mounts.mount('EntryGateDialog', () =>
+      new EntryGateDialog(this.layout.designWidth, this.layout.designHeight, mode, cb));
   }
 
   showReconnectPrompt(cb: ReconnectPromptCallbacks): void {

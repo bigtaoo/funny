@@ -168,6 +168,18 @@ D1 也低(<15%)？                     → 首会话体验，查 3.2
 
 **下一步**：Phase 2 完成，合并进当日分支，转 Phase 3（产品侧杠杆，含决策 2 的最终落地——用 `retention_by&dimension=login_mode` 的真实门户数据判断登录墙要不要后移）。
 
+### 2026-09-23 Phase 3.1a：年龄门 + 同意墙合屏
+
+分支 `feat/retention-phase3`。§3.1 四项里**只做这一项和 3.3 的首胜话术**，其余三项都还缺不了数据或需要产品拍板，理由见下方「跳过了什么」。
+
+- 新 `client/src/ui/dialogs/EntryGateDialog.ts` + `AppViews.showEntryGate`，替掉 `createAppCore.gateConsent` 原来的 `gateAge(() => gateGdpr(next))` 两段式。合规依据、语义细节、哪些老路径完全不变，写在 [`COMPLIANCE_GLOBAL.md` §3.4 那条新增笔记](COMPLIANCE_GLOBAL.md)，这里只记落地判断。
+- **跳过了什么，为什么**：
+  - **登录墙位置**——§0 决策 2 原话「先测再动」，`retention_by&dimension=login_mode` 还没有真实门户流量，继续挂起。
+  - **加载时长优化**——查了 `load_time` 的现有埋点和 boot 代码（`bootTimeline.ts`/`bootManifest.ts`）：L0 资源已经并行加载、战斗资源已经是非阻塞后台层，没找到明显还能再省的地方；真正的阻塞项（admin 代理没转发 `load_time`/`boot_funnel`，2026-09-23 稍早被另一会话修好）已经解决，现在缺的是真实流量的 p50/p90 数据来指哪一段慢——没有数据不该猜着优化。
+- 验证：`client/test/ageGate.test.ts`/`consentGate.test.ts`/`headless-nav.test.ts`（43 例，2 例因新语义改写——年龄声明不再独立于同意落盘，见 COMPLIANCE_GLOBAL.md 笔记）、新增 `client/test/ui/entryGate.ui.ts`（53 例，三语言×4 视口溢出 + 下溢分支 tap 流程）、`sceneMountRouting.test.ts` 补 `showEntryGate` 的重建策略；`client` 全量 vitest（3906 例，1 个跟本次改动无关的既有限流 flake）+ tsc + `build:web` 均过；真实浏览器走了一遍合并屏（Accept all 直达登录页）和欠龄二次确认→blocked 死路两条路径，截图见会话记录。
+
+**下一步**：转 Phase 3.3（回访钩子——首胜结算页的「明天回来」话术，复用已有的每日签到系统，不涉及游戏平衡决策）。
+
 ---
 
 ## §6 已知阻塞项
