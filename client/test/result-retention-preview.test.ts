@@ -23,6 +23,7 @@ const zeroStats = (owner: 0 | 1): PlayerStats => ({
 function buildCtx(opts: {
   claimedDays?: number[];
   online?: boolean;
+  disableRetentionPreview?: boolean;
 }): { ctx: AppCtx; getResult: () => ResultViewProps | null } {
   let captured: ResultViewProps | null = null;
   const views = { showResult: (props: ResultViewProps) => { captured = props; } } as unknown as AppViews;
@@ -46,7 +47,9 @@ function buildCtx(opts: {
     baseUrl: null,
     saveManager: { get: () => save } as unknown as AppCtx['saveManager'],
     replayStore: {} as unknown as AppCtx['replayStore'],
-    featureFlags: null,
+    featureFlags: opts.disableRetentionPreview
+      ? ({ isOn: (key: string) => key === 'disable_retention_preview' } as unknown as AppCtx['featureFlags'])
+      : null,
     state: { inLobby: true } as unknown as AppState,
     nav: {} as Nav,
     getNetSession: () => null,
@@ -103,5 +106,13 @@ describe('nav/result — come back tomorrow check-in hook', () => {
     const props = getResult();
     expect(props, 'the result screen must still render even without the hook').not.toBeNull();
     expect(props?.retentionPreview).toBeUndefined();
+  });
+
+  it('shows nothing when the disable_retention_preview kill switch is on, even on an otherwise-eligible win', async () => {
+    const { ctx, getResult } = buildCtx({ claimedDays: [], disableRetentionPreview: true });
+    const { goResult } = createResultNav(ctx);
+
+    await goResult(0, [zeroStats(0), zeroStats(1)]);
+    expect(getResult()?.retentionPreview).toBeUndefined();
   });
 });
