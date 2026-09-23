@@ -6,6 +6,7 @@ import { t, TranslationKey } from '../i18n';
 import { ProfilePopup, type ProfileData, type ProfileExtra } from '../ui/dialogs/ProfilePopup';
 import { ui, buildPaperBackground, tearDownChildren } from '../render/sketchUi';
 import { buildIcon, IconKind } from '../render/icons';
+import { buildRewardIcon, preloadRewardIconArt, type RewardLike } from '../render/rewardIcon';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { FS } from '../render/fontScale';
 import {
@@ -24,6 +25,13 @@ export interface EloResult {
   delta: number;
   after: number;
   rankAfter: string;
+}
+
+/** The "come back tomorrow" check-in hook (RETENTION_LAUNCH_PLAN.md §3.3) — see AppViews.ts's doc. */
+export interface ResultRetentionPreview {
+  /** 1-based check-in calendar slot (server/shared/src/retention.ts CHECKIN_REWARDS index + 1). */
+  day: number;
+  reward: RewardLike;
 }
 
 // ─── Badge definitions ────────────────────────────────────────────────────────
@@ -169,6 +177,7 @@ export class ResultScene implements Scene {
   private readonly localOwner: OwnerId;
   private readonly elo?: EloResult;
   private readonly profiles?: ResultProfiles;
+  private readonly retentionPreview?: ResultRetentionPreview;
   private readonly popup: ProfilePopup;
 
   constructor(
@@ -181,6 +190,7 @@ export class ResultScene implements Scene {
     elo?: EloResult,
     profiles?: ResultProfiles,
     outroTexts?: string[],
+    retentionPreview?: ResultRetentionPreview,
   ) {
     this.container = new PIXI.Container();
     this.w  = w;
@@ -188,7 +198,9 @@ export class ResultScene implements Scene {
     this.localOwner = localOwner;
     this.elo = elo;
     this.profiles = profiles;
+    this.retentionPreview = retentionPreview;
     this.popup = new ProfilePopup(w, h, cb.getProfileExtra);
+    if (retentionPreview) void preloadRewardIconArt(); // best-effort; buildRewardIcon degrades gracefully if art isn't decoded yet
 
     if (outroTexts && outroTexts.length > 0) {
       this.buildOutroOverlay(outroTexts, 0, () => {
@@ -431,6 +443,34 @@ export class ResultScene implements Scene {
     const primaryH = Math.round(h * 0.085);
     const primaryX = (w - primaryW) / 2;
     const primaryY = Math.round(h * 0.78);
+
+    // "Come back tomorrow" check-in hook (RETENTION_LAUNCH_PLAN.md §3.3) — a one-line reward
+    // preview sitting just above the primary CTA, independent of the badges block above it (which
+    // varies in height) so it never collides regardless of how many badges this match earned.
+    if (isWin && this.retentionPreview) {
+      const { day, reward } = this.retentionPreview;
+      const rowY = primaryY - Math.round(h * 0.06);
+      const rc = Math.round(h * 0.04);
+      const ink = 0x8a7020;
+      const gap = Math.round(w * 0.012);
+      // Same icon+count convention as DailyScene's calendar cells: card/equipment are single-item
+      // milestone draws (no "+N"), everything else pairs the glyph with its amount.
+      const singleItem = reward.kind === 'card' || reward.kind === 'equipment';
+      const icon = buildRewardIcon(reward, rc, ink);
+      const countTxt = !singleItem
+        ? makeText(`+${reward.count ?? 0}`, { fontSize: FS.label, fill: ink, fontFamily: 'monospace' })
+        : null;
+      const label = makeText(t('result.tomorrowReward', { day }), { fontSize: FS.label, fill: 0x555544, fontFamily: 'monospace' });
+
+      const groupW = (icon ? rc + gap : 0) + (countTxt ? countTxt.width + gap : 0) + label.width;
+      let x = (w - groupW) / 2;
+      if (icon) { icon.x = x; icon.y = rowY - rc / 2; this.container.addChild(icon); x += rc + gap; }
+      if (countTxt) { countTxt.anchor.set(0, 0.5); countTxt.x = x; countTxt.y = rowY; this.container.addChild(countTxt); x += countTxt.width + gap; }
+      label.anchor.set(0, 0.5);
+      label.x = x; label.y = rowY;
+      this.container.addChild(label);
+    }
+
     // On a win the CTA reads "fight again" (more triumphant); otherwise "play
     // again". An explicit playAgainLabel (e.g. campaign's "back to map") wins.
     const primaryLabel = cb.playAgainLabel ?? (isWin ? t('result.playAgainWin') : t('result.playAgain'));

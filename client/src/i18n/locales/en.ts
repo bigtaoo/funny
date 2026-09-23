@@ -158,6 +158,7 @@ export const en: Record<TranslationKey, string> = {
   'result.backToMap': 'BACK TO MAP',
   'result.watchReplay': 'WATCH REPLAY',
   'result.eloDelta': 'ELO {delta} → {after}　{rank}',
+  'result.tomorrowReward': 'Come back tomorrow — Day {day} check-in',
   'rank.unranked': 'Unranked',
   'rank.bronze': 'Bronze',
   'rank.silver': 'Silver',
@@ -1543,6 +1544,12 @@ export const en: Record<TranslationKey, string> = {
   'ageGate.confirmBack': 'Go back',
   'ageGate.blockedTitle': 'Not available',
   'ageGate.blockedBody': 'This game is intended for players aged {min} and over. If you selected the wrong birth year, contact support@gamestao.com.',
+
+  // Merged age-gate + consent screen (RETENTION_LAUNCH_PLAN.md §3.1) — only used when both are
+  // still unanswered; the standalone ageGate.*/consent.* copy above covers every other case.
+  'entryGate.title': 'Before you play',
+  'entryGate.body': 'Select your birth year, then accept our Privacy Policy and Terms of Service to continue — we use anonymous gameplay data to improve the game.',
+  'entryGate.bodyChoice': 'Select your birth year. Please also read and accept our Privacy Policy and Terms of Service. Separately, you choose whether we may collect anonymous gameplay data — "Essentials only" plays just the same, and you can change it anytime in Settings.',
 
   // ── Login reconnect prompt (resume an in-progress match after re-login) ─────
   'reconnect.title': 'Unfinished Match',

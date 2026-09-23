@@ -185,45 +185,23 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
   }
 
   /**
-   * The two first-launch gates, in the order they have to run: age first, then GDPR consent.
-   * Every entry path goes through here (`resolveEntry` on launch and after login), so this is the
-   * one place that decides what a player has to answer before reaching a screen of their own.
-   */
-  function gateConsent(next: () => void): void {
-    gateAge(() => gateGdpr(next));
-  }
-
-  /**
-   * Neutral age gate (COMPLIANCE_GLOBAL §3.4, `privacy-policy §9`), ahead of the consent gate so
-   * nothing — not even the consent screen's own analytics event — happens before the player's age
-   * is known. Three states, which is why this reads the flags map directly instead of
-   * `saveManager.getFlag`: that helper answers `flags[key] === true`, and "never asked" has to be
-   * distinguishable from "declared younger" or a blocked player would be asked again every launch.
-   */
-  function gateAge(next: () => void): void {
-    const declared = saveManager.get().flags[AGE_DECLARED_FLAG];
-    if (declared === true) { next(); return; }
-    if (declared === false) { views.showAgeGate('blocked', { onDeclared() { /* dead end */ } }); return; }
-    views.showAgeGate('ask', {
-      onDeclared(birthYear) {
-        const oldEnough = new Date().getFullYear() - birthYear >= MIN_AGE_YEARS;
-        saveManager.setFlag(AGE_DECLARED_FLAG, oldEnough);
-        if (!oldEnough) { views.showAgeGate('blocked', { onDeclared() { /* dead end */ } }); return; }
-        next();
-      },
-    });
-  }
-
-  /**
-   * GDPR consent gate (C5-c, L1-1). Runs `next()` immediately once the player has answered;
-   * otherwise shows the blocking consent dialog. Anonymous / offline users see it too — the
-   * answer lands in the local flag (synced to the server later via SaveManager push), and the
-   * explicit recordGdprConsent fires immediately when a token is already present.
+   * The two first-launch gates. Every entry path goes through here (`resolveEntry` on launch and
+   * after login), so this is the one place that decides what a player has to answer before reaching
+   * a screen of their own.
    *
-   * Three states, read off `save.flags` directly for the same reason the age gate does:
-   * `SaveManager.getFlag` answers `flags[key] === true`, and a player who chose "essentials only"
-   * has to be distinguishable from one who was never asked, or the dialog returns every launch and
-   * their refusal is quietly overwritten the first time they tap through it.
+   * Both gates run through one {@link EntryGateDialog} mount (RETENTION_LAUNCH_PLAN.md §3.1: age
+   * gate + consent wall merged into one screen) whenever more than one is still unanswered — the
+   * common brand-new-player case. A returning player missing only one of the two still sees just
+   * that one, rendered with the exact copy/layout the old standalone dialogs used (EntryGateDialog's
+   * class doc). The permanent underage 'blocked' dead end is unaffected either way — it is still its
+   * own {@link showAgeGate} mount, reached the instant the account is known to be blocked so nothing
+   * about that state (not even the consent screen) ever has a chance to render first.
+   *
+   * Age is neutral (COMPLIANCE_GLOBAL §3.4, `privacy-policy §9`) and gates in front of consent so
+   * nothing — not even the consent screen's own analytics event — happens before it is known. Both
+   * flags are read off `save.flags` directly rather than `saveManager.getFlag` (which answers
+   * `flags[key] === true`): "never asked" has to be distinguishable from "declared younger" /
+   * "essentials only", or a player who already answered would be asked again every launch.
    *
    * | `flags.gdprConsent` | meaning | analytics |
    * |---|---|---|
@@ -231,41 +209,56 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
    * | `false` | terms accepted, analytics refused ("essentials only") | off |
    * | absent | never asked | (gate shows) |
    *
-   * Nothing is tracked on the refusal path — not even a `gdpr_consent { granted: false }` event.
-   * The refusal is the one answer that cannot be reported through the thing it refuses; it reaches
-   * the server as account state via `recordGdprConsent`, which is record-keeping under Art 7(1),
-   * not telemetry.
-   *
-   * `countDeclinedLaunch()` is the one exception, and it is not telemetry either: it bumps a
-   * date/platform/count row on the unauthenticated launch counter, which stores nobody. Both refusal
-   * paths call it — the launch they refuse on and every launch after — because since refusal stopped
-   * ending the session (ANALYTICS_DESIGN §3.6c) these players go on playing and reporting nothing,
-   * and the launch funnel could not tell them apart from the ones who read this dialog and left.
+   * Nothing is tracked on the GDPR refusal path — not even a `gdpr_consent { granted: false }`
+   * event. The refusal is the one answer that cannot be reported through the thing it refuses; it
+   * reaches the server as account state via `recordGdprConsent`, which is record-keeping under
+   * Art 7(1), not telemetry. `countDeclinedLaunch()` is the one exception, and it is not telemetry
+   * either: it bumps a date/platform/count row on the unauthenticated launch counter, which stores
+   * nobody. Both refusal paths call it — the launch they refuse on and every launch after — because
+   * since refusal stopped ending the session (ANALYTICS_DESIGN §3.6c) these players go on playing
+   * and reporting nothing, and the launch funnel could not tell them apart from the ones who read
+   * this dialog and left. That re-apply also has to happen on every launch even when the gate screen
+   * itself does not show (age still pending, say) — the `answered !== undefined` branch below runs
+   * unconditionally for exactly that reason, same as the old `gateGdpr` did.
    */
-  function gateGdpr(next: () => void): void {
-    const answered = saveManager.get().flags[GDPR_CONSENT_FLAG];
-    if (answered !== undefined) {
-      analytics.setConsent(answered === true);
-      if (answered === false) analytics.countDeclinedLaunch();
-      next();
-      return;
+  function gateConsent(next: () => void): void {
+    const declaredAge = saveManager.get().flags[AGE_DECLARED_FLAG];
+    if (declaredAge === false) { views.showAgeGate('blocked', { onDeclared() { /* dead end */ } }); return; }
+
+    const answeredGdpr = saveManager.get().flags[GDPR_CONSENT_FLAG];
+    if (answeredGdpr !== undefined) {
+      analytics.setConsent(answeredGdpr === true);
+      if (answeredGdpr === false) analytics.countDeclinedLaunch();
     }
 
-    /** Shared tail of both answers: persist locally, mirror to the account, proceed. */
-    const record = (granted: boolean): void => {
+    const needAge = declaredAge !== true;
+    const needConsent = answeredGdpr === undefined;
+    if (!needAge && !needConsent) { next(); return; }
+
+    /** Shared tail of a granted/refused consent answer: persist locally, mirror to the account. */
+    const recordConsent = (granted: boolean): void => {
       saveManager.setFlag(GDPR_CONSENT_FLAG, granted);
       analytics.setConsent(granted);
       if (granted) analytics.track('gdpr_consent', { granted: true });
       else analytics.countDeclinedLaunch();
       const token = platform.storage.getItem(TOKEN_KEY);
       if (api && token) { api.setToken(token); void api.recordGdprConsent(granted).catch(() => { /* best-effort; flag still syncs via SaveManager */ }); }
-      next();
     };
 
-    views.showConsent(needsConsentChoice() ? 'choice' : 'accept-only', {
-      onAccept() { record(true); },
-      onDecline() { record(false); },
-    });
+    views.showEntryGate(
+      { age: needAge ? 'ask' : 'ok', consent: needConsent ? (needsConsentChoice() ? 'choice' : 'accept-only') : null },
+      {
+        onAnswered({ birthYear, granted }) {
+          if (birthYear !== undefined) {
+            const oldEnough = new Date().getFullYear() - birthYear >= MIN_AGE_YEARS;
+            saveManager.setFlag(AGE_DECLARED_FLAG, oldEnough);
+            if (!oldEnough) { views.showAgeGate('blocked', { onDeclared() { /* dead end */ } }); return; }
+          }
+          if (granted !== undefined) recordConsent(granted);
+          next();
+        },
+      },
+    );
   }
 
   /**

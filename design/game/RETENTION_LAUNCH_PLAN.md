@@ -168,6 +168,30 @@ D1 也低(<15%)？                     → 首会话体验，查 3.2
 
 **下一步**：Phase 2 完成，合并进当日分支，转 Phase 3（产品侧杠杆，含决策 2 的最终落地——用 `retention_by&dimension=login_mode` 的真实门户数据判断登录墙要不要后移）。
 
+### 2026-09-23 Phase 3.1a：年龄门 + 同意墙合屏
+
+分支 `feat/retention-phase3`。§3.1 四项里**只做这一项和 3.3 的首胜话术**，其余三项都还缺不了数据或需要产品拍板，理由见下方「跳过了什么」。
+
+- 新 `client/src/ui/dialogs/EntryGateDialog.ts` + `AppViews.showEntryGate`，替掉 `createAppCore.gateConsent` 原来的 `gateAge(() => gateGdpr(next))` 两段式。合规依据、语义细节、哪些老路径完全不变，写在 [`COMPLIANCE_GLOBAL.md` §3.4 那条新增笔记](COMPLIANCE_GLOBAL.md)，这里只记落地判断。
+- **跳过了什么，为什么**：
+  - **登录墙位置**——§0 决策 2 原话「先测再动」，`retention_by&dimension=login_mode` 还没有真实门户流量，继续挂起。
+  - **加载时长优化**——查了 `load_time` 的现有埋点和 boot 代码（`bootTimeline.ts`/`bootManifest.ts`）：L0 资源已经并行加载、战斗资源已经是非阻塞后台层，没找到明显还能再省的地方；真正的阻塞项（admin 代理没转发 `load_time`/`boot_funnel`，2026-09-23 稍早被另一会话修好）已经解决，现在缺的是真实流量的 p50/p90 数据来指哪一段慢——没有数据不该猜着优化。
+- 验证：`client/test/ageGate.test.ts`/`consentGate.test.ts`/`headless-nav.test.ts`（43 例，2 例因新语义改写——年龄声明不再独立于同意落盘，见 COMPLIANCE_GLOBAL.md 笔记）、新增 `client/test/ui/entryGate.ui.ts`（53 例，三语言×4 视口溢出 + 下溢分支 tap 流程）、`sceneMountRouting.test.ts` 补 `showEntryGate` 的重建策略；`client` 全量 vitest（3906 例，1 个跟本次改动无关的既有限流 flake）+ tsc + `build:web` 均过；真实浏览器走了一遍合并屏（Accept all 直达登录页）和欠龄二次确认→blocked 死路两条路径，截图见会话记录。
+
+**下一步**：转 Phase 3.3（回访钩子——首胜结算页的「明天回来」话术，复用已有的每日签到系统，不涉及游戏平衡决策）。
+
+### 2026-09-23 Phase 3.3：结算页「明天回来」签到预览
+
+同分支 `feat/retention-phase3`，接着 3.1a 一起做。
+
+- `ResultScene` 新增可选 `retentionPreview?: {day, reward}`：赢的那一局、且本月签到还一天没领时，在主按钮上方画一行「图标+数量+Day N 签到」提示，复用 `DailyScene` 的 `buildRewardIcon` 图标约定（不新起一套画法）。数据来源：`server/shared/src/retention.ts` 的 `CHECKIN_REWARDS` 表（通过既有 `GET /retention`），不新增经济投放。
+- 触发面比"首胜"更宽：门槛是"本地签到状态 `checkinClaimedCount===0`"（本月还没领过），不是字面上的"这是玩家的第一场胜利"——原因见 `ONBOARDING_DESIGN.md` §9 第 4 条的详细记录：教学毕业本身从不经过 `ResultScene`（直接进大厅），真正第一次看到结算页是打完 `ch1_lv1` 之后；用签到状态当信号，不用去追"哪条路径才算首胜"，也不用碰教学关的导航。
+- **性能陷阱踩了一次**：`nav/result.ts` 的 `goResult` 一开始无条件 `await getRetentionPreview(...)`，即使离线/已签到/输了也会多等一个 microtask tick——`campaign-real-layer-interlude-nav.test.ts` 依赖 `driveToEnd()` resolve 后**不额外 await** 就能读到 `views.screen==='result'` 的时序假设因此被打破（screen 还停在 `'game'`）。修法：把"要不要发请求"拆成一个同步函数，只有真要发网络请求（赢+未签到+在线）时才 `await`，其余分支直接同步返回 `undefined`、不占用一次 tick——教训：**给一个已经在产测试里被"隐式时序"依赖的异步链路插入新 await，哪怕逻辑上是"仅在早退分支"，也要检查这类不显式 await 后续操作的测试**。
+- **验证局限**：这条路径需要 `api`（在线）才会显示，本地 dev server 没有真实后端可登录，没能在真实浏览器里走通"赢一局在线对局→看到预览"的完整链路；改用两层自动化覆盖替代——`client/test/result-retention-preview.test.ts`（5 例，直接单测 `createResultNav` 的门槛逻辑：首胜显示/已签到不显示/输了不显示/平局不显示/离线不显示）+ `client/test/ui/resultRetentionPreview.ui.ts`（5 例，真的构造 `ResultScene` 断言图标+文案画出来、不越界、不挡住主按钮，三语言×横竖屏）。
+- 验证：以上两个新文件 + `client` 全量 vitest（3911 例，同一个既有限流 flake）+ 全量 UI 套件（2903 例）+ tsc + `build:web` 均过。
+
+**下一步**：Phase 3.1a + 3.3 完成，合并进当日分支。Phase 3.2（新客匹配保护期，「必要时」——待 Phase 2 `first_battle_result`/`matched_bot` 真实数据判断是否需要）和 3.4（世界地图软门槛是否要降低通关 10 关的门槛，属游戏经济/平衡决策而非纯留存埋线）继续挂起，理由同 3.1 里登录墙的挂起——没有数据或需要产品拍板的都不该盲改。
+
 ---
 
 ## §6 已知阻塞项

@@ -288,7 +288,9 @@
 1. ✅ **教学关 `ch0_tutorial.json`** + **TutorialDirector**（阶段 A O1–O7 → 阶段 B Beat 1–3 + 脚本反应波 → 阶段 C 自由发挥 + 毕业 + 永不失败兜底）+ **TutorialDrawPolicy** + `flags.tutorial_done` + 跳过/重看。
 2. ✅ **首次功能引导机制**：`flags.featSeen.*` + `guide.*` i18n（各子页内「?」按钮待逐页接，§10）。
 3. ✅ **SLG 软门槛**：解锁阈值（`isFirstChapterCleared`）+ 大厅 SLG 入口灰显气泡（通 ch1 点亮）。
-4. **首胜钩子**：教学毕业奖励话术 + 引出每日签到入口（当前走既有结算 + 大厅红点，未做专门话术）。
+4. **首胜钩子**：
+   - ✅ **结算页「明天回来」预览**（2026-09-23，RETENTION_LAUNCH_PLAN.md §3.3）：`ResultScene` 在「赢 + 本月签到还一天没领」时画一行签到奖励预览（图标+数量+「Day N 签到」文案），复用既有 `CHECKIN_REWARDS`/`RetentionView`，不新增经济。**范围收窄**：不是字面意义的「教学毕业」——`goTutorial` 的胜利分支直接进大厅、从不经过 `ResultScene`（见 `campaignRoster.ts` `onGameEnd`），真正的「首个真实结算页」是新手打完 `ch1_lv1` 之后。用「本月还没签到过」这个更宽松、更健壮的信号代替「字面上的第一场胜利」，覆盖新手无论先玩哪个模式赢下第一局的情况，也避免为了精确定位"首胜"去改教学关的导航（风险更大、收益不明显）。
+   - 教学毕业本身的专门话术仍未做——走既有结算（不经过 ResultScene）+ 大厅红点，与本条无关。
 5. **合规开机层**（年龄门 + EU/UK 同意，与 COMPLIANCE 联动，海外测试前必须）。
 6. ~~FTUE 漏斗埋点接入~~ ✅ 已完成（`tutorial_start/complete/skip` + 逐 beat `tutorial_step` 全部已埋，见 §8「FTUE 漏斗埋点」行——design-doc-audit-2026-07 核实此条目此前是过期记录）。
 7. 依教学完成率与 D1 数据迭代 beat 脚本与提示文案。
