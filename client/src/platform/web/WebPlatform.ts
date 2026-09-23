@@ -150,7 +150,7 @@ export class WebPlatform implements IPlatform {
   }
 
   async getAuthCredential(): Promise<AuthCredential> {
-    return { kind: 'device', deviceId: getOrCreateDeviceId(this.storage) };
+    return { kind: 'device', deviceId: await getOrCreateDeviceId(this.storage) };
   }
 
   connectSocket(url: string, handlers: SocketHandlers): IGameSocket {

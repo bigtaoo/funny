@@ -47,8 +47,8 @@ export class AuthService implements AuthApi {
   // ── auth (S0-4 / S0-7) ──────────────────────────────────
   /** Exchange a platform anonymous credential for a token + accountId; on success the token is retained automatically. */
   async auth(cred: AuthCredential): Promise<AuthResult> {
-    const path = cred.kind === 'wx' ? '/auth/wx' : '/auth/device';
-    const body = cred.kind === 'wx' ? { code: cred.code } : { deviceId: cred.deviceId };
+    const path = cred.kind === 'wx' ? '/auth/wx' : cred.kind === 'crazygames' ? '/auth/crazygames' : '/auth/device';
+    const body = cred.kind === 'wx' ? { code: cred.code } : cred.kind === 'crazygames' ? { token: cred.token } : { deviceId: cred.deviceId };
     const data = await this.core.post<AuthResult>(path, body);
     this.core.token = data.token;
     return data;

@@ -53,6 +53,7 @@ module.exports = {
         NW_META_HOST: process.env.NW_META_HOST || '127.0.0.1',
         NW_WX_APPID: process.env.NW_WX_APPID || '',
         NW_WX_SECRET: process.env.NW_WX_SECRET || '',
+        NW_CRAZYGAMES_GAME_ID: process.env.NW_CRAZYGAMES_GAME_ID || '',
         NW_COMMERCIAL_INTERNAL_URL: COMM_INTERNAL, // meta orchestrates economy calls to commercial
         NW_GATEWAY_INTERNAL_URL: GW_INTERNAL, // peer judge (Phase C): meta → gateway /gw/judge
         // Active-match resume tracking (login-reconnect-prompt, shared with matchsvc). Missing this

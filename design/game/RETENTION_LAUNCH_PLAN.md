@@ -123,6 +123,22 @@ D1 也低(<15%)？                     → 首会话体验，查 3.2
 
 **下一步（Phase 1）**：VPS 现网数据已确认可查询、可信度已标注清楚，转入 1.1–1.4 的代码改动。
 
+### 2026-09-23 Phase 1.1 + 3.1（部分）：身份持久化 + CrazyGames SSO
+
+分支 `feat/retention-phase1`。
+
+**1.1 device_id 持久化加固**（`client/src/platform/uuid.ts`）：`getOrCreateDeviceId` 改异步，localStorage 仍是主路径，IndexedDB 作为独立存储做镜像写入 + localStorage 为空时的恢复源。**明确不解决** Safari ITP 对 script-writable storage 的 7 天清除（两者会被一起清），那个问题的真正解法是下面这条。
+
+**3.1（CrazyGames SSO 部分，用户已拍板接受）**：
+- 新 `AuthCredential` 变体 `{kind:'crazygames', token}`；`CrazyGamesPlatform` 接入 SDK v3 `user` 模块（`isUserAccountAvailable/getUser/getUserToken/showAuthPrompt`，按 [官方文档](https://docs.crazygames.com/sdk/html5-v2/user/) 实现，**门户环境未联调过**，见 §6）。
+- **静默路径**（零摩擦）：`resolveEntry()` 现在对 `crazygames`/`wx` credential 一视同仁——玩家已登门户账号时静默换 token 进大厅，不碰登录墙。玩家未登门户账号时行为与改动前完全一致（回退到 device credential，仍见登录页）。**没有动登录墙本身**，符合决策 2「先测数据再决定」。
+- **主动路径**：LoginScene 新增「Sign in with CrazyGames」按钮（仅 `platform.signInWithCrazyGames` 存在时渲染，其它平台像素级不变），复用 `doAuth()` 的 token 持久化 + 埋点（`login_submit/ok/fail{mode:'crazygames'}`，三选一新增值）。
+- **服务端**：新端点 `POST /auth/crazygames { token }`（`server/metaserver/src/service/auth/crazygames.ts` + `crazygamesAuth.ts` 的 RS256 校验，公钥 `https://sdk.crazygames.com/publicKey.json`，**不**复用 `NW_JWT_SECRET`）。复用既有 `resolveByOAuth('crazygames', userId, ...)`——与 Google/Apple 同等耐久性（`isAnonymous:false`），未新增账号解析逻辑。`NW_CRAZYGAMES_GAME_ID` 未配置（游戏尚未在 CrazyGames 后台登记）时端点返回 `OAUTH_FAILED`，不影响其它登录方式；已接入两份部署 compose + `ecosystem.config.cjs` + `.env.example`，过 `deploy-config.test.ts` 门禁。
+- 测试：`uuid.test.ts`（11，含 IndexedDB 恢复/失败路径的手写 fake）、`crazyGamesSignIn.test.ts`（7）、`auth-reconnect-prompt.test.ts`（+3，静默/主动/取消三态）、`crazygamesAuth-unit.test.ts`（8，真 RSA 密钥对，无网络）、`auth-crazygames-unit.test.ts`（8，镜 `auth-oauthbind-unit.test.ts` 写法）——client/server 两端 tsc + webpack build（web/crazygames 两个 target）+ 全量 vitest 均过。
+- **仍未做**：登录墙位置本身（3.1 剩余部分）——留给 Phase 2 数据决定。
+
+覆盖：见上；文档：本节 + `ANALYTICS_DESIGN.md §5.6`（`login_submit` mode 新增 `crazygames`）+ `ACCOUNT_DESIGN.md §3`（新端点契约）。
+
 ---
 
 ## §6 已知阻塞项

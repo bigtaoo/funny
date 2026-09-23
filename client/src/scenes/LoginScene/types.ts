@@ -22,6 +22,12 @@ export interface LoginSceneCallbacks {
   onRegister(loginId: string, password: string, displayName?: string): Promise<AuthOutcome>;
   /** Continue without an account (offline single-player). */
   onPlayOffline(): void;
+  /**
+   * Sign in via the CrazyGames portal's own account popup (RETENTION_LAUNCH_PLAN.md §3.1). Optional
+   * — the caller only passes this when `IPlatform.signInWithCrazyGames` exists, so the landing view
+   * only grows a fourth button on CrazyGames; every other platform is unaffected.
+   */
+  onCrazyGamesSignIn?(): void;
 }
 
 // Mirror the server's account rules (server/shared/src/password.ts) so the client

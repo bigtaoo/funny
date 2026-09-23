@@ -354,6 +354,7 @@ export const zh = {
   'auth.title': '登录 {game}',
   'auth.login': '登录',
   'auth.register': '注册',
+  'auth.signInCrazyGames': '用 CrazyGames 账号登录',
   'auth.loginIdLabel': '邮箱 / 用户名',
   'auth.passwordLabel': '密码',
   'auth.confirmPasswordLabel': '确认密码',

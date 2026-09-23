@@ -45,6 +45,20 @@ declare global {
             callbacks: { adStarted?(): void; adFinished?(): void; adError?(e: unknown): void },
           ): void;
         };
+        // User account module (RETENTION_LAUNCH_PLAN.md §1.1/§3.1 — CrazyGames SSO). Portal-held
+        // identity: getUserToken() returns a signed JWT the server verifies against CrazyGames' own
+        // public key (never our own JWT_SECRET — see server/metaserver/src/crazygamesAuth.ts), so a
+        // player's account survives losing local storage entirely, which plain device_id cannot.
+        // Docs: https://docs.crazygames.com/sdk/html5-v2/user/
+        user: {
+          isUserAccountAvailable(): Promise<boolean>;
+          getUser(): Promise<{ username: string; profilePictureUrl: string } | null>;
+          /** Throws { error: 'userNotAuthenticated' | ... } when no portal session exists — that is
+           *  the expected, silent "not signed in" case, not a real failure. */
+          getUserToken(): Promise<string>;
+          /** Throws { error: 'userCancelled' | 'userAlreadySignedIn' | 'showAuthPromptInProgress' }. */
+          showAuthPrompt(): Promise<{ username: string; profilePictureUrl: string }>;
+        };
       };
     };
   }
@@ -216,8 +230,50 @@ export class CrazyGamesPlatform implements IPlatform {
     });
   }
 
+  /**
+   * Silent, zero-friction identity resolution (RETENTION_LAUNCH_PLAN.md §1.1): if the player is
+   * already signed into the CrazyGames portal (from a previous game, or the portal's own account
+   * menu), `getUserToken()` succeeds without showing anything — same shape as `WechatPlatform`'s
+   * silent `wx.login`. This never *prompts*; it only checks. A player not signed into the portal
+   * gets `userNotAuthenticated`, which is expected and falls through to the device-id credential,
+   * same as before this method existed. Explicit sign-in (showing the prompt) is
+   * {@link signInWithCrazyGames}, wired to LoginScene's optional "Sign in with CrazyGames" button.
+   */
   async getAuthCredential(): Promise<AuthCredential> {
-    return { kind: 'device', deviceId: getOrCreateDeviceId(this.storage) };
+    await this.initDone;
+    if (this.sdk) {
+      try {
+        const token = await this.sdk.user.getUserToken();
+        return { kind: 'crazygames', token };
+      } catch {
+        // Not signed into the portal (or the account system isn't available on this host) — fall
+        // through to the anonymous device credential below, exactly as before this method existed.
+      }
+    }
+    return { kind: 'device', deviceId: await getOrCreateDeviceId(this.storage) };
+  }
+
+  /**
+   * Explicit CrazyGames sign-in (RETENTION_LAUNCH_PLAN.md §3.1): shows the portal's own login/register
+   * popup, then exchanges the resulting session for a token. Returns `null` if the SDK is unavailable
+   * (dev server, non-portal host) or the player cancels/errors out — the caller (LoginScene) treats
+   * `null` as "stay on the landing view", never as a hard failure to surface.
+   */
+  async signInWithCrazyGames(): Promise<AuthCredential | null> {
+    await this.initDone;
+    if (!this.sdk) return null;
+    try {
+      // userAlreadySignedIn is not an error for our purposes — it just means getUserToken() below
+      // will succeed immediately without a popup ever having shown.
+      await this.sdk.user.showAuthPrompt().catch((e: unknown) => {
+        if ((e as { error?: string } | undefined)?.error !== 'userAlreadySignedIn') throw e;
+      });
+      const token = await this.sdk.user.getUserToken();
+      return { kind: 'crazygames', token };
+    } catch (e) {
+      console.warn('[CrazyGames] sign-in failed or cancelled:', e);
+      return null;
+    }
   }
 
   connectSocket(url: string, handlers: SocketHandlers): IGameSocket {
