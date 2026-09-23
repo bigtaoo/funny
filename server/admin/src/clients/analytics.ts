@@ -68,7 +68,7 @@ export interface AnalyticsQueryResult {
 
 export interface AnalyticsClient {
   readonly available: boolean;
-  query(type: string, days: number, platform?: string): Promise<AnalyticsQueryResult>;
+  query(type: string, days: number, platform?: string, newCohort?: boolean): Promise<AnalyticsQueryResult>;
 }
 
 export class HttpAnalyticsClient implements AnalyticsClient {
@@ -79,10 +79,14 @@ export class HttpAnalyticsClient implements AnalyticsClient {
 
   get available(): boolean { return this.analyticsUrl !== null; }
 
-  async query(type: string, days: number, platform?: string): Promise<AnalyticsQueryResult> {
+  /** `newCohort` only means anything to `type='retention'` (RETENTION_LAUNCH_PLAN.md §1.2) — passed
+   *  through unconditionally, same as `platform`, since analyticsvc's own query dispatch is what
+   *  decides which types read it and ignoring an unused query param elsewhere costs nothing. */
+  async query(type: string, days: number, platform?: string, newCohort?: boolean): Promise<AnalyticsQueryResult> {
     if (!this.analyticsUrl) return {};
     const qs = new URLSearchParams({ type, days: String(days) });
     if (platform) qs.set('platform', platform);
+    if (newCohort) qs.set('newCohort', '1');
     type Payload = {
       type: string;
       counts?: AnalyticsEventCountRow[];

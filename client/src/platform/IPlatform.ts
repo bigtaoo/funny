@@ -223,14 +223,25 @@ export interface IPlatform {
 
   /**
    * Anonymous-account credential the client trades to the server for a JWT
-   * + accountId (S0-4). Server-side: /auth/wx (code→openid) or /auth/device.
+   * + accountId (S0-4). Server-side: /auth/wx (code→openid), /auth/device, or /auth/crazygames.
    *
-   * Web / CrazyGames: a device UUID persisted in storage (stable per device).
+   * Web: a device UUID persisted in storage (stable per device).
    * WeChat: a fresh `wx.login` code each call (short-lived, server exchanges it).
-   *
-   * Returns the same kind every call on a given platform.
+   * CrazyGames: `kind:'crazygames'` (a portal session token) when the player is already signed into
+   *   the CrazyGames portal — checked silently, never prompts — else falls back to `kind:'device'`,
+   *   same as Web. Unlike the other two platforms this one does NOT return the same kind every call:
+   *   it can flip from 'device' to 'crazygames' the moment the player signs in (see
+   *   {@link IPlatform.signInWithCrazyGames}), which is the point — RETENTION_LAUNCH_PLAN.md §1.1.
    */
   getAuthCredential(): Promise<AuthCredential>;
+
+  /**
+   * Explicit CrazyGames sign-in: shows the portal's own login/register popup, then resolves to the
+   * resulting credential (or `null` if unavailable/cancelled). Optional — only `CrazyGamesPlatform`
+   * implements it; other platforms have no portal account system to sign into, and LoginScene only
+   * offers the button when this method is present (RETENTION_LAUNCH_PLAN.md §3.1).
+   */
+  signInWithCrazyGames?(): Promise<AuthCredential | null>;
 
   /**
    * Open a binary WebSocket to the gameserver (S1-6). Platform abstracts the
@@ -318,7 +329,10 @@ export interface IGameSocket {
 /** Anonymous identity proof (S0-4). See IPlatform.getAuthCredential. */
 export type AuthCredential =
   | { kind: 'device'; deviceId: string }
-  | { kind: 'wx'; code: string };
+  | { kind: 'wx'; code: string }
+  /** CrazyGames portal session token (RETENTION_LAUNCH_PLAN.md §1.1/§3.1) — a signed JWT from
+   *  `SDK.user.getUserToken()`, verified server-side against CrazyGames' own public key. */
+  | { kind: 'crazygames'; token: string };
 
 export interface IStorage {
   getItem(key: string): string | null;

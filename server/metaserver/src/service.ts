@@ -72,6 +72,7 @@ export class MetaService implements MetaHandlers {
   recordGdprConsent(...args: Parameters<AuthService['recordGdprConsent']>) { return this.authSvc.recordGdprConsent(...args); }
   authOAuth(...args: Parameters<AuthService['authOAuth']>) { return this.authSvc.authOAuth(...args); }
   authBind(...args: Parameters<AuthService['authBind']>) { return this.authSvc.authBind(...args); }
+  authCrazyGames(...args: Parameters<AuthService['authCrazyGames']>) { return this.authSvc.authCrazyGames(...args); }
   profileRename(...args: Parameters<AuthService['profileRename']>) { return this.authSvc.profileRename(...args); }
   submitAppeal(...args: Parameters<AuthService['submitAppeal']>) { return this.authSvc.submitAppeal(...args); }
   submitFeedback(...args: Parameters<AuthService['submitFeedback']>) { return this.authSvc.submitFeedback(...args); }

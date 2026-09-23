@@ -49,8 +49,18 @@ export function drawLanding(host: FormHost): void {
   addButton(host, t('auth.register'), btnX, y0 + btnH + gap, btnW, btnH, C.dark, C.gold, () => host.goView('register'),
     0xffffff, undefined, true, 'userPlus');
 
+  // CrazyGames portal sign-in (RETENTION_LAUNCH_PLAN.md §3.1) — only rendered when the host platform
+  // implements it (CrazyGamesPlatform.signInWithCrazyGames), so every other platform's landing view
+  // stays byte-identical to before this button existed. Adds one row, pushing "play offline" + hint
+  // down a slot.
+  const hasCrazyGames = !!host.cb.onCrazyGamesSignIn;
+  if (hasCrazyGames) {
+    addButton(host, t('auth.signInCrazyGames'), btnX, y0 + 2 * (btnH + gap), btnW, btnH, C.paper, C.dark,
+      () => host.cb.onCrazyGamesSignIn!(), C.dark, undefined, true, undefined);
+  }
+
   // Single-player entry — visually secondary (paper fill).
-  const offY = y0 + 2 * (btnH + gap) + Math.round(h * 0.02);
+  const offY = y0 + (hasCrazyGames ? 3 : 2) * (btnH + gap) + Math.round(h * 0.02);
   addButton(host, t('auth.playOffline'), btnX, offY, btnW, btnH, C.paper, C.green,
     () => host.cb.onPlayOffline(), C.dark, undefined, true, 'play');
 

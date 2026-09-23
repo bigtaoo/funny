@@ -348,6 +348,7 @@ export const de: Record<TranslationKey, string> = {
   'auth.title': 'Bei {game} anmelden',
   'auth.login': 'Anmelden',
   'auth.register': 'Registrieren',
+  'auth.signInCrazyGames': 'Mit CrazyGames anmelden',
   'auth.loginIdLabel': 'E-Mail / Benutzername',
   'auth.passwordLabel': 'Passwort',
   'auth.confirmPasswordLabel': 'Passwort bestätigen',

@@ -123,6 +123,38 @@ D1 也低(<15%)？                     → 首会话体验，查 3.2
 
 **下一步（Phase 1）**：VPS 现网数据已确认可查询、可信度已标注清楚，转入 1.1–1.4 的代码改动。
 
+### 2026-09-23 Phase 1.1 + 3.1（部分）：身份持久化 + CrazyGames SSO
+
+分支 `feat/retention-phase1`。
+
+**1.1 device_id 持久化加固**（`client/src/platform/uuid.ts`）：`getOrCreateDeviceId` 改异步，localStorage 仍是主路径，IndexedDB 作为独立存储做镜像写入 + localStorage 为空时的恢复源。**明确不解决** Safari ITP 对 script-writable storage 的 7 天清除（两者会被一起清），那个问题的真正解法是下面这条。
+
+**3.1（CrazyGames SSO 部分，用户已拍板接受）**：
+- 新 `AuthCredential` 变体 `{kind:'crazygames', token}`；`CrazyGamesPlatform` 接入 SDK v3 `user` 模块（`isUserAccountAvailable/getUser/getUserToken/showAuthPrompt`，按 [官方文档](https://docs.crazygames.com/sdk/html5-v2/user/) 实现，**门户环境未联调过**，见 §6）。
+- **静默路径**（零摩擦）：`resolveEntry()` 现在对 `crazygames`/`wx` credential 一视同仁——玩家已登门户账号时静默换 token 进大厅，不碰登录墙。玩家未登门户账号时行为与改动前完全一致（回退到 device credential，仍见登录页）。**没有动登录墙本身**，符合决策 2「先测数据再决定」。
+- **主动路径**：LoginScene 新增「Sign in with CrazyGames」按钮（仅 `platform.signInWithCrazyGames` 存在时渲染，其它平台像素级不变），复用 `doAuth()` 的 token 持久化 + 埋点（`login_submit/ok/fail{mode:'crazygames'}`，三选一新增值）。
+- **服务端**：新端点 `POST /auth/crazygames { token }`（`server/metaserver/src/service/auth/crazygames.ts` + `crazygamesAuth.ts` 的 RS256 校验，公钥 `https://sdk.crazygames.com/publicKey.json`，**不**复用 `NW_JWT_SECRET`）。复用既有 `resolveByOAuth('crazygames', userId, ...)`——与 Google/Apple 同等耐久性（`isAnonymous:false`），未新增账号解析逻辑。`NW_CRAZYGAMES_GAME_ID` 未配置（游戏尚未在 CrazyGames 后台登记）时端点返回 `OAUTH_FAILED`，不影响其它登录方式；已接入两份部署 compose + `ecosystem.config.cjs` + `.env.example`，过 `deploy-config.test.ts` 门禁。
+- 测试：`uuid.test.ts`（11，含 IndexedDB 恢复/失败路径的手写 fake）、`crazyGamesSignIn.test.ts`（7）、`auth-reconnect-prompt.test.ts`（+3，静默/主动/取消三态）、`crazygamesAuth-unit.test.ts`（8，真 RSA 密钥对，无网络）、`auth-crazygames-unit.test.ts`（8，镜 `auth-oauthbind-unit.test.ts` 写法）——client/server 两端 tsc + webpack build（web/crazygames 两个 target）+ 全量 vitest 均过。
+- **仍未做**：登录墙位置本身（3.1 剩余部分）——留给 Phase 2 数据决定。
+
+覆盖：见上；文档：本节 + `ANALYTICS_DESIGN.md §5.6`（`login_submit` mode 新增 `crazygames`）+ `ACCOUNT_DESIGN.md §3`（新端点契约）。
+
+### 2026-09-23 Phase 1.2 + 1.3 + 1.4：留存查询 platform/新客 cohort + ops 下拉 + 采样自查
+
+同分支 `feat/retention-phase1`，接着上面那条一起做。
+
+**1.2**（`server/analyticsvc/src/service/traffic.ts` `queryRetention`）：加 `opts.platform`（同时限定 cohort 归属与「有没有回访」两侧，不是「在 X 平台新增、任意平台算回访」——CrazyGames 和 web 是两个不同域名/应用，混着算没意义）+ `opts.newCohort`（cohort 从「当天活跃」切到「当天首次出现」，用全窗口 `$sort+$group` 找每设备最早 `session_start`，不受显示窗口 `days` 截断——设备真实首次在窗口外时不会被误判成「新」）。`GET /internal/query?type=retention&platform=&newCohort=1` 透传。向后兼容：不传 `opts` 时行为与改动前完全一致。
+
+**1.3**（`tools/ops/src/pages/analytics.ts`）：留存卡自己的 platform 下拉 + 「仅新客」勾选框，改动时**只重新拉留存这一项**（不重跑整页 `Promise.allSettled`）。链路：ops `api.analyticsEvents(type,days,platform,newCohort)` → admin `GET /admin/analytics/events` → `AnalyticsService.analyticsQuery` → `HttpAnalyticsClient.query` → analyticsvc。`newCohort` 只在为真时才多传一个参数——传显式 `undefined` 和不传是两种调用形状，改的时候踩了一次（`analyticsService.test.ts` 的调用记录断言用 `JSON.stringify(args).join(',')`，多一个 `undefined` 元素会拼出多余逗号），已修。
+
+**顺带发现但不在本阶段范围内**：`tools/ops/src/api/index.ts` 的 `analyticsEvents()` 类型里有 `boot_funnel`/`load_time`，但 `server/admin/src/clients/analytics.ts` 的 `HttpAnalyticsClient.query()` 从未转发这两个 type——Launch funnel 卡和加载时长卡在生产环境**一直静默空着**，不报错。已用 spawn_task 挂了一个独立任务（`task_cfb9716f`），不在本次改动里顺手修。
+
+**1.4**：`client/test/analyticsEventConfig.test.ts` 复跑通过——本阶段没加新事件名（只给已有的 `login_submit/ok/fail` 加了一个 `mode` 取值），门禁本该是空操作，跑一遍确认没有意外。
+
+验证：`server/analyticsvc`（131 测试，含 2 条新 e2e：platform 双向隔离 + newCohort 排除回访设备）、`server/admin`（411 测试，含新增的 newCohort 转发用例）、`tools/ops`（tsc + webpack build）均过；client/server 两端 `tsc -b` 真构建也过。
+
+**下一步**：Phase 1 全部完成，合并进当日分支，转 Phase 2（分组留存）。
+
 ---
 
 ## §6 已知阻塞项

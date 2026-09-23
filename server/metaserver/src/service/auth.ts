@@ -30,10 +30,12 @@ import {
   authPasswordChangeHandler,
 } from './auth/credential.js';
 import { authOAuthHandler, authBindHandler } from './auth/oauthBind.js';
+import { authCrazyGamesHandler } from './auth/crazygames.js';
 import { deleteAccountHandler, cancelAccountDeletionHandler, recordGdprConsentHandler } from './auth/accountLifecycle.js';
 import { profileRenameHandler } from './auth/profile.js';
 import { submitAppealHandler, submitFeedbackHandler } from './auth/support.js';
 import { createOAuthService } from '../oauth.js';
+import { createCrazyGamesAuthConfig, verifyCrazyGamesToken } from '../crazygamesAuth.js';
 import type { MetaHandlers } from '../generated/routes.gen.js';
 import { createRateLimiter, type RateLimiter, type MetaCore } from './base.js';
 
@@ -41,11 +43,12 @@ type AuthHandlers = Pick<
   MetaHandlers,
   | 'authWx' | 'authDevice' | 'authRegister' | 'authLogin' | 'authPasswordChange'
   | 'deleteAccount' | 'cancelAccountDeletion' | 'recordGdprConsent' | 'authOAuth' | 'authBind' | 'profileRename'
-  | 'submitAppeal' | 'submitFeedback'
+  | 'authCrazyGames' | 'submitAppeal' | 'submitFeedback'
 >;
 
 export class AuthService implements AuthHandlers {
   private readonly oauth = createOAuthService();
+  private readonly crazyGamesConfig = createCrazyGamesAuthConfig();
 
   /**
    * Login/register IP rate limit (S4-3): at most authRateLimit auth attempts per IP within 15 minutes
@@ -106,6 +109,19 @@ export class AuthService implements AuthHandlers {
     async authBind(req: FastifyRequest, reply: FastifyReply) {
       return authBindHandler(
         { core: this.core, oauth: this.oauth, allowAuthAttempt: this.allowAuthAttempt.bind(this) },
+        req,
+        reply,
+      );
+    }
+
+    async authCrazyGames(req: FastifyRequest, reply: FastifyReply) {
+      return authCrazyGamesHandler(
+        {
+          core: this.core,
+          config: this.crazyGamesConfig,
+          verify: verifyCrazyGamesToken,
+          allowAuthAttempt: this.allowAuthAttempt.bind(this),
+        },
         req,
         reply,
       );

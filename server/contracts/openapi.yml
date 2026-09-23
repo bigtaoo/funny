@@ -1105,6 +1105,41 @@ paths:
                       - true
                   data:
                     $ref: '#/components/schemas/AuthResult'
+  /auth/crazygames:
+    post:
+      operationId: authCrazyGames
+      tags:
+        - auth
+      summary: CrazyGames portal SSO login (verifies SDK.user.getUserToken() server-side, RETENTION_LAUNCH_PLAN.md §1.1/§3.1)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - token
+              properties:
+                token:
+                  type: string
+                  minLength: 8
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                  - data
+                properties:
+                  ok:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    $ref: '#/components/schemas/AuthResult'
   /auth/register:
     post:
       operationId: authRegister

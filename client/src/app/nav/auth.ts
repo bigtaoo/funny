@@ -192,7 +192,31 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
       onLogin: (loginId, password) => doAuth('login', () => api!.login(loginId, password), loginId),
       onRegister: (loginId, password, displayName) =>
         doAuth('register', () => api!.register(loginId, password, displayName), displayName || loginId),
+      // Only CrazyGamesPlatform implements this — LoginScene renders the button iff present,
+      // so every other platform's landing view is pixel-identical to before this method existed.
+      ...(platform.signInWithCrazyGames ? { onCrazyGamesSignIn: () => void doCrazyGamesSignIn() } : {}),
     });
+  }
+
+  /**
+   * Explicit "Sign in with CrazyGames" (RETENTION_LAUNCH_PLAN.md §3.1): shows the portal's own
+   * auth popup, then runs the SAME token-exchange path as password login/register (`doAuth`, so
+   * this shares its token persistence, save adoption, and `login_submit/ok/fail{mode}` telemetry —
+   * `mode:'crazygames'` is a third value alongside login/register, ANALYTICS_DESIGN §5.6).
+   * `null` from the SDK (cancelled / unavailable) is not a failure — the player stays on the
+   * landing view exactly as if they'd tapped nothing, no error toast, no telemetry (there was no
+   * attempt to record: `showAuthPrompt`'s own `userCancelled` is swallowed inside
+   * `signInWithCrazyGames`, so we can't and shouldn't distinguish "cancelled" from "never tried").
+   * A real failure (token rejected server-side) DOES need to surface — the landing view has no form
+   * to attach an inline error to (unlike password login/register), so this uses the same toast
+   * `forceLogout` uses rather than growing LoginScene's view state machine for one button.
+   */
+  async function doCrazyGamesSignIn(): Promise<void> {
+    if (!platform.signInWithCrazyGames || !api) return;
+    const cred = await platform.signInWithCrazyGames();
+    if (!cred) return;
+    const outcome = await doAuth('crazygames', () => api.auth(cred));
+    if (!outcome.ok) showToastMessage(t(outcome.errorKey), 'error');
   }
 
   /**
@@ -205,7 +229,7 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
    * nothing about props: as one name the two would be indistinguishable in the one report where
    * the new-user cohort is already isolated.
    */
-  async function doAuth(mode: 'login' | 'register', call: () => Promise<AuthResult>, name?: string): Promise<AuthOutcome> {
+  async function doAuth(mode: 'login' | 'register' | 'crazygames', call: () => Promise<AuthResult>, name?: string): Promise<AuthOutcome> {
     analytics.track('login_submit', { mode });
     if (!api) {
       console.error('[auth] no API base configured (__NW_API_BASE__ empty) — request not sent');
@@ -311,7 +335,14 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
   async function resolveEntry(): Promise<void> {
     let cred: { kind: string } | null = null;
     try { cred = await platform.getAuthCredential(); } catch { cred = null; }
-    if (cred?.kind === 'wx') {
+    // wx: always a fresh login code, silently exchanged (WeChat has no LoginScene at all).
+    // crazygames: ONLY when the player is already signed into the CrazyGames portal — see
+    // CrazyGamesPlatform.getAuthCredential's doc. A CrazyGames player who is NOT signed in gets
+    // `kind:'device'` back here and falls through to the token-check / goLogin() path below,
+    // completely unchanged — this branch adds a zero-friction bootstrap on top of the existing
+    // flow, it does not replace the login gate for anyone (RETENTION_LAUNCH_PLAN.md §0 decision 2:
+    // moving the gate itself is gated on Phase 2 data, not done here).
+    if (cred?.kind === 'wx' || cred?.kind === 'crazygames') {
       // Lobby shows immediately (no network wait); if the bootstrap pull later turns up an
       // activeMatch, the resume prompt pops in over the lobby (same "arrives late" pattern as
       // onProfile's `if (state.inLobby) nav.goLobby()` refresh).

@@ -42,11 +42,13 @@ function fakeSaveManager(opts: { activeMatch?: ActiveMatchInfo | null; accountId
 /** Minimal fake AppViews: records showLogin/showReconnectPrompt calls; other methods unused here. */
 function fakeViews() {
   const calls: { showReconnectPrompt: ReconnectPromptCallbacks[] } = { showReconnectPrompt: [] };
-  let loginCb: { onLogin: (id: string, pw: string) => void } | undefined;
+  let loginCb: { onLogin: (id: string, pw: string) => void; onCrazyGamesSignIn?: () => void } | undefined;
   return {
     calls,
-    showLogin: vi.fn((cb: { onLogin: (id: string, pw: string) => void }) => { loginCb = cb; }),
+    showLogin: vi.fn((cb: { onLogin: (id: string, pw: string) => void; onCrazyGamesSignIn?: () => void }) => { loginCb = cb; }),
     triggerLogin(id: string, pw: string) { loginCb!.onLogin(id, pw); },
+    triggerCrazyGamesSignIn() { loginCb!.onCrazyGamesSignIn!(); },
+    hasCrazyGamesSignIn() { return !!loginCb!.onCrazyGamesSignIn; },
     showReconnectPrompt: vi.fn((cb: ReconnectPromptCallbacks) => { calls.showReconnectPrompt.push(cb); }),
     showSettings: vi.fn(),
   };
@@ -58,6 +60,10 @@ function buildCtx(opts: {
   api?: unknown;
   token?: string | null;
   wx?: boolean;
+  crazygames?: boolean;
+  /** When set, exposed as `platform.signInWithCrazyGames` (the explicit-button path, distinct from
+   *  the `crazygames` option above which drives the SILENT resolveEntry() auto-login path). */
+  signInWithCrazyGames?: () => Promise<{ kind: 'crazygames'; token: string } | null>;
 }) {
   const nav = {} as Nav;
   const goLobbyCalls: unknown[] = [];
@@ -71,6 +77,7 @@ function buildCtx(opts: {
   const ctx = {
     api: opts.api ?? {
       login: vi.fn(async () => ({ token: 't', accountId: 'acc-1', isNew: false, isAnonymous: false })),
+      auth: vi.fn(async () => ({ token: 't', accountId: 'acc-1', isNew: false, isAnonymous: false })),
       setToken: vi.fn(),
     },
     saveManager: opts.saveManager,
@@ -80,7 +87,9 @@ function buildCtx(opts: {
         setItem: (k: string, v: string) => { storageMap.set(k, v); },
         removeItem: (k: string) => { storageMap.delete(k); },
       },
-      getAuthCredential: async () => (opts.wx ? { kind: 'wx' } : { kind: 'device', deviceId: 'd' }),
+      getAuthCredential: async () =>
+        (opts.wx ? { kind: 'wx' } : opts.crazygames ? { kind: 'crazygames', token: 't' } : { kind: 'device', deviceId: 'd' }),
+      ...(opts.signInWithCrazyGames ? { signInWithCrazyGames: opts.signInWithCrazyGames } : {}),
     },
     views: opts.views,
     state: {} as AppState,
@@ -226,6 +235,27 @@ describe('offerResume via resolveEntry() (wx auto-login)', () => {
   });
 });
 
+// RETENTION_LAUNCH_PLAN.md §1.1/§3.1: when the player is already signed into the CrazyGames portal,
+// getAuthCredential() resolves `{kind:'crazygames'}` and resolveEntry() must treat it exactly like
+// wx's silent auto-login — same bootstrap() + instant-lobby + late-arriving-dialog shape. A player
+// NOT signed into the portal gets `{kind:'device'}` back instead and is covered by the existing
+// "offerResume via resolveEntry() (token re-entry)" describe block above, unchanged.
+describe('offerResume via resolveEntry() (CrazyGames portal auto-login)', () => {
+  it('activeMatch found after bootstrap() pops the dialog', async () => {
+    const saveManager = fakeSaveManager({ activeMatch: SAMPLE_MATCH });
+    const views = fakeViews();
+    const { ctx, goLobbyCalls } = buildCtx({ saveManager, views, crazygames: true });
+    const authNav = createAuthNav(ctx);
+
+    await authNav.resolveEntry();
+    expect(goLobbyCalls).toEqual([{ offline: false }]);
+
+    await settle();
+    expect(saveManager.bootstrap).toHaveBeenCalledTimes(1);
+    expect(views.showReconnectPrompt).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('account-switch NetSession reset (2026-07-18: elo credited to previous account bug)', () => {
   it('doAuth() closes a stale NetSession from a previous account, even when the gateway URL is unchanged', async () => {
     const saveManager = fakeSaveManager({ activeMatch: null });
@@ -349,5 +379,54 @@ describe('mapAuthError (2026-07-18: banned accounts get a distinct message, not 
   });
   it('INVALID_CREDENTIALS still maps as before (regression guard)', () => {
     expect(mapAuthError(new ApiError('INVALID_CREDENTIALS', 'nope'))).toBe('auth.err.invalid');
+  });
+});
+
+// RETENTION_LAUNCH_PLAN.md §3.1: the explicit "Sign in with CrazyGames" button on LoginScene's
+// landing view — distinct from the silent resolveEntry() auto-login covered above. goLogin() only
+// passes onCrazyGamesSignIn to views.showLogin when platform.signInWithCrazyGames exists, so every
+// other platform's landing view is unaffected (LoginScene/forms.ts only renders the button when the
+// callback is present).
+describe('goLogin() "Sign in with CrazyGames" button', () => {
+  it('platform.signInWithCrazyGames absent (every platform but CrazyGames) → no button offered', () => {
+    const saveManager = fakeSaveManager();
+    const views = fakeViews();
+    const { ctx } = buildCtx({ saveManager, views });
+    const authNav = createAuthNav(ctx);
+
+    authNav.goLogin();
+    expect(views.hasCrazyGamesSignIn()).toBe(false);
+  });
+
+  it('platform.signInWithCrazyGames present → button offered; tapping it signs in and reaches the lobby', async () => {
+    const saveManager = fakeSaveManager();
+    const views = fakeViews();
+    const signInWithCrazyGames = vi.fn(async () => ({ kind: 'crazygames' as const, token: 'fresh-jwt' }));
+    const { ctx, goLobbyCalls } = buildCtx({ saveManager, views, signInWithCrazyGames });
+    const authNav = createAuthNav(ctx);
+
+    authNav.goLogin();
+    expect(views.hasCrazyGamesSignIn()).toBe(true);
+    views.triggerCrazyGamesSignIn();
+    await settle();
+
+    expect(signInWithCrazyGames).toHaveBeenCalledTimes(1);
+    expect((ctx.api as unknown as { auth: ReturnType<typeof vi.fn> }).auth).toHaveBeenCalledWith({ kind: 'crazygames', token: 'fresh-jwt' });
+    expect(goLobbyCalls).toEqual([{ offline: false }]);
+  });
+
+  it('player cancels the portal popup (signInWithCrazyGames resolves null) → stays on landing, no auth call, no navigation', async () => {
+    const saveManager = fakeSaveManager();
+    const views = fakeViews();
+    const signInWithCrazyGames = vi.fn(async () => null);
+    const { ctx, goLobbyCalls } = buildCtx({ saveManager, views, signInWithCrazyGames });
+    const authNav = createAuthNav(ctx);
+
+    authNav.goLogin();
+    views.triggerCrazyGamesSignIn();
+    await settle();
+
+    expect((ctx.api as unknown as { auth: ReturnType<typeof vi.fn> }).auth).not.toHaveBeenCalled();
+    expect(goLobbyCalls).toEqual([]);
   });
 });
