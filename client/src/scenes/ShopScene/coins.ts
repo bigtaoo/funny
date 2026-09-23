@@ -18,26 +18,14 @@ import type { ShopSceneCore, CardSpec } from './core';
 import { drawButtonLabel } from '../../ui/widgets/buttonLabel';
 import type { ActionHandlers } from './actions';
 import { drawCard } from './card';
+import { IAP_TIERS_LIST } from '@nw/shared/economy/iapTiers';
 
-interface CoinTierDef {
-  id: string;
-  usdCents: number;
-  coins: number;
-  base: number;
-  bestValue?: boolean;
-}
-
-// Web-only tiers ($4.99–$99.99, matching ECONOMY_BALANCE.md §2.2 USD table).
-const WEB_COIN_TIERS: CoinTierDef[] = [
-  { id: 't499',  usdCents:  499, base:  500, coins:   550 },
-  { id: 't999',  usdCents:  999, base: 1000, coins:  1150 },
-  { id: 't1999', usdCents: 1999, base: 2000, coins:  2400, bestValue: true },
-  { id: 't4999', usdCents: 4999, base: 5000, coins:  6500 },
-  { id: 't9999', usdCents: 9999, base: 10000, coins: 13500 },
-];
-
-// Per-tier treasure glyph — escalating gold so bigger tiers read richer (ascending order).
-const COIN_TIER_ICONS: IconKind[] = ['coin', 'coins', 'coinStack', 'coinSack', 'coinChest'];
+// Per-tier treasure glyph — escalating gold so bigger tiers read richer. t099/t199/t499 share the
+// single-coin glyph (no glyph smaller than 'coin' exists for the two mobile-only tiers,
+// ECONOMY_BALANCE.md §2.2); t999+ keep their pre-2026-09-23 icons unchanged.
+const COIN_TIER_ICONS: Record<string, IconKind> = {
+  t099: 'coin', t199: 'coin', t499: 'coin', t999: 'coins', t1999: 'coinStack', t4999: 'coinSack', t9999: 'coinChest',
+};
 
 export class CoinsPanel {
   constructor(private readonly core: ShopSceneCore, private readonly actions: ActionHandlers) {}
@@ -56,7 +44,11 @@ export class CoinsPanel {
     // for a bonus their purchase won't actually receive. Absent monetization mirror (offline) = assume available.
     const firstDoubleAvailable = core.cb.getMonetization?.().firstPurchaseUsed !== true;
 
-    const specs: CardSpec[] = WEB_COIN_TIERS.map((tier, idx) => {
+    // t099/t199 (`mobileOnly`) only render when the platform can actually sell them — see
+    // ShopSceneCallbacks.includeMobileOnlyCoinTiers's doc comment for why (Paddle fee economics,
+    // not a store restriction).
+    const tiers = IAP_TIERS_LIST.filter((tier) => !tier.mobileOnly || core.cb.includeMobileOnlyCoinTiers);
+    const specs: CardSpec[] = tiers.map((tier) => {
       const bonus = tier.coins - tier.base;
       const lines: { text: string; color: number }[] = [];
       if (bonus > 0) lines.push({ text: `+${bonus}`, color: C.green });
@@ -64,7 +56,7 @@ export class CoinsPanel {
       if (firstDoubleAvailable) lines.push({ text: t('shop.firstDouble'), color: 0xff6b00 });
       const tierId = tier.id;
       return {
-        icon: COIN_TIER_ICONS[idx] ?? 'coin', iconColor: C.gold,
+        icon: COIN_TIER_ICONS[tierId] ?? 'coin', iconColor: C.gold,
         title: `$${(tier.usdCents / 100).toFixed(2)}`,
         coinAmount: tier.coins,
         lines,

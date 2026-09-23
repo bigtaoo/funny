@@ -18,6 +18,7 @@
       "@nw/shared/battlepass": ["../server/shared/src/battlepass.ts"],
       "@nw/shared/rechargeMilestone": ["../server/shared/src/rechargeMilestone.ts"],
       "@nw/shared/titles": ["../server/shared/src/titles.ts"],
+      "@nw/shared/economy/iapTiers": ["../server/shared/src/economy/iapTiers.ts"],
       "@nw/shared": ["../server/shared/src/index.ts"]
     }
   },

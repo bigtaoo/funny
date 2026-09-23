@@ -68,6 +68,9 @@ export function createShopNav(ctx: AppCtx): ShopNav {
       // Providing this callback is what makes the shop's "Coins" tab appear.
       ...(shopLoggedIn && platform.iapKind() !== null ? {
         rechargeCoins: (tierId: string) => doRechargeCoins(tierId, client, () => { converted = true; }),
+        // t099/t199 are mobile-only (ShopSceneCallbacks.includeMobileOnlyCoinTiers's doc comment) —
+        // viable on iOS/Android's flat store cut, uneconomic through Paddle's fixed per-txn fee.
+        includeMobileOnlyCoinTiers: platform.iapKind() === 'apple' || platform.iapKind() === 'google',
       } : {}),
       // Promo-code redemption (B-PROMO): only available when online + logged in.
       ...(shopLoggedIn ? {

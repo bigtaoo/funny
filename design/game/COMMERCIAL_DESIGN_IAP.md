@@ -22,7 +22,7 @@
 | CrazyGames | `null` | —（平台自有变现） | — |
 
 - `ShopScene` 的 Coins tab **仅当 `rechargeCoins` 回调存在时显示**；`createAppCore.goShop` 现在仅在「已登录在线 **且** `platform.iapKind() !== null`」时提供该回调。→ web/原生显示 Coins tab，微信/CrazyGames 不显示（这些平台继续只有 B-PROMO 兑换码）。
-- 档位数值权威仍是 `server/shared/src/economy.ts` 的 `IAP_TIERS`（t099..t9999）；`ShopScene.WEB_COIN_TIERS` 只展示 5 档 USD（t499..t9999），web-only 小额档（t099/t199）暂不在 UI 露出。
+- 档位数值权威是 `server/shared/src/economy/iapTiers.ts` 的 `IAP_TIERS_LIST`（t099..t9999，经 `@nw/shared/economy/iapTiers` 给客户端复用）。`ShopScene/coins.ts` 按 `IapTierDef.mobileOnly` 过滤：web(Paddle) 只展示 5 档 USD（t499..t9999，`includeMobileOnlyCoinTiers` 缺省 false），原生（iOS/Android，`platform.iapKind() === 'apple' | 'google'`）展示全部 7 档。**`mobileOnly` 只是 Paddle 按笔手续费在 $0.99/$1.99 不划算**，不是"App 内无入口"——原生走店内固定抽成，与档位大小无关（2026-09-23 修复，此前客户端把这条 Paddle-only 限制误实现成全平台共用的硬编码 5 档列表）。
 
 ### 10.2 两条充值流
 

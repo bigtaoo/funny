@@ -137,18 +137,28 @@ Price（见 `IAP_CREDENTIALS.md §1.1` 与那次事故记录），ASC 就建对�
 
 | Product ID | 金币 | 美元价 |
 |---|---|---|
+| `com.gamestao.nivara.coins.t099`  | 100   | $0.99 |
+| `com.gamestao.nivara.coins.t199`  | 210   | $1.99 |
 | `com.gamestao.nivara.coins.t499`  | 550   | $4.99 |
 | `com.gamestao.nivara.coins.t999`  | 1150  | $9.99 |
 | `com.gamestao.nivara.coins.t1999` | 2400  | $19.99 |
 | `com.gamestao.nivara.coins.t4999` | 6500  | $49.99 |
 | `com.gamestao.nivara.coins.t9999` | 13500 | $99.99 |
 
-金币数以 `server/shared/src/economy.ts` 的 `IAP_TIERS` 为唯一权威（此表随之为准）。
+金币数以 `server/shared/src/economy/iapTiers.ts` 的 `IAP_TIERS` 为唯一权威（此表随之为准）。
 
-> **为什么不是 7 个**：`IAP_TIERS` 里还有 `t099` / `t199` 两档，但商店的档位表是客户端硬编码的
-> `WEB_COIN_TIERS`（[`client/src/scenes/ShopScene/coins.ts`](../../client/src/scenes/ShopScene/coins.ts)），
-> $4.99 起共 5 档、所有平台共用，这两档**在 App 内没有任何入口**。ASC 里建了也是触达不到的商品，Apple 不会放行。
-> 要上这两档就先给客户端加入口，那是另一件事。
+> **⚠️ 更正（2026-09-23）：这是 7 个，不是 5 个。** 此前这里写着"为什么不是 7 个"，说 `t099`/`t199`
+> 在 App 内没有入口——**那条推理是错的，把 web(Paddle) 的限制错当成了全平台限制**。真实原因只是 Paddle
+> 按笔收取的固定手续费在 $0.99/$1.99 这个量级不划算（`IapTierDef.mobileOnly`，
+> [`server/shared/src/economy/iapTiers.ts`](../../server/shared/src/economy/iapTiers.ts) 那句注释一直
+> 写着"iOS/Android: t099 / t199 also available"），iOS/Android 走的是店内固定抽成、跟档位大小无关，
+> 这两档在原生端完全划算。客户端过去把这个 Paddle-only 的限制错误地实现成了全平台共用的硬编码列表
+> （`ShopScene/coins.ts` 的 `WEB_COIN_TIERS`），**已修复**：现在从 `IAP_TIERS_LIST` 派生，
+> 原生（`includeMobileOnlyCoinTiers`，由 `platform.iapKind() === 'apple' | 'google'` 决定）显示全部 7 档，
+> web/Paddle 仍只显示 5 档。**ASC 侧需要新建 `com.gamestao.nivara.coins.t099`（$0.99）与
+> `.coins.t199`（$1.99）两个消耗型商品**——建法同其余 5 档（§4.0 第 2 步），建之前这两个 Product ID
+> 在 Apple 那边不存在，点击会立即失败（`invalid_product`，不会拉起支付面板），这正是 2026-09-23
+> 测试时看到的现象——那次测的是 `starter_draw`，跟这次修复无关，但同一症状。
 
 > **未决（不阻塞提审）**：`WEB_COIN_TIERS` 把价格写死成 `$4.99` 字样，而 App Store 按 storefront 本地化定价
 > （德区是含税欧元）。正解是从 `SKProduct.priceLocale` 回读真实价再显示，要动原生桥，等首版跑通再做。
@@ -260,6 +270,8 @@ B 批上了 StoreKit 2 + `appAccountToken` 之后**依然保留**，而且多了
 
 **当前进度（2026-09-07）**：ASC 里 9 个商品已建齐（5 消耗型 + 2 非消耗型 + 2 自动续订订阅），状态均为
 「准备提交」；VPS 已设 `NW_IAP_BUNDLE=com.gamestao.nivara` 并透传到容器（`printenv` 已确认）。
+⚠️ **2026-09-23 起这个数变成 11**：客户端修复了 t099/t199 在原生端的 UI 入口（见 §4.1 的更正），
+ASC 还差 `com.gamestao.nivara.coins.t099`（$0.99）与 `.coins.t199`（$1.99）两个消耗型，建法同下方 5 个。
 **两项外部动作都已完成（2026-09-07 当天）**：① In-App Purchase Key 已生成、四个变量已推到 VPS 并在容器里
 实测过（§12）；② ASC 的通知 URL 已配成 `https://api.gamestao.com/api/iap/apple/notifications`
 ——**注意那个 `/api` 前缀**，Caddy 只经 `handle_path /api/*` 暴露 metaserver，裸路径会被兜底规则接走回 200，
@@ -681,7 +693,11 @@ OTA 管线**不需要 macOS runner**（无原生编译），`ubuntu-latest` 即�
       所以在这次构建处理完之前，TestFlight 上不存在任何可用于沙盒验证的二进制。
       顺带满足 §11.6 的「首个带 Capgo 插件的壳走一次二进制发布」。
       ⚠️ 历史上从没打过 `ios-v*` tag（`git tag -l 'ios-v*'` 为空），一直是手动 dispatch
-- [ ] TestFlight 沙盒账号走通一次充值→发币对账（依赖上面的构建 + IAP 商品），五个币档 + 四个非币商品各买一次。
+- [ ] **在 ASC 补建 `com.gamestao.nivara.coins.t099`（$0.99）与 `.coins.t199`（$1.99）两个消耗型商品**
+      （2026-09-23 挂起，见 §4.1 的更正）——客户端原生端已经会渲染这两档，ASC 没建之前点了必
+      `invalid_product`，不会拉起支付面板。建法同 §4.0 第 2 步。
+- [ ] TestFlight 沙盒账号走通一次充值→发币对账（依赖上面的构建 + IAP 商品，以及上一条的两个新商品），
+      七个币档 + 四个非币商品各买一次。
       **这也是 §4.2b 那个 sandbox 验签回退修复（`13ba7b325`）的第一次真交易验证**——它此前只用
       Apple 的 TEST 通知验过，没有任何一笔真沙盒购买走过那条分支
 - [ ] **沙盒验一次自动续订**（§4.1b）：沙盒订阅按加速时钟续期（1 个月 ≈ 5 分钟），买月卡 → 杀进程 →
