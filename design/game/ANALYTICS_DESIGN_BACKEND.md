@@ -378,6 +378,25 @@ ops 那边扣的是 `Lost = boots − sessions − declined`（§3.6c）。
   必须**不参与自己的均值**，而不是按 0 平进去。
 - **`abandoned` 用事件对算，不用超时**：同一会话有 `boot` 无 `load_time` = 加载界面还开着就关了页面。
 
+### 9.11 分组留存 + 配套查询（`type=retention_by/session_duration_dist/churn_scene_dist`，2026-09-23）
+
+`RETENTION_LAUNCH_PLAN.md` §2 的"为什么"工具——9.5 的滚动/新客留存只回答"留存多少"，这里回答"哪一类新客留得更好"。三个查询都在新文件 `analyticsvc/service/retentionBy.ts`（`RetentionByService`，独立 sibling class）+ `dist.ts` 追加两个方法。
+
+**`queryRetentionBy(days, dimension, {platform?})`**：新客 cohort（首次 `session_start` 落在窗口内的设备，判定方式与 9.5 的 `newCohort` 一致）按 `dimension` 在**各自首次会话**上的取值分组，每组独立算一条 D1–D7 曲线。九个维度分两种取法（`RETENTION_BY_DIMENSIONS`，`defs.ts`）：
+
+- **读 SessionDoc**（入库时已算好，见 9.8）：`browser`/`device_type`/`webview`/`geo_country`——按设备首次会话的 `session_id` 查 `sessions` 表；SessionDoc 缺失（已过 90 天 TTL，或该场景理论上不该发生）时落到 `'unknown'`。
+- **读事件**：`load_time_bucket`（首次会话 `load_time.props.total_ms`，粗分 4 档：`<2s/2-4s/4-8s/8s+`，比 9.10 直方图的 100ms 分辨率粗得多——这里是分组标签，不是画百分位）、`tutorial_complete`（首次会话是否出现该事件，`'true'/'false'`）、`first_battle_result`（首次会话第一条 `game_end.props.result`，未打过记 `'none'`）、`matched_bot`（首次会话是否出现 `pvp_match_bot`）、`login_mode`（首次会话第一条 `login_ok.props.mode`，**没有该事件**——静默设备/静默门户 SSO 自动登录，见 ANALYTICS_DESIGN.md §5.6——落到 `'device'`，这正是决策②的判据："登录墙要不要后移"看的就是 `login_mode='device'` 那组和显式登录的那几组曲线差多少）。
+
+**跨日期分组的"每设备自己的 D+n"语义（`RetentionByRow` 的核心，也是与 9.5 `RetentionRow` 唯一的语义分歧点）**：9.5 一条 cohort 行只对应一个日历日，D+n 对整个 cohort 是同一天；这里一个 dimension 分组会横跨窗口内多个首次会话日期，于是 D+n 必须按**每个设备自己的**"首次会话日 + n"来判——同组内一台"今天才首次进来"的设备，它的 D1 目标日还没发生，这一次偏移**整台设备都不计入**（既不算分子也不算分母），不是当作"未回访"计进分母。因此 `d_rate[n]` 的真实分母（该偏移已发生的设备数）可以小于 `cohort_size`（整组设备数），偏移越靠后、组内日期跨度越大，这个缺口越明显——读数时别拿 `d[n]/cohort_size` 去反推，`d_rate[n]` 已经是正确分母算出来的。
+
+**`querySessionDurationDist(days)`**（`dist.ts`）：`sessions.duration_sec` 早就入库（`session_end.props.duration_sec`）但此前没有查询读过。写法与 9.10 `queryLoadTime` 同一套直方图百分位手法（`percentileFromBuckets` 已泛化成按字段名取上界，`lt_ms`/`lt_sec` 共用一份实现），30 秒一档（`SESSION_DURATION_BUCKET_SEC`）。没有 `duration_sec`（未正常收到 `session_end`）的会话**不计入样本**，不是当 0 秒处理。
+
+**`queryChurnLastScene(days)`**（`dist.ts`）：`churn_signal.props.scene` 分组计数（§5.6 事件表）。数的是**事件条数不是去重设备数**——同一场景在一次会话里可以多次触发闲置信号，这里要看的是"流失最终停在哪一屏"这个分布本身，不是覆盖率。
+
+**ops 页面**（`tools/ops/src/pages/analytics.ts`）：「Retention by first-session property」卡复用 9.5 留存卡的表格/单元格渲染（`retentionCell`/`retentionRows` 对 `RetentionByRow` 结构性兼容，无需为分组留存另写一套），下拉切维度做独立 scoped 重拉（同 9.5 platform/newCohort 下拉的写法）；「Session length」卡结构照抄 9.10 加载时长卡；「Where sessions end」复用 `shareCard`。
+
+**admin 代理链路**：`dimension` 作为 `analyticsQuery`/`AnalyticsClient.query` 的第 5 个可选参数，转发规则与 9.5 的 `newCohort` 同一套——只在设了值时才传（显式传 `undefined` 和不传是两种不同的调用形状，`analyticsService.test.ts` 的调用录制断言会拆穿这个区别，9.5 那轮已经踩过一次）。
+
 ---
 
 ## §10 隐私合规

@@ -155,6 +155,19 @@ D1 也低(<15%)？                     → 首会话体验，查 3.2
 
 **下一步**：Phase 1 全部完成，合并进当日分支，转 Phase 2（分组留存）。
 
+### 2026-09-23 Phase 2：分组留存 + 会话时长/流失末屏
+
+分支 `feat/retention-phase2`。实现细节（哪个维度读 SessionDoc / 哪个读事件、per-device 日期对齐的精确语义、直方图百分位函数怎么泛化成跨单位复用）写在 [`ANALYTICS_DESIGN_BACKEND.md` §9.11](ANALYTICS_DESIGN_BACKEND.md#911-分组留存--配套查询typeretention_bysession_duration_distchurn_scene_dist2026-09-23)，这里只记决策和验证结果。
+
+- 新 `GET /internal/query?type=retention_by&dimension=`（`server/analyticsvc/src/service/retentionBy.ts` 新 `RetentionByService`）：九个维度全部实现（`RETENTION_BY_DIMENSIONS`，`defs.ts`），含 §0 决策 2 的判据维度 `login_mode`。
+- 配套 `type=session_duration_dist`/`churn_scene_dist`（`dist.ts` 追加两个方法）。
+- ops 「Retention by first-session property」卡（维度下拉 + 独立 scoped 重拉，同 1.3 的 platform 下拉写法）+「Session length」+「Where sessions end」两张卡。
+- admin 代理链路（`analyticsQuery`/`AnalyticsClient.query`）加 `dimension` 第 5 参数，转发规则复用 1.3 踩过的那条「只在设了值时才传」的坑（`analyticsService.test.ts` 补了新用例锁住两种调用形状）。
+- **实现中修正了上一次中断时草拟的一处错误**：`defs.ts` 里 `RetentionByRow` 的 JSDoc 曾把 `login_mode` 归到「读 SessionDoc」一类——核对 `db.ts` 的 `SessionDoc` 字段后确认它根本不在表里，`login_mode` 只能来自首次会话的 `login_ok` 事件（没有该事件时落到 `'device'`）。动手实现前先核对了 schema，写代码时一并改了注释。
+- 验证：`server/analyticsvc` 新增 `retentionBy.e2e.test.ts`（12 例，覆盖两种维度取法、per-device 日期对齐、HTTP 分发+参数校验）、`server/admin` 补 1 例（dimension 转发）、`tools/ops` 补 6 例（`retentionCell`/`retentionRows` 对 `RetentionByRow` 结构性兼容、`churnSceneRows`、`sec()`）；`server`/`ops` 两端 tsc -b / webpack build 均过。
+
+**下一步**：Phase 2 完成，合并进当日分支，转 Phase 3（产品侧杠杆，含决策 2 的最终落地——用 `retention_by&dimension=login_mode` 的真实门户数据判断登录墙要不要后移）。
+
 ---
 
 ## §6 已知阻塞项

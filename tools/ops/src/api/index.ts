@@ -92,7 +92,7 @@ export class Api extends ApiTransport {
   }> {
     return this.req('GET', '/admin/analytics/summary');
   }
-  analyticsEvents(type: string, days: number, platform?: string, newCohort?: boolean): Promise<{
+  analyticsEvents(type: string, days: number, platform?: string, newCohort?: boolean, dimension?: string): Promise<{
     available: boolean;
     event_counts?: { date: string; event: string; count: number }[];
     dau?: { date: string; dau: number }[];
@@ -141,10 +141,27 @@ export class Api extends ApiTransport {
       buckets: { lt_ms: number; count: number }[];
       abandoned: number;
     }[];
+    retention_by?: {
+      value: string;
+      cohort_size: number;
+      d: Partial<Record<1 | 2 | 3 | 4 | 5 | 6 | 7, number>>;
+      d_rate: Partial<Record<1 | 2 | 3 | 4 | 5 | 6 | 7, number>>;
+    }[];
+    session_duration_dist?: {
+      platform: string;
+      samples: number;
+      p50_sec: number;
+      p75_sec: number;
+      p90_sec: number;
+      p95_sec: number;
+      buckets: { lt_sec: number; count: number }[];
+    }[];
+    churn_scene_dist?: { scene: string; count: number }[];
   }> {
     const qs = new URLSearchParams({ type, days: String(days) });
     if (platform) qs.set('platform', platform);
     if (newCohort) qs.set('newCohort', '1');
+    if (dimension) qs.set('dimension', dimension);
     return this.req('GET', `/admin/analytics/events?${qs}`);
   }
 

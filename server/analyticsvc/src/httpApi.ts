@@ -15,7 +15,7 @@ import {
   err,
   type InternalAuthVerifier,
 } from '@nw/shared';
-import type { AnalyticsService, EventBatch, ResolvedGeo } from './service';
+import { RETENTION_BY_DIMENSIONS, type AnalyticsService, type EventBatch, type ResolvedGeo, type RetentionByDimension } from './service';
 
 /** Client IP from the Caddy-injected X-Forwarded-For (first hop) or the raw socket as a fallback. */
 function clientIp(req: IncomingMessage): string | undefined {
@@ -282,6 +282,22 @@ export function startHttpApi(
         if (type === 'load_time') {
           const load_time = await svc.queryLoadTime(days);
           return send(res, 200, ok({ type, load_time }));
+        }
+        if (type === 'retention_by') {
+          const dimension = qs.get('dimension');
+          if (!RETENTION_BY_DIMENSIONS.includes(dimension as RetentionByDimension)) {
+            return sendErr(res, ErrorCode.BAD_REQUEST, `unknown or missing dimension: ${dimension}`);
+          }
+          const retention_by = await svc.queryRetentionBy(days, dimension as RetentionByDimension, { platform });
+          return send(res, 200, ok({ type, retention_by }));
+        }
+        if (type === 'session_duration_dist') {
+          const session_duration_dist = await svc.querySessionDurationDist(days);
+          return send(res, 200, ok({ type, session_duration_dist }));
+        }
+        if (type === 'churn_scene_dist') {
+          const churn_scene_dist = await svc.queryChurnLastScene(days);
+          return send(res, 200, ok({ type, churn_scene_dist }));
         }
         return sendErr(res, ErrorCode.BAD_REQUEST, `unknown query type: ${type}`);
       }

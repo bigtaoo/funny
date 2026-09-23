@@ -9,23 +9,27 @@
 import { AnalyticsCollections } from '../db';
 import {
   RegionRow, OsRow, BadgeDistRow, BrowserRow, DeviceTypeRow, WebViewRow, GeoRow, LoadTimeRow,
-  LOAD_TIME_BUCKET_MS, LOAD_TIME_PHASES, dayStart,
+  LOAD_TIME_BUCKET_MS, LOAD_TIME_PHASES, SessionDurationRow, SESSION_DURATION_BUCKET_SEC, ChurnSceneRow,
+  dayStart,
 } from './defs';
 
 /**
  * Read a percentile off a cumulative histogram: the upper bound of the first bucket whose running
  * total reaches `p` of the population. Exact to the bucket width, and never interpolated — an
  * interpolated value would suggest a precision the buckets do not have.
+ *
+ * Generic over the upper-bound field name (`key`) so the same implementation serves any unit —
+ * queryLoadTime's `lt_ms` buckets and querySessionDurationDist's `lt_sec` ones alike.
  */
-function percentileFromBuckets(buckets: { lt_ms: number; count: number }[], total: number, p: number): number {
+function percentileFromBuckets<K extends string>(buckets: ({ count: number } & Record<K, number>)[], key: K, total: number, p: number): number {
   if (total === 0) return 0;
   const target = total * p;
   let seen = 0;
   for (const b of buckets) {
     seen += b.count;
-    if (seen >= target) return b.lt_ms;
+    if (seen >= target) return b[key];
   }
-  return buckets[buckets.length - 1]?.lt_ms ?? 0;
+  return buckets[buckets.length - 1]?.[key] ?? 0;
 }
 
 export class DistService {
@@ -205,10 +209,10 @@ export class DistService {
       rows.push({
         platform,
         samples: agg.samples,
-        p50_ms: percentileFromBuckets(buckets, agg.samples, 0.5),
-        p75_ms: percentileFromBuckets(buckets, agg.samples, 0.75),
-        p90_ms: percentileFromBuckets(buckets, agg.samples, 0.9),
-        p95_ms: percentileFromBuckets(buckets, agg.samples, 0.95),
+        p50_ms: percentileFromBuckets(buckets, 'lt_ms', agg.samples, 0.5),
+        p75_ms: percentileFromBuckets(buckets, 'lt_ms', agg.samples, 0.75),
+        p90_ms: percentileFromBuckets(buckets, 'lt_ms', agg.samples, 0.9),
+        p95_ms: percentileFromBuckets(buckets, 'lt_ms', agg.samples, 0.95),
         avg,
         buckets,
         abandoned: abandoned.get(platform) ?? 0,
@@ -267,5 +271,79 @@ export class DistService {
       badge: r._id.badge || 'none',
       count: r.count,
     }));
+  }
+
+  /**
+   * Session-length distribution per platform (RETENTION_LAUNCH_PLAN.md §2 supplementary query):
+   * `sessions.duration_sec` was already written at ingest (ingest.ts, from `session_end`'s
+   * `props.duration_sec`) but had no query reading it until now. Percentile histogram, same
+   * reasoning and shape as {@link queryLoadTime} — long-tailed distribution, bounded memory, no
+   * `$percentile` version dependency — just seconds instead of milliseconds.
+   */
+  async querySessionDurationDist(days: number): Promise<SessionDurationRow[]> {
+    const since = new Date(dayStart(this.now()) - (days - 1) * 86400_000);
+    const hist = await this.cols.sessions
+      .aggregate<{ _id: { platform: string; bucket: number }; count: number }>([
+        { $match: { started_at: { $gte: since }, duration_sec: { $type: 'number' } } },
+        {
+          $group: {
+            _id: {
+              platform: '$platform',
+              // $ceil (not $floor): see queryLoadTime's identical bucket note — an exact-multiple
+              // duration belongs to its own inclusive-upper-bound bucket, not the next one up.
+              bucket: { $ceil: { $divide: ['$duration_sec', SESSION_DURATION_BUCKET_SEC] } },
+            },
+            count: { $sum: 1 },
+          },
+        },
+        { $sort: { '_id.platform': 1 as const, '_id.bucket': 1 as const } },
+      ])
+      .toArray();
+
+    const byPlatform = new Map<string, { buckets: Map<number, number>; samples: number }>();
+    for (const row of hist) {
+      const platform = row._id.platform || 'unknown';
+      let agg = byPlatform.get(platform);
+      if (!agg) {
+        agg = { buckets: new Map(), samples: 0 };
+        byPlatform.set(platform, agg);
+      }
+      const upper = row._id.bucket * SESSION_DURATION_BUCKET_SEC;
+      agg.buckets.set(upper, (agg.buckets.get(upper) ?? 0) + row.count);
+      agg.samples += row.count;
+    }
+
+    const rows: SessionDurationRow[] = [];
+    for (const [platform, agg] of byPlatform) {
+      const buckets = [...agg.buckets.entries()].sort((a, b) => a[0] - b[0]).map(([lt_sec, count]) => ({ lt_sec, count }));
+      rows.push({
+        platform,
+        samples: agg.samples,
+        p50_sec: percentileFromBuckets(buckets, 'lt_sec', agg.samples, 0.5),
+        p75_sec: percentileFromBuckets(buckets, 'lt_sec', agg.samples, 0.75),
+        p90_sec: percentileFromBuckets(buckets, 'lt_sec', agg.samples, 0.9),
+        p95_sec: percentileFromBuckets(buckets, 'lt_sec', agg.samples, 0.95),
+        buckets,
+      });
+    }
+    return rows.sort((a, b) => b.samples - a.samples);
+  }
+
+  /**
+   * Last-scene-before-churn distribution (RETENTION_LAUNCH_PLAN.md §2 supplementary query): count of
+   * `churn_signal` events by the scene the player was on when it fired (ANALYTICS_DESIGN §5.6 —
+   * `props.scene`). Not a funnel — a scene can appear any number of times per session, so this
+   * counts churn EVENTS, not distinct devices, answering "where do sessions actually end" rather than
+   * "how many players reach this scene".
+   */
+  async queryChurnLastScene(days: number): Promise<ChurnSceneRow[]> {
+    const since = new Date(dayStart(this.now()) - (days - 1) * 86400_000);
+    const pipeline = [
+      { $match: { ts: { $gte: since }, event: 'churn_signal' } },
+      { $group: { _id: '$props.scene', count: { $sum: 1 } } },
+      { $sort: { count: -1 as const } },
+    ];
+    const rows = await this.cols.events.aggregate<{ _id?: string; count: number }>(pipeline).toArray();
+    return rows.map((r) => ({ scene: r._id || 'unknown', count: r.count }));
   }
 }

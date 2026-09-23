@@ -17,6 +17,7 @@ import { TrafficService } from './service/traffic';
 import { FunnelService } from './service/funnel';
 import { DistService } from './service/dist';
 import { IngestService } from './service/ingest';
+import { RetentionByService } from './service/retentionBy';
 
 export * from './service/defs';
 
@@ -29,6 +30,7 @@ export class AnalyticsService {
   private readonly funnel: FunnelService;
   private readonly dist: DistService;
   private readonly ingest: IngestService;
+  private readonly retentionBy: RetentionByService;
 
   constructor(
     private readonly cols: AnalyticsCollections,
@@ -38,6 +40,7 @@ export class AnalyticsService {
     this.funnel = new FunnelService(cols, now);
     this.dist = new DistService(cols, now);
     this.ingest = new IngestService(cols, now);
+    this.retentionBy = new RetentionByService(cols, now);
   }
 
   getConfig(): AnalyticsConfig {
@@ -71,6 +74,11 @@ export class AnalyticsService {
   queryGeoDist(...args: Parameters<DistService['queryGeoDist']>) { return this.dist.queryGeoDist(...args); }
   queryBadgeDist(...args: Parameters<DistService['queryBadgeDist']>) { return this.dist.queryBadgeDist(...args); }
   queryLoadTime(...args: Parameters<DistService['queryLoadTime']>) { return this.dist.queryLoadTime(...args); }
+  querySessionDurationDist(...args: Parameters<DistService['querySessionDurationDist']>) { return this.dist.querySessionDurationDist(...args); }
+  queryChurnLastScene(...args: Parameters<DistService['queryChurnLastScene']>) { return this.dist.queryChurnLastScene(...args); }
+
+  // ── retentionBy ──
+  queryRetentionBy(...args: Parameters<RetentionByService['queryRetentionBy']>) { return this.retentionBy.queryRetentionBy(...args); }
 
   // ── ingest ──
   ingestEvents(...args: Parameters<IngestService['ingestEvents']>) { return this.ingest.ingestEvents(...args); }
