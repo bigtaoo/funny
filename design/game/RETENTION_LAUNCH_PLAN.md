@@ -139,6 +139,22 @@ D1 也低(<15%)？                     → 首会话体验，查 3.2
 
 覆盖：见上；文档：本节 + `ANALYTICS_DESIGN.md §5.6`（`login_submit` mode 新增 `crazygames`）+ `ACCOUNT_DESIGN.md §3`（新端点契约）。
 
+### 2026-09-23 Phase 1.2 + 1.3 + 1.4：留存查询 platform/新客 cohort + ops 下拉 + 采样自查
+
+同分支 `feat/retention-phase1`，接着上面那条一起做。
+
+**1.2**（`server/analyticsvc/src/service/traffic.ts` `queryRetention`）：加 `opts.platform`（同时限定 cohort 归属与「有没有回访」两侧，不是「在 X 平台新增、任意平台算回访」——CrazyGames 和 web 是两个不同域名/应用，混着算没意义）+ `opts.newCohort`（cohort 从「当天活跃」切到「当天首次出现」，用全窗口 `$sort+$group` 找每设备最早 `session_start`，不受显示窗口 `days` 截断——设备真实首次在窗口外时不会被误判成「新」）。`GET /internal/query?type=retention&platform=&newCohort=1` 透传。向后兼容：不传 `opts` 时行为与改动前完全一致。
+
+**1.3**（`tools/ops/src/pages/analytics.ts`）：留存卡自己的 platform 下拉 + 「仅新客」勾选框，改动时**只重新拉留存这一项**（不重跑整页 `Promise.allSettled`）。链路：ops `api.analyticsEvents(type,days,platform,newCohort)` → admin `GET /admin/analytics/events` → `AnalyticsService.analyticsQuery` → `HttpAnalyticsClient.query` → analyticsvc。`newCohort` 只在为真时才多传一个参数——传显式 `undefined` 和不传是两种调用形状，改的时候踩了一次（`analyticsService.test.ts` 的调用记录断言用 `JSON.stringify(args).join(',')`，多一个 `undefined` 元素会拼出多余逗号），已修。
+
+**顺带发现但不在本阶段范围内**：`tools/ops/src/api/index.ts` 的 `analyticsEvents()` 类型里有 `boot_funnel`/`load_time`，但 `server/admin/src/clients/analytics.ts` 的 `HttpAnalyticsClient.query()` 从未转发这两个 type——Launch funnel 卡和加载时长卡在生产环境**一直静默空着**，不报错。已用 spawn_task 挂了一个独立任务（`task_cfb9716f`），不在本次改动里顺手修。
+
+**1.4**：`client/test/analyticsEventConfig.test.ts` 复跑通过——本阶段没加新事件名（只给已有的 `login_submit/ok/fail` 加了一个 `mode` 取值），门禁本该是空操作，跑一遍确认没有意外。
+
+验证：`server/analyticsvc`（131 测试，含 2 条新 e2e：platform 双向隔离 + newCohort 排除回访设备）、`server/admin`（411 测试，含新增的 newCohort 转发用例）、`tools/ops`（tsc + webpack build）均过；client/server 两端 `tsc -b` 真构建也过。
+
+**下一步**：Phase 1 全部完成，合并进当日分支，转 Phase 2（分组留存）。
+
 ---
 
 ## §6 已知阻塞项

@@ -231,7 +231,8 @@ export function startHttpApi(
           return send(res, 200, ok({ type, login_hour }));
         }
         if (type === 'retention') {
-          const retention = await svc.queryRetention(days);
+          const newCohort = qs.get('newCohort') === '1';
+          const retention = await svc.queryRetention(days, { platform, newCohort });
           return send(res, 200, ok({ type, retention }));
         }
         if (type === 'first_session') {

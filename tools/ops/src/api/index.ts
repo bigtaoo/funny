@@ -92,7 +92,7 @@ export class Api extends ApiTransport {
   }> {
     return this.req('GET', '/admin/analytics/summary');
   }
-  analyticsEvents(type: string, days: number, platform?: string): Promise<{
+  analyticsEvents(type: string, days: number, platform?: string, newCohort?: boolean): Promise<{
     available: boolean;
     event_counts?: { date: string; event: string; count: number }[];
     dau?: { date: string; dau: number }[];
@@ -144,6 +144,7 @@ export class Api extends ApiTransport {
   }> {
     const qs = new URLSearchParams({ type, days: String(days) });
     if (platform) qs.set('platform', platform);
+    if (newCohort) qs.set('newCohort', '1');
     return this.req('GET', `/admin/analytics/events?${qs}`);
   }
 

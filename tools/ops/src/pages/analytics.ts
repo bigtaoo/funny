@@ -171,28 +171,70 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
       body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, `DAU trend (last ${days} days)`), sparkline(dauPts.map((p) => p.dau)), t));
     }
 
-    // D1–D7 retention
-    const cohorts = retentionRows(sectionRows(retention, (v) => v.retention));
-    if (cohorts.length > 0) {
-      const t = h('table', {},
-        h('tr', {},
-          h('th', {}, 'Date'),
-          h('th', { style: 'text-align:right' }, 'Cohort'),
-          ...RETENTION_OFFSETS.map((n) => h('th', { style: 'text-align:right' }, `D${n}%`)),
+    // D1–D7 retention (RETENTION_LAUNCH_PLAN.md §1.2/§1.3: platform + new-user-cohort filters).
+    // Own scoped fetch/re-render on filter change — re-running the whole page's Promise.allSettled
+    // batch for a retention-only filter tweak would needlessly re-query every other card too.
+    // Filters reset to "All platforms" / unchecked on every Refresh / days change (not persisted
+    // across `reload()`), an intentional simplification for an internal ops tool.
+    {
+      const initialCohorts = retentionRows(sectionRows(retention, (v) => v.retention));
+      const platformSel = h('select', {},
+        h('option', { value: '' }, 'All platforms'),
+        h('option', { value: 'web' }, 'web'),
+        h('option', { value: 'wechat' }, 'wechat'),
+        h('option', { value: 'crazygames' }, 'crazygames'),
+      ) as HTMLSelectElement;
+      const newCohortChk = h('input', { type: 'checkbox' }) as HTMLInputElement;
+      const tableHost = h('div', {});
+      const card = h('div', { class: 'card' },
+        h('div', { class: 'muted' }, `Retention cohorts (last ${days} days, D1–D7 return, — = insufficient data)`),
+        h('div', { class: 'row', style: 'margin:4px 0' },
+          h('label', {}, 'Platform', platformSel),
+          h('label', { style: 'margin-left:12px' }, newCohortChk, ' New users only (first-ever session_start that day)'),
         ),
+        tableHost,
       );
-      for (const r of cohorts) {
-        t.append(h('tr', {},
-          h('td', {}, r.date),
-          h('td', { style: 'text-align:right' }, String(r.cohort_size)),
-          // Cell shows the rate; hover reveals the returning device count.
-          ...RETENTION_OFFSETS.map((n) => {
-            const c = retentionCell(r, n);
-            return h('td', { style: 'text-align:right', title: c.title }, c.text);
-          }),
-        ));
+
+      const renderTable = (cohorts: typeof initialCohorts): void => {
+        clear(tableHost);
+        if (cohorts.length === 0) { tableHost.append(h('div', { class: 'muted' }, 'No data')); return; }
+        const t = h('table', {},
+          h('tr', {},
+            h('th', {}, 'Date'),
+            h('th', { style: 'text-align:right' }, 'Cohort'),
+            ...RETENTION_OFFSETS.map((n) => h('th', { style: 'text-align:right' }, `D${n}%`)),
+          ),
+        );
+        for (const r of cohorts) {
+          t.append(h('tr', {},
+            h('td', {}, r.date),
+            h('td', { style: 'text-align:right' }, String(r.cohort_size)),
+            // Cell shows the rate; hover reveals the returning device count.
+            ...RETENTION_OFFSETS.map((n) => {
+              const c = retentionCell(r, n);
+              return h('td', { style: 'text-align:right', title: c.title }, c.text);
+            }),
+          ));
+        }
+        tableHost.append(t);
+      };
+
+      const reloadRetentionCard = async (): Promise<void> => {
+        const platform = platformSel.value || undefined;
+        const res = await api.analyticsEvents('retention', days, platform, newCohortChk.checked);
+        renderTable(retentionRows(res.retention ?? []));
+      };
+      platformSel.addEventListener('change', () => void reloadRetentionCard());
+      newCohortChk.addEventListener('change', () => void reloadRetentionCard());
+
+      // Same visibility gate as before this card grew filter controls: hidden entirely (not just
+      // "no data") when analytics is unavailable or the unfiltered cohort has nothing — consistent
+      // with every other card on this page, and avoids exposing filter controls that would just
+      // never have anything to show.
+      if (initialCohorts.length > 0) {
+        renderTable(initialCohorts);
+        body.append(card);
       }
-      body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, `Retention cohorts (last ${days} days, D1–D7 return, — = insufficient data)`), t));
     }
 
     // First-session onboarding funnel + action breakdown (new users only)

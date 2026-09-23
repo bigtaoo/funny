@@ -199,14 +199,27 @@ export class TrafficService {
    * D1–D7 rolling retention: fraction of daily active devices in the last N days that are still
    * active on day +1 (next-day return) through day +7 (seventh-day return).
    * An extra 7-day data window is fetched so the later offsets can be computed for recent cohorts.
+   *
+   * `opts.platform` scopes BOTH sides — cohort membership and "did they come back" — to that
+   * platform's own `session_start` events (2026-09-23, RETENTION_LAUNCH_PLAN.md §1.2). Deliberately
+   * not "cohort on platform X, return on any platform": for a CrazyGames-launch read the question is
+   * "did the CrazyGames player come back to CrazyGames", not whether the same device ever touched a
+   * different build — the two builds are different domains/apps to begin with.
+   *
+   * `opts.newCohort` switches from "every active device that day" (rolling cohort, includes
+   * returning players re-appearing on a later day) to "devices whose FIRST-EVER `session_start`
+   * (within the retained event window — events TTL 90d, same caveat as queryFirstSession) falls on
+   * that day" — the new-user cohort a portal launch actually wants to track, matching the definition
+   * of "new" the launch dashboards elsewhere already use (§9.6/§9.9 use the same "first-ever" idea).
    */
-  async queryRetention(days: number): Promise<RetentionRow[]> {
+  async queryRetention(days: number, opts: { platform?: string; newCohort?: boolean } = {}): Promise<RetentionRow[]> {
     const extraDays = Math.max(...RETENTION_OFFSETS);
     const since = new Date(dayStart(this.now()) - (days - 1 + extraDays) * 86400_000);
+    const platformMatch = opts.platform ? { platform: opts.platform } : {};
 
     // Deduplicate (date, device) → list of distinct active devices per day
     const pipeline = [
-      { $match: { ts: { $gte: since }, event: 'session_start' } },
+      { $match: { ts: { $gte: since }, event: 'session_start', ...platformMatch } },
       { $group: { _id: { date: { $dateToString: { format: '%Y-%m-%d', date: '$ts' } }, device: '$device_id' } } },
       { $group: { _id: '$_id.date', devices: { $push: '$_id.device' } } },
     ];
@@ -217,11 +230,30 @@ export class TrafficService {
     const byDate = new Map<string, Set<string>>();
     for (const r of rows) byDate.set(r._id, new Set(r.devices));
 
+    // New-user cohort: each device's first-ever session_start, scanning the FULL retained window
+    // (not bounded to `since`) — a device whose true first session predates `since` must not be
+    // miscounted as "new" on some later date that merely falls inside our narrower display window.
+    let firstSeenDate: Map<string, string> | undefined;
+    if (opts.newCohort) {
+      const firstPipeline = [
+        { $match: { event: 'session_start', ...platformMatch } },
+        { $sort: { ts: 1 as const } },
+        { $group: { _id: '$device_id', firstTs: { $first: '$ts' } } },
+      ];
+      const firstRows = await this.cols.events
+        .aggregate<{ _id: string; firstTs: Date }>(firstPipeline)
+        .toArray();
+      firstSeenDate = new Map(firstRows.map((r) => [r._id, toDateStr(r.firstTs.getTime())]));
+    }
+
     const result: RetentionRow[] = [];
     for (let i = days - 1; i >= 0; i--) {
       const dateMs = dayStart(this.now()) - i * 86400_000;
       const date = toDateStr(dateMs);
-      const cohort = byDate.get(date);
+      let cohort = byDate.get(date);
+      if (firstSeenDate && cohort) {
+        cohort = new Set([...cohort].filter((dev) => firstSeenDate!.get(dev) === date));
+      }
       if (!cohort || cohort.size === 0) {
         result.push({ date, cohort_size: 0, d: {}, d_rate: {} });
         continue;
