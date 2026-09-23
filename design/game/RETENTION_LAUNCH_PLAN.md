@@ -112,6 +112,17 @@ D1 也低(<15%)？                     → 首会话体验，查 3.2
 
 （按完成顺序追加，含日期、分支、要点）
 
+### 2026-09-23 Phase 0 基线
+
+直连 VPS analyticsvc 生产库（`/internal/query`，14 天窗口）拉的现网数字：
+
+- **流量现状**：DAU 1–4/天（`dau` 查询），几乎全是内部测试设备——`boot_funnel` 里 `boots` 大多为 0（说明 §3.6b 的启动计数在 09-20 才随代码一起上线，之前的日期没有这一列数据，只有 `sessions` 有数）、`first_session.cohort_size = 0`（14 天窗口内没有真正的新客首会话，测试设备早就不是「新」了）。
+- **结论：当前生产库里的 D1/D7 数字（`retention` 查询里 cohort_size 2–4 的那些行）不能当真实留存读——样本是同一批返场测试的开发者设备，不是自然流量。** 上线前任何"我们现在 D7 是 X%"的说法都不成立，基线要等真实门户流量进来才立得住。
+- **容量核算（0.3，结论：不是瓶颈）**：现有 `notebook_wars_analytics` 库 dataSize 12.72MB / storageSize（压缩后）1.86MB / indexSize 4.20MB，`events` 20,030 条（90 天窗口内，几乎全部来自内部测试）。按 2–3k DAU、假设每会话 30–60 条事件（session 生命周期 + nav_checkpoint 100% 采样 + 首会话教程步骤等）估算，稳态（90 天 TTL 打满）约 800 万–2700 万条事件；用现网 dataSize/doc 比例（~635 B/doc）外推，dataSize 约 5–17 GB，考虑到实测 6.8:1 的压缩比，storageSize 落在 1–2.5 GB 量级。VPS 磁盘 `df -h /`：38G 总量，**19G 可用**——analytics 单独看没有风险，但要留意和其它服务（replay/日志）共享同一块盘，上线后一周复查一次实际增长速度而非只信这个估算。
+- **0.2 门户冒烟——仍是阻塞项，未变化**：`acceptance-smoke.md` 的 CrazyGames 9 行需要游戏真的跑在 `crazygames.com` 的门户 iframe 里（广告 SDK 加载、`isOffOrigin` 生效与否、外链策略），本地 `npm run build:crazygames` 只能确认构建产物本身不报错，**验证不了门户宿主行为**。需要用户提供 CrazyGames 开发者后台的测试/预览链接才能往下走，见 §6。
+
+**下一步（Phase 1）**：VPS 现网数据已确认可查询、可信度已标注清楚，转入 1.1–1.4 的代码改动。
+
 ---
 
 ## §6 已知阻塞项
