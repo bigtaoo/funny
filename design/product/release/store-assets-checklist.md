@@ -241,7 +241,7 @@ tactics,pvp,multiplayer,card battle,lane,army,castle,sketch,doodle,paper,rts
 | Version | `1.0`（与 `client/ios/App/App.xcodeproj/project.pbxproj` 的 `MARKETING_VERSION = 1.0` 一致） |
 | Copyright | `2026 Tao Wang`（运营主体见 `terms.html §1`：德国个体经营，非公司） |
 | Routing App Coverage File | 留空（不是导航类 App） |
-| Build | 选 **CFBundleVersion = 7** 那个（2026-09-08，run `34201608554`，head `e2e307e45`，36.5 MB）——**唯一带 StoreKit 2 的包**；CFBundleVersion=4 的两个是 B 批之前的代码 |
+| Build | 选 **CFBundleVersion = 11** 那个（2026-09-23，run `35864608992`，head `2fd328b47`，36.6 MB）——含 t099/t199 币档 + mobileOnly UI 修复的最新包；此前 CFBundleVersion=7（2026-09-08）已停用 |
 | Export Compliance | **不会问**：`client/ios/App/App/Info.plist` 已有 `ITSAppUsesNonExemptEncryption = false` |
 | Version Release | Manually release this version（自己控制放出时机） |
 

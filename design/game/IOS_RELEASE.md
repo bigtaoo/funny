@@ -270,13 +270,14 @@ B 批上了 StoreKit 2 + `appAccountToken` 之后**依然保留**，而且多了
 
 **当前进度（2026-09-07）**：ASC 里 9 个商品已建齐（5 消耗型 + 2 非消耗型 + 2 自动续订订阅），状态均为
 「准备提交」；VPS 已设 `NW_IAP_BUNDLE=com.gamestao.nivara` 并透传到容器（`printenv` 已确认）。
-⚠️ **2026-09-23 起这个数变成 11**：客户端修复了 t099/t199 在原生端的 UI 入口（见 §4.1 的更正），
-ASC 还差 `com.gamestao.nivara.coins.t099`（$0.99）与 `.coins.t199`（$1.99）两个消耗型，建法同下方 5 个。
+⚠️ **2026-09-23 这个数变成 11**：客户端修复了 t099/t199 在原生端的 UI 入口（见 §4.1 的更正），
+两个新消耗型商品已在 ASC 补建，与其余 9 个一起随 App Version 1.0（CFBundleVersion=11）一次性
+**提交审核（13 items，2026-09-23，状态 Waiting for Review）**，不再是「准备提交」。
 **两项外部动作都已完成（2026-09-07 当天）**：① In-App Purchase Key 已生成、四个变量已推到 VPS 并在容器里
 实测过（§12）；② ASC 的通知 URL 已配成 `https://api.gamestao.com/api/iap/apple/notifications`
 ——**注意那个 `/api` 前缀**，Caddy 只经 `handle_path /api/*` 暴露 metaserver，裸路径会被兜底规则接走回 200，
 而 200 对 Apple 就是「投递成功」，通知从此静默丢失。共享密钥 `NW_APPLE_PASSWORD` 已作废并删除（§4.2）。
-**剩下的是真机沙盒**：充值对账 + 自动续订演练（§12）。
+**剩下的是真机沙盒**：充值对账 + 自动续订演练（§12），等 App Review 通过、商品状态转 Ready to Submit 后才能测（见 [[ios-mobile-only-coin-tiers-2026-09-23]] 的未确认假说）。
 
 > 客户端请求的 Product ID 由 `AppDelegate.swift` 自动派生自 App 的 Bundle ID（`<bundleId>.coins.<tierId>`），与上表一致，无需额外配置。
 
@@ -693,9 +694,9 @@ OTA 管线**不需要 macOS runner**（无原生编译），`ubuntu-latest` 即�
       所以在这次构建处理完之前，TestFlight 上不存在任何可用于沙盒验证的二进制。
       顺带满足 §11.6 的「首个带 Capgo 插件的壳走一次二进制发布」。
       ⚠️ 历史上从没打过 `ios-v*` tag（`git tag -l 'ios-v*'` 为空），一直是手动 dispatch
-- [ ] **在 ASC 补建 `com.gamestao.nivara.coins.t099`（$0.99）与 `.coins.t199`（$1.99）两个消耗型商品**
-      （2026-09-23 挂起，见 §4.1 的更正）——客户端原生端已经会渲染这两档，ASC 没建之前点了必
-      `invalid_product`，不会拉起支付面板。建法同 §4.0 第 2 步。
+- [x] **在 ASC 补建 `com.gamestao.nivara.coins.t099`（$0.99）与 `.coins.t199`（$1.99）两个消耗型商品**
+      （2026-09-23 完成，见 §4.1 的更正）——两个商品随同其余 7 个 IAP/订阅一起随 App Version 1.0
+      提交审核（13 items，2026-09-23，见下方「提交审核」条）
 - [ ] TestFlight 沙盒账号走通一次充值→发币对账（依赖上面的构建 + IAP 商品，以及上一条的两个新商品），
       七个币档 + 四个非币商品各买一次。
       **这也是 §4.2b 那个 sandbox 验签回退修复（`13ba7b325`）的第一次真交易验证**——它此前只用
@@ -725,7 +726,8 @@ OTA 管线**不需要 macOS runner**（无原生编译），`ubuntu-latest` 即�
       [`store-assets-checklist §1.2b`](../product/release/store-assets-checklist.md)
 - [x] **支持 URL / 营销 URL 各建一页**（2026-09-08）——`/support` + `/about`（`client/public/web/`），
       零购买面，门禁 `client/test/nativePaymentIsolation.test.ts`。此前支持 URL 只能拿隐私政策页顶着
-- [ ] 提交审核（**2026-07-21 确认：尚未提审**）
+- [x] **提交审核**（**2026-09-23 完成**）——App Version 1.0（build CFBundleVersion=11，run `35864608992`，
+      head `2fd328b47`）+ 全部 12 个 IAP/订阅商品，共 13 items 一次性提交，状态 Waiting for Review
 
 > **2026-09-07 第二轮（B 批）新增的验证缺口**，别当成已保障：
 > ① **Swift 在本机既不能编译也没有单元测试**。`client/test/iosStoreKit2.test.ts` 是**读文本的门禁**
