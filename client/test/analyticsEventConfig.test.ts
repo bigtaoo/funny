@@ -20,7 +20,9 @@ import path from 'path';
 
 const CLIENT_DIR = path.resolve(__dirname, '..');
 const SRC = path.resolve(CLIENT_DIR, 'src');
-const DEFS = path.resolve(CLIENT_DIR, '../server/analyticsvc/src/service/defs.ts');
+// DEFAULT_CONFIG lives in eventConfig.ts (split out of defs.ts 2026-09-24, defs.ts hit the 500-line
+// gate); re-exported from defs.ts, but this test greps raw source text, not the module graph.
+const DEFS = path.resolve(CLIENT_DIR, '../server/analyticsvc/src/service/eventConfig.ts');
 
 /**
  * Events the table carries on purpose without a live emitter. Keep this list short and justified —
