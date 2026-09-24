@@ -92,6 +92,49 @@ describe('ApiClient password auth (SA-1/SA-3)', () => {
   });
 });
 
+// auth()'s path/body selection is a ternary chain keyed on AuthCredential.kind; every other test that
+// exercises "auth" (auth-reconnect-prompt.test.ts, net-session-freshtoken.test.ts) mocks ctx.api.auth
+// as a vi.fn(), so the real ternary — and a typo'd field name inside one of its branches — was never
+// checked against the wire. A wrong path or field here breaks login for that credential kind silently.
+describe('ApiClient.auth — path/body per AuthCredential.kind (S0-4/S0-7)', () => {
+  it("kind 'device': POST /auth/device with { deviceId }", async () => {
+    const calls = installFetch(() => ({ json: { ok: true, data: authData() } }));
+    const api = new ApiClient('https://h/api');
+    const res = await api.auth({ kind: 'device', deviceId: 'dev-1' });
+    expect(res.accountId).toBe('acc-1');
+    expect(api.getToken()).toBe('tok-1');
+    expect(calls[0]!.url).toBe('https://h/api/auth/device');
+    expect(calls[0]!.body).toEqual({ deviceId: 'dev-1' });
+  });
+
+  it("kind 'wx': POST /auth/wx with { code }", async () => {
+    const calls = installFetch(() => ({ json: { ok: true, data: authData({ token: 'tok-wx' }) } }));
+    const api = new ApiClient('https://h/api');
+    await api.auth({ kind: 'wx', code: 'wx-code-1' });
+    expect(api.getToken()).toBe('tok-wx');
+    expect(calls[0]!.url).toBe('https://h/api/auth/wx');
+    expect(calls[0]!.body).toEqual({ code: 'wx-code-1' });
+  });
+
+  it("kind 'crazygames': POST /auth/crazygames with { token }", async () => {
+    const calls = installFetch(() => ({ json: { ok: true, data: authData({ token: 'tok-cg' }) } }));
+    const api = new ApiClient('https://h/api');
+    await api.auth({ kind: 'crazygames', token: 'portal-jwt-1' });
+    expect(api.getToken()).toBe('tok-cg');
+    expect(calls[0]!.url).toBe('https://h/api/auth/crazygames');
+    expect(calls[0]!.body).toEqual({ token: 'portal-jwt-1' });
+  });
+
+  it('failure wraps to ApiError(code), does not retain a token', async () => {
+    installFetch(() => ({ status: 401, json: { ok: false, error: { code: 'INVALID_CREDENTIALS', message: 'bad' } } }));
+    const api = new ApiClient('https://h/api');
+    await expect(api.auth({ kind: 'device', deviceId: 'dev-1' })).rejects.toMatchObject({
+      name: 'ApiError', code: 'INVALID_CREDENTIALS',
+    });
+    expect(api.getToken()).toBeNull();
+  });
+});
+
 describe('ApiClient card/equipment request bodies (CC-1/E3/E6)', () => {
   // Regression: fuseCards() used to send { targetCardId, materialCardIds } with no
   // idempotencyKey — the server's openapi contract requires { targetId, materialIds,

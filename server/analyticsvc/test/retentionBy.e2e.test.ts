@@ -183,6 +183,66 @@ describe.skipIf(!mongo)('grouped retention + supplementary queries', () => {
     expect(group.d_rate[1]).toBe(1); // NOT 1/2 — rb-late is excluded from this offset entirely, not counted as a miss
   });
 
+  // ─── queryRetentionBy: the other three event-derived dimensions ────────────
+  // login_mode and tutorial_complete have their own tests above; load_time_bucket, first_battle_result
+  // and matched_bot share the same resolveEventDimension() but read a different event/prop each — a
+  // typo'd event name or prop key would silently misgroup rather than throw, so each gets its own case.
+
+  it('groups by load_time_bucket (props.total_ms on the load_time event, bucketed)', async () => {
+    const ANCHOR = Date.UTC(2021, 3, 1);
+    await mongo!.collections.events.insertMany([
+      sessionStart('rb-fast', 'rb-fast-0', 0, ANCHOR),
+      ev('rb-fast', 'rb-fast-0', 'load_time', 0, ANCHOR, { total_ms: 1500 }), // < 2s
+      sessionStart('rb-slow', 'rb-slow-0', 0, ANCHOR),
+      ev('rb-slow', 'rb-slow-0', 'load_time', 0, ANCHOR, { total_ms: 9000 }), // 8s+
+      // No load_time event at all (e.g. crashed before it fired) — falls back to 'unknown'.
+      sessionStart('rb-noload', 'rb-noload-0', 0, ANCHOR),
+      sessionStart('rb-fast', 'rb-fast-1', 1, ANCHOR), // returns
+    ]);
+
+    const pinned = new AnalyticsService(mongo!.collections, () => ANCHOR + DAY + 12 * 3600_000);
+    const rows = await pinned.queryRetentionBy(2, 'load_time_bucket');
+    const byValue = new Map(rows.map((r) => [r.value, r]));
+
+    expect(byValue.get('<2s')).toMatchObject({ cohort_size: 1, d: { 1: 1 } });
+    expect(byValue.get('8s+')).toMatchObject({ cohort_size: 1, d: { 1: 0 } });
+    expect(byValue.get('unknown')).toMatchObject({ cohort_size: 1, d: { 1: 0 } });
+  });
+
+  it("groups by first_battle_result (props.result on the game_end event); no battle → 'none'", async () => {
+    const ANCHOR = Date.UTC(2021, 3, 15);
+    await mongo!.collections.events.insertMany([
+      sessionStart('rb-win', 'rb-win-0', 0, ANCHOR),
+      ev('rb-win', 'rb-win-0', 'game_end', 0, ANCHOR, { result: 'win' }),
+      sessionStart('rb-nobattle', 'rb-nobattle-0', 0, ANCHOR),
+      sessionStart('rb-win', 'rb-win-1', 1, ANCHOR), // returns
+    ]);
+
+    const pinned = new AnalyticsService(mongo!.collections, () => ANCHOR + DAY + 12 * 3600_000);
+    const rows = await pinned.queryRetentionBy(2, 'first_battle_result');
+    const byValue = new Map(rows.map((r) => [r.value, r]));
+
+    expect(byValue.get('win')).toMatchObject({ cohort_size: 1, d: { 1: 1 } });
+    expect(byValue.get('none')).toMatchObject({ cohort_size: 1, d: { 1: 0 } });
+  });
+
+  it("groups by matched_bot (pvp_match_bot event presence, 'true'/'false')", async () => {
+    const ANCHOR = Date.UTC(2021, 4, 1);
+    await mongo!.collections.events.insertMany([
+      sessionStart('rb-bot', 'rb-bot-0', 0, ANCHOR),
+      ev('rb-bot', 'rb-bot-0', 'pvp_match_bot', 0, ANCHOR),
+      sessionStart('rb-human', 'rb-human-0', 0, ANCHOR),
+      sessionStart('rb-bot', 'rb-bot-1', 1, ANCHOR), // returns
+    ]);
+
+    const pinned = new AnalyticsService(mongo!.collections, () => ANCHOR + DAY + 12 * 3600_000);
+    const rows = await pinned.queryRetentionBy(2, 'matched_bot');
+    const byValue = new Map(rows.map((r) => [r.value, r]));
+
+    expect(byValue.get('true')).toMatchObject({ cohort_size: 1, d: { 1: 1 } });
+    expect(byValue.get('false')).toMatchObject({ cohort_size: 1, d: { 1: 0 } });
+  });
+
   // ─── querySessionDurationDist ────────────────────────────────────────────────
 
   describe('querySessionDurationDist', () => {

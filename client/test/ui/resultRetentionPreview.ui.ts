@@ -92,6 +92,22 @@ describe('ResultScene — come back tomorrow check-in hook', () => {
     scene.destroy();
   });
 
+  // Card/equipment milestone rewards are singleItem (CHECKIN_REWARDS' day-14/30 draws) — no "+N"
+  // count, unlike every other reward kind. Only kind: 'material' was ever exercised above.
+  it('milestone rewards (card/equipment) draw the icon + label with no "+N" count', () => {
+    for (const kind of ['card', 'equipment'] as const) {
+      const [w, h] = LANDSCAPE_DESIGN;
+      const preview: ResultRetentionPreview = { day: 30, reward: { kind, id: 'x' } };
+      const scene = buildScene(w, h, 0, preview);
+
+      const all = texts(scene.container);
+      expect(all.some((n) => n.text === t('result.tomorrowReward', { day: 30 })), `no label for ${kind}`).toBe(true);
+      expect(all.some((n) => /^\+\d/.test(n.text)), `unexpected "+N" count drawn for singleItem kind ${kind}`).toBe(false);
+
+      scene.destroy();
+    }
+  });
+
   it('draws nothing when there is no retentionPreview', () => {
     const [w, h] = LANDSCAPE_DESIGN;
     const scene = buildScene(w, h, 0, undefined);

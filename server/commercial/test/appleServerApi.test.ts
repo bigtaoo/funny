@@ -26,12 +26,13 @@
 //     failures are constructed as the real `APIException` / `VerificationException` types, because
 //     `isNotFound` and `isWrongEnvironment` both start with an `instanceof` — a hand-rolled
 //     `{ apiError }` object would pass every assertion below while proving nothing.
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { generateKeyPairSync } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import {
   APIError,
   APIException,
+  AppStoreServerAPIClient,
   Environment,
   SignedDataVerifier,
   VerificationException,
@@ -618,6 +619,53 @@ describe('createAppleServerApi', () => {
       expect(createAppleServerApi()).toBeNull();
     },
   );
+
+  // Everything above (and the whole "with NW_APPLE_PRE_RELEASE on" describe up top) exercises
+  // preRelease through makeAppleServerApi() directly, passing the boolean straight in — that never
+  // touches createAppleServerApi()'s own `process.env.NW_APPLE_PRE_RELEASE === 'true'` line. A typo
+  // there (wrong var name, comparing to the boolean instead of the string, …) would make every
+  // deployment silently behave as if the flag were always off — exactly the shape of the 2026-09-23
+  // incident this flag exists to fix — and nothing else in the suite would notice. This spies on the
+  // real AppStoreServerAPIClient's network method (the file's own "transport is FAKE" convention) so
+  // the assertion runs through createAppleServerApi()'s actual env read, not a re-declared fake of it.
+  describe('NW_APPLE_PRE_RELEASE wiring (env → createAppleServerApi(), not just makeAppleServerApi())', () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+      delete process.env.NW_APPLE_PRE_RELEASE;
+    });
+
+    it('"true": retries sandbox on a production 401, same as passing preRelease: true directly', async () => {
+      // Not decoding a real transaction here: createAppleServerApi()'s verifiers pin the real Apple
+      // root CAs (unlike the test file's own realVerifier()), so a throwaway-key signedTx() cannot
+      // pass them. Ending the sandbox call in a 404 (swallowed to null by withEnvFallback) proves the
+      // retry happened without needing a payload that would verify — the thing under test is whether
+      // the SECOND call fires at all, not what it decodes to.
+      setEnv(FULL);
+      process.env.NW_APPLE_PRE_RELEASE = 'true';
+      let calls = 0;
+      vi.spyOn(AppStoreServerAPIClient.prototype, 'getTransactionInfo').mockImplementation(async () => {
+        calls += 1;
+        if (calls === 1) throw new APIException(401); // production, asked first
+        throw new APIException(404, APIError.TRANSACTION_ID_NOT_FOUND); // sandbox, asked second
+      });
+
+      const tx = await createAppleServerApi()!.verifyTransaction('tx-1');
+      expect(tx).toBeNull(); // sandbox's 404 swallows to null, same as any other not-found
+      expect(calls).toBe(2);
+    });
+
+    it('unset (default off): a production 401 rethrows rather than retrying sandbox', async () => {
+      setEnv(FULL);
+      let calls = 0;
+      vi.spyOn(AppStoreServerAPIClient.prototype, 'getTransactionInfo').mockImplementation(async () => {
+        calls += 1;
+        throw new APIException(401);
+      });
+
+      await expect(createAppleServerApi()!.verifyTransaction('tx-1')).rejects.toThrow(APIException);
+      expect(calls).toBe(1); // never reached sandbox — the 401 widening was never applied
+    });
+  });
 });
 
 describe('transactionIdFromReceipt', () => {
