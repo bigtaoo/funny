@@ -431,7 +431,7 @@ export const zh = {
   'subDisclosure.priceMonthly': '价格：{price} / 月',
   'subDisclosure.priceYearly': '价格：{price} / 年',
   'subDisclosure.includes': '包含：立得 {now} 金币\n生效期间每天可领 {daily} 金币',
-  // "Apple ID" / "App Store": no-break space keeps each name on one line (SubscriptionDisclosureDialog.wrapMixed).
+  // "Apple ID" / "App Store": no-break space keeps each name on one line (SubscriptionDisclosureDialog.wrapMixed).
   'subDisclosure.terms': '确认后从你的 Apple ID 扣费。除非在周期结束前至少 24 小时取消，否则自动续期。可在 App Store 账户设置中管理或取消。',
   'subDisclosure.eula': '使用条款（EULA）',
   'subDisclosure.subscribe': '订阅',

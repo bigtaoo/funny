@@ -113,6 +113,11 @@ module.exports = {
         NW_APPLE_IAP_ISSUER_ID: process.env.NW_APPLE_IAP_ISSUER_ID,
         NW_APPLE_IAP_PRIVATE_KEY_BASE64: process.env.NW_APPLE_IAP_PRIVATE_KEY_BASE64,
         NW_APPLE_APP_ID: process.env.NW_APPLE_APP_ID,
+        // Temporary ops toggle (IOS_RELEASE.md §4.1/§12): App Store Server API's Production host 401s
+        // every request until the app has shipped at least one version. Set to true to also retry
+        // Sandbox on a Production 401 (not just "order not found"); MUST be unset again the day the
+        // app goes Ready for Sale, or it will mask a real post-launch auth failure.
+        NW_APPLE_PRE_RELEASE: process.env.NW_APPLE_PRE_RELEASE,
         NW_GOOGLE_SERVICE_ACCOUNT_JSON: process.env.NW_GOOGLE_SERVICE_ACCOUNT_JSON,
         NW_GOOGLE_PACKAGE_NAME: process.env.NW_GOOGLE_PACKAGE_NAME ?? 'com.nw.game',
         NW_WX_PAY_MCH_ID: process.env.NW_WX_PAY_MCH_ID,

@@ -380,7 +380,7 @@ ops 那边扣的是 `Lost = boots − sessions − declined`（§3.6c）。
 
 ### 9.11 分组留存 + 配套查询（`type=retention_by/session_duration_dist/churn_scene_dist`，2026-09-23）
 
-`RETENTION_LAUNCH_PLAN.md` §2 的"为什么"工具——9.5 的滚动/新客留存只回答"留存多少"，这里回答"哪一类新客留得更好"。三个查询都在新文件 `analyticsvc/service/retentionBy.ts`（`RetentionByService`，独立 sibling class）+ `dist.ts` 追加两个方法。
+[`RETENTION_LAUNCH_PLAN.md`](RETENTION_LAUNCH_PLAN.md) §2 的"为什么"工具——9.5 的滚动/新客留存只回答"留存多少"，这里回答"哪一类新客留得更好"。三个查询都在新文件 `analyticsvc/service/retentionBy.ts`（`RetentionByService`，独立 sibling class）+ `dist.ts` 追加两个方法。
 
 **`queryRetentionBy(days, dimension, {platform?})`**：新客 cohort（首次 `session_start` 落在窗口内的设备，判定方式与 9.5 的 `newCohort` 一致）按 `dimension` 在**各自首次会话**上的取值分组，每组独立算一条 D1–D7 曲线。九个维度分两种取法（`RETENTION_BY_DIMENSIONS`，`defs.ts`）：
 

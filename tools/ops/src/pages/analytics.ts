@@ -6,13 +6,17 @@
 // `distribution()`, which is what pulling the arithmetic out made visible.
 import { clear, h, pill } from '../dom';
 import {
-  analyticsUnavailable, badgeModes, badgePivot, barRatio, barWidthPx, bootFunnelRows, churnSceneRows,
-  distribution, eventCountGrid, funnelPivot, funnelPlatforms, levelFunnelRows, LOAD_TIME_PHASE_LABELS,
-  loadTimeRows, loginHourRows, metricRows, ms, ONBOARDING_LABELS,
-  retentionCell, RETENTION_BY_DIMENSION_LABELS, RETENTION_OFFSETS, retentionRows, sec, sectionRows,
+  analyticsUnavailable, barRatio, bootFunnelRows, churnSceneRows,
+  distribution, eventCountGrid, funnelPivot, funnelPlatforms, levelFunnelRows,
+  loadTimeRows, loginHourRows, metricRows, ONBOARDING_LABELS,
+  retentionCell, RETENTION_BY_DIMENSION_LABELS, RETENTION_OFFSETS, retentionRows, sectionRows,
   sectionValue, type ShareRow, stepFunnelRows, TUTORIAL_LABELS,
 } from '../logic/analytics';
 import { pct } from '../logic/shared';
+import {
+  bar, badgeDistCards, featureGuideCard, launchFunnelCard, levelFunnelCard, loadTimeCard,
+  sessionDurationCard, shareCard, stepFunnelCard,
+} from './analyticsCards';
 import { showErr, sparkline, type Ctx } from './shared';
 
 export async function pageAnalytics(ctx: Ctx): Promise<void> {
@@ -92,111 +96,19 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
       return;
     }
 
-    // Launch funnel (ANALYTICS_DESIGN §3.6b). The only card on this page whose denominator is not an
-    // analytics event: `Launches` is the unauthenticated counter on GET /analytics/config, which
-    // every client hits before the age and consent gates. `Lost` is therefore the one measurement of
-    // the players who open the game and leave without a single event being recorded about them —
-    // every other card on this page starts counting at session_start and cannot see them at all.
-    // `Declined` is carved out of that gap (§3.6c): those players did answer and did stay — they
-    // just refused telemetry — and leaving them inside `Lost` made the gate bounce look worse than
-    // it is, in a way that grows with every refusal the game keeps.
+    // Launch funnel, load time and session-length cards: see analyticsCards.ts for the "why" behind
+    // each (ANALYTICS_DESIGN §3.6b/§5.1b, RETENTION_LAUNCH_PLAN.md §2).
     const launches = bootFunnelRows(sectionRows(bootFunnel, (v) => v.boot_funnel));
-    if (launches.length) {
-      const t = h('table', {},
-        h('tr', {},
-          h('th', {}, 'Date'),
-          h('th', {}, 'Platform'),
-          h('th', { style: 'text-align:right' }, 'Launches'),
-          h('th', { style: 'text-align:right' }, 'Sessions'),
-          h('th', { style: 'text-align:right', title: 'Launches by players who chose "essentials only" — they are playing, they just report nothing (ANALYTICS_DESIGN §3.6c)' }, 'Declined'),
-          h('th', { style: 'text-align:right', title: 'Launches that never reported anything and were not refusals — left at the age or consent gate' }, 'Lost'),
-          h('th', { style: 'text-align:right', title: 'gdpr_consent — first-time acceptances' }, 'Consents'),
-          // `bar()` prints the percentage next to the bar, so this column needs no separate pct cell.
-          h('th', {}, 'Reached'),
-        ),
-      );
-      for (const r of launches) {
-        t.append(h('tr', {},
-          h('td', {}, r.date),
-          h('td', {}, r.platform),
-          h('td', { style: 'text-align:right' }, String(r.boots)),
-          h('td', { style: 'text-align:right' }, String(r.sessions)),
-          h('td', { style: 'text-align:right' }, String(r.declinedCount)),
-          h('td', { style: 'text-align:right' }, String(r.lost)),
-          h('td', { style: 'text-align:right' }, String(r.consents)),
-          h('td', {}, bar(r.reachRate)),
-        ));
-      }
-      body.append(h('div', { class: 'card' },
-        h('div', { class: 'muted' }, `Launch funnel — launches vs sessions that reported anything (last ${days} days)`),
-        t,
-      ));
-    }
+    const launchCard = launchFunnelCard(launches, days);
+    if (launchCard) body.append(launchCard);
 
-    // Load time (ANALYTICS_DESIGN §5.1b). Percentiles, not averages: startup is long-tailed and a
-    // mean describes nobody. `Gave up` counts sessions that emitted `boot` and never `load_time`.
     const loads = loadTimeRows(sectionRows(loadTime, (v) => v.load_time));
-    if (loads.length) {
-      const t = h('table', {},
-        h('tr', {},
-          h('th', {}, 'Platform'),
-          h('th', { style: 'text-align:right' }, 'Launches'),
-          h('th', { style: 'text-align:right' }, 'p50'),
-          h('th', { style: 'text-align:right' }, 'p75'),
-          h('th', { style: 'text-align:right' }, 'p90'),
-          h('th', { style: 'text-align:right' }, 'p95'),
-          ...LOAD_TIME_PHASE_LABELS.map((p) => h('th', { style: 'text-align:right', title: p.title }, p.label)),
-          h('th', { style: 'text-align:right', title: 'Sessions that started loading and closed the page before the first screen' }, 'Gave up'),
-        ),
-      );
-      for (const r of loads) {
-        t.append(h('tr', {},
-          h('td', {}, r.platform),
-          h('td', { style: 'text-align:right' }, String(r.samples)),
-          h('td', { style: 'text-align:right' }, ms(r.p50_ms)),
-          h('td', { style: 'text-align:right' }, ms(r.p75_ms)),
-          h('td', { style: 'text-align:right' }, ms(r.p90_ms)),
-          h('td', { style: 'text-align:right' }, ms(r.p95_ms)),
-          ...r.phases.map((v) => h('td', { style: 'text-align:right' }, ms(v))),
-          h('td', { style: 'text-align:right' }, r.abandoned > 0 ? `${r.abandoned} (${pct(r.abandonRate)})` : '0'),
-        ));
-      }
-      body.append(h('div', { class: 'card' },
-        h('div', { class: 'muted' }, `Load time — total percentiles and the mean of each phase (last ${days} days)`),
-        t,
-      ));
-    }
+    const loadCard = loadTimeCard(loads, days);
+    if (loadCard) body.append(loadCard);
 
-    // Session-length distribution (RETENTION_LAUNCH_PLAN.md §2 supplementary query): percentiles of
-    // `sessions.duration_sec`, same shape as the load-time card above but for how long the session
-    // itself lasted once it got going, not how long it took to start.
     const durations = sectionRows(sessionDuration, (v) => v.session_duration_dist);
-    if (durations.length) {
-      const t = h('table', {},
-        h('tr', {},
-          h('th', {}, 'Platform'),
-          h('th', { style: 'text-align:right' }, 'Sessions'),
-          h('th', { style: 'text-align:right' }, 'p50'),
-          h('th', { style: 'text-align:right' }, 'p75'),
-          h('th', { style: 'text-align:right' }, 'p90'),
-          h('th', { style: 'text-align:right' }, 'p95'),
-        ),
-      );
-      for (const r of durations) {
-        t.append(h('tr', {},
-          h('td', {}, r.platform),
-          h('td', { style: 'text-align:right' }, String(r.samples)),
-          h('td', { style: 'text-align:right' }, sec(r.p50_sec)),
-          h('td', { style: 'text-align:right' }, sec(r.p75_sec)),
-          h('td', { style: 'text-align:right' }, sec(r.p90_sec)),
-          h('td', { style: 'text-align:right' }, sec(r.p95_sec)),
-        ));
-      }
-      body.append(h('div', { class: 'card' },
-        h('div', { class: 'muted' }, `Session length — how long a session lasted once it started (last ${days} days)`),
-        t,
-      ));
-    }
+    const durationCard = sessionDurationCard(durations, days);
+    if (durationCard) body.append(durationCard);
 
     // Churn last-scene distribution (RETENTION_LAUNCH_PLAN.md §2 supplementary query): where sessions
     // actually end. Counts churn_signal EVENTS, not devices — a scene can appear any number of times.
@@ -376,92 +288,18 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
       ));
     }
 
-    // Level funnel — which specific level players get stuck on / quit (A9-9)
+    // Level funnel, feature-guide funnel and badge-distribution cards: see analyticsCards.ts
+    // (A9-9 / design-doc-audit-2026-07 / ANALYTICS_DESIGN §5.8).
     const levels = levelFunnelRows(sectionRows(levelFunnel, (v) => v.level_funnel));
-    if (levels.length) {
-      const t = h('table', {},
-        h('tr', {},
-          h('th', {}, 'Level'),
-          h('th', { style: 'text-align:right' }, 'Attempts'),
-          h('th', { style: 'text-align:right' }, 'Completes'),
-          h('th', { style: 'text-align:right' }, 'Abandons'),
-          h('th', { style: 'text-align:right' }, 'Completion'),
-          h('th', {}, ''),
-        ),
-      );
-      for (const r of levels) {
-        t.append(h('tr', {},
-          h('td', {}, r.level_id),
-          h('td', { style: 'text-align:right' }, String(r.attempts)),
-          h('td', { style: 'text-align:right' }, String(r.completes)),
-          h('td', { style: 'text-align:right' }, String(r.abandons)),
-          h('td', { style: 'text-align:right' }, r.completion_rate !== undefined ? pct(r.completion_rate) : '—'),
-          h('td', {}, bar(r.completion_rate ?? 0)),
-        ));
-      }
-      body.append(h('div', { class: 'card' },
-        h('div', { class: 'muted' }, `Level funnel — 20 levels with the lowest completion rate (last ${days} days)`),
-        t,
-      ));
-    }
+    const levelCard = levelFunnelCard(levels, days);
+    if (levelCard) body.append(levelCard);
 
-    // First-time feature-guide funnel (design-doc-audit-2026-07) — shown/closed/replay per feature.
-    // "replays" stays 0 for every row until the per-page "?" re-open button is wired (ONBOARDING_DESIGN §8/§10).
     const guides = sectionRows(featureGuideFunnel, (v) => v.feature_guide_funnel);
-    if (guides.length) {
-      const t2 = h('table', {},
-        h('tr', {},
-          h('th', {}, 'Feature'),
-          h('th', { style: 'text-align:right' }, 'Shown'),
-          h('th', { style: 'text-align:right' }, 'Closed'),
-          h('th', { style: 'text-align:right' }, 'Replays'),
-          h('th', { style: 'text-align:right' }, 'Close rate'),
-          h('th', {}, ''),
-        ),
-      );
-      for (const r of guides) {
-        t2.append(h('tr', {},
-          h('td', {}, r.feature),
-          h('td', { style: 'text-align:right' }, String(r.shown)),
-          h('td', { style: 'text-align:right' }, String(r.closed)),
-          h('td', { style: 'text-align:right' }, String(r.replays)),
-          h('td', { style: 'text-align:right' }, r.close_rate !== undefined ? pct(r.close_rate) : '—'),
-          h('td', {}, bar(r.close_rate ?? 0)),
-        ));
-      }
-      body.append(h('div', { class: 'card' },
-        h('div', { class: 'muted' }, `First-time feature guide — shown/closed/replay per feature (last ${days} days)`),
-        t2,
-      ));
-    }
+    const guideCard = featureGuideCard(guides, days);
+    if (guideCard) body.append(guideCard);
 
-    // Post-match badge/title distribution (ANALYTICS_DESIGN §5.8) — per mode, which "hero" badge
-    // players actually get. A single badge with a near-100% share = the calibration is degenerate
-    // (everyone gets the same title). One pivot table per mode: badge rows × win/loss/draw + total.
     const badges = sectionRows(badgeDist, (v) => v.badge_dist);
-    for (const mode of badgeModes(badges)) {
-      const pivot = badgePivot(badges, mode);
-      const t = h('table', {},
-        h('tr', {},
-          h('th', {}, 'Hero badge'),
-          ...pivot.results.map((rr) => h('th', { style: 'text-align:right' }, rr)),
-          h('th', { style: 'text-align:right' }, 'Total'),
-          h('th', {}, 'Share'),
-        ),
-      );
-      for (const b of pivot.badges) {
-        t.append(h('tr', {},
-          h('td', {}, b.badge),
-          ...b.counts.map((n) => h('td', { style: 'text-align:right' }, String(n))),
-          h('td', { style: 'text-align:right' }, String(b.total)),
-          h('td', {}, bar(b.share)),
-        ));
-      }
-      body.append(h('div', { class: 'card' },
-        h('div', { class: 'muted' }, `Result badge distribution — ${mode} (${pivot.grandTotal} matches, last ${days} days; one badge near 100% = miscalibrated)`),
-        t,
-      ));
-    }
+    for (const card of badgeDistCards(badges, days)) body.append(card);
 
     // The five share tables. Locale is a language code, not a place — Geo below is the actual country,
     // server-derived from the request IP via geoip-lite (A9-9); raw IPs are never stored.
@@ -520,57 +358,4 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
   refreshBtn.addEventListener('click', () => void reload());
   daysSel.addEventListener('change', () => void reload());
   await reload();
-}
-
-/** Shared renderer for cohort step-funnels (onboarding / tutorial / scene) — table + conversion bar per step. */
-function stepFunnelCard(title: string, rows: ReturnType<typeof stepFunnelRows>): HTMLElement {
-  const t = h('table', {},
-    h('tr', {},
-      h('th', {}, 'Step'),
-      h('th', { style: 'text-align:right' }, 'Reached'),
-      h('th', { style: 'text-align:right' }, 'Step conv.'),
-      h('th', { style: 'text-align:right' }, 'Of cohort'),
-      h('th', {}, ''),
-    ),
-  );
-  for (const r of rows) {
-    t.append(h('tr', {},
-      h('td', {}, r.label),
-      h('td', { style: 'text-align:right' }, String(r.count)),
-      h('td', { style: 'text-align:right' }, r.stepRate !== undefined ? pct(r.stepRate) : '—'),
-      h('td', { style: 'text-align:right' }, pct(r.ofCohort)),
-      h('td', {}, bar(r.ofCohort)),
-    ));
-  }
-  return h('div', { class: 'card' }, h('div', { class: 'muted' }, title), t);
-}
-
-/** `label | count | bar` card — the six single-dimension tables (five *_dist payloads + login hour). */
-function shareCard(
-  caption: string,
-  labelHeader: string,
-  valueHeader: string,
-  rows: readonly ShareRow[],
-  shareHeader = 'Share',
-  labelStyle?: string,
-): HTMLElement {
-  const t = h('table', {},
-    h('tr', {}, h('th', {}, labelHeader), h('th', { style: 'text-align:right' }, valueHeader), h('th', {}, shareHeader)),
-  );
-  for (const r of rows) {
-    t.append(h('tr', {},
-      h('td', labelStyle ? { style: labelStyle } : {}, r.label),
-      h('td', { style: 'text-align:right' }, String(r.value)),
-      h('td', {}, bar(r.share)),
-    ));
-  }
-  return h('div', { class: 'card' }, h('div', { class: 'muted' }, caption), t);
-}
-
-/** A proportional bar plus its percentage, from a ratio already computed in the logic layer. */
-function bar(ratio: number): HTMLElement {
-  const el = h('div', {
-    style: `display:inline-block;width:${barWidthPx(ratio)}px;height:8px;background:#2f5fcf;vertical-align:middle;border-radius:2px`,
-  });
-  return h('span', {}, el, ` ${pct(ratio)}`);
 }
