@@ -23,6 +23,8 @@ import { installGlobalErrorHandlers, netLog, setToastSink, setAppealSink, setFee
 import { GlobalToast } from './ui/GlobalToast';
 import { AppealDialog } from './ui/dialogs/AppealDialog';
 import { FeedbackDialog } from './ui/dialogs/FeedbackDialog';
+import { SubscriptionDisclosureDialog } from './ui/dialogs/SubscriptionDisclosureDialog';
+import { setSubscriptionDisclosureSink } from './ui/dialogs/subscriptionDisclosure';
 import { t } from './i18n';
 import { ui as C } from './render/sketchUi';
 import { setBakeRenderer } from './render/bake';
@@ -320,6 +322,29 @@ export async function startApp(
     dlg.container.zIndex = 9_000; // above scene content, below GlobalToast (10_000)
     app.stage.addChild(dlg.container);
     feedbackDialog = dlg;
+    input.holdForModal(true);
+  });
+
+  // Subscription disclosure (IOS_RELEASE.md, App Review 3.1.2): same stage-level overlay as the two
+  // dialogs above, awaited by the iOS purchase flow before the StoreKit sheet opens.
+  let disclosureDialog: SubscriptionDisclosureDialog | null = null;
+  setSubscriptionDisclosureSink((info, answer) => {
+    if (disclosureDialog) { answer(false); return; }
+    const close = (accepted: boolean): void => {
+      if (!disclosureDialog) return;
+      app.stage.removeChild(disclosureDialog.container);
+      disclosureDialog.destroy();
+      disclosureDialog = null;
+      input.holdForModal(false);
+      answer(accepted);
+    };
+    const dlg = new SubscriptionDisclosureDialog(app.screen.width, app.screen.height, info, {
+      onSubscribe: () => close(true),
+      onCancel: () => close(false),
+    });
+    dlg.container.zIndex = 9_000; // above scene content, below GlobalToast (10_000)
+    app.stage.addChild(dlg.container);
+    disclosureDialog = dlg;
     input.holdForModal(true);
   });
 

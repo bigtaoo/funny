@@ -190,6 +190,9 @@ module.exports = (env, argv) => {
         // sell and never showed t099/t199 on native, even though iOS/Android pay Apple/Google's flat
         // per-txn cut regardless of price — only Paddle's fixed fee makes them uneconomic).
         '@nw/shared/economy/iapTiers': path.resolve(__dirname, '../server/shared/src/economy/iapTiers.ts'),
+        // @nw/shared/economy/subscriptions = monthly/year card benefits + USD display prices, for the
+        // iOS subscription disclosure dialog. Its only import is type-only, so it stays zero-runtime-import.
+        '@nw/shared/economy/subscriptions': path.resolve(__dirname, '../server/shared/src/economy/subscriptions.ts'),
         // @nw/shared = browser-safe slice of server/shared. Points directly to slg/index.ts
         // (pure/deterministic, no Node.js built-ins) to avoid pulling in password/logger
         // which import node:crypto / node:fs / node:path and break webpack browser builds.

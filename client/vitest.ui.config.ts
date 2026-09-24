@@ -34,6 +34,7 @@ export default defineConfig({
       '@nw/shared/rechargeMilestone': path.resolve(__dirname, '../server/shared/src/rechargeMilestone.ts'),
       '@nw/shared/titles': path.resolve(__dirname, '../server/shared/src/titles.ts'),
       '@nw/shared/economy/iapTiers': path.resolve(__dirname, '../server/shared/src/economy/iapTiers.ts'),
+      '@nw/shared/economy/subscriptions': path.resolve(__dirname, '../server/shared/src/economy/subscriptions.ts'),
       // Browser-safe slice, same as webpack.config.js/vitest.config.ts — NOT the full
       // src/index.ts barrel, which re-exports jwt.ts (-> 'jsonwebtoken', a server-only
       // dep this client-side test run never installs). Every current bare '@nw/shared'

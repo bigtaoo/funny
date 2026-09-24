@@ -20,6 +20,7 @@
       "@nw/shared/rechargeMilestone": ["../server/shared/src/rechargeMilestone.ts"],
       "@nw/shared/titles": ["../server/shared/src/titles.ts"],
       "@nw/shared/economy/iapTiers": ["../server/shared/src/economy/iapTiers.ts"],
+      "@nw/shared/economy/subscriptions": ["../server/shared/src/economy/subscriptions.ts"],
       "@nw/shared": ["../server/shared/src/slg/index.ts"]
     }
   },
