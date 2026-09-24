@@ -674,6 +674,9 @@ OTA 管线**不需要 macOS runner**（无原生编译），`ubuntu-latest` 即�
 - [ ] 填 App 描述（三语）——文案已备齐（`store-assets-checklist §0.1` 短描述 + §0.1b 长描述），
       直接复制进 ASC 即可。⚠️ **英文副标题用 `Turn-based notebook strategy`**（§0.1 原稿
       `Turn-based strategy in a notebook` 是 33 字符，超 30 上限）
+      ⚠️ **2026-09-24 复核**：三语描述末尾都补了一行 EULA 链接（见 §0.1b 的 2026-09-24 补记）——
+      build 11 提审被 3.1.2 拒，理由正是 Description 里没有 Terms of Use 链接。重新贴描述进 ASC 后
+      直接点 Resubmit 即可，不用出新包
 - [x] **隐私标签** —— 2026-09-08 首发 6 个数据类型，**2026-09-23 补齐 `Purchases → Purchase History`
       与 `User Content → Other User Content` 两个真实收集项**，现共 8 项全部发布（代码依据与用途见
       [`store-assets-checklist §1.4b`](../product/release/store-assets-checklist.md)）。
@@ -735,6 +738,9 @@ OTA 管线**不需要 macOS runner**（无原生编译），`ubuntu-latest` 即�
       零购买面，门禁 `client/test/nativePaymentIsolation.test.ts`。此前支持 URL 只能拿隐私政策页顶着
 - [x] **提交审核**（**2026-09-23 完成**）——App Version 1.0（build CFBundleVersion=11，run `35864608992`，
       head `2fd328b47`）+ 全部 12 个 IAP/订阅商品，共 13 items 一次性提交，状态 Waiting for Review
+- [ ] **2026-09-24 被拒（3.1.2）**：Year Card / Monthly Card 订阅缺 EULA 链接（App Description 里没有）。
+      修法见上面「填 App 描述」条——三语描述已补 EULA 链接（`store-assets-checklist §0.1b`），
+      待贴回 ASC 并 Resubmit
 
 > **2026-09-07 第二轮（B 批）新增的验证缺口**，别当成已保障：
 > ① **Swift 在本机既不能编译也没有单元测试**。`client/test/iosStoreKit2.test.ts` 是**读文本的门禁**

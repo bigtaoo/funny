@@ -36,6 +36,12 @@
 > 写作口径：**功能陈述，不吹**。Apple 审核对"最好/第一/免费"一类措辞和与实际功能不符的描述会退回；
 > 抽卡一律写作「付费随机道具」并点明概率公示，绝不出现赌博/博彩类词汇（各渠道口径统一，见 §5）。
 > 长度控制在 ~800 字符以内：Play 上限 4000、App Store 4000，但商店只展示前三行，长了没人读。
+>
+> **2026-09-24 补 EULA 链接**：build 11 提审后被 Apple 3.1.2 拒（"does not include a functional link
+> to the Terms of Use (EULA) in the app metadata that appears on the app's App Store product page"）——
+> 三语描述里原来确实没有任何条款链接。用的是已有的自定义 `terms.html`（覆盖订阅/退款条款），不走
+> Apple 标准 EULA，所以修法是在 App Description 末尾加一行链接，不用去 ASC 的 License Agreement 字段
+> 另填一份自定义 EULA 全文。改 Description 不需要出新包，重新提交这条 metadata 即可。
 
 **中文**
 
@@ -51,6 +57,8 @@ Nivara 是一款画在方格纸上的实时策略对战游戏。金币自己回�
 · 养成：卡牌、皮肤、装备可收集；战力成长不改变 PvP 的对局规则
 
 内含付费随机道具，抽取概率在游戏内「概率」页公示。可完全免费游玩。
+
+使用条款（EULA）：https://nivara.gamestao.com/terms
 ```
 
 **English**
@@ -68,6 +76,8 @@ when to hold.
 · Collection — cards, skins and gear to collect; progression never changes the rules of a PvP match
 
 Contains paid random items; the draw rates are published in-game on the odds page. Free to play.
+
+Terms of Use (EULA): https://nivara.gamestao.com/terms
 ```
 
 **Deutsch**
@@ -86,6 +96,8 @@ ausgibst, welche Bahn du drückst und wann du hältst.
 
 Enthält kostenpflichtige Zufallsgegenstände; die Wahrscheinlichkeiten stehen im Spiel auf der
 Quoten-Seite. Kostenlos spielbar.
+
+Nutzungsbedingungen (EULA): https://nivara.gamestao.com/terms
 ```
 
 ### 0.2 关键词 / 标签（待各渠道适配）
