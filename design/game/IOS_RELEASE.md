@@ -455,6 +455,36 @@ Windows 上可做的验证仅限 `tsc --noEmit` + `webpack --env TARGET=mobile`�
   [`store-assets-checklist §1.2b`](../product/release/store-assets-checklist.md)。
 - **iPad 必测**：通用 App 审核会在 iPad 上跑，务必补 iPad 截图且 iPad 上无布局破裂。
 - **3.3.1 热更新边界**：若启用 OTA（§11），热更只能改 JS/资源、不得改变主要用途或新增站外支付，否则违规可下架。原生改动一律走二进制发布。
+- **3.1.2 自动续订订阅**（2026-09-24 被拒一次后补齐，两半都要有）：
+  1. **Metadata**：App Description 里必须有可点的 **Terms of Use (EULA)** 链接。ASC → App Information →
+     License Agreement 是 **Apple's Standard License Agreement**，所以链接指向 Apple 标准 EULA
+     `https://www.apple.com/legal/internet-services/itunes/dev/stdeula/`，另附 Privacy Policy 与一段订阅说明。
+     线上原文见 [`store-assets-checklist §0.1b`](../product/release/store-assets-checklist.md)（**ASC 只有英文一份本地化**）。
+  2. **App 内购买前**：订阅名、周期、价格、「自动续订」说明、EULA 与隐私政策两个可点链接，必须在唤起 StoreKit
+     付款框**之前**给到。见下方 §9.1。
+  build 11 那次是**自动预检**（"This is an automated message"），只查了第 1 条就退回了——人工审核会再查第 2 条，
+  所以两条是一起修、随 build 12 一起提交的。
+
+### 9.1 购买前的订阅说明框（3.1.2，2026-09-24）
+
+- **在哪一步弹**：`app/nav/shop/iap.ts` 的 `doBuySubscription`，**仅 `iapKind() === 'apple'`**，在
+  `platform.nativeIapPurchase()` 之前 `await requestSubscriptionDisclosure(...)`；点取消返回
+  `shop.rechargeCancelled`，StoreKit 不会被唤起、服务端不会被调。放在 nav 层而不是 ShopScene，是因为它必须紧贴
+  真正的付款调用——任何以后新加的购买入口只要走 `doBuySubscription` 就自动带上它。
+- **怎么挂**：`ui/dialogs/subscriptionDisclosure.ts` 是 sink（与 Feedback/Appeal 同一模式），`app.ts` 注册，
+  把 `SubscriptionDisclosureDialog` 挂到 `app.stage`（zIndex 9000）并 `input.holdForModal(true)`；
+  **没有 sink 时答「否」**——显示不了条款的购买不该继续。门禁 `client/test/appDialogInputGate.test.ts`。
+- **价格从哪来**：原生桥新增 `NWBilling.products(keys)` → StoreKit `Product.displayPrice`（本地化，如
+  `4,99 €`），`platform/iap.ts nativeDisplayPrices()` 做特性检测 + 4 秒超时。旧包（build ≤ 11）没有这个方法，
+  OTA 下发的新 JS 在旧包上回退显示 `server/shared/src/economy/subscriptions.ts` 里的 USD 价（`$4.99`/`$49.99`）；
+  付款框本身永远是 StoreKit 的真实价格。Swift 这半只有 CI 能编译，文本门禁见 `client/test/iosStoreKit2.test.ts`。
+- **EULA 链接**指向 Apple 标准 EULA（与 ASC 的 License Agreement 一致），隐私政策走 `legalUrl('/privacy')`
+  （原生壳下是绝对 https）。
+- **排版**：三种布局按顺序尝试——单栏按钮竖排 → （竖屏）单栏按钮并排 → （横屏）左右两栏；字号有可读性下限，
+  光靠整体缩小救不了 iPhone SE 竖屏和手机横屏。中英混排用本地的 `wrapMixed`（中文逐字断、英文整词不拆、
+  `。，` 不上行首；`Apple ID` / `App Store` 用不断行空格绑定）——PIXI 自带 wordWrap 只在空格处断，
+  会把「金币」或半句话甩到单独一行，加 `breakWords` 又会把 `Apple I|D` 劈开。
+  **headless UI 测试量不出这类问题**（每字符固定 7px），四种尺寸 × 三语是用 Playwright 在 dpr 3 下实拍核过的。
 
 ## 10. 支付渠道隔离（2026-09-03 审计 + 修复）
 
@@ -674,9 +704,9 @@ OTA 管线**不需要 macOS runner**（无原生编译），`ubuntu-latest` 即�
 - [ ] 填 App 描述（三语）——文案已备齐（`store-assets-checklist §0.1` 短描述 + §0.1b 长描述），
       直接复制进 ASC 即可。⚠️ **英文副标题用 `Turn-based notebook strategy`**（§0.1 原稿
       `Turn-based strategy in a notebook` 是 33 字符，超 30 上限）
-      ⚠️ **2026-09-24 复核**：三语描述末尾都补了一行 EULA 链接（见 §0.1b 的 2026-09-24 补记）——
-      build 11 提审被 3.1.2 拒，理由正是 Description 里没有 Terms of Use 链接。重新贴描述进 ASC 后
-      直接点 Resubmit 即可，不用出新包
+      ⚠️ **2026-09-24 更正**：ASC 只有 **English (U.S.)** 一份本地化，App Store 只用英文。build 11 被 3.1.2 拒
+      后，英文 Description 已在 ASC 改好并保存（加订阅段 + Apple 标准 EULA 链接 + 隐私政策，去掉段内硬换行），
+      线上原文见 `store-assets-checklist §0.1b`。本条剩下的只是中文/德文本地化要不要加（非必需）
 - [x] **隐私标签** —— 2026-09-08 首发 6 个数据类型，**2026-09-23 补齐 `Purchases → Purchase History`
       与 `User Content → Other User Content` 两个真实收集项**，现共 8 项全部发布（代码依据与用途见
       [`store-assets-checklist §1.4b`](../product/release/store-assets-checklist.md)）。
@@ -738,9 +768,10 @@ OTA 管线**不需要 macOS runner**（无原生编译），`ubuntu-latest` 即�
       零购买面，门禁 `client/test/nativePaymentIsolation.test.ts`。此前支持 URL 只能拿隐私政策页顶着
 - [x] **提交审核**（**2026-09-23 完成**）——App Version 1.0（build CFBundleVersion=11，run `35864608992`，
       head `2fd328b47`）+ 全部 12 个 IAP/订阅商品，共 13 items 一次性提交，状态 Waiting for Review
-- [ ] **2026-09-24 被拒（3.1.2）**：Year Card / Monthly Card 订阅缺 EULA 链接（App Description 里没有）。
-      修法见上面「填 App 描述」条——三语描述已补 EULA 链接（`store-assets-checklist §0.1b`），
-      待贴回 ASC 并 Resubmit
+- [ ] **2026-09-24 被拒（3.1.2，自动预检）**：Year Card / Monthly Card 订阅，App Description 里没有 EULA 链接。
+      修了两半（§9 的 3.1.2 条）：① ASC 英文 Description 已改（Apple 标准 EULA + 隐私政策 + 订阅说明）；
+      ② App 内购买前的订阅说明框（§9.1，含 Swift `products()` 取本地化价格）——**原生改动，要出 build 12**。
+      剩：跑 `release-ios.yml` 出 build 12 → ASC 版本页换成 build 12 → **Update Review** 重新提交
 
 > **2026-09-07 第二轮（B 批）新增的验证缺口**，别当成已保障：
 > ① **Swift 在本机既不能编译也没有单元测试**。`client/test/iosStoreKit2.test.ts` 是**读文本的门禁**
