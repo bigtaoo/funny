@@ -733,11 +733,14 @@ OTA 管线**不需要 macOS runner**（无原生编译），`ubuntu-latest` 即�
 - [x] **在 ASC 补建 `com.gamestao.nivara.coins.t099`（$0.99）与 `.coins.t199`（$1.99）两个消耗型商品**
       （2026-09-23 完成，见 §4.1 的更正）——两个商品随同其余 7 个 IAP/订阅一起随 App Version 1.0
       提交审核（13 items，2026-09-23，见下方「提交审核」条）
-- [ ] **部署 `NW_APPLE_PRE_RELEASE=true`（VPS `.env` + 重启 `server-commercial-1`）**——解除首发前
-      App Store Server API Production host 恒定 401 挡住沙盒发币的问题（见上方 2026-09-23 更正段），
-      代码在 `fix/apple-prerelease-401-fallback`，待合并部署。
+- [x] **部署 `NW_APPLE_PRE_RELEASE=true`（VPS `.env` + 重启 `server-commercial-1`）**——解除首发前
+      App Store Server API Production host 恒定 401 挡住沙盒发币的问题（见上方 2026-09-23 更正段）。
+      **2026-09-24 才真正上线**：PR #148 合并后变量一直没进 `.env`，build 12 测试 $4.99 付款成功不到账
+      （commercial 空消息 `internal request failed url=/internal/recharge/verify:`、meta `POST /iap/verify -> 400`）。
+      已写进凭据库 `secrets/funny/prod.yaml` → `push-env.py` 推上 VPS → 重建 commercial，容器内 `printenv` 核过；
+      未 finish 的那笔交易重开 App 后由 `Transaction.unfinished` 补发成功。
       **App 首次 Ready for Sale 后必须删掉这个变量**并重启，否则会掩盖上线后的真实鉴权故障
-- [ ] TestFlight 沙盒账号走通一次充值→发币对账（依赖上面的构建 + IAP 商品 + 上面这个 401 回退修复），
+- [ ] TestFlight 沙盒账号走通一次充值→发币对账（2026-09-24 build 12：充值已走通、到账正常；逐档全买一遍待补；依赖上面的构建 + IAP 商品 + 上面这个 401 回退修复），
       七个币档 + 四个非币商品各买一次。
       **这也是 §4.2b 那个 sandbox 验签回退修复（`13ba7b325`）的第一次真交易验证**——它此前只用
       Apple 的 TEST 通知验过，没有任何一笔真沙盒购买走过那条分支
