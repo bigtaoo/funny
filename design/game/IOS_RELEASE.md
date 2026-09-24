@@ -137,18 +137,28 @@ Price（见 `IAP_CREDENTIALS.md §1.1` 与那次事故记录），ASC 就建对�
 
 | Product ID | 金币 | 美元价 |
 |---|---|---|
+| `com.gamestao.nivara.coins.t099`  | 100   | $0.99 |
+| `com.gamestao.nivara.coins.t199`  | 210   | $1.99 |
 | `com.gamestao.nivara.coins.t499`  | 550   | $4.99 |
 | `com.gamestao.nivara.coins.t999`  | 1150  | $9.99 |
 | `com.gamestao.nivara.coins.t1999` | 2400  | $19.99 |
 | `com.gamestao.nivara.coins.t4999` | 6500  | $49.99 |
 | `com.gamestao.nivara.coins.t9999` | 13500 | $99.99 |
 
-金币数以 `server/shared/src/economy.ts` 的 `IAP_TIERS` 为唯一权威（此表随之为准）。
+金币数以 `server/shared/src/economy/iapTiers.ts` 的 `IAP_TIERS` 为唯一权威（此表随之为准）。
 
-> **为什么不是 7 个**：`IAP_TIERS` 里还有 `t099` / `t199` 两档，但商店的档位表是客户端硬编码的
-> `WEB_COIN_TIERS`（[`client/src/scenes/ShopScene/coins.ts`](../../client/src/scenes/ShopScene/coins.ts)），
-> $4.99 起共 5 档、所有平台共用，这两档**在 App 内没有任何入口**。ASC 里建了也是触达不到的商品，Apple 不会放行。
-> 要上这两档就先给客户端加入口，那是另一件事。
+> **⚠️ 更正（2026-09-23）：这是 7 个，不是 5 个。** 此前这里写着"为什么不是 7 个"，说 `t099`/`t199`
+> 在 App 内没有入口——**那条推理是错的，把 web(Paddle) 的限制错当成了全平台限制**。真实原因只是 Paddle
+> 按笔收取的固定手续费在 $0.99/$1.99 这个量级不划算（`IapTierDef.mobileOnly`，
+> [`server/shared/src/economy/iapTiers.ts`](../../server/shared/src/economy/iapTiers.ts) 那句注释一直
+> 写着"iOS/Android: t099 / t199 also available"），iOS/Android 走的是店内固定抽成、跟档位大小无关，
+> 这两档在原生端完全划算。客户端过去把这个 Paddle-only 的限制错误地实现成了全平台共用的硬编码列表
+> （`ShopScene/coins.ts` 的 `WEB_COIN_TIERS`），**已修复**：现在从 `IAP_TIERS_LIST` 派生，
+> 原生（`includeMobileOnlyCoinTiers`，由 `platform.iapKind() === 'apple' | 'google'` 决定）显示全部 7 档，
+> web/Paddle 仍只显示 5 档。**ASC 侧需要新建 `com.gamestao.nivara.coins.t099`（$0.99）与
+> `.coins.t199`（$1.99）两个消耗型商品**——建法同其余 5 档（§4.0 第 2 步），建之前这两个 Product ID
+> 在 Apple 那边不存在，点击会立即失败（`invalid_product`，不会拉起支付面板），这正是 2026-09-23
+> 测试时看到的现象——那次测的是 `starter_draw`，跟这次修复无关，但同一症状。
 
 > **未决（不阻塞提审）**：`WEB_COIN_TIERS` 把价格写死成 `$4.99` 字样，而 App Store 按 storefront 本地化定价
 > （德区是含税欧元）。正解是从 `SKProduct.priceLocale` 回读真实价再显示，要动原生桥，等首版跑通再做。
@@ -260,11 +270,17 @@ B 批上了 StoreKit 2 + `appAccountToken` 之后**依然保留**，而且多了
 
 **当前进度（2026-09-07）**：ASC 里 9 个商品已建齐（5 消耗型 + 2 非消耗型 + 2 自动续订订阅），状态均为
 「准备提交」；VPS 已设 `NW_IAP_BUNDLE=com.gamestao.nivara` 并透传到容器（`printenv` 已确认）。
+⚠️ **2026-09-23 这个数变成 11**：客户端修复了 t099/t199 在原生端的 UI 入口（见 §4.1 的更正），
+两个新消耗型商品已在 ASC 补建，与其余 9 个一起随 App Version 1.0（CFBundleVersion=11）一次性
+**提交审核（13 items，2026-09-23，状态 Waiting for Review）**，不再是「准备提交」。
 **两项外部动作都已完成（2026-09-07 当天）**：① In-App Purchase Key 已生成、四个变量已推到 VPS 并在容器里
 实测过（§12）；② ASC 的通知 URL 已配成 `https://api.gamestao.com/api/iap/apple/notifications`
 ——**注意那个 `/api` 前缀**，Caddy 只经 `handle_path /api/*` 暴露 metaserver，裸路径会被兜底规则接走回 200，
 而 200 对 Apple 就是「投递成功」，通知从此静默丢失。共享密钥 `NW_APPLE_PASSWORD` 已作废并删除（§4.2）。
 **剩下的是真机沙盒**：充值对账 + 自动续订演练（§12）。
+
+⚠️ **2026-09-23 沙盒首单实测发现并修复**：`invalid_product`/发币失败那个长期未确认的假说被证实是**另一件事**——真正原因是 Apple App Store Server API 的 Production host 在 App **从未发布过正式版本前会对所有请求返回裸 401**（Apple 开发者论坛证实是故意行为，不是我们的配置问题；Paid Apps 协议/银行/税表当时已全部 Active，排除了那个方向）。`appleServerApi.ts` 的环境回退逻辑原本只在"查无此单"时才重试 Sandbox，401 会直接抛错、从不触达 Sandbox——所以哪怕沙盒测试者的密钥/凭据完全正确，验证请求也在第一跳就失败，从未发过币。
+修法：新增 `NW_APPLE_PRE_RELEASE=true` 这个**临时性**运维开关（`fix/apple-prerelease-401-fallback` 分支），只在开着的时候把 Production 401 也纳入重试 Sandbox 的条件；默认关闭以保持"401 必须响亮失败"这条安全设计不变（真实密钥失效不能被静默读成"没这笔单"）。**App 首个版本 Ready for Sale 后必须删掉这个变量**（VPS `.env` + 下方 §12 清单项），否则会掩盖上线后的真实鉴权故障。
 
 > 客户端请求的 Product ID 由 `AppDelegate.swift` 自动派生自 App 的 Bundle ID（`<bundleId>.coins.<tierId>`），与上表一致，无需额外配置。
 
@@ -439,6 +455,36 @@ Windows 上可做的验证仅限 `tsc --noEmit` + `webpack --env TARGET=mobile`�
   [`store-assets-checklist §1.2b`](../product/release/store-assets-checklist.md)。
 - **iPad 必测**：通用 App 审核会在 iPad 上跑，务必补 iPad 截图且 iPad 上无布局破裂。
 - **3.3.1 热更新边界**：若启用 OTA（§11），热更只能改 JS/资源、不得改变主要用途或新增站外支付，否则违规可下架。原生改动一律走二进制发布。
+- **3.1.2 自动续订订阅**（2026-09-24 被拒一次后补齐，两半都要有）：
+  1. **Metadata**：App Description 里必须有可点的 **Terms of Use (EULA)** 链接。ASC → App Information →
+     License Agreement 是 **Apple's Standard License Agreement**，所以链接指向 Apple 标准 EULA
+     `https://www.apple.com/legal/internet-services/itunes/dev/stdeula/`，另附 Privacy Policy 与一段订阅说明。
+     线上原文见 [`store-assets-checklist §0.1b`](../product/release/store-assets-checklist.md)（**ASC 只有英文一份本地化**）。
+  2. **App 内购买前**：订阅名、周期、价格、「自动续订」说明、EULA 与隐私政策两个可点链接，必须在唤起 StoreKit
+     付款框**之前**给到。见下方 §9.1。
+  build 11 那次是**自动预检**（"This is an automated message"），只查了第 1 条就退回了——人工审核会再查第 2 条，
+  所以两条是一起修、随 build 12 一起提交的。
+
+### 9.1 购买前的订阅说明框（3.1.2，2026-09-24）
+
+- **在哪一步弹**：`app/nav/shop/iap.ts` 的 `doBuySubscription`，**仅 `iapKind() === 'apple'`**，在
+  `platform.nativeIapPurchase()` 之前 `await requestSubscriptionDisclosure(...)`；点取消返回
+  `shop.rechargeCancelled`，StoreKit 不会被唤起、服务端不会被调。放在 nav 层而不是 ShopScene，是因为它必须紧贴
+  真正的付款调用——任何以后新加的购买入口只要走 `doBuySubscription` 就自动带上它。
+- **怎么挂**：`ui/dialogs/subscriptionDisclosure.ts` 是 sink（与 Feedback/Appeal 同一模式），`app.ts` 注册，
+  把 `SubscriptionDisclosureDialog` 挂到 `app.stage`（zIndex 9000）并 `input.holdForModal(true)`；
+  **没有 sink 时答「否」**——显示不了条款的购买不该继续。门禁 `client/test/appDialogInputGate.test.ts`。
+- **价格从哪来**：原生桥新增 `NWBilling.products(keys)` → StoreKit `Product.displayPrice`（本地化，如
+  `4,99 €`），`platform/iap.ts nativeDisplayPrices()` 做特性检测 + 4 秒超时。旧包（build ≤ 11）没有这个方法，
+  OTA 下发的新 JS 在旧包上回退显示 `server/shared/src/economy/subscriptions.ts` 里的 USD 价（`$4.99`/`$49.99`）；
+  付款框本身永远是 StoreKit 的真实价格。Swift 这半只有 CI 能编译，文本门禁见 `client/test/iosStoreKit2.test.ts`。
+- **EULA 链接**指向 Apple 标准 EULA（与 ASC 的 License Agreement 一致），隐私政策走 `legalUrl('/privacy')`
+  （原生壳下是绝对 https）。
+- **排版**：三种布局按顺序尝试——单栏按钮竖排 → （竖屏）单栏按钮并排 → （横屏）左右两栏；字号有可读性下限，
+  光靠整体缩小救不了 iPhone SE 竖屏和手机横屏。中英混排用本地的 `wrapMixed`（中文逐字断、英文整词不拆、
+  `。，` 不上行首；`Apple ID` / `App Store` 用不断行空格绑定）——PIXI 自带 wordWrap 只在空格处断，
+  会把「金币」或半句话甩到单独一行，加 `breakWords` 又会把 `Apple I|D` 劈开。
+  **headless UI 测试量不出这类问题**（每字符固定 7px），四种尺寸 × 三语是用 Playwright 在 dpr 3 下实拍核过的。
 
 ## 10. 支付渠道隔离（2026-09-03 审计 + 修复）
 
@@ -655,13 +701,16 @@ OTA 管线**不需要 macOS runner**（无原生编译），`ubuntu-latest` 即�
       `CapgoCapacitorUpdater 6.50.1`，与 committed lock 一致）。**剩下的是真机验收**：等 ASC 处理完进
       TestFlight，装 build 9，按 §5.1 看设置页底部两行读数（判定词 `env-reported`、`inner` = 390x844、
       `env` = 47/0/34/0）。没在设备上看过就不算完，`'never'` 本身在本机无法验证
-- [ ] 填隐私标签 + App 描述（三语）——文案已备齐（`store-assets-checklist §0.1` 短描述 + §0.1b 长描述），
+- [ ] 填 App 描述（三语）——文案已备齐（`store-assets-checklist §0.1` 短描述 + §0.1b 长描述），
       直接复制进 ASC 即可。⚠️ **英文副标题用 `Turn-based notebook strategy`**（§0.1 原稿
       `Turn-based strategy in a notebook` 是 33 字符，超 30 上限）
-  - **隐私标签 2026-09-08 已填并发布，但只填了 6 个数据类型**：还差 `Purchases → Purchase History`
-    与 `User Content → Other User Content` 两个真实收集项（代码依据与该填的用途见
-    [`store-assets-checklist §1.4b`](../product/release/store-assets-checklist.md)），用户主动延后。
-    Privacy Policy URL 当天补填（发布时是空的，而它是必填项）
+      ⚠️ **2026-09-24 更正**：ASC 只有 **English (U.S.)** 一份本地化，App Store 只用英文。build 11 被 3.1.2 拒
+      后，英文 Description 已在 ASC 改好并保存（加订阅段 + Apple 标准 EULA 链接 + 隐私政策，去掉段内硬换行），
+      线上原文见 `store-assets-checklist §0.1b`。本条剩下的只是中文/德文本地化要不要加（非必需）
+- [x] **隐私标签** —— 2026-09-08 首发 6 个数据类型，**2026-09-23 补齐 `Purchases → Purchase History`
+      与 `User Content → Other User Content` 两个真实收集项**，现共 8 项全部发布（代码依据与用途见
+      [`store-assets-checklist §1.4b`](../product/release/store-assets-checklist.md)）。
+      Privacy Policy URL 当天补填（发布时是空的，而它是必填项）
 - [x] **填年龄分级问卷**（Apple 自有问卷）—— **2026-09-08 填完，算出 13+**，Override 留
       `Not Applicable`、Age Suitability URL 留空（理由见 store-assets §1.3）。答案已定在
       [`store-assets-checklist §1.3`](../product/release/store-assets-checklist.md)：模拟赌博/随机付费道具
@@ -681,7 +730,15 @@ OTA 管线**不需要 macOS runner**（无原生编译），`ubuntu-latest` 即�
       所以在这次构建处理完之前，TestFlight 上不存在任何可用于沙盒验证的二进制。
       顺带满足 §11.6 的「首个带 Capgo 插件的壳走一次二进制发布」。
       ⚠️ 历史上从没打过 `ios-v*` tag（`git tag -l 'ios-v*'` 为空），一直是手动 dispatch
-- [ ] TestFlight 沙盒账号走通一次充值→发币对账（依赖上面的构建 + IAP 商品），五个币档 + 四个非币商品各买一次。
+- [x] **在 ASC 补建 `com.gamestao.nivara.coins.t099`（$0.99）与 `.coins.t199`（$1.99）两个消耗型商品**
+      （2026-09-23 完成，见 §4.1 的更正）——两个商品随同其余 7 个 IAP/订阅一起随 App Version 1.0
+      提交审核（13 items，2026-09-23，见下方「提交审核」条）
+- [ ] **部署 `NW_APPLE_PRE_RELEASE=true`（VPS `.env` + 重启 `server-commercial-1`）**——解除首发前
+      App Store Server API Production host 恒定 401 挡住沙盒发币的问题（见上方 2026-09-23 更正段），
+      代码在 `fix/apple-prerelease-401-fallback`，待合并部署。
+      **App 首次 Ready for Sale 后必须删掉这个变量**并重启，否则会掩盖上线后的真实鉴权故障
+- [ ] TestFlight 沙盒账号走通一次充值→发币对账（依赖上面的构建 + IAP 商品 + 上面这个 401 回退修复），
+      七个币档 + 四个非币商品各买一次。
       **这也是 §4.2b 那个 sandbox 验签回退修复（`13ba7b325`）的第一次真交易验证**——它此前只用
       Apple 的 TEST 通知验过，没有任何一笔真沙盒购买走过那条分支
 - [ ] **沙盒验一次自动续订**（§4.1b）：沙盒订阅按加速时钟续期（1 个月 ≈ 5 分钟），买月卡 → 杀进程 →
@@ -709,7 +766,12 @@ OTA 管线**不需要 macOS runner**（无原生编译），`ubuntu-latest` 即�
       [`store-assets-checklist §1.2b`](../product/release/store-assets-checklist.md)
 - [x] **支持 URL / 营销 URL 各建一页**（2026-09-08）——`/support` + `/about`（`client/public/web/`），
       零购买面，门禁 `client/test/nativePaymentIsolation.test.ts`。此前支持 URL 只能拿隐私政策页顶着
-- [ ] 提交审核（**2026-07-21 确认：尚未提审**）
+- [x] **提交审核**（**2026-09-23 完成**）——App Version 1.0（build CFBundleVersion=11，run `35864608992`，
+      head `2fd328b47`）+ 全部 12 个 IAP/订阅商品，共 13 items 一次性提交，状态 Waiting for Review
+- [ ] **2026-09-24 被拒（3.1.2，自动预检）**：Year Card / Monthly Card 订阅，App Description 里没有 EULA 链接。
+      修了两半（§9 的 3.1.2 条）：① ASC 英文 Description 已改（Apple 标准 EULA + 隐私政策 + 订阅说明）；
+      ② App 内购买前的订阅说明框（§9.1，含 Swift `products()` 取本地化价格）——**原生改动，要出 build 12**。
+      剩：跑 `release-ios.yml` 出 build 12 → ASC 版本页换成 build 12 → **Update Review** 重新提交
 
 > **2026-09-07 第二轮（B 批）新增的验证缺口**，别当成已保障：
 > ① **Swift 在本机既不能编译也没有单元测试**。`client/test/iosStoreKit2.test.ts` 是**读文本的门禁**

@@ -25,8 +25,8 @@
 // bridge-or-null), never on the absence of a throw.
 //
 // Run with: npm test
-import { describe, it, expect, afterEach } from 'vitest';
-import { getNativeBilling, type NwBillingBridge } from '../src/platform/iap';
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import { getNativeBilling, nativeDisplayPrices, type NwBillingBridge } from '../src/platform/iap';
 import { getNativeAds, type NwAdsBridge } from '../src/platform/nativeAds';
 import { requestPlatformHeader } from '../src/net/ApiClient/core';
 
@@ -116,6 +116,67 @@ describe('getNativeBilling — the shape check is the whole feature', () => {
     expect(getNativeBilling()).toBeNull();
     setBilling('NWBilling');
     expect(getNativeBilling()).toBeNull();
+  });
+});
+
+// The subscription disclosure (App Review 3.1.2) shows this price on the terms screen before the
+// StoreKit sheet opens; a wrong or thrown result must degrade to "no price" (caller falls back to
+// its own USD label) rather than break the purchase flow.
+describe('nativeDisplayPrices — same silent-failure shape as the bridge readers above', () => {
+  it('no bridge at all → {}', async () => {
+    expect(await nativeDisplayPrices(['monthly_card'])).toEqual({});
+  });
+
+  it('a bridge with no products() (older binary) → {}', async () => {
+    setBilling(goodBilling('apple'));
+    expect(await nativeDisplayPrices(['monthly_card'])).toEqual({});
+  });
+
+  it('keys the result by productKey, dropping entries for keys not answered', async () => {
+    setBilling({
+      ...goodBilling('apple'),
+      products: async (keys: string[]) => keys
+        .filter((k) => k === 'monthly_card')
+        .map((k) => ({ productKey: k, displayPrice: '4,99 €' })),
+    });
+    expect(await nativeDisplayPrices(['monthly_card', 'year_card'])).toEqual({ monthly_card: '4,99 €' });
+  });
+
+  it('drops malformed entries (missing/wrong-typed productKey or displayPrice, or an empty price)', async () => {
+    setBilling({
+      ...goodBilling('apple'),
+      products: async () => [
+        { productKey: 'monthly_card', displayPrice: '' },
+        { productKey: 'year_card' },
+        { displayPrice: '9,99 €' },
+        { productKey: 42, displayPrice: '9,99 €' },
+        { productKey: 't499', displayPrice: 499 },
+        null,
+      ],
+    });
+    expect(await nativeDisplayPrices(['monthly_card', 'year_card', 't499'])).toEqual({});
+  });
+
+  it('a non-array reply → {}', async () => {
+    setBilling({ ...goodBilling('apple'), products: async () => ({ not: 'an array' }) });
+    expect(await nativeDisplayPrices(['monthly_card'])).toEqual({});
+  });
+
+  it('products() throwing → {}, not a rejected promise', async () => {
+    setBilling({ ...goodBilling('apple'), products: async () => { throw new Error('native crashed'); } });
+    await expect(nativeDisplayPrices(['monthly_card'])).resolves.toEqual({});
+  });
+
+  it('products() that never resolves → {} once timeoutMs elapses, not a hang', async () => {
+    vi.useFakeTimers();
+    try {
+      setBilling({ ...goodBilling('apple'), products: () => new Promise(() => {}) });
+      const pending = nativeDisplayPrices(['monthly_card'], 4000);
+      await vi.advanceTimersByTimeAsync(4000);
+      expect(await pending).toEqual({});
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

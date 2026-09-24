@@ -163,6 +163,7 @@ export const zh = {
   'result.backToMap': '返回地图',
   'result.watchReplay': '观看回放',
   'result.eloDelta': 'ELO {delta} → {after}　段位 {rank}',
+  'result.tomorrowReward': '明天回来签到领第 {day} 天奖励',
   'rank.unranked': '未定级',
   'rank.bronze': '青铜',
   'rank.silver': '白银',
@@ -354,6 +355,7 @@ export const zh = {
   'auth.title': '登录 {game}',
   'auth.login': '登录',
   'auth.register': '注册',
+  'auth.signInCrazyGames': '用 CrazyGames 账号登录',
   'auth.loginIdLabel': '邮箱 / 用户名',
   'auth.passwordLabel': '密码',
   'auth.confirmPasswordLabel': '确认密码',
@@ -422,6 +424,17 @@ export const zh = {
   // ── Monetization deals (GACHA_DESIGN §5–§6) ──
   'shop.monthlyCard': '月卡',
   'shop.yearCard': '年卡',
+  'subDisclosure.kind': '自动续期订阅',
+  'subDisclosure.length': '周期：{period}',
+  'subDisclosure.periodMonth': '1 个月',
+  'subDisclosure.periodYear': '1 年',
+  'subDisclosure.priceMonthly': '价格：{price} / 月',
+  'subDisclosure.priceYearly': '价格：{price} / 年',
+  'subDisclosure.includes': '包含：立得 {now} 金币\n生效期间每天可领 {daily} 金币',
+  // "Apple ID" / "App Store": no-break space keeps each name on one line (SubscriptionDisclosureDialog.wrapMixed).
+  'subDisclosure.terms': '确认后从你的 Apple ID 扣费。除非在周期结束前至少 24 小时取消，否则自动续期。可在 App Store 账户设置中管理或取消。',
+  'subDisclosure.eula': '使用条款（EULA）',
+  'subDisclosure.subscribe': '订阅',
   'shop.cardActive': '订阅卡生效中，用完后再购买',
   'shop.monthlyPending': '支付成功，卡片稍后生效',
   'shop.save': '省 {amount}',
@@ -1565,6 +1578,12 @@ export const zh = {
   'ageGate.confirmBack': '返回修改',
   'ageGate.blockedTitle': '暂时无法进入',
   'ageGate.blockedBody': '本游戏面向{min}岁及以上玩家。如果你填错了出生年份，请联系 support@gamestao.com。',
+
+  // Merged age-gate + consent screen (RETENTION_LAUNCH_PLAN.md §3.1) — only used when both are
+  // still unanswered; the standalone ageGate.*/consent.* copy above covers every other case.
+  'entryGate.title': '开始之前',
+  'entryGate.body': '请选择你的出生年份，并接受我们的隐私政策与用户协议以继续——我们会用匿名游玩数据改进游戏。',
+  'entryGate.bodyChoice': '请选择你的出生年份，并阅读同意我们的隐私政策与用户协议。你可以另外选择是否让我们收集匿名游玩数据——选「仅必要」同样可以正常游戏，随时可在设置里改。',
 
   // ── 登录断线重连提示（重新登录后恢复未完成的对局） ───────────────────────────
   'reconnect.title': '未完成的对局',

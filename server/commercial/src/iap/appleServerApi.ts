@@ -18,6 +18,15 @@
 // exist in production. So each call tries production first and retries sandbox on a "not found"
 // error; notification verification does the same on an environment mismatch. A TestFlight/sandbox
 // tester and a real customer therefore both work without any deployment flag to get wrong.
+//
+// ── The one deployment flag that DOES exist, and why ──
+// Before an app's first version is Ready for Sale, Apple's PRODUCTION host 401s every App Store Server
+// API request outright (confirmed 2026-09-23: the same key/JWT gets a clean SANDBOX response but a
+// bare, bodyless PRODUCTION 401 — this app had never shipped). Apple's own developer forums document
+// this as intentional, not a config error. `NW_APPLE_PRE_RELEASE=true` widens the retry to cover it —
+// see `isUnauthenticated`. Delete the env var (VPS `.env` + IOS_RELEASE.md §12) once the first version
+// ships; leaving it on past launch would let a real post-launch auth failure (expired key) silently
+// read as "no such transaction" instead of failing loud.
 import {
   APIException,
   APIError,
@@ -100,6 +109,8 @@ interface EnvPair<T> {
 export interface AppleServerApiDeps {
   clients: EnvPair<AppleApiClientLike>;
   verifiers: EnvPair<AppleVerifierLike>;
+  /** See `isUnauthenticated`'s doc comment. Defaults to false (the steady-state, post-launch posture). */
+  preRelease?: boolean;
 }
 
 function decodedPayloadToTransaction(p: JWSTransactionDecodedPayload): AppleTransaction | null {
@@ -122,6 +133,24 @@ function isNotFound(e: unknown): boolean {
     e.apiError === APIError.TRANSACTION_ID_NOT_FOUND ||
     e.apiError === APIError.ORIGINAL_TRANSACTION_ID_NOT_FOUND
   );
+}
+
+/**
+ * True for a bare, bodyless 401 from Apple's PRODUCTION host specifically — the documented behaviour
+ * of the App Store Server API for an app that has never had a version released (confirmed 2026-09-23
+ * against a real sandbox purchase: the identical key/JWT gets a clean SANDBOX response but a bare
+ * PRODUCTION 401 with no `apiError`/`errorMessage` body, before this app's first release). Apple's own
+ * developer forums document this as intentional: production access to the App Store Server API is
+ * gated on the app having shipped at least once — see IOS_RELEASE.md §12's note on `NW_APPLE_PRE_RELEASE`.
+ *
+ * Deliberately NOT folded into `isNotFound`/the default `shouldRetry`: after launch, a 401 usually means
+ * a real problem (expired/revoked In-App Purchase Key), and that must keep failing loud (see the
+ * "rethrows unauthenticated" test) rather than being silently read as "no such transaction". Only used
+ * when `preRelease` is explicitly on, which `createAppleServerApi` gates on `NW_APPLE_PRE_RELEASE=true`
+ * — an operator flag to delete once this app's first version is Ready for Sale.
+ */
+function isUnauthenticated(e: unknown): boolean {
+  return e instanceof APIException && e.httpStatusCode === 401;
 }
 
 /**
@@ -149,27 +178,38 @@ function isWrongEnvironment(e: unknown): boolean {
  * Run against production, falling back to sandbox when Apple reports the id as unknown there.
  * Production is tried first on purpose: in production that is the only call made, and sandbox ids
  * (TestFlight, sandbox testers) are the rarer case that pays the second round trip.
+ *
+ * `shouldTrySandbox` only gates whether the SECOND call happens at all — it is deliberately NOT reused
+ * to decide whether that second call's own failure gets swallowed to null. Those are different
+ * questions: `isUnauthenticated` (pre-release 401) is true of production for a reason that has nothing
+ * to do with sandbox, so a 401 sandbox ALSO reports is never explained by it and must keep rethrowing —
+ * same asymmetry the "rethrows a real failure the SANDBOX host reports" test already covers for
+ * `isNotFound`. The sandbox-side swallow therefore always uses `isNotFound`, never the passed-in
+ * predicate.
  */
 async function withEnvFallback<T>(
   pair: EnvPair<AppleApiClientLike>,
   run: (client: AppleApiClientLike) => Promise<T>,
-  shouldRetry: (e: unknown) => boolean = isNotFound,
+  shouldTrySandbox: (e: unknown) => boolean = isNotFound,
 ): Promise<T | null> {
   try {
     return await run(pair.production);
   } catch (e) {
-    if (!shouldRetry(e)) throw e;
+    if (!shouldTrySandbox(e)) throw e;
   }
   try {
     return await run(pair.sandbox);
   } catch (e) {
-    if (shouldRetry(e)) return null;
+    if (isNotFound(e)) return null;
     throw e;
   }
 }
 
 export function makeAppleServerApi(deps: AppleServerApiDeps): AppleServerApi {
-  const { clients, verifiers } = deps;
+  const { clients, verifiers, preRelease = false } = deps;
+  // See `isUnauthenticated`'s doc comment — only widened pre-release, so the post-launch "401 must
+  // fail loud" guarantee (rethrows-unauthenticated test) is untouched once this flag is off.
+  const shouldRetry = (e: unknown): boolean => isNotFound(e) || (preRelease && isUnauthenticated(e));
 
   /** Decode a signed transaction with whichever verifier accepts its environment. */
   async function decodeTransaction(signed: string): Promise<AppleTransaction | null> {
@@ -185,7 +225,7 @@ export function makeAppleServerApi(deps: AppleServerApiDeps): AppleServerApi {
 
   return {
     async verifyTransaction(transactionId) {
-      const resp = await withEnvFallback(clients, (c) => c.getTransactionInfo(transactionId));
+      const resp = await withEnvFallback(clients, (c) => c.getTransactionInfo(transactionId), shouldRetry);
       if (!resp?.signedTransactionInfo) return null;
       return decodeTransaction(resp.signedTransactionInfo);
     },
@@ -195,8 +235,10 @@ export function makeAppleServerApi(deps: AppleServerApiDeps): AppleServerApi {
       // notification may have missed, and a subscription that is 20 renewals behind is not a case worth
       // paging for — the older periods were already granted long ago, and every grant is idempotent
       // anyway. Asking for ASCENDING would fight that: the newest transactions are the interesting ones.
-      const resp = await withEnvFallback(clients, (c) =>
-        c.getTransactionHistory(anyTransactionId, null, {}),
+      const resp = await withEnvFallback(
+        clients,
+        (c) => c.getTransactionHistory(anyTransactionId, null, {}),
+        shouldRetry,
       );
       const signed = resp?.signedTransactions ?? [];
       const out: AppleTransaction[] = [];
@@ -237,7 +279,7 @@ export function makeAppleServerApi(deps: AppleServerApiDeps): AppleServerApi {
     },
 
     async sendConsumption(transactionId, request) {
-      await withEnvFallback(clients, (c) => c.sendConsumptionInformation(transactionId, request));
+      await withEnvFallback(clients, (c) => c.sendConsumptionInformation(transactionId, request), shouldRetry);
     },
   };
 }
@@ -282,6 +324,9 @@ export function createAppleServerApi(): AppleServerApi | null {
       production: verifier(Environment.PRODUCTION, appAppleId),
       sandbox: verifier(Environment.SANDBOX, undefined),
     },
+    // Operator flag, DELETE once this app's first version is Ready for Sale (IOS_RELEASE.md §12) — see
+    // `isUnauthenticated`'s doc comment for why this can't just be always-on.
+    preRelease: process.env.NW_APPLE_PRE_RELEASE === 'true',
   });
 }
 

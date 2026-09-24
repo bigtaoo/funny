@@ -17,6 +17,21 @@ import { LocalSaveStore } from '../src/game/meta/SaveStore';
 import { makeNewSave } from '../src/game/meta/SaveData';
 import { TOKEN_KEY } from '../src/app/appConstants';
 import { HeadlessAppViews } from './harness/HeadlessAppViews';
+import { setSubscriptionDisclosureSink, type SubscriptionDisclosureInfo } from '../src/ui/dialogs/subscriptionDisclosure';
+
+// iOS shows the subscription disclosure before the StoreKit sheet (App Review 3.1.2). Accepted by
+// default so the purchase-path tests below run; the disclosure's own cases override `disclosureAnswer`.
+let disclosures: SubscriptionDisclosureInfo[] = [];
+let disclosureAnswer = true;
+beforeEach(() => {
+  disclosures = [];
+  disclosureAnswer = true;
+  setSubscriptionDisclosureSink((info, answer) => { disclosures.push(info); answer(disclosureAnswer); });
+});
+afterEach(() => {
+  setSubscriptionDisclosureSink(null);
+  delete (globalThis as { NWBilling?: unknown }).NWBilling;
+});
 
 class MemStorage implements IStorage {
   private map = new Map<string, string>();
@@ -154,6 +169,49 @@ describe('createShopNav — buyMonthlyCard/buyYearCard', () => {
       const res = await views.shop!.buyMonthlyCard!();
       expect(res).toEqual({ ok: false, key: 'shop.error' });
       expect(serverCalled).toBe(false);
+    });
+  });
+
+  describe('apple: subscription disclosure before the StoreKit sheet (App Review 3.1.2)', () => {
+    it('declining the disclosure never opens the store sheet and never calls the server', async () => {
+      disclosureAnswer = false;
+      let nativeCalled = false;
+      let serverCalled = false;
+      const { views } = buildShopNav({
+        iapKind: 'apple',
+        nativeIapPurchase: async () => { nativeCalled = true; return { receipt: 'r' }; },
+        yearCardBuy: async () => { serverCalled = true; return { save: makeNewSave() }; },
+      });
+      const res = await views.shop!.buyYearCard!();
+      expect(res).toEqual({ ok: false, key: 'shop.rechargeCancelled' });
+      expect(disclosures).toEqual([{ product: 'year_card', price: '$49.99' }]);
+      expect(nativeCalled).toBe(false);
+      expect(serverCalled).toBe(false);
+    });
+
+    it('shows the storefront-localized price when the native bridge provides one', async () => {
+      (globalThis as { NWBilling?: unknown }).NWBilling = {
+        kind: 'apple',
+        purchase: async () => ({ receipt: 'r' }),
+        products: async (keys: string[]) => keys.map((k) => ({ productKey: k, displayPrice: k === 'monthly_card' ? '4,99 €' : '?' })),
+      };
+      const { views } = buildShopNav({ iapKind: 'apple' });
+      await views.shop!.buyMonthlyCard!();
+      expect(disclosures).toEqual([{ product: 'monthly_card', price: '4,99 €' }]);
+    });
+
+    it('falls back to the USD label when the bridge has no price lookup (older binary)', async () => {
+      (globalThis as { NWBilling?: unknown }).NWBilling = { kind: 'apple', purchase: async () => ({ receipt: 'r' }) };
+      const { views } = buildShopNav({ iapKind: 'apple' });
+      await views.shop!.buyMonthlyCard!();
+      expect(disclosures).toEqual([{ product: 'monthly_card', price: '$4.99' }]);
+    });
+
+    it('google does not show the Apple disclosure', async () => {
+      const { views } = buildShopNav({ iapKind: 'google' });
+      const res = await views.shop!.buyMonthlyCard!();
+      expect(res.ok).toBe(true);
+      expect(disclosures).toEqual([]);
     });
   });
 

@@ -32,6 +32,7 @@ vi.mock('../src/platform/iap', () => ({
   getNativeBilling: () => null,
   getNativeReceiptReader: () => null,
   getNativePendingReader: () => null,
+  nativeDisplayPrices: async () => ({}),
 }));
 
 import { createShopNav } from '../src/app/nav/shop';
@@ -45,6 +46,7 @@ import { makeNewSave, type SaveData } from '../src/game/meta/SaveData';
 import { TOKEN_KEY } from '../src/app/appConstants';
 import { BUSY_TIMEOUT_MS } from '../src/ui/busyTracker';
 import { HeadlessAppViews } from './harness/HeadlessAppViews';
+import { setSubscriptionDisclosureSink } from '../src/ui/dialogs/subscriptionDisclosure';
 
 class MemStorage implements IStorage {
   private map = new Map<string, string>();
@@ -147,8 +149,12 @@ function buildShop(opts: HarnessOpts) {
 /** Exhaust pollForCoinIncrease/pollForStarterGrant's delays: [1000, 1500, 2000, 2500, 3000]. */
 const ALL_POLL_DELAYS = 1000 + 1500 + 2000 + 2500 + 3000 + 1000;
 
-beforeEach(() => { finishNativeTransaction.mockReset(); });
-afterEach(() => { vi.useRealTimers(); });
+// The iOS subscription disclosure is covered in shopNav-buySubscription.test.ts; here the player accepts it.
+beforeEach(() => {
+  finishNativeTransaction.mockReset();
+  setSubscriptionDisclosureSink((_info, answer) => answer(true));
+});
+afterEach(() => { vi.useRealTimers(); setSubscriptionDisclosureSink(null); });
 
 describe('rechargeCoins (doRechargeCoins) — native', () => {
   it('purchases, verifies the receipt, then adopts the coins the server reports', async () => {

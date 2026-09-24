@@ -9,8 +9,10 @@ import { withTimeout, TimeoutError } from '../../../ui/busyTracker';
 import type { AppCtx } from '../../appCtx';
 import { log } from '../../appConstants';
 import { scheduleSubscriptionReminder } from '../../../platform/localReminders';
-import { finishNativeTransaction } from '../../../platform/iap';
+import { finishNativeTransaction, nativeDisplayPrices } from '../../../platform/iap';
 import type { SaveData } from '../../../game/meta/SaveData';
+import { requestSubscriptionDisclosure } from '../../../ui/dialogs/subscriptionDisclosure';
+import { MONTHLY_CARD_PRICE_USD_CENTS, YEAR_CARD_PRICE_USD_CENTS } from '@nw/shared/economy/subscriptions';
 
 export interface ShopIap {
   doRechargeCoins(tierId: string, client: ApiClient, onConverted: () => void): Promise<ShopActionResult>;
@@ -165,6 +167,14 @@ export function createShopIap(ctx: AppCtx): ShopIap {
     const trackEvent = product === 'monthly_card' ? 'monthly_card_buy' : 'year_card_buy';
     const kind = platform.iapKind();
     if (kind === 'apple' || kind === 'google') {
+      if (kind === 'apple') {
+        // App Review 3.1.2: length, price, renewal terms and EULA/privacy links before the sheet opens.
+        // The USD label is only for an older binary without a price lookup; StoreKit's sheet still
+        // shows the real storefront price.
+        const usdCents = product === 'monthly_card' ? MONTHLY_CARD_PRICE_USD_CENTS : YEAR_CARD_PRICE_USD_CENTS;
+        const price = (await nativeDisplayPrices([product]))[product] ?? `$${(usdCents / 100).toFixed(2)}`;
+        if (!(await requestSubscriptionDisclosure({ product, price }))) return { ok: false, key: 'shop.rechargeCancelled' };
+      }
       try {
         // user-paced native store sheet — unbounded
         const { receipt } = await platform.nativeIapPurchase(product, appleAccountToken());

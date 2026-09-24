@@ -48,11 +48,16 @@ describe('age gate', () => {
     expect(views.ageGate?.mode).toBe('ask');
   });
 
-  it('hands over to the consent gate once an age at or above the threshold is declared', () => {
+  it('hands over to the consent gate once an age at or above the threshold is declared, committing both together', () => {
+    // The merged screen (RETENTION_LAUNCH_PLAN.md §3.1, EntryGateDialog) answers age and consent
+    // with the same tap when both are still open — so the age flag is not written until the consent
+    // step is too, unlike the old two-screen flow this replaced.
     const { views, platform } = launch({});
     views.ageGate!.cb.onDeclared(THIS_YEAR - MIN_AGE_YEARS); // exactly the threshold — allowed
-    expect(recordedFlag(platform)).toBe(true);
     expect(views.screen).toBe('consent');
+    expect(recordedFlag(platform), 'age is not committed until the merged screen is fully answered').toBeUndefined();
+    views.consent!.onAccept();
+    expect(recordedFlag(platform)).toBe(true);
   });
 
   it('blocks — and never reaches the consent gate — when the declared age is one year short', () => {
@@ -93,6 +98,7 @@ describe('age gate', () => {
 
     const { views } = launch({}, { nw_api_base: 'http://api.test', [TOKEN_KEY]: 'tok-1' });
     views.ageGate!.cb.onDeclared(THIS_YEAR - MIN_AGE_YEARS);
+    views.consent!.onAccept(); // the merged screen commits age together with consent — see the test above
     await new Promise((r) => setTimeout(r, 0)); // let the background PUT run
 
     const put = seen.find((r) => r.url === 'http://api.test/flags');

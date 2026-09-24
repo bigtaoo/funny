@@ -224,6 +224,33 @@ describe('analyticsQuery with analyticsvc unreachable', () => {
     });
     expect(h.calls).toEqual(['query("dau",7,"wechat")']);
   });
+
+  // RETENTION_LAUNCH_PLAN.md §1.2/§1.3: newCohort only means anything to type='retention', but the
+  // proxy forwards it unconditionally when the caller sets it, for any type — the query dispatch
+  // side (analyticsvc) is what decides which types read it.
+  it('forwards newCohort when set, and omits it (not an explicit undefined) when not set', async () => {
+    const h = harness();
+    await h.svc.analyticsQuery('retention', 7, 'crazygames', true);
+    expect(h.calls).toEqual(['query("retention",7,"crazygames",true)']);
+
+    h.calls.length = 0;
+    await h.svc.analyticsQuery('retention', 7, 'crazygames', false);
+    // false is falsy -> same 3-arg call shape as omitting it entirely (matches "not set" for this
+    // proxy's purposes; analyticsvc's own `qs.get('newCohort') === '1'` reads it the same way).
+    expect(h.calls).toEqual(['query("retention",7,"crazygames")']);
+  });
+
+  // RETENTION_LAUNCH_PLAN.md §2: same conditional-forwarding shape as newCohort above, one param
+  // further out — dimension only means anything to type='retention_by'.
+  it('forwards dimension when set (with newCohort defaulted to false), and omits both when not set', async () => {
+    const h = harness();
+    await h.svc.analyticsQuery('retention_by', 7, 'crazygames', undefined, 'login_mode');
+    expect(h.calls).toEqual(['query("retention_by",7,"crazygames",false,"login_mode")']);
+
+    h.calls.length = 0;
+    await h.svc.analyticsQuery('retention_by', 7, 'crazygames');
+    expect(h.calls).toEqual(['query("retention_by",7,"crazygames")']);
+  });
 });
 
 describe('player lookup guards', () => {

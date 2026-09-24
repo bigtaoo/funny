@@ -158,6 +158,7 @@ export const de: Record<TranslationKey, string> = {
   'result.backToMap': 'ZURÜCK ZUR KARTE',
   'result.watchReplay': 'WIEDERHOLUNG ANSEHEN',
   'result.eloDelta': 'ELO {delta} → {after}　{rank}',
+  'result.tomorrowReward': 'Komm morgen zurück — Tag {day} Check-in',
   'rank.unranked': 'Unplatziert',
   'rank.bronze': 'Bronze',
   'rank.silver': 'Silber',
@@ -348,6 +349,7 @@ export const de: Record<TranslationKey, string> = {
   'auth.title': 'Bei {game} anmelden',
   'auth.login': 'Anmelden',
   'auth.register': 'Registrieren',
+  'auth.signInCrazyGames': 'Mit CrazyGames anmelden',
   'auth.loginIdLabel': 'E-Mail / Benutzername',
   'auth.passwordLabel': 'Passwort',
   'auth.confirmPasswordLabel': 'Passwort bestätigen',
@@ -415,6 +417,16 @@ export const de: Record<TranslationKey, string> = {
   // ── Monetarisierung (GACHA_DESIGN §5–§6) ──
   'shop.monthlyCard': 'Monatskarte',
   'shop.yearCard': 'Jahreskarte',
+  'subDisclosure.kind': 'Automatisch verlängertes Abo',
+  'subDisclosure.length': 'Laufzeit: {period}',
+  'subDisclosure.periodMonth': '1 Monat',
+  'subDisclosure.periodYear': '1 Jahr',
+  'subDisclosure.priceMonthly': 'Preis: {price} / Monat',
+  'subDisclosure.priceYearly': 'Preis: {price} / Jahr',
+  'subDisclosure.includes': 'Enthält sofort {now} Münzen, danach täglich {daily} Münzen, solange aktiv',
+  'subDisclosure.terms': 'Abrechnung über deine Apple-ID bei Bestätigung. Verlängert sich automatisch, wenn nicht mindestens 24 Stunden vor Ablauf gekündigt. Verwalten oder kündigen in den App-Store-Einstellungen.',
+  'subDisclosure.eula': 'Nutzungsbedingungen (EULA)',
+  'subDisclosure.subscribe': 'Abonnieren',
   'shop.cardActive': 'Karte aktiv – nach Ablauf erneut kaufbar',
   'shop.monthlyPending': 'Zahlung erhalten – Karte wird in Kürze aktiviert',
   'shop.save': '{amount} sparen',
@@ -1553,6 +1565,12 @@ export const de: Record<TranslationKey, string> = {
   'ageGate.confirmBack': 'Zurück',
   'ageGate.blockedTitle': 'Nicht verfügbar',
   'ageGate.blockedBody': 'Dieses Spiel ist für Spieler ab {min} Jahren bestimmt. Falls du ein falsches Geburtsjahr gewählt hast, wende dich an support@gamestao.com.',
+
+  // Merged age-gate + consent screen (RETENTION_LAUNCH_PLAN.md §3.1) — only used when both are
+  // still unanswered; the standalone ageGate.*/consent.* copy above covers every other case.
+  'entryGate.title': 'Bevor es losgeht',
+  'entryGate.body': 'Wähle dein Geburtsjahr und akzeptiere anschließend unsere Datenschutzerklärung und Nutzungsbedingungen, um fortzufahren — wir nutzen anonyme Spieldaten zur Verbesserung des Spiels.',
+  'entryGate.bodyChoice': 'Wähle dein Geburtsjahr. Bitte lies und akzeptiere außerdem unsere Datenschutzerklärung und Nutzungsbedingungen. Davon unabhängig entscheidest du, ob wir anonyme Spieldaten erheben dürfen — mit "Nur Nötiges" spielst du genauso, änderbar jederzeit in den Einstellungen.',
 
   // ── Wiederverbindungs-Hinweis nach Login (laufendes Match nach Re-Login fortsetzen) ──
   'reconnect.title': 'Unbeendetes Match',

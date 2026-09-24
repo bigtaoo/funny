@@ -86,6 +86,15 @@ interface AccountDoc {
 POST /auth/device   { deviceId }                 → AuthResult   # 匿名设备，自动 upsert
 POST /auth/wx       { code }                      → AuthResult   # 微信 code 换 openid
 
+# 新增：CrazyGames 门户 SSO（RETENTION_LAUNCH_PLAN.md §1.1/§3.1，2026-09-23）
+POST /auth/crazygames { token }                   → AuthResult | OAUTH_FAILED
+  # token = SDK.user.getUserToken()，服务端按 CrazyGames 公钥验 RS256（crazygamesAuth.ts），
+  # 不复用 NW_JWT_SECRET——那签的是我们自己的 token，这是第三方签的。
+  # 走 resolveByOAuth(cols, 'crazygames', userId, ...)：与 Google/Apple 同等耐久性（isAnonymous=false），
+  # 不进 OAuthProvider 联合类型（google-only）——机制是验 JWT 不是换码，不走 /auth/oauth 那条路。
+  # 未配置 NW_CRAZYGAMES_GAME_ID（游戏尚未在 CrazyGames 开发者后台登记）时返回 OAUTH_FAILED，
+  # 不影响其它登录方式。
+
 # 新增：密码
 POST /auth/register { loginId, password, displayName? }   → AuthResult | LOGIN_ID_TAKEN
 POST /auth/login    { loginId, password }                 → AuthResult | INVALID_CREDENTIALS

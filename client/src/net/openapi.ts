@@ -38,6 +38,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/crazygames": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** CrazyGames portal SSO login (verifies SDK.user.getUserToken() server-side, RETENTION_LAUNCH_PLAN.md §1.1/§3.1) */
+        post: operations["authCrazyGames"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/register": {
         parameters: {
             query?: never;
@@ -2028,6 +2045,36 @@ export interface operations {
             content: {
                 "application/json": {
                     deviceId: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: components["schemas"]["AuthResult"];
+                    };
+                };
+            };
+        };
+    };
+    authCrazyGames: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    token: string;
                 };
             };
         };

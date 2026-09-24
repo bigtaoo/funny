@@ -82,6 +82,9 @@ services:
       NW_META_HOST: 0.0.0.0
       NW_WX_APPID: ${NW_WX_APPID:-}
       NW_WX_SECRET: ${NW_WX_SECRET:-}
+      # CrazyGames portal SSO (RETENTION_LAUNCH_PLAN.md §1.1/§3.1). Leave empty → /auth/crazygames
+      # returns OAUTH_FAILED (does not affect other login methods) until the game has a dashboard id.
+      NW_CRAZYGAMES_GAME_ID: ${NW_CRAZYGAMES_GAME_ID:-}
       # Economy orchestration calls commercial (internal network, not exposed to public, S5).
       NW_COMMERCIAL_INTERNAL_URL: http://commercial:8092
       # Peer judge (Phase C): calls gateway for third-party re-evaluation when ranked hash mismatch. No depends_on
@@ -160,6 +163,11 @@ services:
       NW_APPLE_IAP_ISSUER_ID: ${NW_APPLE_IAP_ISSUER_ID:-}
       NW_APPLE_IAP_PRIVATE_KEY_BASE64: ${NW_APPLE_IAP_PRIVATE_KEY_BASE64:-}
       NW_APPLE_APP_ID: ${NW_APPLE_APP_ID:-}
+      # Temporary ops toggle (IOS_RELEASE.md §4.1/§12): App Store Server API's Production host 401s
+      # every request until the app has shipped at least one version. Set to true to also retry
+      # Sandbox on a Production 401 (not just "order not found"); MUST be unset again the day the
+      # app goes Ready for Sale, or it will mask a real post-launch auth failure.
+      NW_APPLE_PRE_RELEASE: ${NW_APPLE_PRE_RELEASE:-}
       NW_GOOGLE_SERVICE_ACCOUNT_JSON: ${NW_GOOGLE_SERVICE_ACCOUNT_JSON:-}
       NW_GOOGLE_PACKAGE_NAME: ${NW_GOOGLE_PACKAGE_NAME:-com.nw.game}
       NW_WX_PAY_MCH_ID: ${NW_WX_PAY_MCH_ID:-}

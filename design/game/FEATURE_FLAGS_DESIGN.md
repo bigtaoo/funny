@@ -48,6 +48,7 @@ export const FEATURE_FLAGS = {
   client_log_warn:    { default: false, desc: 'Client log upload - warn',  side: 'client' },
   client_log_info:    { default: false, desc: 'Client log upload - info',  side: 'client' },
   client_log_debug:   { default: false, desc: 'Client log upload - debug', side: 'client' },
+  disable_retention_preview: { default: false, desc: 'Kill switch: hide result-screen check-in reward preview', side: 'client' },
   // …新增 flag 在此登记
 } as const;
 

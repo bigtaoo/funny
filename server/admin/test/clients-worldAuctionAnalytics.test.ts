@@ -196,6 +196,8 @@ describe('HttpAnalyticsClient', () => {
       ['device_type_dist', { device_type_dist: [] }, { device_type_dist: [] }],
       ['geo_dist', { geo_dist: [] }, { geo_dist: [] }],
       ['badge_dist', { badge_dist: [] }, { badge_dist: [] }],
+      ['boot_funnel', { boot_funnel: [] }, { boot_funnel: [] }],
+      ['load_time', { load_time: [] }, { load_time: [] }],
       ['something_unmapped', {}, {}],
     ];
     for (const [type, payload, expected] of cases) {
@@ -211,5 +213,15 @@ describe('HttpAnalyticsClient', () => {
     fetchMock.mockResolvedValue({ ok: true, status: 200, body: { data: { type: 'dau', dau: [] } } });
     await new HttpAnalyticsClient('http://an', 'k').query('dau', 30, 'ios');
     expect(fetchMock.mock.calls.at(-1)?.[0]).toBe('http://an/internal/query?type=dau&days=30&platform=ios');
+  });
+
+  // Regression: the client had declared boot_funnel/load_time without ever dispatching them, so a
+  // real analyticsvc payload silently fell through the `if (p.type === ...)` chain to `return {}`.
+  it('defaults boot_funnel/load_time to [] when the upstream omits them', async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 200, body: { data: { type: 'boot_funnel' } } });
+    expect(await new HttpAnalyticsClient('http://an', 'k').query('boot_funnel', 7)).toEqual({ boot_funnel: [] });
+
+    fetchMock.mockResolvedValue({ ok: true, status: 200, body: { data: { type: 'load_time' } } });
+    expect(await new HttpAnalyticsClient('http://an', 'k').query('load_time', 7)).toEqual({ load_time: [] });
   });
 });

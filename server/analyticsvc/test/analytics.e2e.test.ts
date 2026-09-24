@@ -827,6 +827,77 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
     expect(cohort?.d_rate[7]).toBeCloseTo(1 / 3);
   });
 
+  // RETENTION_LAUNCH_PLAN.md §1.2: platform scopes BOTH cohort membership and "did they come back"
+  // to that platform's own session_start events — a crazygames-only read must not count a web
+  // session as a return, and vice versa.
+  it('queryRetention({platform}) scopes cohort AND return-tracking to that platform only', async () => {
+    const ANCHOR = Date.UTC(2020, 1, 1); // separate anchor month, isolated from the 2020-01-10 seed above
+    const DAY = 86400_000;
+    const ev = (device: string, platform: string, dayOffset: number) => ({
+      session_id: `plat-${device}-${dayOffset}`,
+      device_id: device,
+      platform,
+      os: 'test',
+      game_version: '1',
+      locale: 'en',
+      event: 'session_start',
+      props: {},
+      ts: new Date(ANCHOR + dayOffset * DAY + 3600_000),
+    });
+    await mongo!.collections.events.insertMany([
+      // Day 0 cohort: cg-A/cg-B on crazygames, web-A on web.
+      ev('cg-A', 'crazygames', 0), ev('cg-B', 'crazygames', 0), ev('web-A', 'web', 0),
+      // Day 1: cg-A returns on crazygames (counts); web-A returns but on WEB, not crazygames — must
+      // not inflate the crazygames-scoped D1 even though it's the "same kind of return" conceptually.
+      ev('cg-A', 'crazygames', 1), ev('web-A', 'web', 1),
+    ]);
+
+    const retSvc = new AnalyticsService(mongo!.collections, () => ANCHOR + 12 * 3600_000);
+    const rows = await retSvc.queryRetention(1, { platform: 'crazygames' });
+    const cohort = rows.find((r) => r.date === '2020-02-01');
+    expect(cohort?.cohort_size).toBe(2); // cg-A, cg-B only — web-A excluded from the platform-scoped cohort
+    expect(cohort?.d[1]).toBe(1); // only cg-A returned ON crazygames
+    expect(cohort?.d_rate[1]).toBeCloseTo(1 / 2);
+  });
+
+  // RETENTION_LAUNCH_PLAN.md §1.2: newCohort restricts each day's cohort to devices whose first-ever
+  // session_start falls on that day — a returning player re-appearing on a later day must not be
+  // double-counted as "new" again, which the default rolling-cohort mode would do.
+  it('queryRetention({newCohort:true}) excludes returning devices from later cohorts', async () => {
+    const ANCHOR = Date.UTC(2020, 2, 1); // separate anchor month again
+    const DAY = 86400_000;
+    const ev = (device: string, dayOffset: number) => ({
+      session_id: `new-${device}-${dayOffset}`,
+      device_id: device,
+      platform: 'web',
+      os: 'test',
+      game_version: '1',
+      locale: 'en',
+      event: 'session_start',
+      props: {},
+      ts: new Date(ANCHOR + dayOffset * DAY + 3600_000),
+    });
+    await mongo!.collections.events.insertMany([
+      // Day 0: new-A, new-B first appear.
+      ev('new-A', 0), ev('new-B', 0),
+      // Day 1: new-A returns (a rolling-cohort read would count them again as "active"), new-C is
+      // genuinely new.
+      ev('new-A', 1), ev('new-C', 1),
+    ]);
+
+    const retSvc = new AnalyticsService(mongo!.collections, () => ANCHOR + DAY + 12 * 3600_000);
+    const rolling = await retSvc.queryRetention(2, {});
+    const rollingDay1 = rolling.find((r) => r.date === '2020-03-02');
+    expect(rollingDay1?.cohort_size).toBe(2); // new-A (returning) + new-C — rolling counts both as "active"
+
+    const newOnly = await retSvc.queryRetention(2, { newCohort: true });
+    const newDay0 = newOnly.find((r) => r.date === '2020-03-01');
+    const newDay1 = newOnly.find((r) => r.date === '2020-03-02');
+    expect(newDay0?.cohort_size).toBe(2); // new-A, new-B — both genuinely new on day 0
+    expect(newDay1?.cohort_size).toBe(1); // new-C only — new-A's first session was day 0, not day 1
+    expect(newDay0?.d[1]).toBe(1); // of day-0's new cohort, only new-A came back on day 1
+  });
+
   // ─── first-session / onboarding ────────────────────────────────────────────
 
   it('queryFirstSession builds the onboarding funnel + action breakdown for new users only', async () => {

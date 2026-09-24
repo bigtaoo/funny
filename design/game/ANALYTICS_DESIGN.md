@@ -454,10 +454,12 @@ scene 取值：`IntroScene / LobbyScene / LoginScene / CampaignMapScene / LevelP
 | `tutorial_step` | `level_id, phase, step_key, step_index` | 教程内部小步骤（§9.7 教程步骤漏斗用），`step_key` 见 `TUTORIAL_ORDERED_KEYS` |
 | `nav_checkpoint` | `scene` | 场景级漏斗用（§9.7），100% 采样，仅在 `screen_view` 命中场景白名单时自动补发 |
 | `login_gate_hit` | `scene` | 离线功能门控弹「需要登录」 |
-| `login_submit` | `mode` | 提交登录/注册表单（mode: login/register）。2026-09-20 补——此前 `LoginScene` 除 `screen_view` 外零埋点，**新客第一道硬墙有多少人过去了、剩下的被哪个错误挡住，全不可知** |
+| `login_submit` | `mode` | 提交登录/注册表单（mode: login/register/crazygames）。2026-09-20 补——此前 `LoginScene` 除 `screen_view` 外零埋点，**新客第一道硬墙有多少人过去了、剩下的被哪个错误挡住，全不可知**。`mode:'crazygames'` 2026-09-23 补（RETENTION_LAUNCH_PLAN.md §3.1），走 LoginScene 的「Sign in with CrazyGames」按钮，复用 `doAuth()` 同一条埋点/持久化路径 |
 | `login_ok` | `mode` | 登录/注册成功 |
 | `login_fail` | `mode, error` | 失败。`error` 取**服务端错误码**（`ApiError.code`）或 `network`/`no_api_base`，不是翻译后的文案——要分的是"密码错了"（会重试）和"邮箱被占用"/网络失败（会走人） |
 | `login_skip` | — | 在登录页选「先玩离线」。即"拒绝注册"这条分支 |
+
+> **CrazyGames 静默自动登录不发 `login_submit`**：玩家已在门户登录过时，`resolveEntry()` 走 `bootstrap()` 静默换 token（与 `wx` 同路，见 `ONBOARDING_DESIGN.md`/`app/nav/auth.ts`），跳过 LoginScene，因此也跳过这三个事件——这条路径的转化只能从 §9.9 启动漏斗的 `reach_rate` 侧面看，不在这张登录漏斗里。`mode:'crazygames'` 三个事件只覆盖**主动点按钮**那条路。
 
 > **成功/失败为什么是两个事件名而不是一个带 `ok` 的事件**：§9.6 的首会话 `actions` 分布按**事件名**统计去重设备数、不看 props。合成一个名字，在唯一已经把新客 cohort 隔离出来的那张报表里两者就分不开了。
 | `intro_complete` / `intro_skip` | — | 首启故事 `IntroScene` 看完/跳过（`app/nav/auth.ts` `goIntro` 的 `onFinish(skipped)`），design-doc-audit-2026-07 补齐——此前这一步完全没有埋点。100% 采样，纳入 §9.6 `ONBOARDING_STEPS` 的 `intro_seen` 步骤 |

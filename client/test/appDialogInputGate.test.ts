@@ -18,8 +18,29 @@ describe('app.ts stage-level dialog input gate (2026-08-10: taps fell through to
   const src = fs.readFileSync(APP_TS, 'utf8');
 
   it('raises the gate when each dialog is mounted', () => {
-    // One per dialog: the feedback sink and the appeal sink.
-    expect(src.match(/input\.holdForModal\(true\)/g) ?? []).toHaveLength(2);
+    // One per dialog: the feedback sink, the appeal sink and the subscription disclosure sink.
+    expect(src.match(/input\.holdForModal\(true\)/g) ?? []).toHaveLength(3);
+  });
+
+  it('the subscription disclosure releases the gate exactly once and always answers', () => {
+    const m = src.match(/setSubscriptionDisclosureSink\(\(info, answer\) => \{([\s\S]*?)\n  \}\);/);
+    expect(m, 'expected the subscription disclosure sink in app.ts').not.toBeNull();
+    const close = /const close = \(accepted: boolean\): void => \{([\s\S]*?)\n    \};/.exec(m![1]!);
+    expect(close, 'expected a close helper inside the sink').not.toBeNull();
+    expect(close![1]).toMatch(/if \(!disclosureDialog\) return;/);
+    expect(close![1]).toMatch(/input\.holdForModal\(false\)/);
+    expect(close![1]).toMatch(/answer\(accepted\)/);
+    expect(m![1]).toMatch(/onSubscribe: \(\) => close\(true\)/);
+    expect(m![1]).toMatch(/onCancel: \(\) => close\(false\)/);
+  });
+
+  it('a second disclosure request while one is already mounted answers false instead of stacking a dialog', () => {
+    // Two subscription buttons tapped back to back (or a re-entrant call while the sheet's already
+    // up) must not mount a second SubscriptionDisclosureDialog on top of the first — that would leak
+    // the first one's answer callback and double-raise the modal gate.
+    const m = src.match(/setSubscriptionDisclosureSink\(\(info, answer\) => \{([\s\S]*?)\n  \}\);/);
+    expect(m, 'expected the subscription disclosure sink in app.ts').not.toBeNull();
+    expect(m![1]).toMatch(/^\s*if \(disclosureDialog\) \{ answer\(false\); return; \}/m);
   });
 
   it('releases it on every close path', () => {

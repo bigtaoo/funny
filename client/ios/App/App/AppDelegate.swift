@@ -171,6 +171,12 @@ final class NWBridgeViewController: CAPBridgeViewController,
         // Tell StoreKit the content was delivered. Only ever called after the server granted.
         finish: function(transactionId){
           return call({ op: 'finish', transactionId: String(transactionId) }, function(){ return undefined; });
+        },
+        // Storefront-localized prices, each { productKey, displayPrice }; unknown keys are omitted.
+        // Shown in the subscription disclosure before purchase (App Review guideline 3.1.2).
+        products: function(productKeys){
+          var keys = (productKeys || []).map(String);
+          return call({ op: 'products', productKeys: keys }, function(p){ try { return JSON.parse(p || '[]'); } catch (e) { return []; } });
         }
       };
     })();
@@ -331,6 +337,9 @@ final class NWBridgeViewController: CAPBridgeViewController,
                 settle(jsId, ok: false, payload: "missing_transaction_id"); return
             }
             Task { await handleFinish(jsId: jsId, transactionId: transactionId) }
+        case "products":
+            let keys = (body["productKeys"] as? [String]) ?? []
+            Task { await handleProducts(jsId: jsId, productKeys: keys) }
         default:
             guard let tierId = body["tierId"] as? String else { return }
             Task {
@@ -383,6 +392,26 @@ final class NWBridgeViewController: CAPBridgeViewController,
         } catch {
             settle(jsId, ok: false, payload: error.localizedDescription)
         }
+    }
+
+    // MARK: Product info
+    //
+    // Resolves (never rejects) with whatever StoreKit returned, as JSON: a failed lookup yields "[]"
+    // and the JS side falls back to its own price label rather than blocking the purchase.
+    @MainActor
+    private func handleProducts(jsId: String, productKeys: [String]) async {
+        var idToKey: [String: String] = [:]
+        for key in productKeys { idToKey[Self.productId(for: key)] = key }
+        var items: [[String: String]] = []
+        if let products = try? await Product.products(for: Array(idToKey.keys)) {
+            for product in products {
+                guard let key = idToKey[product.id] else { continue }
+                items.append(["productKey": key, "displayPrice": product.displayPrice])
+            }
+        }
+        let json = (try? JSONSerialization.data(withJSONObject: items))
+            .flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+        settle(jsId, ok: true, payload: json)
     }
 
     // MARK: Unfinished-transaction handoff

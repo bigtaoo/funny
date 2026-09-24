@@ -163,7 +163,7 @@ export async function init(
   sessionStartTs = Date.now();
   scenesVisited = [];
 
-  const deviceId = getOrCreateDeviceId(platform.storage);
+  const deviceId = await getOrCreateDeviceId(platform.storage);
   const os = getPlatformOs(platform);
   const platformName = getPlatformName();
   const gameVersion = getGameVersion();

@@ -36,8 +36,28 @@
 > 写作口径：**功能陈述，不吹**。Apple 审核对"最好/第一/免费"一类措辞和与实际功能不符的描述会退回；
 > 抽卡一律写作「付费随机道具」并点明概率公示，绝不出现赌博/博彩类词汇（各渠道口径统一，见 §5）。
 > 长度控制在 ~800 字符以内：Play 上限 4000、App Store 4000，但商店只展示前三行，长了没人读。
+>
+> **App Store 只用英文这一份，且以 ASC 线上那份为准（2026-09-24）。** ASC 的本地化里只有
+> **English (U.S.)**（中文、德文都是 Not Localized），所以下面中文/德文两份只给 Play 等渠道用；
+> App Store 那份是下方「English — App Store（线上原文）」，**逐字**照抄进 ASC → iOS App 1.0 → Description。
+>
+> **为什么多了订阅段和两个链接**：build 11 提审后被 Apple **3.1.2** 自动预检拒（"does not include a
+> functional link to the Terms of Use (EULA) in the app metadata that appears on the app's App Store
+> product page"）——原描述里没有任何条款链接。ASC → App Information → **License Agreement 是 Apple's
+> Standard License Agreement**，按拒信口径「用标准 EULA 就在 Description 里放它的链接」，所以链接指向
+> Apple 标准 EULA（`https://www.apple.com/legal/internet-services/itunes/dev/stdeula/`），**不是**我们自己的
+> `terms.html`（那是 Terms of Service，另一回事）。订阅段写周期但不写价格（各商店区价格不同，价格由
+> StoreKit 付款框和 App 内说明框给出）；两个订阅的周期已在 ASC 订阅组「Nivara Pass」核对：Monthly Card
+> = 1 month、Year Card = 1 year。
+>
+> ⚠️ **App Store 会原样保留描述里的每一个换行**。下面中文/德文代码块里的折行是为了在 markdown 里好读，
+> 旧英文稿就是照这种折行贴进 ASC 的，结果产品页上一句话从中间断开。英文线上稿已改成一段一行；往任何商店
+> 贴之前，都先把段内的硬换行合并掉。
+>
+> 改 Description 不需要出新包；但 App 内购买前的订阅说明（3.1.2 对 App 内的要求）是代码改动，随 build 12 走，
+> 见 [`IOS_RELEASE.md`](../../game/IOS_RELEASE.md) 的 2026-09-24 被拒条目。
 
-**中文**
+**中文**（Play 等渠道用；App Store 不用）
 
 ```
 一本笔记本，两种画法，一场持续到最后一页的战争。
@@ -53,14 +73,12 @@ Nivara 是一款画在方格纸上的实时策略对战游戏。金币自己回�
 内含付费随机道具，抽取概率在游戏内「概率」页公示。可完全免费游玩。
 ```
 
-**English**
+**English — App Store（线上原文，2026-09-24，1348 字符；段内无硬换行）**
 
 ```
 One notebook, two ways of drawing, and a war that runs to the last page.
 
-Nivara is a real-time strategy game drawn on graph paper. Gold refills on its own, your hand
-cycles, and both castles are always in reach — you decide what to spend, which lane to push, and
-when to hold.
+Nivara is a real-time strategy game drawn on graph paper. Gold refills on its own, your hand cycles, and both castles are always in reach — you decide what to spend, which lane to push, and when to hold.
 
 · Campaign — follow Tao and Anna's duel of East and West notebooks, chapter by chapter
 · Multiplayer — real-time PvP that syncs inputs, not outcomes: both sides see one battle
@@ -68,9 +86,15 @@ when to hold.
 · Collection — cards, skins and gear to collect; progression never changes the rules of a PvP match
 
 Contains paid random items; the draw rates are published in-game on the odds page. Free to play.
+
+Subscriptions
+Monthly Card (1 month) and Year Card (1 year) are optional auto-renewable subscriptions. Payment is charged to your Apple ID account at confirmation of purchase. The subscription renews automatically unless it is cancelled at least 24 hours before the end of the current period, and your account is charged for renewal within 24 hours prior to the end of the current period. You can manage or cancel your subscription in your App Store account settings.
+
+Terms of Use (EULA): https://www.apple.com/legal/internet-services/itunes/dev/stdeula/
+Privacy Policy: https://nivara.gamestao.com/privacy
 ```
 
-**Deutsch**
+**Deutsch**（Play 等渠道用；App Store 不用）
 
 ```
 Ein Notizbuch, zwei Zeichenstile, ein Krieg bis zur letzten Seite.
@@ -241,7 +265,7 @@ tactics,pvp,multiplayer,card battle,lane,army,castle,sketch,doodle,paper,rts
 | Version | `1.0`（与 `client/ios/App/App.xcodeproj/project.pbxproj` 的 `MARKETING_VERSION = 1.0` 一致） |
 | Copyright | `2026 Tao Wang`（运营主体见 `terms.html §1`：德国个体经营，非公司） |
 | Routing App Coverage File | 留空（不是导航类 App） |
-| Build | 选 **CFBundleVersion = 7** 那个（2026-09-08，run `34201608554`，head `e2e307e45`，36.5 MB）——**唯一带 StoreKit 2 的包**；CFBundleVersion=4 的两个是 B 批之前的代码 |
+| Build | 选 **CFBundleVersion = 11** 那个（2026-09-23，run `35864608992`，head `2fd328b47`，36.6 MB）——含 t099/t199 币档 + mobileOnly UI 修复的最新包；此前 CFBundleVersion=7（2026-09-08）已停用 |
 | Export Compliance | **不会问**：`client/ios/App/App/Info.plist` 已有 `ITSAppUsesNonExemptEncryption = false` |
 | Version Release | Manually release this version（自己控制放出时机） |
 
@@ -387,7 +411,7 @@ override 到更高档会让商店页面与三处已定口径（§3.4 自我定�
 > 代价是 eCPM 会低一些，换到的是「标签写的和二进制干的是同一件事」。
 > 详见 [`IOS_RELEASE.md §12`](../../game/IOS_RELEASE.md) 与三语隐私政策 §6.3。
 
-> **✅ 2026-09-08 已在 ASC 填写并发布**，但**只填了 6 个数据类型，还差两个真实收集项**（下面「已发布状态」一节）。
+> **✅ 2026-09-08 已在 ASC 填写并发布，2026-09-23 补齐两项真实收集项后共 8 个数据类型**（下面「已发布状态」一节）。
 
 按 §0.3 填写：
 - **Data Used to Track You**：无（声明不做跨 App 跟踪 → 免 ATT 弹窗）。
@@ -395,22 +419,19 @@ override 到更高档会让商店页面与三处已定口径（§3.4 自我定�
 - **Data Not Linked to You**：诊断（如崩溃日志，假名化）。
 - 是否加密传输：是；是否可请求删除：是（应用内删除账号）。
 
-#### 1.4b 已发布状态与欠账（2026-09-08）
+#### 1.4b 已发布状态（2026-09-08 首发 6 项，2026-09-23 补齐至 8 项）
 
-**已填并发布的 6 项**（设置全部正确）：Email Address（App 功能/关联）、User ID（App 功能/关联）、
+**8 项数据类型全部已填并发布**：Email Address（App 功能/关联）、User ID（App 功能/关联）、
 Device ID（App 功能 **+ 第三方广告** /关联）、Product Interaction（分析/不关联）、
-Crash Data、Performance Data（分析/不关联）。跟踪那一问答「否」。
-**Privacy Policy URL 当天补填** `https://nivara.gamestao.com/privacy`——它是**必填项**，
-发布时是空的（`–`）；User Privacy Choices URL 可选，留空。
+Crash Data、Performance Data（分析/不关联）、**Purchase History**（App 功能/关联，
+代码依据：`commercial/src/db.ts` 的 `orders` `recharges` `ledger` `appleTransactionLinks`
+四个集合都以 accountId 为键）、**Other User Content**（App 功能/关联，代码依据：聊天存在服务端，
+`socialsvc/src/family/chat.ts:68` 往 `familyMessages` `insertOne`，好友会话走
+`friendSvc.getMessages(accountId, convId, before, limit)`，客户端「加载更早的消息」就是它）。
+跟踪那一问全部答「否」。
+**Privacy Policy URL** `https://nivara.gamestao.com/privacy`；User Privacy Choices URL 可选，留空。
 
-**⚠️ 还差两项真实收集项**（用户 2026-09-08 主动延后，提审前必须补，否则是 5.1.2 方向的漏报）：
-
-| 缺的类型 | 该填 | 代码依据 |
-|---|---|---|
-| **Purchases → Purchase History** | App 功能 / 关联 / 不跟踪 | `commercial/src/db.ts` 的 `orders` `recharges` `ledger` `appleTransactionLinks` 四个集合都以 accountId 为键 |
-| **User Content → Other User Content** | App 功能 / 关联 / 不跟踪 | 聊天存在服务端：`socialsvc/src/family/chat.ts:68` 往 `familyMessages` `insertOne`，好友会话走 `friendSvc.getMessages(accountId, convId, before, limit)`（客户端「加载更早的消息」就是它） |
-
-补上后「Data Linked to You」摘要会变成 Identifiers / Contact Info / **Purchases** / **User Content**。
+「Data Linked to You」摘要：Identifiers / Contact Info / **Purchases** / **User Content**。
 
 **两处可选加强（AdMob 口径，同日延后）**：`Usage Data → Advertising Data`（第三方广告/不关联/不跟踪）；
 给 `Product Interaction` 再加一个 `Third-Party Advertising` 用途——Google 的披露指引写明
@@ -606,7 +627,7 @@ cd client && NW_BUILD_VERSION=$(git rev-parse --short HEAD) npm run build:crazyg
 
 | 渠道 | 素材就绪 | 分级问卷 | 隐私标签/数据表 | 合规硬门 | 健康忠告 |
 |---|---|---|---|---|---|
-| iOS | ✅ 图标 + 截图齐（预览视频可选，未做） | §1.3 待填 | §1.4 待填 | §1.5 | 全球版 §5.2 |
+| iOS | ✅ 图标 + 截图齐（预览视频可选，未做） | ✅ §1.3（13+） | ✅ §1.4（8/8 项，2026-09-23 补齐） | §1.5 | 全球版 §5.2 |
 | Google Play | ✅ 图标 + 特征图 + 截图齐 | §2.3 待填 | §2.4 待填 | §2.5 | 全球版 §5.2 |
 | 微信小游戏 | ✅ 图标（既有 logo-512）+ 分享图齐；截图仍是英文版，中文版待跑 | §3.3 待评估 | 隐私政策(CN) | §3.2（依版号） | 中国区 §5.1 |
 | CrazyGames | ✅ 横版缩略图齐；操作说明文案已拟（§4.1b，2026-09-09） | 平台要求 | 隐私政策 | §4.2 四条已修，剩内容政策核对 + 冒烟 | 全球版 §5.2 |

@@ -22,6 +22,8 @@ export default defineConfig({
       '@nw/shared/battlepass': path.resolve(__dirname, '../server/shared/src/battlepass.ts'),
       '@nw/shared/rechargeMilestone': path.resolve(__dirname, '../server/shared/src/rechargeMilestone.ts'),
       '@nw/shared/titles': path.resolve(__dirname, '../server/shared/src/titles.ts'),
+      '@nw/shared/economy/iapTiers': path.resolve(__dirname, '../server/shared/src/economy/iapTiers.ts'),
+      '@nw/shared/economy/subscriptions': path.resolve(__dirname, '../server/shared/src/economy/subscriptions.ts'),
       // Browser-safe slice, same as webpack.config.js/vitest.config.ts/vitest.e2e.config.ts —
       // NOT the full src/index.ts barrel, which re-exports jwt.ts (-> 'jsonwebtoken', a
       // server-only dep this job never `npm ci`s). See vitest.e2e.config.ts's comment.

@@ -51,6 +51,7 @@ import type {
   TrendPoint,
   WordlistOverrideDoc,
 } from '../types';
+import type { AnalyticsEventsResult } from './analyticsTypes';
 import { ApiTransport } from './transport';
 
 // Re-exported so callers keep importing it from here (pages/shared.ts, pages/gachaPools.ts, app.ts).
@@ -92,58 +93,11 @@ export class Api extends ApiTransport {
   }> {
     return this.req('GET', '/admin/analytics/summary');
   }
-  analyticsEvents(type: string, days: number, platform?: string): Promise<{
-    available: boolean;
-    event_counts?: { date: string; event: string; count: number }[];
-    dau?: { date: string; dau: number }[];
-    funnel?: { date: string; platform: string; funnel_step: string; count: number; conversion_rate?: number }[];
-    region_dist?: { locale: string; devices: number }[];
-    os_dist?: { os: string; devices: number }[];
-    login_hour?: { hour: number; count: number }[];
-    retention?: {
-      date: string;
-      cohort_size: number;
-      d: Partial<Record<1 | 2 | 3 | 4 | 5 | 6 | 7, number>>;
-      d_rate: Partial<Record<1 | 2 | 3 | 4 | 5 | 6 | 7, number>>;
-    }[];
-    first_session?: {
-      cohort_size: number;
-      window_days: number;
-      funnel: { step: string; count: number; conversion_rate?: number }[];
-      actions: { key: string; kind: 'scene' | 'action'; devices: number; rate: number }[];
-    };
-    level_funnel?: { level_id: string; attempts: number; completes: number; abandons: number; completion_rate?: number }[];
-    tutorial_funnel?: {
-      cohort_size: number;
-      window_days: number;
-      funnel: { step: string; count: number; conversion_rate?: number }[];
-    };
-    scene_funnel?: {
-      cohort_size: number;
-      window_days: number;
-      funnel: { step: string; count: number; conversion_rate?: number }[];
-    };
-    feature_guide_funnel?: { feature: string; shown: number; closed: number; replays: number; close_rate?: number }[];
-    browser_dist?: { browser: string; devices: number }[];
-    device_type_dist?: { device_type: string; devices: number }[];
-    webview_dist?: { webview: string; devices: number }[];
-    geo_dist?: { country: string; devices: number }[];
-    badge_dist?: { mode: string; result: string; badge: string; count: number }[];
-    boot_funnel?: { date: string; platform: string; boots: number; sessions: number; declined: number; consents: number; reach_rate?: number }[];
-    load_time?: {
-      platform: string;
-      samples: number;
-      p50_ms: number;
-      p75_ms: number;
-      p90_ms: number;
-      p95_ms: number;
-      avg: Record<string, number>;
-      buckets: { lt_ms: number; count: number }[];
-      abandoned: number;
-    }[];
-  }> {
+  analyticsEvents(type: string, days: number, platform?: string, newCohort?: boolean, dimension?: string): Promise<AnalyticsEventsResult> {
     const qs = new URLSearchParams({ type, days: String(days) });
     if (platform) qs.set('platform', platform);
+    if (newCohort) qs.set('newCohort', '1');
+    if (dimension) qs.set('dimension', dimension);
     return this.req('GET', `/admin/analytics/events?${qs}`);
   }
 

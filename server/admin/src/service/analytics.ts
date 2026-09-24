@@ -32,7 +32,7 @@ export interface AnalyticsHandlers {
     last24h: Record<MetricKey, { avg: number; peak: number; samples: number }>;
     tickets: Record<CompTicketStatus, number>;
   }>;
-  analyticsQuery(type: string, days: number, platform?: string): Promise<AnalyticsQueryResult & { available: boolean }>;
+  analyticsQuery(type: string, days: number, platform?: string, newCohort?: boolean, dimension?: string): Promise<AnalyticsQueryResult & { available: boolean }>;
   lookupPlayer(publicId: string): Promise<PlayerProfile>;
   lookupPlayerByAccountId(accountId: string): Promise<PlayerProfile>;
   searchPlayers(actor: string, q: string): Promise<PlayerSummary[]>;
@@ -147,9 +147,17 @@ export class AnalyticsService {
     }
 
     /** Aggregated analytics query (proxied to analyticsvc /internal/query, A9-6). */
-    async analyticsQuery(type: string, days: number, platform?: string): Promise<AnalyticsQueryResult & { available: boolean }> {
+    async analyticsQuery(type: string, days: number, platform?: string, newCohort?: boolean, dimension?: string): Promise<AnalyticsQueryResult & { available: boolean }> {
       if (!this.core.analytics.available) return { available: false };
-      const result = await this.core.analytics.query(type, days, platform);
+      // Each trailing param is only forwarded when actually set: an explicit trailing `undefined`
+      // argument is a different call shape than omitting it (matters for the call-recording harness
+      // in analyticsService.test.ts, and is the more honest call anyway — newCohort means nothing
+      // outside 'retention' and dimension means nothing outside 'retention_by').
+      const result = dimension
+        ? await this.core.analytics.query(type, days, platform, newCohort ?? false, dimension)
+        : newCohort
+          ? await this.core.analytics.query(type, days, platform, newCohort)
+          : await this.core.analytics.query(type, days, platform);
       return { ...result, available: true };
     }
 

@@ -81,11 +81,22 @@ export interface ShopSceneCallbacks {
   /** Whether the Recharge peer tab has a claimable milestone reward at the current cumulative spend. */
   getRechargeBadge?(): boolean;
   /**
-   * Initiate a Paddle coin-recharge checkout for the given tier ID (e.g. 't499').
-   * Implementation calls /shop/paddle/checkout to get a transactionId, then opens Paddle.js.
-   * Absent = Coins tab not shown (offline / not on web platform).
+   * Initiate a coin-recharge purchase for the given tier ID (e.g. 't499') — routes to Paddle
+   * checkout on web, the native store purchase sheet on iOS/Android (nav/shop/iap.ts's
+   * doRechargeCoins branches on platform.iapKind() internally). Absent = Coins tab not shown
+   * (offline / no payment channel wired for this platform).
    */
   rechargeCoins?(tierId: string): Promise<ShopActionResult>;
+  /**
+   * True when the store channel can sell the two mobile-only tiers, t099 ($0.99) / t199 ($1.99)
+   * (`IapTierDef.mobileOnly`, `@nw/shared/economy/iapTiers`, ECONOMY_BALANCE §2.2). iOS/Android
+   * take the same flat cut regardless of price, so these are viable there; Paddle's fixed
+   * per-transaction fee eats too much margin at that size, so web never offers them — that is
+   * the *only* reason they're excluded, not a blanket "no UI entry anywhere" (2026-09-23 fix:
+   * the Coins grid used to hardcode the Paddle-only 5-tier list and never showed these two on
+   * native either). Absent/false = Coins tab shows the standard 5 tiers ($4.99+) only.
+   */
+  includeMobileOnlyCoinTiers?: boolean;
   // ── Monetization deals (GACHA_DESIGN §5–§6). All optional; absent = section not shown (offline / not logged in). ──
   /** Monthly/year card + starter state (subscription end ms, purchased one-off product ids). */
   getMonetization?(): {

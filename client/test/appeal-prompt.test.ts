@@ -148,9 +148,13 @@ describe('createAppCore().submitAppeal', () => {
 
   it('delegates to ApiClient.submitAppeal (POST /account/appeal) when an api base is configured', async () => {
     const platform = new HeadlessPlatform({ storage: { nw_api_base: 'http://x' } });
+    // createAppCore also fires background requests (GET /bootstrap, analytics' GET /analytics/config)
+    // that can settle after the appeal POST, so only record the request under test.
     let capturedBody: unknown;
-    (globalThis as Record<string, unknown>).fetch = async (_url: string, init?: RequestInit) => {
-      capturedBody = init?.body ? JSON.parse(init.body as string) : undefined;
+    (globalThis as Record<string, unknown>).fetch = async (url: string, init?: RequestInit) => {
+      if (new URL(url).pathname === '/account/appeal') {
+        capturedBody = init?.body ? JSON.parse(init.body as string) : undefined;
+      }
       return jsonResponse({ ok: true, data: { ok: true } });
     };
 

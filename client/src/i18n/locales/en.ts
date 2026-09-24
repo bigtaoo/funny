@@ -158,6 +158,7 @@ export const en: Record<TranslationKey, string> = {
   'result.backToMap': 'BACK TO MAP',
   'result.watchReplay': 'WATCH REPLAY',
   'result.eloDelta': 'ELO {delta} → {after}　{rank}',
+  'result.tomorrowReward': 'Come back tomorrow — Day {day} check-in',
   'rank.unranked': 'Unranked',
   'rank.bronze': 'Bronze',
   'rank.silver': 'Silver',
@@ -348,6 +349,7 @@ export const en: Record<TranslationKey, string> = {
   'auth.title': 'Sign in to {game}',
   'auth.login': 'Log in',
   'auth.register': 'Sign up',
+  'auth.signInCrazyGames': 'Sign in with CrazyGames',
   'auth.loginIdLabel': 'Email / username',
   'auth.passwordLabel': 'Password',
   'auth.confirmPasswordLabel': 'Confirm password',
@@ -415,6 +417,16 @@ export const en: Record<TranslationKey, string> = {
   // ── Monetization deals (GACHA_DESIGN §5–§6) ──
   'shop.monthlyCard': 'Monthly Card',
   'shop.yearCard': 'Year Card',
+  'subDisclosure.kind': 'Auto-renewable subscription',
+  'subDisclosure.length': 'Length: {period}',
+  'subDisclosure.periodMonth': '1 month',
+  'subDisclosure.periodYear': '1 year',
+  'subDisclosure.priceMonthly': 'Price: {price} / month',
+  'subDisclosure.priceYearly': 'Price: {price} / year',
+  'subDisclosure.includes': 'Includes {now} coins right away, then {daily} coins every day while active',
+  'subDisclosure.terms': 'Charged to your Apple ID at confirmation. Renews automatically unless cancelled at least 24 hours before the period ends. Manage or cancel in your App Store account settings.',
+  'subDisclosure.eula': 'Terms of Use (EULA)',
+  'subDisclosure.subscribe': 'Subscribe',
   'shop.cardActive': 'Card active — buy again once it expires',
   'shop.monthlyPending': 'Payment received — card will activate shortly',
   'shop.save': 'Save {amount}',
@@ -1542,6 +1554,12 @@ export const en: Record<TranslationKey, string> = {
   'ageGate.confirmBack': 'Go back',
   'ageGate.blockedTitle': 'Not available',
   'ageGate.blockedBody': 'This game is intended for players aged {min} and over. If you selected the wrong birth year, contact support@gamestao.com.',
+
+  // Merged age-gate + consent screen (RETENTION_LAUNCH_PLAN.md §3.1) — only used when both are
+  // still unanswered; the standalone ageGate.*/consent.* copy above covers every other case.
+  'entryGate.title': 'Before you play',
+  'entryGate.body': 'Select your birth year, then accept our Privacy Policy and Terms of Service to continue — we use anonymous gameplay data to improve the game.',
+  'entryGate.bodyChoice': 'Select your birth year. Please also read and accept our Privacy Policy and Terms of Service. Separately, you choose whether we may collect anonymous gameplay data — "Essentials only" plays just the same, and you can change it anytime in Settings.',
 
   // ── Login reconnect prompt (resume an in-progress match after re-login) ─────
   'reconnect.title': 'Unfinished Match',
