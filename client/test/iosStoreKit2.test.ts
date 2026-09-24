@@ -86,6 +86,16 @@ describe('the billing bridge is StoreKit 2', () => {
     expect(swift).toMatch(/finish: function\(transactionId\)/);
   });
 
+  it('exposes products() and answers it with StoreKit displayPrice under the JS product key', () => {
+    // The subscription disclosure (App Review 3.1.2) feature-detects `products` and falls back to a
+    // USD label without it, so a name drift would silently show the wrong currency, not fail.
+    expect(swift).toMatch(/products: function\(productKeys\)/);
+    expect(swift).toMatch(/op: 'products', productKeys: keys/);
+    expect(swift).toMatch(/case "products":/);
+    expect(swift).toMatch(/body\["productKeys"\] as\? \[String\]/);
+    expect(swift).toMatch(/"productKey": key, "displayPrice": product\.displayPrice/);
+  });
+
   it('ignores transactions Apple did not verify', () => {
     // `.unverified` is not "probably fine": granting on it would let a tampered device mint
     // transactions. The unwrap returns nil and nothing downstream runs.

@@ -37,13 +37,27 @@
 > 抽卡一律写作「付费随机道具」并点明概率公示，绝不出现赌博/博彩类词汇（各渠道口径统一，见 §5）。
 > 长度控制在 ~800 字符以内：Play 上限 4000、App Store 4000，但商店只展示前三行，长了没人读。
 >
-> **2026-09-24 补 EULA 链接**：build 11 提审后被 Apple 3.1.2 拒（"does not include a functional link
-> to the Terms of Use (EULA) in the app metadata that appears on the app's App Store product page"）——
-> 三语描述里原来确实没有任何条款链接。用的是已有的自定义 `terms.html`（覆盖订阅/退款条款），不走
-> Apple 标准 EULA，所以修法是在 App Description 末尾加一行链接，不用去 ASC 的 License Agreement 字段
-> 另填一份自定义 EULA 全文。改 Description 不需要出新包，重新提交这条 metadata 即可。
+> **App Store 只用英文这一份，且以 ASC 线上那份为准（2026-09-24）。** ASC 的本地化里只有
+> **English (U.S.)**（中文、德文都是 Not Localized），所以下面中文/德文两份只给 Play 等渠道用；
+> App Store 那份是下方「English — App Store（线上原文）」，**逐字**照抄进 ASC → iOS App 1.0 → Description。
+>
+> **为什么多了订阅段和两个链接**：build 11 提审后被 Apple **3.1.2** 自动预检拒（"does not include a
+> functional link to the Terms of Use (EULA) in the app metadata that appears on the app's App Store
+> product page"）——原描述里没有任何条款链接。ASC → App Information → **License Agreement 是 Apple's
+> Standard License Agreement**，按拒信口径「用标准 EULA 就在 Description 里放它的链接」，所以链接指向
+> Apple 标准 EULA（`https://www.apple.com/legal/internet-services/itunes/dev/stdeula/`），**不是**我们自己的
+> `terms.html`（那是 Terms of Service，另一回事）。订阅段写周期但不写价格（各商店区价格不同，价格由
+> StoreKit 付款框和 App 内说明框给出）；两个订阅的周期已在 ASC 订阅组「Nivara Pass」核对：Monthly Card
+> = 1 month、Year Card = 1 year。
+>
+> ⚠️ **App Store 会原样保留描述里的每一个换行**。下面中文/德文代码块里的折行是为了在 markdown 里好读，
+> 旧英文稿就是照这种折行贴进 ASC 的，结果产品页上一句话从中间断开。英文线上稿已改成一段一行；往任何商店
+> 贴之前，都先把段内的硬换行合并掉。
+>
+> 改 Description 不需要出新包；但 App 内购买前的订阅说明（3.1.2 对 App 内的要求）是代码改动，随 build 12 走，
+> 见 [`IOS_RELEASE.md`](../../game/IOS_RELEASE.md) 的 2026-09-24 被拒条目。
 
-**中文**
+**中文**（Play 等渠道用；App Store 不用）
 
 ```
 一本笔记本，两种画法，一场持续到最后一页的战争。
@@ -57,18 +71,14 @@ Nivara 是一款画在方格纸上的实时策略对战游戏。金币自己回�
 · 养成：卡牌、皮肤、装备可收集；战力成长不改变 PvP 的对局规则
 
 内含付费随机道具，抽取概率在游戏内「概率」页公示。可完全免费游玩。
-
-使用条款（EULA）：https://nivara.gamestao.com/terms
 ```
 
-**English**
+**English — App Store（线上原文，2026-09-24，1348 字符；段内无硬换行）**
 
 ```
 One notebook, two ways of drawing, and a war that runs to the last page.
 
-Nivara is a real-time strategy game drawn on graph paper. Gold refills on its own, your hand
-cycles, and both castles are always in reach — you decide what to spend, which lane to push, and
-when to hold.
+Nivara is a real-time strategy game drawn on graph paper. Gold refills on its own, your hand cycles, and both castles are always in reach — you decide what to spend, which lane to push, and when to hold.
 
 · Campaign — follow Tao and Anna's duel of East and West notebooks, chapter by chapter
 · Multiplayer — real-time PvP that syncs inputs, not outcomes: both sides see one battle
@@ -77,10 +87,14 @@ when to hold.
 
 Contains paid random items; the draw rates are published in-game on the odds page. Free to play.
 
-Terms of Use (EULA): https://nivara.gamestao.com/terms
+Subscriptions
+Monthly Card (1 month) and Year Card (1 year) are optional auto-renewable subscriptions. Payment is charged to your Apple ID account at confirmation of purchase. The subscription renews automatically unless it is cancelled at least 24 hours before the end of the current period, and your account is charged for renewal within 24 hours prior to the end of the current period. You can manage or cancel your subscription in your App Store account settings.
+
+Terms of Use (EULA): https://www.apple.com/legal/internet-services/itunes/dev/stdeula/
+Privacy Policy: https://nivara.gamestao.com/privacy
 ```
 
-**Deutsch**
+**Deutsch**（Play 等渠道用；App Store 不用）
 
 ```
 Ein Notizbuch, zwei Zeichenstile, ein Krieg bis zur letzten Seite.
@@ -96,8 +110,6 @@ ausgibst, welche Bahn du drückst und wann du hältst.
 
 Enthält kostenpflichtige Zufallsgegenstände; die Wahrscheinlichkeiten stehen im Spiel auf der
 Quoten-Seite. Kostenlos spielbar.
-
-Nutzungsbedingungen (EULA): https://nivara.gamestao.com/terms
 ```
 
 ### 0.2 关键词 / 标签（待各渠道适配）

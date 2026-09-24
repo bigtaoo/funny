@@ -28,6 +28,13 @@ export interface NativePendingTx {
   productKey: string;
 }
 
+/** A store product as the native layer sees it: our product key plus the storefront-localized price. */
+export interface NativeProductInfo {
+  productKey: string;
+  /** Already formatted for the player's storefront (StoreKit `Product.displayPrice`, e.g. "4,99 €"). */
+  displayPrice: string;
+}
+
 /**
  * Native billing bridge injected on `window` by the Capacitor plugin. When absent,
  * the web bundle is running in a plain browser and recharge falls back to Paddle.
@@ -73,6 +80,11 @@ export interface NwBillingBridge {
    * for content nothing will ever deliver, with no record anywhere that it happened.
    */
   finish?(transactionId: string): Promise<void>;
+  /**
+   * Storefront-localized info for the given product keys; unknown keys are simply absent. Optional
+   * for the same OTA reason as `receipt`: an older binary has a working bridge without it.
+   */
+  products?(productKeys: string[]): Promise<NativeProductInfo[]>;
 }
 
 /** Reads the injected native billing bridge, if any (validated shape). */
@@ -117,5 +129,33 @@ export async function finishNativeTransaction(transactionId: string): Promise<bo
     // The store keeps the transaction and offers it again next launch; the grant already happened
     // and is idempotent, so the worst case is one redundant report later.
     return false;
+  }
+}
+
+/**
+ * Storefront-localized display prices keyed by product key. Empty when this shell has no
+ * `products` (older binary), the store call fails, or it does not answer within `timeoutMs` — the
+ * caller then shows its own fallback price rather than blocking a purchase on a price label.
+ */
+export async function nativeDisplayPrices(productKeys: string[], timeoutMs = 4000): Promise<Record<string, string>> {
+  const b = getNativeBilling();
+  if (!b || typeof b.products !== 'function') return {};
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const list = await Promise.race([
+      b.products(productKeys),
+      new Promise<NativeProductInfo[]>((resolve) => { timer = setTimeout(() => resolve([]), timeoutMs); }),
+    ]);
+    const out: Record<string, string> = {};
+    for (const p of Array.isArray(list) ? list : []) {
+      if (p && typeof p.productKey === 'string' && typeof p.displayPrice === 'string' && p.displayPrice) {
+        out[p.productKey] = p.displayPrice;
+      }
+    }
+    return out;
+  } catch {
+    return {};
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
   }
 }

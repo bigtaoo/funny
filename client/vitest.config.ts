@@ -34,6 +34,7 @@ export default defineConfig({
       '@nw/shared/rechargeMilestone': path.resolve(__dirname, '../server/shared/src/rechargeMilestone.ts'),
       '@nw/shared/titles': path.resolve(__dirname, '../server/shared/src/titles.ts'),
       '@nw/shared/economy/iapTiers': path.resolve(__dirname, '../server/shared/src/economy/iapTiers.ts'),
+      '@nw/shared/economy/subscriptions': path.resolve(__dirname, '../server/shared/src/economy/subscriptions.ts'),
       '@nw/shared': path.resolve(__dirname, '../server/shared/src/slg/index.ts'),
     },
   },
