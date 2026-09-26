@@ -19,6 +19,7 @@ import { advanceMarch } from './arrivalWalk';
 import { applyArrival } from './arrivalSettle';
 import { collectSettlementKeys, concurrentEligible } from './settlePlan';
 import { bumpCounter } from '../metrics';
+import { worldScope } from '../worldLease';
 
 /**
  * How many due marches one arrival tick will settle. Each one costs a handful of Mongo/Redis round trips
@@ -128,14 +129,14 @@ export class ArrivalService {
    * ADR-051 (P1): a stepping march advances tile-by-tile, writing the occupancy index at each cell for the
    * P2 encounter check. Legacy docs and 'return' legs carry no stepping cursor and never appear here.
    */
-  async processDueArrivalSteps(nowMs?: number): Promise<number> {
+  async processDueArrivalSteps(nowMs?: number, worldIds?: readonly string[]): Promise<number> {
     const { cols } = this.core.deps;
     const t = nowMs ?? this.core.deps.now();
     // `arriveAt: { $gt: t }` is what makes this half disjoint from the settlement half: a march at or past
     // its final arrival belongs to that one, which walks it the rest of the way AND settles it. The
     // `nextStepAt` index drives the scan; `arriveAt` rides along as a residual filter.
     const due = await cols.marches
-      .find({ status: 'marching', nextStepAt: { $lte: t }, arriveAt: { $gt: t } })
+      .find({ ...worldScope(worldIds), status: 'marching', nextStepAt: { $lte: t }, arriveAt: { $gt: t } })
       .limit(ARRIVAL_SCAN_LIMIT)
       .toArray();
     warnIfCapped(due.length, t, 'step');
@@ -183,11 +184,15 @@ export class ArrivalService {
    * lottery a march can lose repeatedly. `arriveAt: 1` is an existing index, so the sort is free, and it
    * makes lateness bounded and fair instead of arbitrary.
    */
-  async processDueArrivalSettlements(nowMs?: number, sliceMs: number = SETTLE_SLICE_MS): Promise<number> {
+  async processDueArrivalSettlements(
+    nowMs?: number,
+    sliceMs: number = SETTLE_SLICE_MS,
+    worldIds?: readonly string[],
+  ): Promise<number> {
     const { cols } = this.core.deps;
     const t = nowMs ?? this.core.deps.now();
     const due = await cols.marches
-      .find({ status: 'marching', arriveAt: { $lte: t } })
+      .find({ ...worldScope(worldIds), status: 'marching', arriveAt: { $lte: t } })
       .sort({ arriveAt: 1 })
       .limit(ARRIVAL_SCAN_LIMIT)
       .toArray();

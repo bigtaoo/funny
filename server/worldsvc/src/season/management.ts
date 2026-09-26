@@ -333,10 +333,13 @@ export class SeasonManagementService {
    * (destructive map wipe needs ops judgment on timing, consistent with G6 shard ops). Best-effort per world:
    * one world's failure does not block the others. Returns the worldIds that were settled this pass.
    */
-  async processDueSeasonSettlement(): Promise<string[]> {
+  async processDueSeasonSettlement(worldIds?: readonly string[]): Promise<string[]> {
     const { cols, now } = this.core.deps;
     const due = await cols.worlds
-      .find({ status: 'active', settleAt: { $lte: now() } }, { projection: { _id: 1 } })
+      .find(
+        { status: 'active', settleAt: { $lte: now() }, ...(worldIds ? { _id: { $in: [...worldIds] } } : {}) },
+        { projection: { _id: 1 } },
+      )
       .toArray();
     const settled: string[] = [];
     for (const w of due) {
