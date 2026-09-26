@@ -78,8 +78,8 @@ export function refreshOnQueueDue(host: QueuePollHost): void {
  * getOccupations had also answered, long after /world/teams itself had landed. Each slice now
  * paints the moment its own request resolves.
  *
- * Issue order matters: rateGate.ts hands out its 5-token bucket strictly FIFO, so when the bucket
- * is drained (world-map entry, a burst of taps) requests are served in the order they were made.
+ * Issue order matters: rateGate.ts serves all three GETs from its background lane in FIFO order, so
+ * when the bucket is drained (world-map entry, a burst of taps) they are served in the order made.
  * getTeams goes first because the team row is what the player is waiting on here.
  */
 export function load(host: DataHost): void {
