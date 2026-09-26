@@ -4,15 +4,17 @@
 #   powershell -ExecutionPolicy Bypass -File install.ps1
 #
 # Auto-detects the %APPDATA%\GIMP\<version> directory and copies the plugin to
-#   plug-ins\export_layers_cropped\export_layers_cropped.py
+#   plug-ins\export_layers_cropped\ (export_layers_cropped.py + speckle.py)
 # After installing, restart GIMP. Menu: File > Export Layers (Cropped to Content)
 
 $ErrorActionPreference = 'Stop'
 
-$src = Join-Path $PSScriptRoot 'export_layers_cropped.py'
-if (-not (Test-Path $src)) {
-    Write-Error "Plugin source file not found: $src"
-    exit 1
+$files = @('export_layers_cropped.py', 'speckle.py')
+foreach ($f in $files) {
+    if (-not (Test-Path (Join-Path $PSScriptRoot $f))) {
+        Write-Error "Plugin source file not found: $(Join-Path $PSScriptRoot $f)"
+        exit 1
+    }
 }
 
 # Find all GIMP config directories (there may be multiple versions: 2.10 / 3.0 / 3.2 ...), install to 3.x only
@@ -33,7 +35,9 @@ if (-not $versions) {
 foreach ($v in $versions) {
     $dest = Join-Path $v.FullName 'plug-ins\export_layers_cropped'
     New-Item -ItemType Directory -Force -Path $dest | Out-Null
-    Copy-Item -Path $src -Destination (Join-Path $dest 'export_layers_cropped.py') -Force
+    foreach ($f in $files) {
+        Copy-Item -Path (Join-Path $PSScriptRoot $f) -Destination (Join-Path $dest $f) -Force
+    }
     Write-Host "Installed to GIMP $($v.Name): $dest" -ForegroundColor Green
 }
 

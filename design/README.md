@@ -235,6 +235,7 @@
 |---|---|
 | [animator/ARCHITECTURE.md](tools/animator/ARCHITECTURE.md) · [REQUIREMENTS.md](tools/animator/REQUIREMENTS.md) | 骨骼动画编辑器（端口 9091） |
 | [animator/WORKSPACE_SYNC.md](tools/animator/WORKSPACE_SYNC.md) | animator 在线工作区 + 云盘→仓库同步桥（Cloudflare Pages + Supabase + 自动 PR）。**已归档**：方向被 desktop-shell/DESIGN.md 取代（ADR-055），代码已于 2026-08-02 全部下线——`WorkspaceStore`/`WorkspacePanel`/`workspaceConfig`/`anim-sync.mjs`/`anim-sync.yml`/`art/units/manifest.json` 在仓库里均已不存在（2026-09-15 核实）。本行此前写「已合并代码暂未下线」，与该文档自己的状态头矛盾 |
+| [gimp-export-layers/DESIGN.md](tools/gimp-export-layers/DESIGN.md) | GIMP 图层导出插件 + 去杂点（按岛的墨量/距离删掉散落像素再裁剪；`.taoeditor` 模式同步重算 anchor） |
 | [desktop-shell/DESIGN.md](tools/desktop-shell/DESIGN.md) | **工具桌面壳（Electron，多工具挂载 + 壳/内容双层自动更新 + 预留 git 提交接口；状态：设计中）** |
 | [level-editor/DESIGN.md](tools/level-editor/DESIGN.md) | 关卡编辑器（端口 9092） |
 | [map-editor/DESIGN.md](tools/map-editor/DESIGN.md) | SLG 大地图编辑器（端口 9095） |
