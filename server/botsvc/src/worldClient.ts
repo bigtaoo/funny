@@ -45,7 +45,7 @@ export interface SectView {
   memberFamilyCount: number;
 }
 
-export type SparseTileType =
+export type TileType =
   | 'neutral'
   | 'resource'
   | 'territory'
@@ -57,17 +57,34 @@ export type SparseTileType =
   | 'plankway'
   | 'stronghold';
 
-export interface WorldTileSparseView {
+/**
+ * One `/world/map` cell (openapi-world.yml WorldTileView), narrowed to what the expansion planner reads
+ * (expansion.ts). The full view, not `/world/map/sparse`: the sparse layer lists occupied tiles only,
+ * so it cannot say which neutral neighbour is a paper tile or what level it is.
+ */
+export interface WorldTileView {
   x: number;
   y: number;
-  type: SparseTileType;
+  type: TileType;
+  level: number;
+  resType?: string;
+  occupied?: boolean;
   mine?: boolean;
+  /** Same family. */
   ally?: boolean;
+  /** Same sect, other family — counts toward ADR-039 connectivity. */
+  sectmate?: boolean;
+  /** Allied sect — does NOT count toward connectivity. */
   allySect?: boolean;
+  protectedUntil?: number;
+  /** Mid occupation-hold (ADR-037): someone already won this tile's battle and is waiting out the hold. */
+  contestedUntil?: number;
 }
 
-/** Occupied structures worth marching on; resource/neutral/obstacle tiles are never attack targets. */
-const ATTACKABLE_TYPES: ReadonlySet<SparseTileType> = new Set(['territory', 'base', 'stronghold']);
+/** `POST /world/march` answer (MarchView), narrowed to the arrival time the bot paces its next march on. */
+export interface MarchStarted {
+  arriveAt?: number;
+}
 
 /** `{worldId}:{x}:{y}` (worldsvc's own tileId format, see server/worldsvc/src/coreKernel.ts). Split from the right since worldId itself never contains ':'. */
 function parseTileCoords(tileId: string): { x: number; y: number } | null {
@@ -115,31 +132,28 @@ export class WorldClient {
     return this.call<PlayerWorldView>('POST', '/world/build/upgrade', token, { worldId, key });
   }
 
-  getWorldMapSparse(
-    token: string,
-    worldId: string,
-    cx: number,
-    cy: number,
-    r: number,
-  ): Promise<{ tiles: WorldTileSparseView[] }> {
+  /** Full map view (every cell, with terrain/level/resource type) in the Chebyshev window of radius `r` around (cx, cy). */
+  getWorldMap(token: string, worldId: string, cx: number, cy: number, r: number): Promise<{ tiles: WorldTileView[] }> {
     const q = `worldId=${encodeURIComponent(worldId)}&cx=${cx}&cy=${cy}&r=${r}`;
-    return this.call<{ tiles: WorldTileSparseView[] }>('GET', `/world/map/sparse?${q}`, token);
+    return this.call<{ tiles: WorldTileView[] }>('GET', `/world/map?${q}`, token);
   }
 
-  startMarchAttack(
+  /** A flat-pool march (no team): the troops leave `playerWorld.troops` at departure. */
+  startMarch(
     token: string,
     worldId: string,
     from: { x: number; y: number },
     to: { x: number; y: number },
+    kind: 'occupy' | 'attack',
     troops: number,
-  ): Promise<void> {
-    return this.call<void>('POST', '/world/march', token, {
+  ): Promise<MarchStarted> {
+    return this.call<MarchStarted>('POST', '/world/march', token, {
       worldId,
       fromX: from.x,
       fromY: from.y,
       toX: to.x,
       toY: to.y,
-      kind: 'attack',
+      kind,
       troops,
     });
   }
@@ -162,11 +176,5 @@ export class WorldClient {
   /** Own base coordinates parsed from `mainBaseTile`; null until the bot has a placed base. */
   baseCoords(view: PlayerWorldView): { x: number; y: number } | null {
     return view.mainBaseTile ? parseTileCoords(view.mainBaseTile) : null;
-  }
-
-  /** Nearest attackable (occupied, non-mine) tile in the given sparse viewport, or null if none. */
-  pickAttackTarget(tiles: WorldTileSparseView[]): { x: number; y: number } | null {
-    const candidates = tiles.filter((t) => !t.mine && ATTACKABLE_TYPES.has(t.type));
-    return candidates.length > 0 ? { x: candidates[0]!.x, y: candidates[0]!.y } : null;
   }
 }

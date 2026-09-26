@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { WorldClient, type WorldTileSparseView } from '../src/worldClient';
+import { WorldClient } from '../src/worldClient';
 
 const client = new WorldClient('http://unused');
 
@@ -45,18 +45,22 @@ describe('WorldClient HTTP methods', () => {
     expect(calls).toEqual([{ url: `${BASE}/world/build/upgrade`, method: 'POST', auth: `Bearer ${TOKEN}`, body: { worldId: 's3-0', key: 'desk' } }]);
   });
 
-  it('getWorldMapSparse GETs /world/map/sparse with worldId/cx/cy/r', async () => {
-    const calls = install({ ok: true, data: { tiles: [] } });
-    await new WorldClient(BASE).getWorldMapSparse(TOKEN, 's3-0', 5, 6, 3);
-    expect(calls[0]!.url).toBe(`${BASE}/world/map/sparse?worldId=s3-0&cx=5&cy=6&r=3`);
+  it('getWorldMap GETs the FULL /world/map (not the sparse layer) with worldId/cx/cy/r', async () => {
+    const calls = install({ ok: true, data: { tiles: [{ x: 5, y: 6, type: 'resource', level: 1, resType: 'paper' }] } });
+    const view = await new WorldClient(BASE).getWorldMap(TOKEN, 's3-0', 5, 6, 3);
+    expect(calls[0]!.url).toBe(`${BASE}/world/map?worldId=s3-0&cx=5&cy=6&r=3`);
+    expect(view.tiles[0]!.resType).toBe('paper');
   });
 
-  it('startMarchAttack POSTs /world/march with from/to coords + troops + kind:attack', async () => {
-    const calls = install({ ok: true });
-    await new WorldClient(BASE).startMarchAttack(TOKEN, 's3-0', { x: 1, y: 2 }, { x: 3, y: 4 }, 10);
+  it('startMarch POSTs /world/march with from/to coords, the kind and troops — and nothing else', async () => {
+    const calls = install({ ok: true, data: { arriveAt: 42 } });
+    // `to` may be a whole ExpansionPlan; only its coordinates go on the wire.
+    const to = { x: 3, y: 4, kind: 'occupy' as const, troops: 500 };
+    const started = await new WorldClient(BASE).startMarch(TOKEN, 's3-0', { x: 1, y: 2 }, to, 'occupy', 500);
+    expect(started).toEqual({ arriveAt: 42 });
     expect(calls).toEqual([{
       url: `${BASE}/world/march`, method: 'POST', auth: `Bearer ${TOKEN}`,
-      body: { worldId: 's3-0', fromX: 1, fromY: 2, toX: 3, toY: 4, kind: 'attack', troops: 10 },
+      body: { worldId: 's3-0', fromX: 1, fromY: 2, toX: 3, toY: 4, kind: 'occupy', troops: 500 },
     }]);
   });
 
@@ -109,38 +113,11 @@ describe('WorldClient.baseCoords', () => {
   });
 });
 
-describe('WorldClient.pickAttackTarget', () => {
-  const tile = (over: Partial<WorldTileSparseView>): WorldTileSparseView => ({
-    x: 0,
-    y: 0,
-    type: 'territory',
-    ...over,
-  });
-
-  it('picks the first occupied, non-mine attackable tile', () => {
-    const tiles = [tile({ mine: true, x: 1, y: 1 }), tile({ mine: false, x: 2, y: 2 })];
-    expect(client.pickAttackTarget(tiles)).toEqual({ x: 2, y: 2 });
-  });
-
-  it('ignores resource/neutral/obstacle tiles even when not mine', () => {
-    const tiles = [
-      tile({ type: 'resource', mine: false, x: 5, y: 5 }),
-      tile({ type: 'neutral', mine: false, x: 6, y: 6 }),
-      tile({ type: 'obstacle', mine: false, x: 7, y: 7 }),
-    ];
-    expect(client.pickAttackTarget(tiles)).toBeNull();
-  });
-
-  it('returns null when no candidates exist', () => {
-    expect(client.pickAttackTarget([])).toBeNull();
-  });
-});
-
 describe('WorldClient.baseCoords — non-numeric segments', () => {
   // 'not-a-tile-id' above is rejected one line earlier, by the <3-segment check, so the Number.isFinite
   // pair had never actually run against a bad value. It has to hold: baseCoords feeds
-  // BotSession.trySiege's march origin, and a NaN x/y would go out as `fromX=NaN` on a real POST
-  // /world/march instead of the bot simply skipping the siege this tick.
+  // BotSession.tryExpand's march origin, and a NaN x/y would go out as `fromX=NaN` on a real POST
+  // /world/march instead of the bot simply skipping the march this tick.
   it('returns null when the x segment is not a number', () => {
     expect(client.baseCoords({ joined: true, mainBaseTile: 's3-0:ab:34' })).toBeNull();
   });

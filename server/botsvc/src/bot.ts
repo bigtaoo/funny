@@ -1,6 +1,7 @@
 // Single bot session (BOTSVC_DESIGN §3.2): login, family join/leave-on-low-activity, payment-tier
-// bootstrap, SLG city actions (§3.2 slg_action), and — this increment — ranked matchmaking + battle
-// over a real gateway+gameserver WS connection driven by @nw/engine's AISystem (§1 B3, §8).
+// bootstrap, SLG city actions + connected expansion (§3.2 slg_action, §3.4), and ranked
+// matchmaking + battle over a real gateway+gameserver WS connection driven by @nw/engine's
+// AISystem (§1 B3, §8).
 import { BUILD_QUEUE_SLOTS, RESOURCE_TYPES, SECT_CREATE_COST, buildCost, buildGateReason } from '@nw/shared';
 import { MetaClient } from './metaClient';
 import { SocialClient, type FamilyView } from './socialClient';
@@ -10,6 +11,7 @@ import { playRankedMatch } from './battleSession';
 import type { BotIdentity } from './pool';
 import { hasCode } from './apiError';
 import { BOT_FAMILY_ROSTER, BOT_SECT_ROSTER, BotOrgRegistry, PENDING_SEAT_TTL_MS, botFamilySlot } from './orgs';
+import { planExpansion } from './expansion';
 
 /** Family upkeep pacing per role (BOTSVC_DESIGN §3.3): officers approve applications, members just idle. */
 const FAMILY_SEEK_INTERVAL_MS = 60_000;
@@ -36,29 +38,19 @@ const P1_BUILDING_KEYS: BuildingKey[] = [
   'drillYard',
 ];
 
-/** Every Nth slg tick a bot considers a siege instead of just upgrading — "偶尔攻城", not every tick (BOTSVC_DESIGN §3.2). */
-const SIEGE_TICK_INTERVAL = 5;
-/** Send a minority of the garrison; never risk the whole troop count on one march. */
-const SIEGE_TROOP_FRACTION = 0.3;
+/** Every Nth slg tick a bot considers a march instead of just upgrading (BOTSVC_DESIGN §3.4). */
+const EXPAND_TICK_INTERVAL = 5;
 /**
- * Upper bound worldsvc puts on any map-view radius (`MAP_VIEW_MAX_RADIUS` in worldsvc/src/worldTypes.ts).
- * Asking for more is not an error — the server silently clamps — so a larger number here would be a lie
- * in the source rather than a wider scan. `bot.scanRadius.test.ts` fails if the two ever drift.
- */
-const WORLD_MAP_VIEW_MAX_RADIUS = 40;
-
-/**
- * Sparse-map scan radius around the bot's own base when looking for a siege target.
+ * Radius of the full map view the expansion planner reads, around the bot's base.
  *
- * Sits AT the server's view cap, deliberately. 5 was tuned against season 1's crowded shard (1644
- * players, nearest-neighbour base distance p50 = 4) and stopped reaching anything once play moved to a
- * sparse one: measured on live s2-0 on 2026-09-15, 108 players spread over 1500×1500 give p50 = 42 /
- * p90 = 85, and an 11×11 window found a target for **2 of 108** bots. `POST /world/march` was absent
- * from all 288 worldsvc heartbeats of the preceding 24h — no bot had besieged anything at all, and the
- * wasted `/world/me` + `/world/map/sparse` pair every fifth tick fell through to yet another upgrade,
- * which is why `build/upgrade` ran at 5/5 ticks instead of the intended 4/5. At the cap it is 54 of 108.
+ * Small on purpose: ADR-039 connectivity means every legal target borders land the sect already holds,
+ * and a bot that can afford ~6 occupations (EXPAND_TROOP_FLOOR) never grows far past its own 3x3. Until
+ * 2026-09-26 this scanned the server's full 40-tile cap for targets that were then all rejected as
+ * TERRITORY_NOT_CONNECTED — the full view is per-cell, so a 17x17 window is also the cheap one.
  */
-const SIEGE_SCAN_RADIUS = WORLD_MAP_VIEW_MAX_RADIUS;
+const EXPAND_VIEW_RADIUS = 8;
+/** Pause before the next march when the server's answer carried no arrival time. */
+const MARCH_BUSY_FALLBACK_MS = 10 * 60_000;
 
 /**
  * Wall-clock floor between two SLG upkeep passes *for one bot*, independent of how the scheduler is
@@ -71,7 +63,7 @@ export const DEFAULT_SLG_INTERVAL_MS = 45_000;
 
 /**
  * Hard ceiling on how stale the resource snapshot behind the upgrade decision may get. In the default
- * configuration this never fires — a siege tick refreshes the snapshot every SIEGE_TICK_INTERVAL SLG
+ * configuration this never fires — an expansion tick refreshes the snapshot every EXPAND_TICK_INTERVAL SLG
  * ticks (5 × 45s = 225s) for free, out of the `/world/me` it was fetching anyway. It is the backstop
  * for a configuration where that no longer holds, so that a bot which currently affords nothing still
  * re-checks eventually instead of going quiet forever.
@@ -110,6 +102,8 @@ export class BotSession {
   /** Last `/world/me` this session saw, used to decide what it can afford before asking the server. */
   private slgSnapshot: PlayerWorldView | undefined;
   private slgSnapshotAt = 0;
+  /** No new march before this (the previous one's arrival, BOTSVC_DESIGN §3.4 rule 6). */
+  private marchBusyUntil = 0;
   private battling = false;
   /** Set while a battle is in flight (runBattle) — logout() aborts it instead of leaving the match
    *  running to completion against an account the fleet no longer tracks as online (2026-08-04 fix). */
@@ -357,8 +351,8 @@ export class BotSession {
 
   /**
    * One tick of SLG upkeep (§3.2 slg_action): join the active season's world on first tick, then
-   * either upgrade a building it can actually pay for or — every SIEGE_TICK_INTERVAL ticks — march a
-   * minority of troops on a nearby occupied tile. No auction/social calls here (B8).
+   * either upgrade a building it can actually pay for or — every EXPAND_TICK_INTERVAL ticks — march on
+   * the next tile bordering its sect's land (expansion.ts). No auction/social calls here (B8).
    *
    * Rate-limited per bot (DEFAULT_SLG_INTERVAL_MS) rather than acting on every upkeep pass handed to
    * it: the scheduler's pass cadence is tuned for its own CPU burst shape, and letting it double as
@@ -377,7 +371,7 @@ export class BotSession {
       this.noteSnapshot(joined, now);
     }
     this.slgTick++;
-    if (this.slgTick % SIEGE_TICK_INTERVAL === 0 && (await this.trySiege())) return;
+    if (this.slgTick % EXPAND_TICK_INTERVAL === 0 && (await this.tryExpand(now))) return;
     await this.upgradeNextBuilding();
   }
 
@@ -445,26 +439,27 @@ export class BotSession {
     this.slgSnapshotAt = at;
   }
 
-  /** Returns true if a march was actually started (so the caller skips the upgrade this tick). */
-  private async trySiege(): Promise<boolean> {
-    if (!this.token || !this.worldId) return false;
+  /**
+   * March on the next tile bordering the sect's land (BOTSVC_DESIGN §3.4). Returns true if a march was
+   * actually started, so the caller skips the upgrade this tick. One march in flight at a time: the
+   * next is held until the server-reported arrival, after which the tile shows up as mid occupation-hold
+   * (`contestedUntil`) and is not picked again.
+   */
+  private async tryExpand(now: number): Promise<boolean> {
+    if (!this.token || !this.worldId || now < this.marchBusyUntil) return false;
     const me = await this.world.getWorldMe(this.token, this.worldId);
     // Free refresh for the upgrade decision's snapshot — this is the same `/world/me` it would
     // otherwise have to fetch itself, and at the default cadence it is the ONLY one either needs.
     this.noteSnapshot(me, Date.now());
     const base = this.world.baseCoords(me);
-    if (!base || !me.troops) return false;
-    const { tiles } = await this.world.getWorldMapSparse(
-      this.token,
-      this.worldId,
-      base.x,
-      base.y,
-      SIEGE_SCAN_RADIUS,
-    );
-    const target = this.world.pickAttackTarget(tiles);
-    if (!target) return false;
-    const troops = Math.max(1, Math.floor(me.troops * SIEGE_TROOP_FRACTION));
-    await this.world.startMarchAttack(this.token, this.worldId, base, target, troops);
+    if (!base || !me.troops || !this.token || !this.worldId) return false;
+    const { tiles } = await this.world.getWorldMap(this.token, this.worldId, base.x, base.y, EXPAND_VIEW_RADIUS);
+    const plan = planExpansion(tiles, base, me.troops, Date.now());
+    if (!plan || !this.token || !this.worldId) return false;
+    const started = await this.world.startMarch(this.token, this.worldId, base, plan, plan.kind, plan.troops);
+    this.marchBusyUntil = started?.arriveAt ?? Date.now() + MARCH_BUSY_FALLBACK_MS;
+    // The troops left the pool: the upgrade decision's snapshot no longer matches the server.
+    this.slgSnapshot = undefined;
     return true;
   }
 }
