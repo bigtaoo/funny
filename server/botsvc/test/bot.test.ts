@@ -536,6 +536,91 @@ describe('BotSession.tickFamily', () => {
     expect(full.setRole).not.toHaveBeenCalled();
   });
 
+
+  it('a failed found (TAG taken meanwhile) propagates, and drops the claim so the slot is re-read next time', async () => {
+    vi.useFakeTimers({ now: 1e12 });
+    const social = fakeSocial();
+    social.createFamily.mockRejectedValueOnce(new BotApiError('TAG_TAKEN', 'x'));
+    const s = await session(social);
+    await expect(s.tickFamily()).rejects.toThrow('TAG_TAKEN');
+    vi.setSystemTime(1e12 + MIN);
+    await s.tickFamily();
+    expect(social.getFamily).toHaveBeenCalledTimes(2);
+    expect(social.createFamily).toHaveBeenCalledTimes(2);
+  });
+
+  it('NOT_FOUND on apply (family disbanded since the lookup) is a race, not a failure; no seat is held', async () => {
+    const orgs = new BotOrgRegistry();
+    const social = fakeSocial();
+    social.getFamily.mockImplementation(roster({ 0: fam(0, { memberCount: FAMILY_CAP - 1 }) }));
+    social.requestJoin.mockRejectedValueOnce(new BotApiError('NOT_FOUND', 'x'));
+    await expect((await session(social, { orgs })).tickFamily()).resolves.toBeUndefined();
+    // Had bot-0001 been counted as pending, the one free seat would look taken and bot-0002 would found slot 1.
+    const other = fakeSocial();
+    other.getFamily.mockImplementation(roster({ 0: fam(0, { memberCount: FAMILY_CAP - 1 }) }));
+    await (await session(other, { orgs, id: bot2 })).tickFamily();
+    expect(other.requestJoin).toHaveBeenCalledWith('t', `fam:${BOT_FAMILY_ROSTER[0]!.tag}`);
+  });
+
+  it('an unexpected apply error propagates so the fleet failure log counts it', async () => {
+    const social = fakeSocial();
+    social.getFamily.mockImplementation(roster({ 0: fam(0) }));
+    social.requestJoin.mockRejectedValue(new BotApiError('BANNED', 'x'));
+    await expect((await session(social)).tickFamily()).rejects.toThrow('BANNED');
+  });
+
+  it('joining a family releases the seat this bot was holding in the shared registry', async () => {
+    vi.useFakeTimers({ now: 1e12 });
+    const orgs = new BotOrgRegistry();
+    const families = roster({ 0: fam(0, { memberCount: FAMILY_CAP - 1 }) });
+    const a = fakeSocial();
+    a.getFamily.mockImplementation(families);
+    const s = await session(a, { orgs });
+    await s.tickFamily(); // applies, holds the last seat
+    a.myFamily.mockResolvedValue(fam(1, { members: [{ accountId: 'a1', role: 'member', joinedAt: 0 }] }));
+    vi.setSystemTime(1e12 + MIN);
+    await s.tickFamily(); // accepted elsewhere -> seat released
+    const b = fakeSocial();
+    b.getFamily.mockImplementation(families);
+    await (await session(b, { orgs, id: bot2 })).tickFamily();
+    expect(b.requestJoin).toHaveBeenCalledWith('t', `fam:${BOT_FAMILY_ROSTER[0]!.tag}`);
+  });
+
+  it('an applicant who got into another family first (ALREADY_IN_FAMILY) does not stop the accepting', async () => {
+    const social = fakeSocial();
+    social.myFamily.mockResolvedValue(led(3));
+    social.listJoinRequests.mockResolvedValue([
+      { requestId: 'r1', accountId: 'x1', createdAt: 1 },
+      { requestId: 'r2', accountId: 'x2', createdAt: 2 },
+    ]);
+    social.respondJoinRequest.mockImplementation(async (_t: string, id: string) => {
+      if (id === 'r1') throw new BotApiError('ALREADY_IN_FAMILY', 'x');
+    });
+    await (await session(social)).tickFamily();
+    expect(social.respondJoinRequest.mock.calls.map((c: unknown[]) => [c[1], c[2]])).toEqual([
+      ['r1', true],
+      ['r2', true],
+    ]);
+  });
+
+  it('an unexpected error while approving propagates', async () => {
+    const social = fakeSocial();
+    social.myFamily.mockResolvedValue(led(3));
+    social.listJoinRequests.mockResolvedValue([{ requestId: 'r1', accountId: 'x1', createdAt: 1 }]);
+    social.respondJoinRequest.mockRejectedValue(new BotApiError('NO_PERMISSION', 'x'));
+    await expect((await session(social)).tickFamily()).rejects.toThrow('NO_PERMISSION');
+  });
+
+  it('members without an accountId in the view are never picked as elder', async () => {
+    const social = fakeSocial();
+    social.myFamily.mockResolvedValue(led(3, [
+      { role: 'member', joinedAt: 1 },
+      { accountId: 'm2', role: 'member', joinedAt: 2 },
+    ]));
+    await (await session(social)).tickFamily();
+    expect(social.setRole).toHaveBeenCalledWith('t', 'm2', 'elder');
+  });
+
   describe('sects', () => {
     function sectWorld(sects: unknown[]): any {
       return {
@@ -599,6 +684,87 @@ describe('BotSession.tickFamily', () => {
         await leaderIn(worldId, social, world);
         expect(world.listSects).not.toHaveBeenCalled();
       }
+    });
+
+    it('a failed grant founds nothing: no create without the coins to pay for it', async () => {
+      const social = fakeSocial();
+      social.myFamily.mockResolvedValue(led(0));
+      const world = sectWorld([]);
+      const commercial = fakeCommercial();
+      commercial.grantCoins.mockRejectedValue(new Error('grant 500'));
+      const s = await session(social, { world, commercial });
+      (s as any).worldId = 's3-0';
+      await expect(s.tickFamily()).rejects.toThrow('grant 500');
+      expect(world.createSect).not.toHaveBeenCalled();
+    });
+
+    it('a failed create is retried next tick with the SAME grant orderId, so the founder is never paid twice', async () => {
+      vi.useFakeTimers({ now: 1e12 });
+      const social = fakeSocial();
+      social.myFamily.mockResolvedValue(led(0));
+      const world = sectWorld([]);
+      world.createSect.mockRejectedValueOnce(new BotApiError('NAME_TAKEN', 'x'));
+      const commercial = fakeCommercial();
+      const s = await session(social, { world, commercial });
+      (s as any).worldId = 's3-0';
+      await expect(s.tickFamily()).rejects.toThrow('NAME_TAKEN');
+      vi.setSystemTime(1e12 + 60_000);
+      await s.tickFamily();
+      expect(world.createSect).toHaveBeenCalledTimes(2);
+      const orderIds = commercial.grantCoins.mock.calls.map((c: unknown[]) => c[2]);
+      expect(orderIds).toEqual(['bot-sect-bot-0001-s3-0', 'bot-sect-bot-0001-s3-0']);
+    });
+
+    /**
+     * A bot's own next sect step is 60s away, when the sect cache has expired anyway; the forgetSects
+     * calls exist for the NEXT leader reading the shared registry within that minute. Runs the leader
+     * of `firstSlot`, then a slot-9 leader in the same world; resolves/rejects with the FIRST outcome.
+     */
+    async function twoLeaders(world: any, firstSlot: number): Promise<void> {
+      const orgs = new BotOrgRegistry();
+      const first = fakeSocial();
+      first.myFamily.mockResolvedValue(led(firstSlot));
+      const a = await session(first, { world, orgs });
+      (a as any).worldId = 's3-0';
+      const outcome = a.tickFamily();
+      await outcome.catch(() => undefined);
+      const second = fakeSocial();
+      second.myFamily.mockResolvedValue(led(9));
+      const b = await session(second, { world, orgs, id: bot2 });
+      (b as any).worldId = 's3-0';
+      await b.tickFamily();
+      return outcome;
+    }
+
+    it('after a leader founds a sect, the next leader re-reads the shared sect list and joins it', async () => {
+      const world = sectWorld([]);
+      world.listSects.mockResolvedValueOnce([]).mockResolvedValue([sect(0, 1)]);
+      await twoLeaders(world, 0);
+      expect(world.listSects).toHaveBeenCalledTimes(2);
+      expect(world.joinSect).toHaveBeenCalledWith('t', 's3-0', sect(0, 1).sectId);
+    });
+
+    it('after a join, the next leader re-reads the shared sect list', async () => {
+      const world = sectWorld([sect(0, 1), sect(1, 1)]);
+      await twoLeaders(world, 7);
+      expect(world.listSects).toHaveBeenCalledTimes(2);
+    });
+
+    it('a rejected join (SECT_FULL race) propagates, and the next leader still re-reads the list', async () => {
+      const world = sectWorld([sect(0, SECT_FAMILY_CAP - 1)]);
+      world.joinSect.mockRejectedValueOnce(new BotApiError('SECT_FULL', 'x'));
+      await expect(twoLeaders(world, 7)).rejects.toThrow('SECT_FULL');
+      expect(world.listSects).toHaveBeenCalledTimes(2);
+    });
+
+    it('a non-founder leader with no bot sect in its world yet waits: no grant, no create, no join', async () => {
+      const social = fakeSocial();
+      social.myFamily.mockResolvedValue(led(BOT_SECT_ROSTER.length));
+      const world = sectWorld([]);
+      const commercial = await leaderIn('s3-0', social, world);
+      expect(commercial.grantCoins).not.toHaveBeenCalled();
+      expect(world.createSect).not.toHaveBeenCalled();
+      expect(world.joinSect).not.toHaveBeenCalled();
     });
   });
 });
