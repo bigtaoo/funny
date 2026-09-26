@@ -32,7 +32,7 @@
 // `npx vitest run difficulty` suite (evaluates all 61 levels, slow).
 const fs = require('fs');
 const path = require('path');
-const dir = path.join(__dirname, '..', 'src', 'game', 'campaign', 'levels');
+const dir = path.join(__dirname, '..', '..', 'server', 'engine', 'src', 'campaign', 'levels');
 
 const FIRST_WAVE_TICK = 120; // shift so the first wave lands at 4s, giving a placement window
 

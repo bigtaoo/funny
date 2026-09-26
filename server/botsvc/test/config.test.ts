@@ -9,7 +9,7 @@ const ENV_KEYS = [
   'NW_BOT_SHED_START_AT', 'NW_BOT_SHED_FULL_AT', 'NW_META_BASE_URL', 'NW_SOCIAL_BASE_URL',
   'NW_WORLD_BASE_URL', 'NW_GATEWAY_INTERNAL_URL', 'NW_GATEWAY_WS_URL', 'NW_COMMERCIAL_INTERNAL_URL',
   'NW_INTERNAL_KEY', 'NW_BOT_BATTLE_CHANCE', 'NW_BOT_UPKEEP_CONCURRENCY', 'NW_BOT_TICK_MS',
-  'NW_BOT_UPKEEP_ROTATIONS', 'NW_BOT_DEVICE_OFFSET', 'NW_BOT_SPAWN_BATCH',
+  'NW_BOT_UPKEEP_ROTATIONS', 'NW_BOT_DEVICE_OFFSET', 'NW_BOT_SPAWN_BATCH', 'NW_BOT_ROTATION', 'NW_BOT_PVE',
 ] as const;
 
 describe('loadBotsvcEnv', () => {
@@ -50,6 +50,8 @@ describe('loadBotsvcEnv', () => {
     expect(env.upkeepRotations).toBe(3);
     expect(env.deviceOffset).toBe(0);
     expect(env.spawnBatch).toBe(10);
+    expect(env.rotation).toBe(true);
+    expect(env.pve).toBe(true);
   });
 
   it('every var set -> all threaded through verbatim (except numeric coercion)', () => {
@@ -95,5 +97,15 @@ describe('loadBotsvcEnv', () => {
     expect(env.upkeepRotations).toBe(5);
     expect(env.deviceOffset).toBe(1000);
     expect(env.spawnBatch).toBe(25);
+  });
+
+  it('NW_BOT_ROTATION / NW_BOT_PVE: 0 or false turns them off, anything else (or empty) leaves them on', () => {
+    for (const [v, on] of [['0', false], ['false', false], ['FALSE', false], ['1', true], ['true', true], ['', true]] as const) {
+      process.env.NW_BOT_ROTATION = v;
+      process.env.NW_BOT_PVE = v;
+      const env = loadBotsvcEnv();
+      expect(env.rotation, v).toBe(on);
+      expect(env.pve, v).toBe(on);
+    }
   });
 });

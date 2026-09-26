@@ -40,7 +40,9 @@
 ```
 server/botsvc/          独立 npm workspace，端口 18087（仅内部管理面，不对客户端公网暴露）
   内部管理 API（X-Internal-Key，供 admin/ops 调）：
-    GET  /internal/bots/status         → { total, online, targetOnline, sheddingLevel }
+    GET  /internal/bots/status         → { total, online, targetOnline, effectiveTarget, paused,
+                                           upkeepErrors: {family, slg, pve},
+                                           pve: {entered, cleared, lost, spotChecked, verified} }
     POST /internal/bots/scale          { targetOnline }        → 调整目标同时在线数（默认100）
     POST /internal/bots/pause          { }                     → 立即下线所有机器人，停止新登录
 ```
@@ -57,10 +59,12 @@ server/botsvc/          独立 npm workspace，端口 18087（仅内部管理面
 
 - **账号池 1000，稳态同时在线目标 100**（§3.2 覆盖真人挤占时的动态降低）。
 - 每个机器人账号：`deviceId = bot-{0001..1000}`，走 metaserver 现有 **匿名 device-login** 公网端点创建/复用账号（跟真实 Web/CrazyGames 玩家完全一样的入口，不新增账号创建 API）。
-- botsvc 主循环维护一个"会话调度器"：
-  - 未在线的机器人按泊松间隔随机挑选上线（模拟真人陆续登录，不是 1000 个同时排队）。
-  - 在线机器人有一个随机会话时长（例如 10–60 分钟，具体数值留实现时按压测结果调），到期正常走登出流程下线，模拟真人玩一会儿就退。
-  - 调度器目标：**同时在线数在 `targetOnline` 附近波动**，不要求分毫不差。
+- **在线轮换（2026-09-26 落地，`scheduler.ts` + `rotation.ts`）**：在此之前这一段只写在设计里、代码从没做——调度器永远登录账号池的前 `targetOnline` 个、登上就不下线，所以**线上永远是 bot-0001..0100 在线，其余 900 个从没上过线**。现在：
+  - **目标在线数跟着欧洲的一天走**：`targetOnline` 的含义改成**晚高峰峰值**，每个 tick 按柏林本地时间（`Europe/Berlin`，夏令时由时区库处理）查 `EUROPE_DAY_CURVE` 的 24 个整点系数并在两个整点间线性插值：凌晨 4–5 点最低 0.12，午间 0.6 左右，20–21 点为 1。全天平均约 0.55，所以 `targetOnline=100` 的机队**日均约 55 在线**。夜里至少留 1 个。容量降级（§4）在这个数上再往下压。
+  - **每次登录 20–60 分钟**（均匀分布），到点后**只在 `lobby_idle` 时下线**——打排位或打关卡的机器人先打完再走；PvE 到点没打的也先打完（§3.5）。
+  - **谁上线**：先上**当前有 PvE 到点**的（到点早的优先），其余从离线的机器人里**均匀随机**挑，不再按账号池顺序。每 tick 登入/登出都受 `NW_BOT_SPAWN_BATCH` 限流。
+  - **超出目标时谁先下**（曲线下降或容量降级）：先下空闲的，空闲的里按会话结束时间早的先下；对局中的放在最后，所以晚间回落不会打断对局，容量降级仍然能降到目标。
+  - `NW_BOT_ROTATION=0` 回到旧行为（平直目标、按账号池顺序、不到期下线），给要一支稳定机队的压测用。
 - **单次 tick 的纪律（2026-07-14 断线排查后加固）**：`scheduler.tick()` 由固定 `NW_BOT_TICK_MS` 定时器（默认 5s）无条件触发，而一次 pass 要遍历一个轮转分片的在线 bot 做家族/SLG 巡检——大机队下一次 pass 可能超过一个 tick 周期。因此：
   - **防重入门闩**（`ticking` 标志）：上一 pass 未跑完时，新到的 tick 直接跳过并告警一次，绝不叠加。否则多个 tick 循环并发会成倍放大 REST/撮合负载，正是把事件循环周期性打爆、导致对局漏掉 gameserver 心跳的元凶之一。
   - **巡检有界并发**（`NW_BOT_UPKEEP_CONCURRENCY`，默认 20）：把逐 bot 串行 `await tickFamily()/tickSlg()` 改成固定大小的 worker 池从共享游标取任务；单 bot 内 `tickFamily → tickSlg → tickBattle` 顺序不变，`tickBattle()` 仍 fire-and-forget。串行会让 pass 随机队线性膨胀，无界 `Promise.all` 又会一次性打出上千 REST——两者都要避免。
@@ -70,14 +74,15 @@ server/botsvc/          独立 npm workspace，端口 18087（仅内部管理面
 
 ```
 offline → logging_in → lobby_idle ⇄ matchmaking → in_battle → lobby_idle → ...
-                            ↓                                      ↑
+                            ↓   ↘                                  ↑
+                            ↓     in_pve ─────────────────────────┤
                         slg_action ──────────────────────────────┘
                             ↓
                         family_task
 ```
 
 - `logging_in`：metaserver device-login 拿 JWT → gateway WS 握手上线（presence 事件，跟真人一样触发好友上线通知等副作用，这是刻意的，因为机器人要看起来像真人）。
-- `lobby_idle`：什么都不做，按权重随机决定下一步去 `matchmaking`（PvE 关卡 / PvP 排位）还是 `slg_action`。
+- `lobby_idle`：每个巡检 pass 依次 `tickFamily → tickSlg → tickPve → tickBattle`。PvE 到点就进 `in_pve`（§3.5），这样同一个 pass 的排位掷骰就不会再让它去排队；否则按 `battleChancePerTick` 掷骰决定去不去 `matchmaking`。
 - `matchmaking`：走真实 gateway→matchsvc 排队协议；配对成功后用 §1 B3 的 AISystem headless 驱动真实 gameserver WS 数据面连接完整走完一局（提交真实 cmd 流），局末走真实 `/internal/match/report` 结算路径——**跟真人打真人在服务器视角完全一样**。
 - `slg_action`：调 worldsvc 公网 `/world/*` 做基础节奏（资源采集、建筑升级、造兵、按连地规则从本城向外占资源地，见 §3.4），**不挂拍卖**（B8）。
   **节奏与"发不发得出去"两件事都由 bot 自己判（2026-09-17）**：
@@ -195,6 +200,53 @@ botsvc 日志 `family` 失败累计 **123 万次**，最后一条错误显示为
 
 **服务端依然权威**：以上只是让机器人少发注定被拒的请求。连地、兵力、保护期都由 worldsvc 在出发和到达时各校验一次。
 
+### 3.5 PvE：每天 1–3 关，一半在欧洲晚上（2026-09-26 落地）
+
+在此之前机器人**从没打过 PvE**。原因是关卡 JSON 和计星函数只在 `client/` 里，botsvc 根本没法跑关卡。
+
+**先挪家**：
+- `client/src/game/campaign/levels/*.json` 和 `levels.ts` 挪到 `server/engine/src/campaign/`。
+- `client/src/game/meta/campaignRewards.ts` 挪成 `server/engine/src/campaign/stars.ts`。
+- 从 `@nw/engine` 根导出 `CAMPAIGN_LEVELS / CAMPAIGN_LEVEL_ORDER / getLevel` 和 `buildStarContext / computeStars / …`。
+
+client、peer judge、关卡编辑器、调参脚本现在读的都是这一份（engine 的 `tsconfig.json` 加了 `src/**/*.json`，tsc 会把关卡原样发进 `dist/`）。
+
+**什么时候打**（`rotation.ts planPveDay`，按 UTC 日计划，第一次问到时生成）：
+- 每个 bot 每天从 {1, 2, 3} 里均匀取次数，平均每天 2 关。
+- 每一关各自以 50% 落在 **UTC 17:00–22:00**（欧洲晚上）。另外 50% 均匀落在其余 19 小时（从 22 点绕过午夜到 17 点）。所以晚上 5 小时占一半，速率约是其余时段的 3 倍。
+- 换日就重新计划；前一天没打的直接丢，不补。
+- 离线的机器人到点了，调度器会优先把它登上来（§3.1）。
+
+**怎么打**（`pve.ts playLevel` + `BotSession.runPve`），和客户端的顺序一样：
+1. `GET /save` 读进度和卡牌。
+2. 选关（`pickLevel`）：
+   - 默认打**前沿**，即第一个没通关的关。每一关的 `requires` 恰好就是顺序里的上一关，这一点有测试钉着，所以"第一个没通的"一定已解锁。
+   - 30% 概率（`PVE_REPLAY_CHANCE`）改为重打一关已通关但不满 3 星的。
+   - 全部 3 星时不打。
+3. `POST /pve/enter` 扣体力，输了不退。体力不足（`INSUFFICIENT_STAMINA`）就算了，不当错误：每关 10 点、上限 120、每 6 分钟回 1 点，每天 1–3 关远用不完。
+4. **在本机跑引擎**打这一关：
+   - 用 `campaign` 模式。
+   - 卡牌是存档里的 `cardInv` / `equipmentInv`，经 `toEngineCards` 转成引擎格式（`@nw/shared` 的 `CARD_DEFS` 查兵种）。
+   - 玩家在下方（owner 0）。AISystem 只会替上方决策，所以沿用排位里当下方时的**镜像视图**（`engineDriver.ts buildMirroredView`）。
+   - AI 难度按 deviceId 固定在 6–10（`pveDifficulty`）。难度 5（排位用的）在零卡时 60 关只能过 7 关；难度 8 能过 26 关，10 能过 29 关。
+   - 每 300 帧让出一次事件循环；一关模拟只要几毫秒到一秒。
+5. **等满这一关的真实时长**（`endFrame / 30` 秒）再上报：模拟虽然很快，真人打一关要一两分钟。等待期间状态保持 `in_pve`，这段时间登出等于玩家中途离开，不上报，也不算错误。
+6. 赢了走 `POST /pve/clear`（星数 + 成就统计）。被抽查（`needsReplay`，首通必抽）就把指令帧按 `replayToUploadFrames` 的格式送 `POST /pve/verify`。输了什么都不报，和客户端一样。
+
+**抽查必须过**：服务端不自己复算，而是把帧发给一个 peer judge。judge 用关卡 seed、**服务端自己的卡牌快照**和上传的帧重跑一遍（`judgeRunner.ts runPveJudge`）。复算出的星数低于上报值，就会被判可疑，开运营工单并发警告邮件。机器人因此必须严格按 judge 回放的方式推进引擎：
+- 第 t 帧后决定的指令在第 t+1 帧执行，并记在 t+1 帧名下。
+- 用同一份关卡 JSON、同一份卡牌。
+
+**统计**：`/internal/bots/status` 的 `pve` 是全池累计的 `{entered, cleared, lost, spotChecked, verified}`。失败的 run 计入 `upkeepErrors.pve`。`NW_BOT_PVE=0` 关掉 PvE。
+
+**测试**：
+- `pve.test.ts` 在真实引擎上把 60 关全打一遍，逐关用 judge 的方式复算，星数全部一致（有赢有输）。另外覆盖带卡复算、分块不影响结果、帧格式和选关规则。
+- `botPve.test.ts` 覆盖回合编排：到点、占住 `in_pve`、等待时长、抽查、输、体力不足、中途登出。
+- `rotation.test.ts` 覆盖曲线、夏令时、会话时长，以及 4000 天的统计分布。
+- `scheduler.test.ts` 覆盖按曲线定目标、PvE 到点优先上线、只在空闲时到期下线、空闲优先被降。
+- **真实 metaserver 的 e2e**（`server/metaserver/test/bot-pve.e2e.test.ts`，内存 Mongo）：新号带 3 张起始卡，打 ch1_lv1 → 扣到 110 体力 → 首通被抽查 → judge 用请求里服务端的卡牌快照复算 → `verified`，进度写入，没有 `rejected` 记录；第二关推进前沿。
+- 2026-09-26 做了 32 处变异，31 处有测试失败。唯一没被抓到的是 `requires` 检查，查明是冗余代码，已删除，改由上面那条不变量测试把关。
+
 ---
 
 ## 4. 容量分层降级
@@ -294,7 +346,7 @@ const FAMILY_TASK_ACTION_MAP: Record<string, FamilyTaskAction> = {
   - **对真人的外推**：真人客户端各自独立进程，被测机上**根本没有 botsvc**——所以真实容量比上面还高（把 botsvc 那 ~30-47% CPU 让出来）。首个瓶颈是 CPU（非 RAM/DB），若纯服务端 ~65% 对 1000 近似线性，2 核饱和大致落在 **~2000-3000 同时在线**量级（bot 巡检节奏比真人更均匀密集，真实值需专门加压确认）。
   - 观测中的次要现象：被测机变忙时 VPS 上那个 300-bot botsvc 的 CPU 从 ~47% 被挤到 ~27%（宿主争抢下 bot 进程让路），与 §8 断线排查同源（单进程事件循环争抢），不影响服务端容量结论。
   - 遗留：本地 700 个 `bot-1001..1700` 账号已写入生产库，**未清理**（同 §8 上一批 ~1000）。
-- [ ] 会话时长/上线间隔的具体分布参数（当前 §3.1 只给了量级），压测后按真实 CPU/内存曲线调整。
+- [ ] 会话时长与昼夜曲线已按 §3.1 落地（2026-09-26：20–60 分钟、`EUROPE_DAY_CURVE`）；还缺上线后按真实 CPU/内存和真人在线曲线校准。
 - [x] **把 botsvc 正式纳入部署（常驻 300，2026-07-14）**：不再手动 `node:20` 现编现跑。改动：`server/Dockerfile` build 阶段加 `COPY botsvc/package.json` + `tsc -b` 列表末尾加 `botsvc`（生成的 protobuf 已提交，无需 proto codegen），runtime 加 `COPY --from=build .../botsvc/{package.json,dist}`（`ws`/`@bufbuild/protobuf` 在共享 `node_modules`、`@nw/engine`/`@nw/shared` dist 已随其他服务拷入，只缺 botsvc 自己的 dist）；`docker-compose.cloud.yml` + `docker-compose.prod.yml` 各加一个 `botsvc` 服务，`restart: unless-stopped`（跟随重部署/重启自愈）、`NW_BOT_TARGET_ONLINE=300`（`.env` 可覆盖）、`NW_BOT_POOL_SIZE=1000`（复用 Atlas 里现有 `bot-0001..1000`）、按服务名连内部端口（`metaserver:8080`/`socialsvc:8085`/`worldsvc:18084`/`gateway:8090`/控制面 WS `gateway:8082/gw`/`commercial:8092`）。**与原计划的差异**：原设想 `NW_BOTSVC_ENABLED` 开关 + 默认不常开，实际按用户要求做成**默认常驻**（restart:unless-stopped），关停用 `docker compose stop botsvc` 或 `POST /internal/bots/scale {targetOnline:0}`，不需要改代码。botsvc 只有内部管理面 18087，不进 caddy 路由。验证：本机 `docker build` 通过（含 `tsc -b botsvc`），镜像内 `node botsvc/dist/index.js` 干净启动打印 `pool=1000; targetOnline=300` 无导入错误。**注意**：300 常驻会持续产生排位对局，`reason=disconnect` 高发问题（下条）在 300 规模仍部分存在，缓解补丁需确认已在部署分支上。
 - [~] **排查排位对战 `reason=disconnect` 高发**（见上条生产压测发现）——**已诊断 + 单进程内缓解（2026-07-14）**：
   - **根因不是数据面链路**：干净 `base` 局能完整走完 `CF→caddy→gameserver`（中位 78s）。决定性证据是"连接→上报耗时"：`base` 78s vs `disconnect` 188s（拖到 ~128s 才掉 + 60s 宽限），断线局被明显**拖长**——排除了 CF 固定空闲超时和收尾竞态。300 在线时机器很闲（load 2.4/2 核、botsvc 单核 41%）断线率仍 ~78%，也排除"持续 CPU 打满"。

@@ -1,6 +1,6 @@
 import { describe, it } from 'vitest';
 import { simulateLevel, type SimResult } from './difficultySim';
-import { CAMPAIGN_LEVELS } from '../src/game/campaign/levels';
+import { CAMPAIGN_LEVELS } from '@nw/engine/campaign/levels';
 import type { LevelDefinition } from '@nw/engine/campaign/LevelDefinition';
 
 /**

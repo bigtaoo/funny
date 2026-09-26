@@ -1,10 +1,12 @@
-// Session scheduler (BOTSVC_DESIGN §3.1, §4): keeps online count near a target that ramps down under
-// capacity pressure, without pretending a fixed-size crowd all logs in/out in lockstep.
+// Session scheduler (BOTSVC_DESIGN §3.1, §4): keeps online count near a target that follows a European
+// day and ramps down under capacity pressure, rotating which bots are online (20–60 minute sessions)
+// instead of pretending a fixed-size crowd stays logged in forever.
 import { CapacityClient, shedTarget } from './capacityClient';
-import { BotSession } from './bot';
+import { BotSession, type PveCounters } from './bot';
+import { diurnalTarget, sessionLength } from './rotation';
 
-/** Which half of a session's upkeep chain failed (see Scheduler.upkeepErrors). */
-type UpkeepKind = 'family' | 'slg';
+/** Which step of a session's upkeep chain failed (see Scheduler.upkeepErrors). */
+type UpkeepKind = 'family' | 'slg' | 'pve';
 
 /** Rolled-up upkeep-failure warnings are emitted at most this often, however many bots are failing. */
 const UPKEEP_ERROR_LOG_INTERVAL_MS = 60_000;
@@ -19,10 +21,21 @@ export interface SchedulerOptions {
   upkeepConcurrency: number;
   /** Ticks needed to cycle every online session through one upkeep pass (see runUpkeep()). */
   upkeepRotations: number;
+  /**
+   * Rotation (BOTSVC_DESIGN §3.1): scale targetOnline (then the evening peak) by the European day curve
+   * and end every session after 20–60 minutes. Off = the old fixed crowd, for load tests that want a
+   * flat fleet.
+   */
+  rotation?: boolean;
+  /** Injected for tests. */
+  now?: () => number;
+  random?: () => number;
 }
 
 export class Scheduler {
   private readonly online = new Set<BotSession>();
+  /** When each online session's login is up (sessionLength); only read with `rotation` on. */
+  private readonly sessionEnds = new Map<BotSession, number>();
   private paused = false;
   private currentTarget: number;
   /** Re-entrancy guard: the process fires tick() on a fixed interval regardless of whether the previous pass finished. */
@@ -71,7 +84,13 @@ export class Scheduler {
     effectiveTarget: number;
     paused: boolean;
     upkeepErrors: Record<UpkeepKind, number>;
+    pve: PveCounters;
   } {
+    // Summed over the whole pool, online or not: "are the bots playing PvE" is a fleet question.
+    const pve: PveCounters = { entered: 0, cleared: 0, lost: 0, spotChecked: 0, verified: 0 };
+    for (const s of this.pool) {
+      for (const k of Object.keys(pve) as (keyof PveCounters)[]) pve[k] += s.pveCounters[k];
+    }
     return {
       total: this.pool.length,
       online: this.online.size,
@@ -83,7 +102,9 @@ export class Scheduler {
       upkeepErrors: {
         family: this.upkeepErrors.get('family')?.count ?? 0,
         slg: this.upkeepErrors.get('slg')?.count ?? 0,
+        pve: this.upkeepErrors.get('pve')?.count ?? 0,
       },
+      pve,
     };
   }
 
@@ -115,24 +136,27 @@ export class Scheduler {
           this.capacityWarned = true;
         }
       }
+      const now = this.now();
+      const wanted = this.opts.rotation ? diurnalTarget(this.opts.targetOnline, now) : this.opts.targetOnline;
       this.currentTarget =
         gatewayOnline === undefined
-          ? this.opts.targetOnline
+          ? wanted
           : shedTarget({
-              targetOnline: this.opts.targetOnline,
+              targetOnline: wanted,
               currentOnline: gatewayOnline,
               shedStartAt: this.opts.shedStartAt,
               shedFullAt: this.opts.shedFullAt,
             });
 
+      if (this.opts.rotation) this.endExpiredSessions(now);
       if (this.online.size < this.currentTarget) {
-        await this.spawnUpTo(this.currentTarget);
+        await this.spawnUpTo(this.currentTarget, now);
       } else if (this.online.size > this.currentTarget) {
         this.despawnDownTo(this.currentTarget);
       }
 
       await this.runUpkeep();
-      this.flushUpkeepErrors(Date.now());
+      this.flushUpkeepErrors(this.now());
     } finally {
       this.ticking = false;
     }
@@ -174,8 +198,8 @@ export class Scheduler {
    * all acting in lockstep. Serial awaits made one pass grow linearly with the fleet (a 1000-bot tick
    * outran the interval); unbounded Promise.all would fire hundreds of REST fan-outs at once. A fixed
    * pool of workers pulling from a shared cursor keeps each session's tickFamily→tickSlg order intact
-   * while capping in-flight work. tickBattle() stays fire-and-forget: a match can run for minutes, so
-   * it must never be awaited here.
+   * while capping in-flight work. tickPve() and tickBattle() stay fire-and-forget: a level or a match
+   * lasts minutes, so neither may ever be awaited here.
    */
   private async runUpkeep(): Promise<void> {
     const all = [...this.online];
@@ -192,6 +216,8 @@ export class Scheduler {
         const session = sessions[next++]!;
         await session.tickFamily().catch((e: unknown) => this.noteUpkeepError('family', e));
         await session.tickSlg().catch((e: unknown) => this.noteUpkeepError('slg', e));
+        // Before the ranked roll: a due PvE run takes the bot out of lobby_idle, so it does not also queue.
+        void session.tickPve(this.now()).catch((e: unknown) => this.noteUpkeepError('pve', e));
         session.tickBattle();
       }
     };
@@ -199,29 +225,86 @@ export class Scheduler {
     await Promise.all(Array.from({ length: workers }, () => worker()));
   }
 
-  private async spawnUpTo(target: number): Promise<void> {
+  private now(): number {
+    return (this.opts.now ?? Date.now)();
+  }
+
+  private random(): number {
+    return (this.opts.random ?? Math.random)();
+  }
+
+  /**
+   * Who logs in next. With rotation: bots whose PvE run is due first (earliest first), so a planned
+   * evening run is not lost to a bot that happens to be offline then; after them a uniform random
+   * pick from the rest of the pool. Without rotation: the pool in order, the old behaviour.
+   */
+  private nextToLogIn(now: number, count: number): BotSession[] {
     const offline = this.pool.filter((s) => s.state === 'offline');
-    const need = Math.min(target - this.online.size, this.opts.batchSize, offline.length);
-    for (let i = 0; i < need; i++) {
-      const session = offline[i]!;
+    if (!this.opts.rotation) return offline.slice(0, Math.max(0, count));
+    const picked = offline
+      .map((s) => ({ s, at: s.pveDueAt(now) }))
+      .filter((d) => d.at <= now)
+      .sort((a, b) => a.at - b.at)
+      .slice(0, Math.max(0, count))
+      .map((d) => d.s);
+    const rest = offline.filter((s) => !picked.includes(s));
+    while (picked.length < count && rest.length > 0) {
+      picked.push(rest.splice(Math.floor(this.random() * rest.length), 1)[0]!);
+    }
+    return picked;
+  }
+
+  private async spawnUpTo(target: number, now: number): Promise<void> {
+    const need = Math.min(target - this.online.size, this.opts.batchSize);
+    for (const session of this.nextToLogIn(now, need)) {
       await session.login().catch(() => undefined);
-      if (session.state !== 'offline') this.online.add(session);
+      if (session.state === 'offline') continue;
+      this.online.add(session);
+      this.sessionEnds.set(session, now + sessionLength(() => this.random()));
     }
   }
 
+  /**
+   * Logs out sessions whose time is up — only from lobby_idle, so a match or a level is finished first
+   * (a player does not quit mid-game to keep to a schedule), and not while a PvE run is due: the bot
+   * plays it, then goes. Batched like every other login/logout wave.
+   */
+  private endExpiredSessions(now: number): void {
+    let ended = 0;
+    for (const session of [...this.online]) {
+      if (ended >= this.opts.batchSize) break;
+      if ((this.sessionEnds.get(session) ?? Infinity) > now) continue;
+      if (session.state !== 'lobby_idle' || session.pveDueAt(now) <= now) continue;
+      this.drop(session);
+      ended++;
+    }
+  }
+
+  /**
+   * Over target (the day curve falling, or capacity shedding): idle sessions go first, soonest-ending
+   * first, and only then ones mid-match — shedding still reaches its target, the evening wind-down just
+   * does not cut matches short.
+   */
   private despawnDownTo(target: number): void {
     const excess = Math.min(this.online.size - target, this.opts.batchSize);
-    let dropped = 0;
-    for (const session of this.online) {
-      if (dropped >= excess) break;
-      session.logout();
-      this.online.delete(session);
-      dropped++;
-    }
+    const order = [...this.online].sort(
+      (a, b) =>
+        Number(a.state !== 'lobby_idle') - Number(b.state !== 'lobby_idle') ||
+        // MAX_SAFE_INTEGER, not Infinity: Infinity - Infinity is NaN, which breaks the sort.
+        (this.sessionEnds.get(a) ?? Number.MAX_SAFE_INTEGER) - (this.sessionEnds.get(b) ?? Number.MAX_SAFE_INTEGER),
+    );
+    for (const session of order.slice(0, Math.max(0, excess))) this.drop(session);
+  }
+
+  private drop(session: BotSession): void {
+    session.logout();
+    this.online.delete(session);
+    this.sessionEnds.delete(session);
   }
 
   private async drainAll(): Promise<void> {
     for (const session of this.online) session.logout();
     this.online.clear();
+    this.sessionEnds.clear();
   }
 }

@@ -16,7 +16,7 @@ import {
 import { LocalInputSource, type InputSource } from '@nw/engine/net/InputSource';
 import { ENGINE_VERSION } from '@nw/engine/types';
 import type { GameConfig, IGameEngine, Replay } from '@nw/engine/types';
-import { CAMPAIGN_LEVELS, CAMPAIGN_LEVEL_ORDER } from '../src/game/campaign/levels';
+import { CAMPAIGN_LEVELS, CAMPAIGN_LEVEL_ORDER } from '@nw/engine/campaign/levels';
 
 const TICK_DT = 1 / 30;
 
