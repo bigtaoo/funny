@@ -1,16 +1,30 @@
 // Single bot session (BOTSVC_DESIGN §3.2): login, family join/leave-on-low-activity, payment-tier
-// bootstrap, SLG city actions (§3.2 slg_action), and — this increment — ranked matchmaking + battle
-// over a real gateway+gameserver WS connection driven by @nw/engine's AISystem (§1 B3, §8).
-import { BUILD_QUEUE_SLOTS, RESOURCE_TYPES, buildCost, buildGateReason } from '@nw/shared';
+// bootstrap, SLG city actions + connected expansion (§3.2 slg_action, §3.4), and ranked
+// matchmaking + battle over a real gateway+gameserver WS connection driven by @nw/engine's
+// AISystem (§1 B3, §8).
+import { BUILD_QUEUE_SLOTS, RESOURCE_TYPES, SECT_CREATE_COST, buildCost, buildGateReason } from '@nw/shared';
 import { MetaClient } from './metaClient';
-import { SocialClient } from './socialClient';
+import { SocialClient, type FamilyView } from './socialClient';
 import { CommercialClient } from './commercialClient';
 import { WorldClient, type BuildingKey, type PlayerWorldView } from './worldClient';
 import { playRankedMatch } from './battleSession';
 import type { BotIdentity } from './pool';
+import { hasCode } from './apiError';
+import { BOT_FAMILY_ROSTER, BOT_SECT_ROSTER, BotOrgRegistry, PENDING_SEAT_TTL_MS, botFamilySlot } from './orgs';
+import { planExpansion } from './expansion';
 
-/** Below this prosperity, a bot looks for a livelier family instead (mirrors a real player ditching a dead guild). */
-const FAMILY_PROSPERITY_LEAVE_THRESHOLD = 10;
+/** Family upkeep pacing per role (BOTSVC_DESIGN §3.3): officers approve applications, members just idle. */
+const FAMILY_SEEK_INTERVAL_MS = 60_000;
+const FAMILY_OFFICER_INTERVAL_MS = 60_000;
+const FAMILY_MEMBER_INTERVAL_MS = 10 * 60_000;
+/**
+ * After filing an application, don't try again for this long. The server allows one pending request
+ * per account and never expires or lets you withdraw it, so re-applying sooner can only ever answer
+ * ALREADY_REQUESTED; after this the bot looks again in case a full family rejected or dropped it.
+ */
+const PENDING_JOIN_RECHECK_MS = PENDING_SEAT_TTL_MS;
+/** A leader keeps this many elders so applications still get approved while it is offline. */
+const FAMILY_ELDER_TARGET = 2;
 
 /** P1-buildable keys only (BuildingKey's wall/academy are P2, not yet buildable — see contracts/openapi-world.yml). */
 const P1_BUILDING_KEYS: BuildingKey[] = [
@@ -24,29 +38,19 @@ const P1_BUILDING_KEYS: BuildingKey[] = [
   'drillYard',
 ];
 
-/** Every Nth slg tick a bot considers a siege instead of just upgrading — "偶尔攻城", not every tick (BOTSVC_DESIGN §3.2). */
-const SIEGE_TICK_INTERVAL = 5;
-/** Send a minority of the garrison; never risk the whole troop count on one march. */
-const SIEGE_TROOP_FRACTION = 0.3;
+/** Every Nth slg tick a bot considers a march instead of just upgrading (BOTSVC_DESIGN §3.4). */
+const EXPAND_TICK_INTERVAL = 5;
 /**
- * Upper bound worldsvc puts on any map-view radius (`MAP_VIEW_MAX_RADIUS` in worldsvc/src/worldTypes.ts).
- * Asking for more is not an error — the server silently clamps — so a larger number here would be a lie
- * in the source rather than a wider scan. `bot.scanRadius.test.ts` fails if the two ever drift.
- */
-const WORLD_MAP_VIEW_MAX_RADIUS = 40;
-
-/**
- * Sparse-map scan radius around the bot's own base when looking for a siege target.
+ * Radius of the full map view the expansion planner reads, around the bot's base.
  *
- * Sits AT the server's view cap, deliberately. 5 was tuned against season 1's crowded shard (1644
- * players, nearest-neighbour base distance p50 = 4) and stopped reaching anything once play moved to a
- * sparse one: measured on live s2-0 on 2026-09-15, 108 players spread over 1500×1500 give p50 = 42 /
- * p90 = 85, and an 11×11 window found a target for **2 of 108** bots. `POST /world/march` was absent
- * from all 288 worldsvc heartbeats of the preceding 24h — no bot had besieged anything at all, and the
- * wasted `/world/me` + `/world/map/sparse` pair every fifth tick fell through to yet another upgrade,
- * which is why `build/upgrade` ran at 5/5 ticks instead of the intended 4/5. At the cap it is 54 of 108.
+ * Small on purpose: ADR-039 connectivity means every legal target borders land the sect already holds,
+ * and a bot that can afford ~6 occupations (EXPAND_TROOP_FLOOR) never grows far past its own 3x3. Until
+ * 2026-09-26 this scanned the server's full 40-tile cap for targets that were then all rejected as
+ * TERRITORY_NOT_CONNECTED — the full view is per-cell, so a 17x17 window is also the cheap one.
  */
-const SIEGE_SCAN_RADIUS = WORLD_MAP_VIEW_MAX_RADIUS;
+const EXPAND_VIEW_RADIUS = 8;
+/** Pause before the next march when the server's answer carried no arrival time. */
+const MARCH_BUSY_FALLBACK_MS = 10 * 60_000;
 
 /**
  * Wall-clock floor between two SLG upkeep passes *for one bot*, independent of how the scheduler is
@@ -59,7 +63,7 @@ export const DEFAULT_SLG_INTERVAL_MS = 45_000;
 
 /**
  * Hard ceiling on how stale the resource snapshot behind the upgrade decision may get. In the default
- * configuration this never fires — a siege tick refreshes the snapshot every SIEGE_TICK_INTERVAL SLG
+ * configuration this never fires — an expansion tick refreshes the snapshot every EXPAND_TICK_INTERVAL SLG
  * ticks (5 × 45s = 225s) for free, out of the `/world/me` it was fetching anyway. It is the backstop
  * for a configuration where that no longer holds, so that a bot which currently affords nothing still
  * re-checks eventually instead of going quiet forever.
@@ -98,10 +102,16 @@ export class BotSession {
   /** Last `/world/me` this session saw, used to decide what it can afford before asking the server. */
   private slgSnapshot: PlayerWorldView | undefined;
   private slgSnapshotAt = 0;
+  /** No new march before this (the previous one's arrival, BOTSVC_DESIGN §3.4 rule 6). */
+  private marchBusyUntil = 0;
   private battling = false;
   /** Set while a battle is in flight (runBattle) — logout() aborts it instead of leaving the match
    *  running to completion against an account the fleet no longer tracks as online (2026-08-04 fix). */
   private battleAbort: AbortController | undefined;
+  /** Earliest wall-clock time family upkeep runs again (interval depends on role, see tickFamily). */
+  private nextFamilyAt = 0;
+  /** Set after filing a join request: don't re-apply before this (PENDING_JOIN_RECHECK_MS). */
+  private pendingJoinUntil = 0;
 
   constructor(
     readonly identity: BotIdentity,
@@ -111,6 +121,8 @@ export class BotSession {
     private readonly world: WorldClient,
     private readonly battle: BattleOptions,
     private readonly slg: SlgOptions = { intervalMs: DEFAULT_SLG_INTERVAL_MS },
+    /** Process-wide: every session in the fleet must share one, or the seat/create bookkeeping is per-bot and useless. */
+    private readonly orgs: BotOrgRegistry = new BotOrgRegistry(),
   ) {}
 
   async login(): Promise<void> {
@@ -205,25 +217,142 @@ export class BotSession {
     }
   }
 
-  /** One tick of family upkeep (§3.3): join if familyless, leave+re-search if the current family looks dead. */
+  /**
+   * One tick of family + sect upkeep (§3.3). A familyless bot applies to the first bot family with a
+   * free seat, or founds the next roster slot once all earlier ones are full; officers approve every
+   * pending application; leaders also appoint elders and get their family into a bot sect.
+   *
+   * Until 2026-09-26 this failed on every single call (1.2M times on live): it searched with an empty
+   * `tag` the route rejects, joined by TAG instead of family id, and never knew joining had become an
+   * application someone has to approve. No bot was ever in a family.
+   */
   async tickFamily(): Promise<void> {
     if (!this.token) return;
+    const now = Date.now();
+    if (now < this.nextFamilyAt) return;
     const mine = await this.social.myFamily(this.token);
     if (!mine) {
-      const candidates = await this.social.searchFamilies(this.token, '');
-      const pick = candidates[0];
-      if (pick) await this.social.joinFamily(this.token, pick.tag);
+      this.nextFamilyAt = now + FAMILY_SEEK_INTERVAL_MS;
+      await this.seekFamily(now);
       return;
     }
-    if (mine.prosperity < FAMILY_PROSPERITY_LEAVE_THRESHOLD) {
-      await this.social.leaveFamily(this.token);
+    this.orgs.clearPending(this.identity.deviceId);
+    const role = mine.members?.find((m) => m.accountId === this.accountId)?.role ?? 'member';
+    if (role === 'member') {
+      this.nextFamilyAt = now + FAMILY_MEMBER_INTERVAL_MS;
+      return;
+    }
+    this.nextFamilyAt = now + FAMILY_OFFICER_INTERVAL_MS;
+    await this.approveJoinRequests();
+    if (role !== 'leader') return;
+    await this.appointElder(mine);
+    await this.tickSect(mine);
+  }
+
+  private async seekFamily(now: number): Promise<void> {
+    if (!this.token || now < this.pendingJoinUntil) return;
+    const pick = await this.orgs.pickFamily(this.social, this.token);
+    if (!pick) return;
+    if (pick.kind === 'create') {
+      const { name, tag } = BOT_FAMILY_ROSTER[pick.slot]!;
+      try {
+        this.orgs.noteFamily(pick.slot, await this.social.createFamily(this.token, name, tag));
+      } catch (e) {
+        // Lost the race to another founder, or a human took the TAG: re-read the slot next time.
+        this.orgs.forgetFamily(pick.slot);
+        throw e;
+      }
+      return;
+    }
+    try {
+      await this.social.requestJoin(this.token, pick.familyId);
+    } catch (e) {
+      if (hasCode(e, 'FAMILY_FULL', 'NOT_FOUND')) {
+        this.orgs.forgetFamily(pick.slot);
+        return;
+      }
+      // Our one allowed pending request already exists (possibly filed before a restart) — wait on it.
+      if (!hasCode(e, 'ALREADY_REQUESTED')) throw e;
+    }
+    this.orgs.notePending(pick.slot, this.identity.deviceId);
+    this.pendingJoinUntil = now + PENDING_JOIN_RECHECK_MS;
+  }
+
+  /**
+   * Accept every pending application. Once the family is full the rest are rejected rather than left
+   * sitting: an applicant can hold only one request and cannot withdraw it, so a request nobody will
+   * ever accept pins that bot familyless until someone says no.
+   */
+  private async approveJoinRequests(): Promise<void> {
+    if (!this.token) return;
+    const requests = await this.social.listJoinRequests(this.token);
+    let full = false;
+    for (const r of requests) {
+      if (!full) {
+        try {
+          await this.social.respondJoinRequest(this.token, r.requestId, true);
+          continue;
+        } catch (e) {
+          // FAMILY_FULL: the accept already consumed this request server-side; the applicant is free.
+          // ALREADY_IN_FAMILY: they got into another family first. Neither is ours to retry.
+          if (hasCode(e, 'FAMILY_FULL')) full = true;
+          else if (!hasCode(e, 'ALREADY_IN_FAMILY', 'NOT_FOUND')) throw e;
+          continue;
+        }
+      }
+      await this.social.respondJoinRequest(this.token, r.requestId, false).catch((e: unknown) => {
+        if (!hasCode(e, 'NOT_FOUND')) throw e;
+      });
+    }
+  }
+
+  /** Promote the longest-serving plain member, one per tick, until FAMILY_ELDER_TARGET elders exist. */
+  private async appointElder(mine: FamilyView): Promise<void> {
+    if (!this.token || !mine.members) return;
+    if (mine.members.filter((m) => m.role === 'elder').length >= FAMILY_ELDER_TARGET) return;
+    const candidate = mine.members
+      .filter((m) => m.role === 'member' && m.accountId)
+      .sort((a, b) => a.joinedAt - b.joinedAt)[0];
+    if (candidate) await this.social.setRole(this.token, candidate.accountId!, 'elder');
+  }
+
+  /**
+   * Leader-only sect step, in the world this bot joined via tickSlg. Leaders of family slots 0..2
+   * found the three roster sects; every other bot family joins the emptiest one with room.
+   */
+  private async tickSect(mine: FamilyView): Promise<void> {
+    if (!this.token || !this.accountId || !this.worldId || mine.sectId) return;
+    const familySlot = botFamilySlot(mine);
+    if (familySlot < 0) return;
+    const worldId = this.worldId;
+    const sects = await this.orgs.sectsIn(this.world, this.token, worldId);
+    const own = BOT_SECT_ROSTER[familySlot];
+    if (own && !sects.some((s) => s.tag === own.tag)) {
+      // No bot has SECT_CREATE_COST on its own (live max: 1450 coins), so the founder is granted it once;
+      // the orderId makes a retry after a failed create a no-op instead of a second grant.
+      await this.commercial.grantCoins(
+        this.accountId,
+        SECT_CREATE_COST,
+        `bot-sect-${this.identity.deviceId}-${worldId}`,
+        'bot_sect_found',
+      );
+      this.orgs.forgetSects(worldId);
+      await this.world.createSect(this.token, worldId, own.name, own.tag);
+      return;
+    }
+    const target = BotOrgRegistry.pickSect(sects);
+    if (!target) return;
+    try {
+      await this.world.joinSect(this.token, worldId, target.sectId);
+    } finally {
+      this.orgs.forgetSects(worldId);
     }
   }
 
   /**
    * One tick of SLG upkeep (§3.2 slg_action): join the active season's world on first tick, then
-   * either upgrade a building it can actually pay for or — every SIEGE_TICK_INTERVAL ticks — march a
-   * minority of troops on a nearby occupied tile. No auction/social calls here (B8).
+   * either upgrade a building it can actually pay for or — every EXPAND_TICK_INTERVAL ticks — march on
+   * the next tile bordering its sect's land (expansion.ts). No auction/social calls here (B8).
    *
    * Rate-limited per bot (DEFAULT_SLG_INTERVAL_MS) rather than acting on every upkeep pass handed to
    * it: the scheduler's pass cadence is tuned for its own CPU burst shape, and letting it double as
@@ -242,7 +371,7 @@ export class BotSession {
       this.noteSnapshot(joined, now);
     }
     this.slgTick++;
-    if (this.slgTick % SIEGE_TICK_INTERVAL === 0 && (await this.trySiege())) return;
+    if (this.slgTick % EXPAND_TICK_INTERVAL === 0 && (await this.tryExpand(now))) return;
     await this.upgradeNextBuilding();
   }
 
@@ -310,26 +439,27 @@ export class BotSession {
     this.slgSnapshotAt = at;
   }
 
-  /** Returns true if a march was actually started (so the caller skips the upgrade this tick). */
-  private async trySiege(): Promise<boolean> {
-    if (!this.token || !this.worldId) return false;
+  /**
+   * March on the next tile bordering the sect's land (BOTSVC_DESIGN §3.4). Returns true if a march was
+   * actually started, so the caller skips the upgrade this tick. One march in flight at a time: the
+   * next is held until the server-reported arrival, after which the tile shows up as mid occupation-hold
+   * (`contestedUntil`) and is not picked again.
+   */
+  private async tryExpand(now: number): Promise<boolean> {
+    if (!this.token || !this.worldId || now < this.marchBusyUntil) return false;
     const me = await this.world.getWorldMe(this.token, this.worldId);
     // Free refresh for the upgrade decision's snapshot — this is the same `/world/me` it would
     // otherwise have to fetch itself, and at the default cadence it is the ONLY one either needs.
     this.noteSnapshot(me, Date.now());
     const base = this.world.baseCoords(me);
-    if (!base || !me.troops) return false;
-    const { tiles } = await this.world.getWorldMapSparse(
-      this.token,
-      this.worldId,
-      base.x,
-      base.y,
-      SIEGE_SCAN_RADIUS,
-    );
-    const target = this.world.pickAttackTarget(tiles);
-    if (!target) return false;
-    const troops = Math.max(1, Math.floor(me.troops * SIEGE_TROOP_FRACTION));
-    await this.world.startMarchAttack(this.token, this.worldId, base, target, troops);
+    if (!base || !me.troops || !this.token || !this.worldId) return false;
+    const { tiles } = await this.world.getWorldMap(this.token, this.worldId, base.x, base.y, EXPAND_VIEW_RADIUS);
+    const plan = planExpansion(tiles, base, me.troops, Date.now());
+    if (!plan || !this.token || !this.worldId) return false;
+    const started = await this.world.startMarch(this.token, this.worldId, base, plan, plan.kind, plan.troops);
+    this.marchBusyUntil = started?.arriveAt ?? Date.now() + MARCH_BUSY_FALLBACK_MS;
+    // The troops left the pool: the upgrade decision's snapshot no longer matches the server.
+    this.slgSnapshot = undefined;
     return true;
   }
 }

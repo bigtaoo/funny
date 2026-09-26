@@ -38,6 +38,14 @@ describe('CommercialClient', () => {
     expect(calls).toEqual([{ url: `${BASE}/internal/starter/buy`, method: 'POST', body: { accountId: 'acc-a', productId: PRODUCT_STARTER_GROWTH, orderId: 'order-2' }, key: KEY }]);
   });
 
+  it('grantCoins POSTs to /internal/grant and throws on ok:false (a founder must not try to create a sect it cannot pay for)', async () => {
+    const calls = install({ ok: true });
+    await new CommercialClient(BASE, KEY).grantCoins('acc-a', 5000, 'bot-sect-x', 'bot_sect_found');
+    expect(calls).toEqual([{ url: `${BASE}/internal/grant`, method: 'POST', body: { accountId: 'acc-a', amount: 5000, orderId: 'bot-sect-x', reason: 'bot_sect_found' }, key: KEY }]);
+    install({ ok: false });
+    await expect(new CommercialClient(BASE, KEY).grantCoins('acc-a', 5000, 'bot-sect-x', 'r')).rejects.toThrow(/grant failed/);
+  });
+
   it('propagates ok:false from the backend without throwing (idempotent dedupe is commercial\'s job)', async () => {
     install({ ok: false });
     const result = await new CommercialClient(BASE, KEY).buyMonthlyCard('acc-a', 'order-1');
