@@ -69,7 +69,7 @@ function buildHarness(opts: {
       return [Number(parts[parts.length - 2]), Number(parts[parts.length - 1])];
     },
     view: { renderMap: vi.fn() },
-    cb: { worldId: WORLD_ID, worldApi: { getTeams, startMarch, getMarches: vi.fn().mockResolvedValue([]), getMe: vi.fn() } },
+    cb: { worldId: WORLD_ID, worldApi: { getTeams, startMarch, getOrders: vi.fn().mockResolvedValue({ marches: [], occupations: [], stationed: [], siegeHolds: [] }), getMe: vi.fn() } },
     panels: { showModal, showToast, closeModal, showDeployDialog: vi.fn(), renderHud },
   } as unknown as WorldMapContext;
 

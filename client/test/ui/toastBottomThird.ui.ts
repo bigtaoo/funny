@@ -134,10 +134,7 @@ describe('scene showToast() routes to the global toast sink (success/error kind)
       // CityScene.load() fires its four fetches independently (2026-08-02, no Promise.all barrier),
       // so every endpoint it calls has to exist on the stub — a missing one now throws for real.
       getTeams: () => new Promise<never>(() => {}),
-      getMarches: () => new Promise<never>(() => {}),
-      getOccupations: () => new Promise<never>(() => {}),
-      getStationed: () => new Promise<never>(() => {}),
-      getSiegeHolds: () => new Promise<never>(() => {}),
+      getOrders: () => new Promise<never>(() => {}),
       upgradeBuilding: () => new Promise<PlayerWorldView>(() => {}),
       speedupBuild: () => new Promise<PlayerWorldView>(() => {}),
     } as unknown as WorldApiClient;
