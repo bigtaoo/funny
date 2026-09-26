@@ -299,8 +299,9 @@ describe.skipIf(!mongo)('worldsvc arrival tick: round-trip cost (`sched:arrivals
     await svc.processDueArrivals();
 
     // The contested march took the serial path: it re-read its own doc and its full playerWorld, which is
-    // exactly what the batch skips. Its 11 siblings did not.
-    expect(tally.get('marches.findOne') ?? 0).toBe(1);
+    // exactly what the batch skips. Its 11 siblings did not. (The re-read is a claiming findOneAndUpdate
+    // since 2026-09-26 — MarchDoc.stepLeaseUntil — still one round trip.)
+    expect(tally.get('marches.findOneAndUpdate') ?? 0).toBe(1);
     expect(tally.get('playerWorld.findOne') ?? 0).toBeGreaterThanOrEqual(1);
     expect(tally.get('marches.bulkWrite') ?? 0).toBe(1); // the other 11 still went as one batch
 
@@ -419,8 +420,8 @@ describe.skipIf(!mongo)('worldsvc arrival tick: round-trip cost (`sched:arrivals
     tally.clear();
     nowMs = DEPART + STEP_MS;
     await svc.processDueArrivals();
-    // advanceMarch's own `if (pw)` handling applies — including its re-read of the march doc.
-    expect(tally.get('marches.findOne') ?? 0).toBe(1);
+    // advanceMarch's own `if (pw)` handling applies — including its (claiming) re-read of the march doc.
+    expect(tally.get('marches.findOneAndUpdate') ?? 0).toBe(1);
     expect(tally.get('marches.bulkWrite') ?? 0).toBe(0);
     expect((await m.collections.marches.findOne({ _id: 'orphan' }))!.stepIndex).toBe(1);
   });

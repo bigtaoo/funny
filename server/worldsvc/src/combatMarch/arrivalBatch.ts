@@ -267,10 +267,22 @@ export async function applyFastSteps(
   if (fast.length === 0) return;
   const { cols } = core.deps;
 
+  // 2026-09-26 (§12.7 phase 1): two more guards, both compare-and-swap. `stepIndex` = the cursor the plan was
+  // made from, so a march another processor already advanced is not advanced twice; the lease clause skips a
+  // march that some advanceMarch call currently holds (MarchDoc.stepLeaseUntil). A miss falls to the
+  // confirmation read below; a batched step writes nothing but the cursor and its own occ cells, so the one
+  // case that read cannot tell apart (another processor made this exact same step) is idempotent.
+  const leaseNow = core.deps.now();
   const res = await cols.marches.bulkWrite(
     fast.map((p) => ({
       updateOne: {
-        filter: { _id: p.march._id, status: 'marching' as const, kind: { $ne: 'return' as const } },
+        filter: {
+          _id: p.march._id,
+          status: 'marching' as const,
+          kind: { $ne: 'return' as const },
+          stepIndex: p.march.stepIndex,
+          $or: [{ stepLeaseUntil: { $exists: false } }, { stepLeaseUntil: { $lte: leaseNow } }],
+        },
         update: {
           $set: { stepIndex: p.endIndex, nextStepAt: marchStepArriveAt(p.march.departAt, p.endIndex + 1, p.march.speedMult) },
           $inc: { rev: 1 },
