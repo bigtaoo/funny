@@ -2,7 +2,7 @@
 // one at a time; bot.test.ts covers how BotSession paces and sends what it returns.
 import { describe, it, expect } from 'vitest';
 import { OCCUPY_MIN_TROOPS } from '@nw/shared';
-import { EXPAND_MAX_LEVEL, EXPAND_TROOP_FLOOR, planExpansion } from '../src/expansion';
+import { EXPAND_MARCH_MIN_POOL, EXPAND_MAX_LEVEL, EXPAND_TROOP_FLOOR, planExpansion } from '../src/expansion';
 import type { WorldTileView } from '../src/worldClient';
 
 /** Base anchored at (10,10): its 3x3 footprint is x,y in 9..11, so x=12 / x=8 / y=12 / y=8 border it. */
@@ -14,8 +14,8 @@ const res = (x: number, y: number, over: Partial<WorldTileView> = {}): WorldTile
   ({ x, y, type: 'resource', level: 1, resType: 'paper', ...over });
 const enemy = (x: number, y: number, over: Partial<WorldTileView> = {}): WorldTileView =>
   ({ x, y, type: 'territory', level: 1, occupied: true, ...over });
-const target = (tiles: WorldTileView[], troops = RICH) => {
-  const p = planExpansion(tiles, BASE, troops, NOW);
+const target = (tiles: WorldTileView[], troops = RICH, yieldRate: Record<string, number> = {}) => {
+  const p = planExpansion(tiles, BASE, troops, NOW, yieldRate);
   return p && { kind: p.kind, x: p.x, y: p.y };
 };
 
@@ -67,6 +67,21 @@ describe('planExpansion — which tile to occupy', () => {
       .toEqual({ kind: 'occupy', x: 10, y: 12 });
   });
 
+  it('a resource it does not produce at all comes before everything else, paper/graphite included', () => {
+    // Training costs all five: one missing input and no troop can ever be trained.
+    const offer = [res(12, 10, { resType: 'paper' }), res(8, 10, { resType: 'metal', level: 2 })];
+    expect(target(offer, RICH, { ink: 100, paper: 100 })).toEqual({ kind: 'occupy', x: 8, y: 10 });
+    // Only an actual yield counts as produced; a 0 entry is as missing as an absent one.
+    expect(target(offer, RICH, { ink: 100, paper: 100, metal: 0 })).toEqual({ kind: 'occupy', x: 8, y: 10 });
+    // With nothing missing, paper/graphite first again.
+    expect(target(offer, RICH, { ink: 100, paper: 100, metal: 100 })).toEqual({ kind: 'occupy', x: 12, y: 10 });
+  });
+
+  it('a fresh bot (base ink only) is missing all four, and still takes paper/graphite first among them', () => {
+    const offer = [res(12, 10, { resType: 'metal' }), res(8, 10, { resType: 'ink' }), res(10, 12, { resType: 'graphite', level: 2 })];
+    expect(target(offer, RICH, { ink: 100 })).toEqual({ kind: 'occupy', x: 10, y: 12 });
+  });
+
   it('then the lower level, then the tile nearer the base', () => {
     expect(target([res(12, 10, { level: 2 }), res(12, 9, { level: 1 })])).toEqual({ kind: 'occupy', x: 12, y: 9 });
     // Same level: (12,10) is 2 from the anchor, (12,9) is 3.
@@ -80,6 +95,7 @@ describe('planExpansion — which tile to occupy', () => {
   });
 
   it('sends exactly the server minimum, and only if EXPAND_TROOP_FLOOR stays home', () => {
+    expect(EXPAND_MARCH_MIN_POOL).toBe(EXPAND_TROOP_FLOOR + OCCUPY_MIN_TROOPS);
     const tiles = [res(12, 10)];
     expect(planExpansion(tiles, BASE, EXPAND_TROOP_FLOOR + OCCUPY_MIN_TROOPS, NOW)).toEqual({ kind: 'occupy', x: 12, y: 10, troops: OCCUPY_MIN_TROOPS });
     expect(planExpansion(tiles, BASE, EXPAND_TROOP_FLOOR + OCCUPY_MIN_TROOPS - 1, NOW)).toBeNull();

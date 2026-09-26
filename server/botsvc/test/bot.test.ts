@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { FAMILY_CAP, SECT_CREATE_COST, SECT_FAMILY_CAP, buildCost } from '@nw/shared';
-import { BotSession } from '../src/bot';
+import { BotSession, DEFAULT_SLG_INTERVAL_MS } from '../src/bot';
+import { EXPAND_MARCH_MIN_POOL } from '../src/expansion';
 import { BotApiError } from '../src/apiError';
 import { BOT_FAMILY_ROSTER, BOT_SECT_ROSTER, BotOrgRegistry } from '../src/orgs';
 import type { BotIdentity } from '../src/pool';
@@ -37,18 +38,25 @@ function fakeCommercial(): any {
   return { buyMonthlyCard: vi.fn(), buyStarterGrowth: vi.fn(), grantCoins: vi.fn().mockResolvedValue(undefined) };
 }
 
-/** A world fake complete enough to reach tryExpand's own checks, so a case can knock out one piece. */
+/**
+ * A world fake complete enough for a whole SLG turn, so a case can knock out one piece. Unless a case
+ * overrides them, the join and both spends answer with whatever `getWorldMe` currently describes (without
+ * counting as a read of it): the player a case sets up is the one every step of the turn sees.
+ */
 function expandWorld(over: Record<string, unknown> = {}): any {
-  return {
+  const w: any = {
     getActiveSeason: vi.fn().mockResolvedValue({ season: 3 }),
-    joinSeason: vi.fn().mockImplementation(async () => solventMe({ worldId: 's3-0' })),
-    upgradeBuilding: vi.fn().mockImplementation(async () => solventMe()),
     getWorldMe: vi.fn().mockImplementation(async () => solventMe()),
     baseCoords: vi.fn().mockReturnValue({ x: 5, y: 5 }),
     getWorldMap: vi.fn().mockResolvedValue({ tiles: [] }),
     startMarch: vi.fn().mockResolvedValue({ arriveAt: 0 }),
     ...over,
   };
+  const current = async () => w.getWorldMe.getMockImplementation()!();
+  w.joinSeason ??= vi.fn(async () => ({ ...(await current()), worldId: 's3-0' }));
+  w.upgradeBuilding ??= vi.fn(current);
+  w.trainTroops ??= vi.fn(current);
+  return w;
 }
 
 const battleOpts = { gatewayWsUrl: 'ws://unused/gw', chancePerTick: 0 };
@@ -68,8 +76,11 @@ function solventMe(over: Record<string, unknown> = {}): Record<string, unknown> 
   return {
     joined: true,
     troops: 100,
+    // Full, so nothing gets trained unless a case makes room: most cases are about something else.
+    troopCap: 100,
     mainBaseTile: 's3-0:5:5',
-    buildings: { desk: 1 },
+    // The first stickerShop jumps the upgrade rotation; with it built, the rotation runs from `desk`.
+    buildings: { desk: 1, stickerShop: 1 },
     buildQueue: [],
     resources: { ink: 1e9, paper: 1e9, graphite: 1e9, metal: 1e9, sticker: 1e9 },
     ...over,
@@ -84,11 +95,7 @@ async function loggedInSession(world: any): Promise<BotSession> {
 
 describe('BotSession.tickSlg', () => {
   it('joins the active season world on first tick, then upgrades a building', async () => {
-    const world: any = {
-      getActiveSeason: vi.fn().mockResolvedValue({ season: 3 }),
-      joinSeason: vi.fn().mockImplementation(async () => solventMe({ worldId: 's3-0' })),
-      upgradeBuilding: vi.fn().mockImplementation(async () => solventMe()),
-    };
+    const world = expandWorld();
     const session = await loggedInSession(world);
 
     await session.tickSlg();
@@ -98,11 +105,7 @@ describe('BotSession.tickSlg', () => {
   });
 
   it('only resolves the world once — later ticks reuse the cached worldId', async () => {
-    const world: any = {
-      getActiveSeason: vi.fn().mockResolvedValue({ season: 3 }),
-      joinSeason: vi.fn().mockImplementation(async () => solventMe({ worldId: 's3-0' })),
-      upgradeBuilding: vi.fn().mockImplementation(async () => solventMe()),
-    };
+    const world = expandWorld();
     const session = await loggedInSession(world);
 
     await session.tickSlg();
@@ -112,11 +115,7 @@ describe('BotSession.tickSlg', () => {
   });
 
   it('rotates through P1 building keys across ticks instead of repeating one', async () => {
-    const world: any = {
-      getActiveSeason: vi.fn().mockResolvedValue({ season: 3 }),
-      joinSeason: vi.fn().mockImplementation(async () => solventMe({ worldId: 's3-0' })),
-      upgradeBuilding: vi.fn().mockImplementation(async () => solventMe()),
-    };
+    const world = expandWorld();
     const session = await loggedInSession(world);
 
     await session.tickSlg();
@@ -128,26 +127,41 @@ describe('BotSession.tickSlg', () => {
 
   /** An L1 paper tile directly east of the 3x3 base anchored at (5,5) — the one legal first occupation. */
   const paperNextDoor = { x: 7, y: 5, type: 'resource', level: 1, resType: 'paper' };
-  const armedMe = () => solventMe({ troops: 5000 });
+  /** A full pool that nothing can be trained into, so a case sees only the march and the upgrade. */
+  const armedMe = (over: Record<string, unknown> = {}) => solventMe({ troops: 5000, troopCap: 5000, ...over });
 
-  it('on the expansion tick, occupies the adjacent tile instead of upgrading', async () => {
+  // ── Expansion (BOTSVC_DESIGN §3.4) ──────────────────────────────────────────────────────────────
+
+  it('on every turn, occupies the adjacent tile and still upgrades in the same turn', async () => {
     const world = expandWorld({
       getWorldMe: vi.fn().mockImplementation(async () => armedMe()),
       getWorldMap: vi.fn().mockResolvedValue({ tiles: [paperNextDoor] }),
     });
     const session = await loggedInSession(world);
 
-    for (let i = 0; i < 4; i++) await session.tickSlg(); // ticks 1-4: plain upgrades
-    world.upgradeBuilding.mockClear();
-    await session.tickSlg(); // tick 5: expansion interval
+    await session.tickSlg(); // turn 1 joins; the join answer is the view it acts on
 
     // The view is centred on the base with the small expansion radius, not the server's 40-tile cap.
     expect(world.getWorldMap).toHaveBeenCalledWith('t', 's3-0', 5, 5, 8);
     expect(world.startMarch).toHaveBeenCalledWith('t', 's3-0', { x: 5, y: 5 }, expect.objectContaining({ x: 7, y: 5 }), 'occupy', 500);
-    expect(world.upgradeBuilding).not.toHaveBeenCalled();
+    expect(world.upgradeBuilding).toHaveBeenCalledTimes(1);
   });
 
-  it('falls back to upgrading when the expansion tick finds no target', async () => {
+  it('occupies a resource it does not produce yet before one it already has', async () => {
+    const metalNextDoor = { ...paperNextDoor, x: 3, resType: 'metal' };
+    const world = expandWorld({
+      getWorldMe: vi.fn().mockImplementation(async () => armedMe({ yieldRate: { ink: 100, paper: 100 } })),
+      getWorldMap: vi.fn().mockResolvedValue({ tiles: [paperNextDoor, metalNextDoor] }),
+    });
+    const session = await loggedInSession(world);
+
+    await session.tickSlg(); // join
+    await session.tickSlg(); // reads /world/me, which carries the yieldRate
+
+    expect(world.startMarch).toHaveBeenLastCalledWith('t', 's3-0', { x: 5, y: 5 }, expect.objectContaining({ x: 3, y: 5 }), 'occupy', 500);
+  });
+
+  it('still upgrades when there is no legal target', async () => {
     // A tile two cells out is not connected, so there is nothing legal to march on.
     const world = expandWorld({
       getWorldMe: vi.fn().mockImplementation(async () => armedMe()),
@@ -155,8 +169,6 @@ describe('BotSession.tickSlg', () => {
     });
     const session = await loggedInSession(world);
 
-    for (let i = 0; i < 4; i++) await session.tickSlg();
-    world.upgradeBuilding.mockClear();
     await session.tickSlg();
 
     expect(world.startMarch).not.toHaveBeenCalled();
@@ -164,7 +176,7 @@ describe('BotSession.tickSlg', () => {
   });
 
   it('holds the next march until the previous one has arrived', async () => {
-    // Before arrival the tile carries no occupation-hold marker yet, so a second pass would pick the
+    // Before arrival the tile carries no occupation-hold marker yet, so a second look would pick the
     // same tile again and fly a duplicate at it.
     const world = expandWorld({
       getWorldMe: vi.fn().mockImplementation(async () => armedMe()),
@@ -173,11 +185,11 @@ describe('BotSession.tickSlg', () => {
     });
     const session = await loggedInSession(world);
 
-    for (let i = 0; i < 15; i++) await session.tickSlg(); // expansion ticks 5, 10, 15
+    for (let i = 0; i < 3; i++) await session.tickSlg();
 
     expect(world.startMarch).toHaveBeenCalledTimes(1);
-    expect(world.getWorldMap).toHaveBeenCalledTimes(1); // the held ticks do not even look
-    expect(world.upgradeBuilding).toHaveBeenCalledTimes(14); // they upgrade instead
+    expect(world.getWorldMap).toHaveBeenCalledTimes(1); // the held turns do not even look
+    expect(world.upgradeBuilding).toHaveBeenCalledTimes(3); // and upgrade anyway
   });
 
   it('marches again once the previous arrival time has passed', async () => {
@@ -188,7 +200,7 @@ describe('BotSession.tickSlg', () => {
     });
     const session = await loggedInSession(world);
 
-    for (let i = 0; i < 10; i++) await session.tickSlg();
+    for (let i = 0; i < 2; i++) await session.tickSlg();
 
     expect(world.startMarch).toHaveBeenCalledTimes(2);
   });
@@ -201,26 +213,26 @@ describe('BotSession.tickSlg', () => {
     });
     const session = await loggedInSession(world);
 
-    for (let i = 0; i < 10; i++) await session.tickSlg();
+    for (let i = 0; i < 3; i++) await session.tickSlg();
 
     expect(world.startMarch).toHaveBeenCalledTimes(1);
   });
 
-  it('re-reads /world/me after a march, since the troops just left the pool', async () => {
+  it('does not even read the map when the pool is too small to send anything', async () => {
     const world = expandWorld({
-      getWorldMe: vi.fn().mockImplementation(async () => armedMe()),
+      getWorldMe: vi.fn().mockImplementation(async () => armedMe({ troops: EXPAND_MARCH_MIN_POOL - 1 })),
       getWorldMap: vi.fn().mockResolvedValue({ tiles: [paperNextDoor] }),
-      startMarch: vi.fn().mockResolvedValue({ arriveAt: Date.now() + 3_600_000 }),
     });
     const session = await loggedInSession(world);
 
-    for (let i = 0; i < 6; i++) await session.tickSlg(); // tick 5 marches, tick 6 upgrades
+    await session.tickSlg();
+    await session.tickSlg();
 
-    // Tick 5's read, then tick 6's fresh one — not tick 5's pre-march snapshot reused.
-    expect(world.getWorldMe).toHaveBeenCalledTimes(2);
+    expect(world.getWorldMap).not.toHaveBeenCalled();
+    expect(world.startMarch).not.toHaveBeenCalled();
   });
 
-  it('a march the server rejects propagates, and the next expansion tick tries again', async () => {
+  it('a march the server rejects propagates, and the next turn tries again', async () => {
     const rejected = Object.assign(new Error('TERRITORY_NOT_CONNECTED'), { code: 'TERRITORY_NOT_CONNECTED' });
     const world = expandWorld({
       getWorldMe: vi.fn().mockImplementation(async () => armedMe()),
@@ -229,11 +241,97 @@ describe('BotSession.tickSlg', () => {
     });
     const session = await loggedInSession(world);
 
-    for (let i = 0; i < 4; i++) await session.tickSlg();
     await expect(session.tickSlg()).rejects.toBe(rejected); // Scheduler.runUpkeep logs it
-    for (let i = 0; i < 5; i++) await session.tickSlg();
+    await session.tickSlg();
 
     expect(world.startMarch).toHaveBeenCalledTimes(2); // not held: nothing is in flight
+  });
+
+  // ── Training (BOTSVC_DESIGN §3.4 rule 8) ────────────────────────────────────────────────────────
+  // Every occupation leaves its survivors on the tile, so until 2026-09-26 — when bots never trained —
+  // a bot's pool only shrank, and it stalled for good after about six tiles.
+
+  it('a bot too weak to march trains first, then upgrades with what is left', async () => {
+    const world = expandWorld({
+      getWorldMe: vi.fn().mockImplementation(async () => solventMe({ troops: 1000, troopCap: 5000 })),
+    });
+    const session = await loggedInSession(world);
+
+    await session.tickSlg();
+
+    expect(world.trainTroops).toHaveBeenCalledWith('t', 's3-0', 4000);
+    expect(world.trainTroops.mock.invocationCallOrder[0]).toBeLessThan(world.upgradeBuilding.mock.invocationCallOrder[0]);
+  });
+
+  it('a bot that can march upgrades first, and trains from the balance the upgrade left', async () => {
+    // What the upgrade leaves pays for 500 troops of ink; the full pre-upgrade balance would have paid for 2000.
+    const leftover = solventMe({ troops: 3000, troopCap: 5000, resources: { ink: 5000, paper: 1e9, graphite: 1e9, metal: 1e9, sticker: 1e9 } });
+    const world = expandWorld({
+      getWorldMe: vi.fn().mockImplementation(async () => solventMe({ troops: 3000, troopCap: 5000 })),
+      upgradeBuilding: vi.fn().mockResolvedValue(leftover),
+    });
+    const session = await loggedInSession(world);
+
+    await session.tickSlg();
+
+    expect(world.upgradeBuilding.mock.invocationCallOrder[0]).toBeLessThan(world.trainTroops.mock.invocationCallOrder[0]);
+    expect(world.trainTroops).toHaveBeenCalledWith('t', 's3-0', 500);
+  });
+
+  it('the troops a march just sent count toward the training decision', async () => {
+    // 2900 can march; the 500 that leave take it to 2400, below what a march needs, so this turn
+    // trains first — and trains into the room the march just opened, too.
+    const world = expandWorld({
+      getWorldMe: vi.fn().mockImplementation(async () => solventMe({ troops: EXPAND_MARCH_MIN_POOL + 400, troopCap: 5000 })),
+      getWorldMap: vi.fn().mockResolvedValue({ tiles: [paperNextDoor] }),
+    });
+    const session = await loggedInSession(world);
+
+    await session.tickSlg();
+
+    expect(world.startMarch).toHaveBeenCalledTimes(1);
+    expect(world.trainTroops).toHaveBeenCalledWith('t', 's3-0', 5000 - (EXPAND_MARCH_MIN_POOL + 400 - 500));
+    expect(world.trainTroops.mock.invocationCallOrder[0]).toBeLessThan(world.upgradeBuilding.mock.invocationCallOrder[0]);
+  });
+
+  it('an upgrade answer it cannot read ends the turn: no training on the pre-spend balance', async () => {
+    const world = expandWorld({
+      getWorldMe: vi.fn().mockImplementation(async () => solventMe({ troops: 3000, troopCap: 5000 })),
+      upgradeBuilding: vi.fn().mockResolvedValue(undefined),
+    });
+    const session = await loggedInSession(world);
+
+    await session.tickSlg();
+
+    expect(world.upgradeBuilding).toHaveBeenCalledTimes(1);
+    expect(world.trainTroops).not.toHaveBeenCalled();
+  });
+
+  it('a training answer it cannot read ends the turn too', async () => {
+    const world = expandWorld({
+      getWorldMe: vi.fn().mockImplementation(async () => solventMe({ troops: 1000, troopCap: 5000 })),
+      trainTroops: vi.fn().mockResolvedValue(undefined),
+    });
+    const session = await loggedInSession(world);
+
+    await session.tickSlg();
+
+    expect(world.trainTroops).toHaveBeenCalledTimes(1);
+    expect(world.upgradeBuilding).not.toHaveBeenCalled();
+  });
+
+  it('builds the first stickerShop ahead of the rotation, since training needs sticker', async () => {
+    const noShop = solventMe({ buildings: { desk: 1 } });
+    const world = expandWorld({ getWorldMe: vi.fn().mockImplementation(async () => noShop) });
+    world.joinSeason = vi.fn().mockImplementation(async () => ({ ...noShop, worldId: 's3-0' }));
+    const session = await loggedInSession(world);
+
+    await session.tickSlg();
+    // Once it stands, the rotation takes over again, starting where it would have anyway.
+    world.getWorldMe.mockImplementation(async () => solventMe({ buildings: { desk: 1, stickerShop: 1 } }));
+    await session.tickSlg();
+
+    expect(world.upgradeBuilding.mock.calls.map((c: unknown[]) => c[2])).toEqual(['stickerShop', 'desk']);
   });
 
   // ── Affordability gate + pacing (2026-09-17) ────────────────────────────────────────────────────
@@ -242,11 +340,11 @@ describe('BotSession.tickSlg', () => {
   // Note what the pre-existing cases above could NOT have caught: they asserted that the request went
   // out, and their fakes had no resources at all, so "always rejected" and "working" looked identical.
 
-  it('never posts an upgrade a one-resource bot cannot pay for (the live bot shape)', async () => {
-    // A bot's base footprint covers exactly one resource tile, so it yields exactly one resource, and
-    // `ink` is a pure troop-sustain resource that NO entry in BUILD_COST_BASE charges (city.ts design
-    // rule). However rich in ink it gets, nothing is ever buyable.
-    const inkOnly = solventMe({ resources: { ink: 1e9, paper: 0, graphite: 0, metal: 0, sticker: 0 } });
+  it('never posts an upgrade or a batch a one-resource bot cannot pay for (the live bot shape)', async () => {
+    // A bot's base yields ink only, and `ink` is a pure troop-sustain resource that NO entry in
+    // BUILD_COST_BASE charges (city.ts design rule) — while training wants all five. However rich in
+    // ink it gets, nothing is ever buyable.
+    const inkOnly = solventMe({ troopCap: 5000, resources: { ink: 1e9, paper: 0, graphite: 0, metal: 0, sticker: 0 } });
     const world = expandWorld({ getWorldMe: vi.fn().mockImplementation(async () => inkOnly) });
     world.joinSeason = vi.fn().mockImplementation(async () => ({ ...inkOnly, worldId: 's3-0' }));
     const session = await loggedInSession(world);
@@ -254,6 +352,7 @@ describe('BotSession.tickSlg', () => {
     for (let i = 0; i < 12; i++) await session.tickSlg();
 
     expect(world.upgradeBuilding).not.toHaveBeenCalled();
+    expect(world.trainTroops).not.toHaveBeenCalled();
   });
 
   it('picks a key it can afford over the next one in the rotation', async () => {
@@ -282,6 +381,10 @@ describe('BotSession.tickSlg', () => {
     expect(world.upgradeBuilding).not.toHaveBeenCalled();
   });
 
+  it('takes a turn every 10 minutes by default', () => {
+    expect(DEFAULT_SLG_INTERVAL_MS).toBe(10 * 60_000);
+  });
+
   it('acts once per interval however often the scheduler hands it a pass', async () => {
     const world = expandWorld();
     const session = new BotSession(
@@ -291,19 +394,25 @@ describe('BotSession.tickSlg', () => {
 
     for (let i = 0; i < 5; i++) await session.tickSlg();
 
+    expect(world.joinSeason).toHaveBeenCalledTimes(1);
     expect(world.upgradeBuilding).toHaveBeenCalledTimes(1);
   });
 
-  it('costs no extra round trip: the affordability snapshot rides on the expansion tick /world/me', async () => {
-    // This is a COST assertion, not a behaviour one — deciding affordability client-side is only a win
-    // if the decision is not itself paid for with the request it saves. Over 10 ticks the bot may call
-    // `/world/me` only on the two expansion ticks (EXPAND_TICK_INTERVAL = 5), same as before.
-    const world = expandWorld();
+  it('one /world/me per turn, however much the turn does', async () => {
+    // A march, an upgrade and a training batch in one turn still cost exactly one read: the march only
+    // moves troops (subtracted locally), and the two spends answer with the post-spend view.
+    const world = expandWorld({
+      getWorldMe: vi.fn().mockImplementation(async () => solventMe({ troops: 3000, troopCap: 5000 })),
+      getWorldMap: vi.fn().mockResolvedValue({ tiles: [paperNextDoor] }),
+    });
     const session = await loggedInSession(world);
 
-    for (let i = 0; i < 10; i++) await session.tickSlg();
+    for (let i = 0; i < 3; i++) await session.tickSlg();
 
-    expect(world.getWorldMe).toHaveBeenCalledTimes(2);
+    expect(world.getWorldMe).toHaveBeenCalledTimes(2); // turn 1 acted on the join answer
+    expect(world.startMarch).toHaveBeenCalled();
+    expect(world.upgradeBuilding).toHaveBeenCalledTimes(3);
+    expect(world.trainTroops).toHaveBeenCalledTimes(3);
   });
 
   it('does nothing before login (no token yet)', async () => {
@@ -906,12 +1015,10 @@ describe('BotSession.tickSlg — incomplete backend state', () => {
   });
 
   it('skips the expansion and upgrades instead when the bot has no base tile yet', async () => {
-    const world = expandWorld({ getWorldMe: vi.fn().mockImplementation(async () => solventMe({ mainBaseTile: undefined })) });
+    const world = expandWorld({ getWorldMe: vi.fn().mockImplementation(async () => solventMe({ troops: 5000, mainBaseTile: undefined })) });
     world.baseCoords = vi.fn().mockReturnValue(null); // no mainBaseTile -> no march origin
     const session = await loggedInSession(world);
 
-    for (let i = 0; i < 4; i++) await session.tickSlg();
-    world.upgradeBuilding.mockClear();
     await session.tickSlg();
 
     expect(world.getWorldMap).not.toHaveBeenCalled(); // bailed before the map read
@@ -925,8 +1032,6 @@ describe('BotSession.tickSlg — incomplete backend state', () => {
     const world = expandWorld({ getWorldMe: vi.fn().mockImplementation(async () => solventMe({ troops: 0 })) });
     const session = await loggedInSession(world);
 
-    for (let i = 0; i < 4; i++) await session.tickSlg();
-    world.upgradeBuilding.mockClear();
     await session.tickSlg();
 
     expect(world.getWorldMap).not.toHaveBeenCalled();
@@ -935,28 +1040,52 @@ describe('BotSession.tickSlg — incomplete backend state', () => {
   });
 
   it('a logout that lands mid-tick stops the rest of the tick from spending a dead token', async () => {
-    // The only window where the private guards in upgradeNextBuilding/tryExpand can actually fire:
+    // The only window where the private guards in tryExpand/tryUpgrade/tryTrain can actually fire:
     // logout() clears the token while a world call is already in flight, so the checks at the top of
     // tickSlg passed but the ones further down no longer do. Without them the tick would keep going
     // and issue a POST /world/build/upgrade with a token the fleet has already given up — a real
     // 401 against a real backend, blamed on an account nothing is tracking as online any more.
     const holder: { session?: BotSession } = {};
+    // A player who could do all three this turn: march, upgrade and train.
     const world = expandWorld({
+      joinSeason: vi.fn().mockResolvedValue({ joined: true, worldId: 's3-0' }),
       getWorldMe: vi.fn(async () => {
         holder.session!.logout();
-        return { joined: true, troops: 0, mainBaseTile: 's3-0:5:5' };
+        return solventMe({ troops: 3000, troopCap: 5000 });
+      }),
+      getWorldMap: vi.fn().mockResolvedValue({ tiles: [{ x: 7, y: 5, type: 'resource', level: 1, resType: 'paper' }] }),
+    });
+    const session = await loggedInSession(world);
+    holder.session = session;
+
+    await session.tickSlg(); // join turn: nothing to act on
+    await session.tickSlg(); // getWorldMe logs out mid-flight
+
+    expect(world.getWorldMap).not.toHaveBeenCalled();
+    expect(world.startMarch).not.toHaveBeenCalled();
+    expect(world.upgradeBuilding).not.toHaveBeenCalled();
+    expect(world.trainTroops).not.toHaveBeenCalled();
+    expect(session.state).toBe('offline');
+  });
+
+  it('the same holds when training is the step that would have gone first', async () => {
+    // Too few troops to march, so training leads the turn — and has its own guard to hit.
+    const holder: { session?: BotSession } = {};
+    const world = expandWorld({
+      joinSeason: vi.fn().mockResolvedValue({ joined: true, worldId: 's3-0' }),
+      getWorldMe: vi.fn(async () => {
+        holder.session!.logout();
+        return solventMe({ troops: 1000, troopCap: 5000 });
       }),
     });
     const session = await loggedInSession(world);
     holder.session = session;
 
-    for (let i = 0; i < 4; i++) await session.tickSlg();
-    world.upgradeBuilding.mockClear();
-    await session.tickSlg(); // expansion tick: getWorldMe logs out mid-flight
+    await session.tickSlg();
+    await session.tickSlg();
 
-    expect(world.startMarch).not.toHaveBeenCalled();
-    expect(world.upgradeBuilding).not.toHaveBeenCalled(); // the fallback upgrade is skipped too
-    expect(session.state).toBe('offline');
+    expect(world.trainTroops).not.toHaveBeenCalled();
+    expect(world.upgradeBuilding).not.toHaveBeenCalled();
   });
 });
 

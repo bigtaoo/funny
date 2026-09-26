@@ -2,24 +2,18 @@
 // real client (the bot's own player JWT). No auction/social endpoints here — B8 keeps bots out of
 // the auction house and chat entirely. Sect found/join (BOTSVC_DESIGN §3.3) lives here too because
 // sects are worldsvc-owned, not socialsvc.
+import type { BuildingKey } from '@nw/shared';
 import { envelopeError } from './apiError';
 
-export type BuildingKey =
-  | 'desk'
-  | 'inkPot'
-  | 'paperTray'
-  | 'graphiteMill'
-  | 'metalForge'
-  | 'stickerShop'
-  | 'cabinet'
-  | 'drillYard'
-  | 'wall'
-  | 'academy';
+// The shared union, not a local copy: the copy had fallen behind (no `satchel`), so a real
+// `/world/me` build queue was no longer assignable to the bot's own view type.
+export type { BuildingKey };
 
 /**
  * The `/world/me` projection, narrowed to the fields a bot actually reads (openapi-world.yml
  * PlayerWorldView). `resources`/`buildings`/`buildQueue` are typed because the upgrade decision is
- * made from them client-side — see BotSession.affordableBuilding().
+ * made from them client-side — see BotSession.affordableBuilding(); `troopCap`/`trainingQueue` for the
+ * training decision (training.ts), `yieldRate` for which resource tile to occupy next (expansion.ts).
  *
  * `resources` is the SETTLED balance at the moment of the read: worldsvc accrues `yieldRate` over
  * `lastTickAt` on every read and only persists it when something is spent. So a snapshot of this
@@ -33,6 +27,11 @@ export interface PlayerWorldView {
   resources?: Partial<Record<string, number>>;
   buildings?: Partial<Record<string, number>>;
   buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: number }[];
+  troopCap?: number;
+  /** Omitted by worldsvc when empty. */
+  trainingQueue?: { qty: number; startAt: number; completeAt: number }[];
+  /** Hourly yield per resource, from every tile held plus the buildings boosting it. */
+  yieldRate?: Partial<Record<string, number>>;
   [key: string]: unknown;
 }
 
@@ -130,6 +129,11 @@ export class WorldClient {
    *  refresh its resource snapshot without a second round trip. */
   upgradeBuilding(token: string, worldId: string, key: BuildingKey): Promise<PlayerWorldView> {
     return this.call<PlayerWorldView>('POST', '/world/build/upgrade', token, { worldId, key });
+  }
+
+  /** Queues one training batch; like upgradeBuilding, answered with the post-spend `/world/me`. */
+  trainTroops(token: string, worldId: string, qty: number): Promise<PlayerWorldView> {
+    return this.call<PlayerWorldView>('POST', '/world/troops/train', token, { worldId, qty });
   }
 
   /** Full map view (every cell, with terrain/level/resource type) in the Chebyshev window of radius `r` around (cx, cy). */
