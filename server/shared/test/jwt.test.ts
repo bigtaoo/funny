@@ -26,6 +26,25 @@ describe('signToken / verifyToken', () => {
     expect(() => verifyToken(token, cfg)).toThrow('invalid token payload');
   });
 
+  // The secret is cached as a KeyObject (jwt.ts); tokens must stay interchangeable with plain-string HS256.
+  it('stays wire-compatible with jsonwebtoken called with the raw string secret', () => {
+    const fromLib = jwtLib.sign({ sub: 'acc-lib' }, cfg.secret);
+    expect(verifyToken(fromLib, cfg)).toBe('acc-lib');
+    const ours = signToken('acc-ours', cfg);
+    expect((jwtLib.verify(ours, cfg.secret) as { sub: string }).sub).toBe('acc-ours');
+    expect(jwtLib.decode(ours, { complete: true })!.header.alg).toBe('HS256');
+  });
+
+  it('rejects an unsigned (alg none) token', () => {
+    const unsigned = jwtLib.sign({ sub: 'acc-x' }, '', { algorithm: 'none' });
+    expect(() => verifyToken(unsigned, cfg)).toThrow();
+  });
+
+  it('an empty secret still fails rather than verifying', () => {
+    const token = signToken('acc-123', cfg);
+    expect(() => verifyToken(token, { secret: '' })).toThrow();
+  });
+
   it('signToken accepts a custom expiresIn', () => {
     const token = signToken('acc-456', { ...cfg, expiresIn: '1h' });
     expect(verifyToken(token, cfg)).toBe('acc-456');
