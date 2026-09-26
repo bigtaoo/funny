@@ -63,8 +63,14 @@ export interface StatsCallbacks {
   onOpenTitles?(): void;
   /** Open the card codex (LOBBY_IA_REDESIGN §15, folded in from the retired CollectionScene). */
   onOpenCodex?(): void;
-  /** Current season info for the banner (SE-6). */
-  season?: { seasonNo: number; endAt: number };
+  /** Current season number for the banner (SE-6). */
+  season?: { seasonNo: number };
+  /**
+   * Fetch the current ladder season's end (ms epoch) for the banner countdown, or null when unknown
+   * (offline / fetch failed / older server). Without it the banner shows the season number alone —
+   * never "ended", which is only true once the server says the end has actually passed.
+   */
+  getSeasonEndAt?(): Promise<number | null>;
 }
 
 export class StatsScene implements Scene {
@@ -84,6 +90,8 @@ export class StatsScene implements Scene {
   private history: MatchHistoryEntry[] | null = null;
   /** undefined = not fetched yet; null = unranked / fetch failed; number = 1-based ladder position. */
   private myRank: number | null | undefined = undefined;
+  /** undefined = not fetched yet; null = unknown; number = season end (ms epoch). */
+  private seasonEndAt: number | null | undefined = undefined;
 
   /** Match history is capped at the most recent 10 games. */
   private static readonly HISTORY_LIMIT = 10;
@@ -115,6 +123,7 @@ export class StatsScene implements Scene {
     this.render();
     if (this.cb.loadHistory) void this.fetchHistory();
     if (this.cb.getMyRank) void this.fetchMyRank();
+    if (this.cb.season && this.cb.getSeasonEndAt) void this.fetchSeasonEndAt();
   }
 
   private async fetchHistory(): Promise<void> {
@@ -131,6 +140,15 @@ export class StatsScene implements Scene {
       this.myRank = await this.cb.getMyRank!();
     } catch {
       this.myRank = null;
+    }
+    this.render();
+  }
+
+  private async fetchSeasonEndAt(): Promise<void> {
+    try {
+      this.seasonEndAt = await this.cb.getSeasonEndAt!();
+    } catch {
+      this.seasonEndAt = null;
     }
     this.render();
   }
@@ -238,11 +256,16 @@ export class StatsScene implements Scene {
 
     let seasonBannerStr = '';
     if (this.cb.season) {
-      const { seasonNo, endAt } = this.cb.season;
-      const daysLeft = Math.ceil((endAt - Date.now()) / (1000 * 60 * 60 * 24));
-      seasonBannerStr = daysLeft > 0
-        ? t('season.banner', { no: String(seasonNo), days: String(daysLeft) })
-        : t('season.bannerEnded', { no: String(seasonNo) });
+      const { seasonNo } = this.cb.season;
+      const endAt = this.seasonEndAt;
+      if (typeof endAt !== 'number') {
+        seasonBannerStr = t('season.bannerCurrent', { no: String(seasonNo) });
+      } else {
+        const daysLeft = Math.ceil((endAt - Date.now()) / (1000 * 60 * 60 * 24));
+        seasonBannerStr = daysLeft > 0
+          ? t('season.banner', { no: String(seasonNo), days: String(daysLeft) })
+          : t('season.bannerEnded', { no: String(seasonNo) });
+      }
     }
 
     const pvpRows: Row[] = [
