@@ -52,6 +52,16 @@ describe('WorldClient HTTP methods', () => {
     expect(view.tiles[0]!.resType).toBe('paper');
   });
 
+  it('trainTroops POSTs /world/troops/train with worldId + qty and hands back the post-spend view', async () => {
+    const calls = install({ ok: true, data: { joined: true, troops: 10 } });
+    const after = await new WorldClient(BASE).trainTroops(TOKEN, 's3-0', 250);
+    expect(after).toEqual({ joined: true, troops: 10 });
+    expect(calls).toEqual([{
+      url: `${BASE}/world/troops/train`, method: 'POST', auth: `Bearer ${TOKEN}`,
+      body: { worldId: 's3-0', qty: 250 },
+    }]);
+  });
+
   it('startMarch POSTs /world/march with from/to coords, the kind and troops — and nothing else', async () => {
     const calls = install({ ok: true, data: { arriveAt: 42 } });
     // `to` may be a whole ExpansionPlan; only its coordinates go on the wire.

@@ -10,11 +10,16 @@ import type { WorldTileView } from './worldClient';
 
 /** Highest tile level a bot tries to occupy: an L1-L2 NPC garrison falls to the minimum occupy force. */
 export const EXPAND_MAX_LEVEL = 2;
-/** Troops that must stay home after a march leaves. Bots cannot train (training costs all five resources). */
+/**
+ * Troops that must stay home after a march leaves. Survivors of an occupation stay on the tile as its
+ * garrison, so every march permanently spends pool troops; training (training.ts) is what refills them.
+ */
 export const EXPAND_TROOP_FLOOR = 2000;
+/** Smallest pool that can send anything: the floor plus the minimum force every march here uses. */
+export const EXPAND_MARCH_MIN_POOL = EXPAND_TROOP_FLOOR + OCCUPY_MIN_TROOPS;
 /** Share of the pool sent on an attack, before the OCCUPY_MIN_TROOPS minimum and the floor apply. */
 const ATTACK_TROOP_FRACTION = 0.3;
-/** Building upgrades are paid mostly in these two, and a bot's own base yields only one resource. */
+/** Building upgrades are paid mostly in these two. */
 const PREFERRED_RESOURCES: ReadonlySet<string> = new Set(['paper', 'graphite']);
 
 export interface ExpansionPlan {
@@ -36,8 +41,10 @@ function isFriendly(t: WorldTileView): boolean {
  * The next march for a bot whose 3x3 base is anchored at `base`, or null when there is nothing worth
  * sending (no adjacent target, or too few troops to send one without dropping below the floor).
  *
- * Occupying an adjacent L1-L2 resource tile always wins over attacking; paper/graphite first, then the
- * lower level, then the tile closest to the base, then coordinates so the choice is deterministic.
+ * Occupying an adjacent L1-L2 resource tile always wins over attacking. Among those: first a resource the
+ * bot does not produce at all yet (`yieldRate` from `/world/me`) — training costs all five, so one missing
+ * input stops it outright — then paper/graphite, then the lower level, then the tile closest to the base,
+ * then coordinates so the choice is deterministic.
  * Only with no such tile left does a bot attack an adjacent enemy territory tile — never a base, a
  * stronghold, a crossing or a city.
  */
@@ -46,11 +53,13 @@ export function planExpansion(
   base: { x: number; y: number },
   troops: number,
   now: number,
+  yieldRate: Readonly<Partial<Record<string, number>>> = {},
 ): ExpansionPlan | null {
   const friendly = new Set<string>(baseFootprintCells(base.x, base.y).map((c) => key(c.x, c.y)));
   for (const t of tiles) if (isFriendly(t)) friendly.add(key(t.x, t.y));
   const bordersFriendly = (t: WorldTileView) => NEIGHBOURS.some(([dx, dy]) => friendly.has(key(t.x + dx, t.y + dy)));
   const dist = (t: WorldTileView) => Math.abs(t.x - base.x) + Math.abs(t.y - base.y);
+  const produced = (t: WorldTileView) => (yieldRate[t.resType ?? ''] ?? 0) > 0;
 
   const occupyTargets = tiles
     .filter((t) =>
@@ -61,14 +70,15 @@ export function planExpansion(
       && !friendly.has(key(t.x, t.y))
       && bordersFriendly(t))
     .sort((a, b) =>
-      Number(!PREFERRED_RESOURCES.has(a.resType ?? '')) - Number(!PREFERRED_RESOURCES.has(b.resType ?? ''))
+      Number(produced(a)) - Number(produced(b))
+      || Number(!PREFERRED_RESOURCES.has(a.resType ?? '')) - Number(!PREFERRED_RESOURCES.has(b.resType ?? ''))
       || a.level - b.level
       || dist(a) - dist(b)
       || a.y - b.y
       || a.x - b.x);
   const occupy = occupyTargets[0];
   if (occupy) {
-    if (troops - OCCUPY_MIN_TROOPS < EXPAND_TROOP_FLOOR) return null;
+    if (troops < EXPAND_MARCH_MIN_POOL) return null;
     return { kind: 'occupy', x: occupy.x, y: occupy.y, troops: OCCUPY_MIN_TROOPS };
   }
 
@@ -83,7 +93,7 @@ export function planExpansion(
   if (!attack) return null;
   // 30% of the pool, but never under the server minimum and never into the floor.
   const spare = troops - EXPAND_TROOP_FLOOR;
-  if (spare < OCCUPY_MIN_TROOPS) return null;
+  if (troops < EXPAND_MARCH_MIN_POOL) return null;
   const send = Math.min(spare, Math.max(OCCUPY_MIN_TROOPS, Math.floor(troops * ATTACK_TROOP_FRACTION)));
   return { kind: 'attack', x: attack.x, y: attack.y, troops: send };
 }

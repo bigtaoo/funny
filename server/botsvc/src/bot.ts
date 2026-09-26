@@ -1,5 +1,5 @@
 // Single bot session (BOTSVC_DESIGN §3.2): login, family join/leave-on-low-activity, payment-tier
-// bootstrap, SLG city actions + connected expansion (§3.2 slg_action, §3.4), and ranked
+// bootstrap, SLG city actions, connected expansion and troop training (§3.2 slg_action, §3.4), and ranked
 // matchmaking + battle over a real gateway+gameserver WS connection driven by @nw/engine's
 // AISystem (§1 B3, §8).
 import { BUILD_QUEUE_SLOTS, RESOURCE_TYPES, SECT_CREATE_COST, buildCost, buildGateReason } from '@nw/shared';
@@ -11,7 +11,8 @@ import { playRankedMatch } from './battleSession';
 import type { BotIdentity } from './pool';
 import { hasCode } from './apiError';
 import { BOT_FAMILY_ROSTER, BOT_SECT_ROSTER, BotOrgRegistry, PENDING_SEAT_TTL_MS, botFamilySlot } from './orgs';
-import { planExpansion } from './expansion';
+import { EXPAND_MARCH_MIN_POOL, planExpansion } from './expansion';
+import { planTraining, troopsFirst } from './training';
 
 /** Family upkeep pacing per role (BOTSVC_DESIGN §3.3): officers approve applications, members just idle. */
 const FAMILY_SEEK_INTERVAL_MS = 60_000;
@@ -38,8 +39,6 @@ const P1_BUILDING_KEYS: BuildingKey[] = [
   'drillYard',
 ];
 
-/** Every Nth slg tick a bot considers a march instead of just upgrading (BOTSVC_DESIGN §3.4). */
-const EXPAND_TICK_INTERVAL = 5;
 /**
  * Radius of the full map view the expansion planner reads, around the bot's base.
  *
@@ -53,22 +52,17 @@ const EXPAND_VIEW_RADIUS = 8;
 const MARCH_BUSY_FALLBACK_MS = 10 * 60_000;
 
 /**
- * Wall-clock floor between two SLG upkeep passes *for one bot*, independent of how the scheduler is
- * tuned. `tickSlg()` used to act on every upkeep pass it was handed, so its rate was a side effect of
+ * Wall-clock floor between two SLG turns *for one bot*, independent of how the scheduler is tuned.
+ * `tickSlg()` used to act on every upkeep pass it was handed, so its rate was a side effect of
  * `tickMs × upkeepRotations` (5s × 3 = one pass per bot per 15s) — two knobs that exist to shape the
  * scheduler's CPU burst, not to say how often a bot should touch the world. This decouples them: the
  * scheduler may visit a bot as often as it likes; the bot itself acts at most this often.
+ *
+ * 10 minutes since 2026-09-26 (was 45s, with a march considered every 5th pass): at 100/h per tile a
+ * bot has nothing new to spend most of the time, and one of its marches takes minutes to arrive. One
+ * turn now reads `/world/me` once and does everything worth doing — march, upgrade, train.
  */
-export const DEFAULT_SLG_INTERVAL_MS = 45_000;
-
-/**
- * Hard ceiling on how stale the resource snapshot behind the upgrade decision may get. In the default
- * configuration this never fires — an expansion tick refreshes the snapshot every EXPAND_TICK_INTERVAL SLG
- * ticks (5 × 45s = 225s) for free, out of the `/world/me` it was fetching anyway. It is the backstop
- * for a configuration where that no longer holds, so that a bot which currently affords nothing still
- * re-checks eventually instead of going quiet forever.
- */
-const SLG_SNAPSHOT_TTL_MS = 5 * 60_000;
+export const DEFAULT_SLG_INTERVAL_MS = 10 * 60_000;
 
 /** Per-bot SLG pacing (see DEFAULT_SLG_INTERVAL_MS); injected so tests can drive ticks without waiting. */
 export interface SlgOptions {
@@ -95,13 +89,9 @@ export class BotSession {
   private gatewayUrl: string | undefined;
   private paymentBootstrapped = false;
   private worldId: string | undefined;
-  private slgTick = 0;
   private buildRotation = 0;
   /** Earliest wall-clock time this bot may act in the world again (DEFAULT_SLG_INTERVAL_MS). */
   private nextSlgAt = 0;
-  /** Last `/world/me` this session saw, used to decide what it can afford before asking the server. */
-  private slgSnapshot: PlayerWorldView | undefined;
-  private slgSnapshotAt = 0;
   /** No new march before this (the previous one's arrival, BOTSVC_DESIGN §3.4 rule 6). */
   private marchBusyUntil = 0;
   private battling = false;
@@ -350,9 +340,13 @@ export class BotSession {
   }
 
   /**
-   * One tick of SLG upkeep (§3.2 slg_action): join the active season's world on first tick, then
-   * either upgrade a building it can actually pay for or — every EXPAND_TICK_INTERVAL ticks — march on
-   * the next tile bordering its sect's land (expansion.ts). No auction/social calls here (B8).
+   * One SLG turn (§3.2 slg_action, BOTSVC_DESIGN §3.4): join the active season's world on the first
+   * one, then from a single fresh `/world/me` — march on the next tile bordering the sect's land
+   * (expansion.ts), then upgrade a building and train troops it can actually pay for (training.ts).
+   * No auction/social calls here (B8).
+   *
+   * Upgrade and training draw on the same resources, so their order is the priority: a bot whose pool
+   * is too small to march trains first, otherwise buildings go first and training takes what is left.
    *
    * Rate-limited per bot (DEFAULT_SLG_INTERVAL_MS) rather than acting on every upkeep pass handed to
    * it: the scheduler's pass cadence is tuned for its own CPU burst shape, and letting it double as
@@ -363,16 +357,27 @@ export class BotSession {
     const now = Date.now();
     if (now < this.nextSlgAt) return;
     this.nextSlgAt = now + this.slg.intervalMs;
+    let me: PlayerWorldView;
     if (!this.worldId) {
       const { season } = await this.world.getActiveSeason();
       const joined = await this.world.joinSeason(this.token, season);
       if (!joined.worldId) return;
       this.worldId = joined.worldId;
-      this.noteSnapshot(joined, now);
+      me = joined;
+    } else {
+      me = await this.world.getWorldMe(this.token, this.worldId);
     }
-    this.slgTick++;
-    if (this.slgTick % EXPAND_TICK_INTERVAL === 0 && (await this.tryExpand(now))) return;
-    await this.upgradeNextBuilding();
+    const sent = await this.tryExpand(me, now);
+    // The march took its troops out of the pool; resources are untouched, so no second read is needed.
+    if (sent) me = { ...me, troops: (me.troops ?? 0) - sent };
+    const steps = troopsFirst(me)
+      ? [(v: PlayerWorldView) => this.tryTrain(v), (v: PlayerWorldView) => this.tryUpgrade(v)]
+      : [(v: PlayerWorldView) => this.tryUpgrade(v), (v: PlayerWorldView) => this.tryTrain(v)];
+    for (const step of steps) {
+      const next = await step(me);
+      if (!next) return;
+      me = next;
+    }
   }
 
   /**
@@ -389,77 +394,75 @@ export class BotSession {
    * This mirrors worldsvc's own validation (CityBuildingsService.upgradeBuilding) from the shared
    * constants rather than guessing, exactly as a real client greys out an unaffordable row instead of
    * posting it. The server stays authoritative: the mirror can only ever make the bot ask for LESS
-   * than it is entitled to, because the snapshot's settled `resources` only grow with time.
+   * than it is entitled to, because the view's settled `resources` only grow with time.
    */
-  private async upgradeNextBuilding(): Promise<void> {
-    if (!this.token || !this.worldId) return;
-    const me = await this.slgMe();
-    const key = me && this.affordableBuilding(me);
-    if (!key) return;
-    const after = await this.world.upgradeBuilding(this.token, this.worldId, key);
-    // The spend has happened either way, so a response we can't read must not leave the pre-spend
-    // snapshot in place — that would have the bot ask for a second upgrade on money it no longer has.
-    if (after) this.noteSnapshot(after, Date.now());
-    else this.slgSnapshot = undefined;
+  private async tryUpgrade(me: PlayerWorldView): Promise<PlayerWorldView | undefined> {
+    const key = this.affordableBuilding(me);
+    if (!key) return me;
+    if (!this.token || !this.worldId) return undefined;
+    // The spend has happened either way, so a response we can't read must not let the pre-spend view
+    // go on to the training step — that would have the bot spend the same money twice.
+    return (await this.world.upgradeBuilding(this.token, this.worldId, key)) || undefined;
+  }
+
+  /**
+   * Queue one training batch this bot can pay for (training.ts), returning the post-spend view to go
+   * on with, or undefined when a spend happened but its result is unknown.
+   */
+  private async tryTrain(me: PlayerWorldView): Promise<PlayerWorldView | undefined> {
+    const qty = planTraining(me, Date.now());
+    if (!qty) return me;
+    if (!this.token || !this.worldId) return undefined;
+    return (await this.world.trainTroops(this.token, this.worldId, qty)) || undefined;
   }
 
   /**
    * First key in the rotation this bot can pay for right now, or null. Scanning from the rotation
    * cursor (rather than always from `desk`) keeps the round-robin's spread-out feel for a bot rich
    * enough to have a choice, while a bot with exactly one affordable key still finds it every time.
+   *
+   * Except the first stickerShop, which jumps the rotation: training costs sticker, and a bot gets none
+   * from the land it takes — copper only appears on L6+ tiles (SLG_GEN.copperMinLevel), past the L2
+   * ceiling of expansion.ts — so until the shop stands, no troop can ever be trained.
    */
   private affordableBuilding(me: PlayerWorldView): BuildingKey | null {
     const queue = me.buildQueue ?? [];
     if (queue.length >= BUILD_QUEUE_SLOTS) return null; // 'Build queue is full'
     const buildings = me.buildings ?? { desk: 1 };
     const resources = me.resources ?? {};
+    const nextLevel = (key: BuildingKey) => (buildings[key] ?? 0) + queue.filter((e) => e.key === key).length + 1;
+    const affordable = (key: BuildingKey) => {
+      const toLevel = nextLevel(key);
+      if (buildGateReason(buildings, key, toLevel)) return false; // desk gate / max level
+      const cost = buildCost(key, toLevel);
+      return !RESOURCE_TYPES.some((rt) => (resources[rt] ?? 0) < (cost[rt] ?? 0));
+    };
+    if (nextLevel('stickerShop') === 1 && affordable('stickerShop')) return 'stickerShop';
     for (let i = 0; i < P1_BUILDING_KEYS.length; i++) {
       const key = P1_BUILDING_KEYS[(this.buildRotation + i) % P1_BUILDING_KEYS.length]!;
-      const toLevel = (buildings[key] ?? 0) + queue.filter((e) => e.key === key).length + 1;
-      if (buildGateReason(buildings, key, toLevel)) continue; // desk gate / max level
-      const cost = buildCost(key, toLevel);
-      if (RESOURCE_TYPES.some((rt) => (resources[rt] ?? 0) < (cost[rt] ?? 0))) continue;
+      if (!affordable(key)) continue;
       this.buildRotation = this.buildRotation + i + 1;
       return key;
     }
     return null;
   }
 
-  /** The resource snapshot the upgrade decision reads, refreshed only when it has gone stale. */
-  private async slgMe(): Promise<PlayerWorldView | undefined> {
-    if (!this.token || !this.worldId) return undefined;
-    const now = Date.now();
-    if (this.slgSnapshot && now - this.slgSnapshotAt < SLG_SNAPSHOT_TTL_MS) return this.slgSnapshot;
-    this.noteSnapshot(await this.world.getWorldMe(this.token, this.worldId), now);
-    return this.slgSnapshot;
-  }
-
-  private noteSnapshot(me: PlayerWorldView, at: number): void {
-    this.slgSnapshot = me;
-    this.slgSnapshotAt = at;
-  }
-
   /**
-   * March on the next tile bordering the sect's land (BOTSVC_DESIGN §3.4). Returns true if a march was
-   * actually started, so the caller skips the upgrade this tick. One march in flight at a time: the
-   * next is held until the server-reported arrival, after which the tile shows up as mid occupation-hold
-   * (`contestedUntil`) and is not picked again.
+   * March on the next tile bordering the sect's land (BOTSVC_DESIGN §3.4), returning how many troops
+   * left the pool (0 = no march). One march in flight at a time: the next is held until the
+   * server-reported arrival, after which the tile shows up as mid occupation-hold (`contestedUntil`) and
+   * is not picked again.
    */
-  private async tryExpand(now: number): Promise<boolean> {
-    if (!this.token || !this.worldId || now < this.marchBusyUntil) return false;
-    const me = await this.world.getWorldMe(this.token, this.worldId);
-    // Free refresh for the upgrade decision's snapshot — this is the same `/world/me` it would
-    // otherwise have to fetch itself, and at the default cadence it is the ONLY one either needs.
-    this.noteSnapshot(me, Date.now());
+  private async tryExpand(me: PlayerWorldView, now: number): Promise<number> {
+    if (now < this.marchBusyUntil) return 0;
     const base = this.world.baseCoords(me);
-    if (!base || !me.troops || !this.token || !this.worldId) return false;
+    // Below this pool nothing can be sent without breaking the floor, so the map read would be wasted.
+    if (!base || !me.troops || me.troops < EXPAND_MARCH_MIN_POOL || !this.token || !this.worldId) return 0;
     const { tiles } = await this.world.getWorldMap(this.token, this.worldId, base.x, base.y, EXPAND_VIEW_RADIUS);
-    const plan = planExpansion(tiles, base, me.troops, Date.now());
-    if (!plan || !this.token || !this.worldId) return false;
+    const plan = planExpansion(tiles, base, me.troops, Date.now(), me.yieldRate);
+    if (!plan || !this.token || !this.worldId) return 0;
     const started = await this.world.startMarch(this.token, this.worldId, base, plan, plan.kind, plan.troops);
     this.marchBusyUntil = started?.arriveAt ?? Date.now() + MARCH_BUSY_FALLBACK_MS;
-    // The troops left the pool: the upgrade decision's snapshot no longer matches the server.
-    this.slgSnapshot = undefined;
-    return true;
+    return plan.troops;
   }
 }
