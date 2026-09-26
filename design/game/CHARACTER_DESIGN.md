@@ -209,6 +209,11 @@ Anna 三人随偶数章出场（[characters.md](../product/characters.md)：Ch2/
   ④ **已上线**（同日）：母版在 animator 里按 **S 档**（`UNIT_SIZE_TIER[Runner] = Small`，此前烤的是 M 档）重导出，`art/units/runner/runner.tao` 与 `client/src/assets/units/runner.tao` 同步覆盖（两者按 `unitRigsAreBaked.test.ts` 必须逐字节相同）。`naturalHeight` 509 → 314，狗在场上比原先那个直立人形矮一半——它本来就是「全场最小最矮」的 S 档。
   ⑤ 上线时还揪出一个**所有单位都中招的运行时 bug**：`pose.ts` 把 keyframe 旋转加了两次（详见 `design/tools/animator/REQUIREMENTS.md` §贴图绑定 的公式注）。修完连步兵/弓手/盾兵/穷奇的姿态都正了（盾兵原本头是歪着的、弓歪在手外）。
   **死亡 clip 的天花板**：rig 的 root 钉在胯上、运行时不平移 root，所以狗永远趴不下去——`death` 只能做成"前身垮下去、胯还在原高度"的前扑式，后半身抬着是这套骨架的物理下限，不是没调。
+- [x] **苏远（Archer）6 条 clip 按持弓姿重做 + 去杂点图重导出**（2026-09-26）：用户在 animator 里把 `walk` 的首/尾两帧调成"弓在前、箭已搭弦"的行进持弓姿（`r_upper_arm≈211`、`r_lower_arm≈-102`），其余 5 条仍是人形预设（手臂一动弓箭就乱飞，idle 还会劈叉）。
+  ① **walk**：原首帧 ≠ 尾帧，循环接缝会跳。改成首帧＝尾帧（跟步兵/盾兵同一约定）；原尾帧其实是"落脚后下沉、后脚蹬地"那一刻，挪到 0.0625；补过渡（摆动腿屈膝抬脚）与前伸帧，后半周期左右腿对调走第二步。身体起伏＝全部 10 根骨头同一个 `translateY`（FK 不吃 translate，运行时 `pose.ts` 吃），按"最低那只脚落在地平线上"求解。
+  ② **idle/attack/hurt/death/spawn** 全部以同一个持弓姿为基准重做。attack：举弓瞄准 → 满弓 → 放箭 → 收回，首尾同姿，便于按攻击间隔连续重播。
+  ③ **rig 的几何下限**：箭画在 `r_lower_arm` 贴图里，箭的朝向恒等于前臂世界角；而拉弓臂 `r_upper_arm` 长度倍率 2.5（95px，比躯干还长），"箭朝前 + 手贴脸"在几何上不可能——满弓只能折臂、肘从背后露出来。箭与弓臂共线会被弓臂挡住，两者要错开约 20°。
+  ④ **已上线**：animator 导出，`art/units/archer/archer.tao` 与 `client/src/assets/units/archer.tao` 同步覆盖（逐字节相同）；这次导出也吃进了 `91dbfbec1` 去杂点后的小图。`naturalHeight` 仍是 348（由静息姿决定），场上尺寸不变。
 - [ ] **卫安（Medic）绑骨没做完，战斗里仍是旧的淡线稿**（2026-09-03 核对）：v7 新图早在 `f05ad876a`（2026-07-29）就出了，卡面图也已随 2026-08-20 那批 `exportUnitCardArt.mjs` 上线；但 `client/src/assets/units/medic.tao` 与**归档的旧 rig** `art/units/old/medic/medic.tao` **md5 完全相同**——也就是上线的战斗骨骼还是被显式标为 old 的那一份。`art/units/medic/` 目前只有 `medic.xcf`，图层零件还没导出。**剩下的步骤**：GIMP 图层导出 → animator 绑骨（照 Runner 那轮）→ 导出 `.tao` 覆盖 `client/src/assets/units/medic.tao`。**核对方式别看文件日期**（资产重组/压缩批次会刷新时间戳），用上面那个 md5 对比。
 
 ### 7.6 涛阵营三个新英雄（具名+背景+视觉，2026-07-02 定稿）
