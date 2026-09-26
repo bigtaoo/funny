@@ -250,6 +250,18 @@ describe.skipIf(!mongo)('worldsvc season ops e2e', () => {
     expect(await m.collections.seasonResults.countDocuments({ worldId: W })).toBe(1);
   });
 
+  it('settle: only the world-center holder gets the multiplier; each mail carries its own rank, tier and capital count', async () => {
+    await seed('active');
+    await svc.settleSeason(W);
+    const settle = (acct: string) => mailCalls.find((x) => x.accountId === acct && x.dispatchKey === `slg-settle:${W}:s${SEASON}`)!;
+    const scrapOf = (acct: string) => settle(acct).content.attachments!.find((a) => a.kind === 'material' && a.id === 'scrap')!.count;
+    // bob's SEA is rank 2 (top3) and holds capital-1 only: base reward, no center multiplier.
+    expect(scrapOf('bob')).toBe(SETTLE_REWARDS.top3.items.scrap!);
+    expect(scrapOf('alice')).toBe(SETTLE_REWARDS.champion.items.scrap! * CENTER_CAPITAL_MULT);
+    expect(settle('alice').content.body).toBe('slg.settle.body|rank=1|tier=champion|nations=2');
+    expect(settle('bob').content.body).toBe('slg.settle.body|rank=2|tier=top3|nations=1');
+  });
+
   it('settle: battle pass holders receive extra reward mail (S8-8 extra-settlement-reward tier)', async () => {
     await seed('active');
     // Grant alice a battle pass; bob has none.
