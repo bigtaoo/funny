@@ -1057,6 +1057,16 @@ p50 21.2 → 15.3ms（−28%），**p99 555 → 568ms（纹丝不动）**。并�
 - 第一版回声判定写了两处（先查一次缓存，`marching` 再延时查一次）。变异「删掉前一处」**全绿**——
   因为能命中缓存的只有 `marching` 推送，而它反正会走延时那一处。**删掉冗余那一处**，只留一个判据。
   又是 [[concurrency-tests-and-gate-scripts-must-be-mutation-checked]] 那条：没变红的变异说明的是代码多了，不一定是测试少了。
+- **端到端回归测试** `client/test/slgDispatchBurst.test.ts`（同日补）：以上单测各钉一处，这个钉「玩家的感受」。
+  它把真实的 `WorldApiClient` → `WorldApiCore.req` → 全局 `RateGate` 串在一起，换成往返固定 80ms 的假 worldsvc，
+  再由真实的 `showTeamPicker` / `doMarchTeam` / `applyMarchUpdate` / `applyTileUpdate` 驱动。两个用例：
+  ① 连派 5 队（每步间隔 0.5s，邻格 6s 到达）：每队弹窗 = 1 个 RTT、出征请求在点击当刻发出，
+  并**精确断言整轮请求账**（teams 5 / orders 10 / march 5 / map 5，修复前约 65 个）——以后派兵流程里多一个请求，
+  得有人主动改这张账，而不是悄悄变慢；
+  ② 12 个 `tile_update` 把令牌桶打空、读请求排队时点出征：出征必须在一个补给周期（200ms）内发出、插到积压前面。
+  变异验证：去掉分道 → ② 变红（出征等 1600ms）；回声恒刷新 → ① 账不对；弹窗多一个读 → ① 账不对。
+  **顺带暴露的规模隐患（未处理）**：每个 `tile_update` 推送都各自发一次整视口 `GET /world/map`，不合并。
+  几千人同图时视口里别人的战斗会持续推 `tile_update`，这会成为下一个把桶打空的来源，届时应像 `refreshMarches` 一样单飞合并。
 
 ### 12.5 这件事和「几千人同图」的关系
 

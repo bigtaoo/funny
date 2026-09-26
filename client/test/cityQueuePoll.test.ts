@@ -299,7 +299,7 @@ function loadFixture(
 describe('CityScene/data load', () => {
   beforeEach(() => { resAtlas.mockClear(); cityBldAtlas.mockClear(); });
 
-  it('issues getTeams first (rateGate hands out its bucket strictly FIFO)', () => {
+  it('issues getTeams first (rateGate serves reads FIFO within the background lane)', () => {
     const fx = loadFixture({});
     load(fx.host);
     // The order is load-bearing, not cosmetic: with the 5-token bucket drained on world-map entry,
