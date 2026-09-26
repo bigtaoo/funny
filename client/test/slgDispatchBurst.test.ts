@@ -222,9 +222,9 @@ describe('five-team SLG dispatch burst (end to end through the real rate gate)',
   });
 
   it("the player's order is not queued behind a backlog of background reads", async () => {
-    // A busy map: other players' fights nearby push a tile_update each, and each one re-reads the
-    // viewport. Those reads drain the bucket and queue; the order the player taps meanwhile must go
-    // out on the next refill tick, ahead of them — not after the whole backlog.
+    // Whatever drains the bucket — a panel opening, a pan, a refetch — the order the player taps
+    // meanwhile must go out on the next refill tick, ahead of the queued reads, not after all of them.
+    // (tile_update pushes no longer produce such a backlog on their own: they coalesce, see below.)
     const w = world(1);
     const { ctx, modals } = scene(w);
     const pending = new Set<string>();
@@ -234,7 +234,7 @@ describe('five-team SLG dispatch burst (end to end through the real rate gate)',
     await opened;
     await vi.advanceTimersByTimeAsync(2000); // bucket back to full
 
-    for (let i = 0; i < 12; i++) applyTileUpdate(ctx, { tileId: `${WORLD}:${60 + i}:60`, type: 'plain', level: 1 } as never);
+    for (let i = 0; i < 12; i++) void ctx.cb.worldApi.getMap(WORLD, 60 + i, 60, 7);
     const tapped = Date.now();
     modals[0]![0]!.action();
     await vi.advanceTimersByTimeAsync(5000);
@@ -244,5 +244,36 @@ describe('five-team SLG dispatch burst (end to end through the real rate gate)',
     // It really did jump the queue: most of the backlog went out after it.
     const readsAfter = w.sent.filter((s) => s.route === '/world/map' && s.at > order.at).length;
     expect(readsAfter).toBe(12 - 5);
+  });
+
+  it('a storm of thirty tile pushes costs five viewport reads, not thirty, and leaves the order untouched', async () => {
+    // A fight near the camera: a tile_update per settled hit, per occupation tick, per neighbour. Each
+    // used to re-read the whole viewport, so thirty pushes queued thirty reads (six seconds of the
+    // gate). Now at most one read is on the wire and the rest collapse into a single trailing one.
+    const w = world(1);
+    const { ctx, modals } = scene(w);
+    const pending = new Set<string>();
+
+    const opened = showTeamPicker(ctx, pending, BASE[0] + 1, BASE[1], 'occupy');
+    await vi.advanceTimersByTimeAsync(RTT);
+    await opened;
+    await vi.advanceTimersByTimeAsync(2000);
+    const before = w.sent.length;
+
+    for (let i = 0; i < 30; i++) {
+      applyTileUpdate(ctx, { tileId: `${WORLD}:${60 + (i % 6)}:60`, type: 'plain', level: 1 } as never);
+      await vi.advanceTimersByTimeAsync(10); // spread across three round trips
+    }
+    const tapped = Date.now();
+    modals[0]![0]!.action();
+    await vi.advanceTimersByTimeAsync(5000);
+
+    const storm = w.sent.slice(before);
+    const order = storm.find((s) => s.method === 'POST')!;
+    expect(order.at - tapped).toBe(0); // the bucket never drained
+    // Back-to-back reads for as long as pushes keep arriving — one per round trip across the 300ms
+    // of pushes (t=0, 80, 160, 240) — plus the one trailing read that covers the last of them.
+    const reads = storm.filter((s) => s.route === '/world/map').map((s) => s.at - storm[0]!.at);
+    expect(reads).toEqual([0, RTT, 2 * RTT, 3 * RTT, 4 * RTT]);
   });
 });

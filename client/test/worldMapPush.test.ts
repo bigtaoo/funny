@@ -353,6 +353,88 @@ describe('worldmap push — applyTileUpdate', () => {
   });
 });
 
+describe('worldmap push — applyTileUpdate coalescing', () => {
+  // 2026-09-26 (WORLDSVC_CONCURRENCY_AUDIT §12.6): every push used to fire its own full-viewport read.
+  // A fight near the camera is a push per hit, and each read queued behind the 5 req/s gate — the same
+  // drain that held back dispatches. At most one refetch may be on the wire; pushes meanwhile owe one more.
+
+  /** Each refetch waits until the case releases it, so a case controls what is "on the wire". */
+  function gatedRefetch(onLand: (n: number) => void = () => {}): () => void {
+    const waiting: Array<() => void> = [];
+    let n = 0;
+    loadMapViewport.mockImplementation(() => new Promise<void>((r) => {
+      waiting.push(() => { onLand(++n); r(); });
+    }));
+    return () => waiting.shift()!();
+  }
+  const flush = () => new Promise<void>((r) => { setTimeout(r, 0); });
+
+  it('a burst of pushes costs one read on the wire plus one trailing read', async () => {
+    const f = fake();
+    const land = gatedRefetch();
+    for (let i = 0; i < 20; i++) applyTileUpdate(f.ctx, { tileId: `w1:${i}:0` } as TileUpdate);
+    expect(loadMapViewport).toHaveBeenCalledTimes(1);
+
+    land(); await flush();
+    // The first read may predate pushes 2-20, so exactly one more goes out after it.
+    expect(loadMapViewport).toHaveBeenCalledTimes(2);
+    land(); await flush();
+    expect(loadMapViewport).toHaveBeenCalledTimes(2);
+    expect(f.mapRenders).toBe(2);
+  });
+
+  it('a single push costs a single read — no speculative trailing one', async () => {
+    const f = fake();
+    const land = gatedRefetch();
+    applyTileUpdate(f.ctx, { tileId: 'w1:1:1' } as TileUpdate);
+    land(); await flush();
+    expect(loadMapViewport).toHaveBeenCalledTimes(1);
+    expect(f.mapRenders).toBe(1);
+  });
+
+  it('a push after the refetch settled starts a fresh one', async () => {
+    const f = fake();
+    const land = gatedRefetch();
+    applyTileUpdate(f.ctx, { tileId: 'w1:1:1' } as TileUpdate);
+    land(); await flush();
+    applyTileUpdate(f.ctx, { tileId: 'w1:2:2' } as TileUpdate);
+    expect(loadMapViewport).toHaveBeenCalledTimes(2);
+  });
+
+  it('scenes do not share a refetch: a rebuilt scene is not blocked by the old one', async () => {
+    const a = fake();
+    const b = fake();
+    gatedRefetch();
+    applyTileUpdate(a.ctx, { tileId: 'w1:1:1' } as TileUpdate);
+    applyTileUpdate(b.ctx, { tileId: 'w1:1:1' } as TileUpdate);
+    expect(loadMapViewport).toHaveBeenCalledTimes(2);
+  });
+
+  it('a base hit that the read on the wire already landed still flashes', async () => {
+    // The "before" hp must be the cache at push time. Snapshotting it when the trailing read starts
+    // would read the value the first read just landed and diff the hit away.
+    const f = fake({ mainBaseTile: 'w1:5:6' });
+    f.tiles.set('5:6', { hp: 900 });
+    const land = gatedRefetch((n) => { if (n === 1) f.tiles.set('5:6', { hp: 700 }); });
+    applyTileUpdate(f.ctx, { tileId: 'w1:9:9' } as TileUpdate); // someone else's tile: read 1 goes out
+    applyTileUpdate(f.ctx, { tileId: 'w1:5:6' } as TileUpdate); // our base is hit meanwhile
+    land(); await flush(); // read 1 happens to carry the hit
+    land(); await flush();
+    expect(f.vignettes).toBe(1);
+  });
+
+  it('stops owing a read once the scene is torn down', async () => {
+    const f = fake();
+    const land = gatedRefetch();
+    applyTileUpdate(f.ctx, { tileId: 'w1:1:1' } as TileUpdate);
+    applyTileUpdate(f.ctx, { tileId: 'w1:2:2' } as TileUpdate);
+    (f.ctx as unknown as { destroyed: boolean }).destroyed = true;
+    land(); await flush();
+    expect(loadMapViewport).toHaveBeenCalledTimes(1);
+    expect(f.mapRenders).toBe(0);
+  });
+});
+
 describe('worldmap push — applyUnderAttack', () => {
   it('renders the attacker name, tile and countdown into one toast', () => {
     const f = fake();

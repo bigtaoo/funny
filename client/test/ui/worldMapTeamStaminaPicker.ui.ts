@@ -80,10 +80,7 @@ function buildHarness(opts: {
       worldApi: {
         getTeams,
         startMarch,
-        getMarches: vi.fn(() => Promise.resolve([])),
-        getOccupations: vi.fn(() => Promise.resolve([])),
-        getStationed: vi.fn(() => Promise.resolve([])),
-        getSiegeHolds: vi.fn(() => Promise.resolve([])),
+        getOrders: vi.fn(() => Promise.resolve({ marches: [], occupations: [], stationed: [], siegeHolds: [] })),
         getMe: vi.fn().mockResolvedValue(me),
       },
     },
