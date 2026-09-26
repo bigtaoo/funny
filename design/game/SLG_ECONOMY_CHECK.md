@@ -118,7 +118,7 @@ capitalMult(tier) = 该档玩家所属宗门持中原首府(CENTER_CAPITAL_IDX=9
 ```
 {
   population: 50000,          // 全服 SLG 活跃账号
-  worldCapacity: 500,         // = WORLD_CAPACITY（SLG_WORLD_CAPACITY_MAX=500）
+  worldCapacity: 500,         // = WORLD_CAPACITY（SLG_WORLD_CAPACITY_MAX=500；ADR-092 目标 3000，待改常量后重跑）
   shardCount: ceil(pop / cap),
   sectsPerShard: 200,         // 每 shard 参与结算的宗门数
   membersPerSect: { dist: 'lognormal', mean: 25, ... },  // 宗门人数分布（驱动 per-head 总量）
@@ -202,7 +202,7 @@ capitalMult(tier) = 该档玩家所属宗门持中原首府(CENTER_CAPITAL_IDX=9
 
 ## 8. F 轨——运维容量（WORLD_CAPACITY / RESET_DELETE_BATCH）
 
-非经济，纯工程。`WORLD_CAPACITY=500`（单 shard 人口上限，`SLG_WORLD_CAPACITY_MAX=500`）、`RESET_DELETE_BATCH`（清档批大小）。
+非经济，纯工程。`WORLD_CAPACITY=500`（单 shard 人口上限，`SLG_WORLD_CAPACITY_MAX=500`；**ADR-092 目标 3000，常量未改**；注意 §13-SLG-F 只估了文档量/内存，**没估指令吞吐**，3000 人单图的吞吐要靠压测）、`RESET_DELETE_BATCH`（清档批大小）。
 
 **判据**：
 - `WORLD_CAPACITY`：单 shard 500 人对应的 `FamilyDoc`/领地/march 文档量与 worldsvc 内存/Mongo 查询（如 `families.find({worldId}).sort({prosperity})`）延迟在可接受区间——用预估文档数 + 关键查询的 explain/压测确认；超限则下调容量、靠多 shard 摊。

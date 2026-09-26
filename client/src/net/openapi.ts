@@ -3842,6 +3842,8 @@ export interface operations {
                         ok: true;
                         data: {
                             seasonNo: number;
+                            /** @description Current ladder season end (ms epoch). Display-only: seasons roll by ops, not by this timestamp */
+                            seasonEndAt: number;
                             entries: {
                                 /** @description Rank, 1-based */
                                 rank: number;

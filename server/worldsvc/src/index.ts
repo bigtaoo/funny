@@ -8,8 +8,9 @@ import { SectService } from './sectService';
 import { NationChannelService } from './nationChannelService';
 import { MapTemplateService } from './mapTemplateService';
 import { startHttpApi } from './httpApi';
-import { routeTimings, startWorldMetrics, stopWorldMetrics } from './metrics';
+import { routeTimings, startWorldMetrics, stopWorldMetrics, countMongoCommands, worldCounters } from './metrics';
 import { startScheduler } from './scheduler';
+import { WorldLeases, type SchedulerLeaseDoc } from './worldLease';
 import { HttpWorldGatewayClient } from './gatewayClient';
 import { HttpWorldCommercialClient, nullWorldCommercialClient } from './commercialClient';
 import { HttpWorldMetaClient, nullWorldMetaClient } from './metaClient';
@@ -17,11 +18,14 @@ import { HttpWorldMailClient, nullWorldMailClient } from './mailClient';
 import { HttpWorldSocialsvcClient, nullWorldSocialsvcClient } from './socialsvcClient';
 import { loadWorldsvcEnv } from './config';
 import { getComputeBackend, shutdownComputeBackend } from './compute';
+import { INSTANCE_ID } from './instance';
 
 async function main(): Promise<void> {
   const env = loadWorldsvcEnv();
 
-  const mongo = await createWorldMongo(env.worldMongoUri, env.worldMongoDb);
+  // monitorCommands: count every Mongo command (Atlas M0's 100 ops/s ceiling, audit §9 / §12.7).
+  const mongo = await createWorldMongo(env.worldMongoUri, env.worldMongoDb, { monitorCommands: true });
+  countMongoCommands(mongo.client);
   await mongo.ensureIndexes();
   await mongo.runMigrations();
 
@@ -45,8 +49,10 @@ async function main(): Promise<void> {
 
   // socialsvc internal client (P1: family route proxy + channel push delegation + familyId mirror).
   const socialsvc = env.socialsvcInternalUrl
-    ? new HttpWorldSocialsvcClient(env.socialsvcInternalUrl, env.internalKey)
+    ? new HttpWorldSocialsvcClient(env.socialsvcInternalUrl, env.internalKey, INSTANCE_ID)
     : nullWorldSocialsvcClient;
+  // Cross-process membership invalidation (§12.7 phase 1); without Redis the 10s TTL is the only bound, as before.
+  if (redis && socialsvc instanceof HttpWorldSocialsvcClient) await socialsvc.attachInvalidationBus(redis);
 
   // SLG shop price/effect override cache: polls admin for raw overrides + resolves locally (no DB connection,
   // refreshed every 30s; stale cache used when admin is unreachable, code defaults used if never fetched).
@@ -88,6 +94,7 @@ async function main(): Promise<void> {
   });
   if (env.adminInternalUrl) void wordlists.start();
 
+  const openLog = createLogger('worldsvc');
   const svc = new WorldService({
     cols: mongo.collections,
     redis,
@@ -101,6 +108,14 @@ async function main(): Promise<void> {
     mapW: SLG_MAP_W,
     mapH: SLG_MAP_H,
     now: () => Date.now(),
+    // Warm the new world's path index before its first march (see WorldServiceDeps.onWorldOpened).
+    onWorldOpened: (worldId) => {
+      const t0 = Date.now();
+      void getComputeBackend()
+        .warmWorld(worldId, SLG_MAP_W, SLG_MAP_H)
+        .then(() => openLog.info('compute path index warmed', { world: worldId, ms: Date.now() - t0, on: 'open' }))
+        .catch((e) => openLog.warn('compute path index warmup failed (falling back to lazy build)', { world: worldId, err: (e as Error).message }));
+    },
   });
 
   const sectSvc = new SectService({
@@ -125,7 +140,21 @@ async function main(): Promise<void> {
 
   const mapTemplateSvc = new MapTemplateService({ cols: mongo.collections, now: () => Date.now() });
 
-  const scheduler = startScheduler(svc, { autoSettleSeasons: env.autoSettleSeasons, timings: routeTimings });
+  // Worlds opened before ADR-074 city sieges have no city docs (nothing to besiege, nothing to settle on).
+  const citiesFilled = await svc.backfillMissingCities();
+  if (citiesFilled.length > 0) console.log('[worldsvc] backfilled city documents', { worldIds: citiesFilled });
+
+  // Phase 3 (worldLease.ts): with leases on, this process schedules only the worlds it holds; HTTP stays open
+  // for every world regardless, because every write path is already safe across processes (§12.10).
+  const leases = env.worldLease
+    ? new WorldLeases({ leases: mongo.db.collection<SchedulerLeaseDoc>('schedulerLeases'), worlds: mongo.collections.worlds })
+    : null;
+  if (leases) await leases.start();
+  const scheduler = startScheduler(svc, {
+    autoSettleSeasons: env.autoSettleSeasons,
+    timings: routeTimings,
+    ...(leases ? { worlds: () => leases.owned() } : {}),
+  });
 
   const server = startHttpApi(
     { host: env.host, port: env.port, jwtSecret: env.jwtSecret, internalKey: env.internalKey },
@@ -138,6 +167,7 @@ async function main(): Promise<void> {
 
   const shutdown = async (): Promise<void> => {
     scheduler.stop();
+    await leases?.stop().catch(() => {});
     server.close();
     stopWorldMetrics();
     await shutdownComputeBackend();
@@ -163,7 +193,7 @@ async function main(): Promise<void> {
   const compute = getComputeBackend();
   const loopMonitor = startWorldMetrics(hbLog, compute.name);
   startHeartbeat(hbLog, {
-    extra: () => ({ compute: compute.name, loopLagMs: loopMonitor.drain(), routes: routeTimings.drain() }),
+    extra: () => ({ instance: INSTANCE_ID, compute: compute.name, loopLagMs: loopMonitor.drain(), routes: routeTimings.drain(), counters: worldCounters() }),
   });
 
   // Warm the per-world terrain/connectivity index on every compute worker before players arrive

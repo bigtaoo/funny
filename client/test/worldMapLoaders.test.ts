@@ -64,15 +64,15 @@ function fake(over: Partial<{ destroyed: boolean; zoom: 1 | 2 | 3; seenTs: numbe
   };
   // Every endpoint resolves empty by default; a case overrides just the one it is about.
   for (const name of [
-    'enterWorld', 'getMap', 'getMapSparse', 'getMarches', 'getOccupations', 'getStationed',
-    'getSiegeHolds', 'getMe', 'getCities', 'getTeams', 'getTerritories',
+    'enterWorld', 'getMap', 'getMapSparse', 'getOrders', 'getMe', 'getCities', 'getTeams', 'getTerritories',
   ]) {
     f.api[name] = vi.fn(async () => ({ tiles: [] }));
   }
   f.api.enterWorld!.mockImplementation(async () => entry());
-  for (const name of ['getMarches', 'getOccupations', 'getStationed', 'getSiegeHolds', 'getTeams', 'getTerritories', 'getCities']) {
+  for (const name of ['getTeams', 'getTerritories', 'getCities']) {
     f.api[name]!.mockImplementation(async () => []);
   }
+  f.api.getOrders!.mockImplementation(async () => orders());
   f.api.getMe!.mockImplementation(async () => ({ joined: true }));
 
   const ctx = {
@@ -125,6 +125,10 @@ function fake(over: Partial<{ destroyed: boolean; zoom: 1 | 2 | 3; seenTs: numbe
  * close enough here — but `destroyed` flipping mid-flight is not reproducible that way at all, so
  * both helpers go through a real macrotask and stay honest about the await window.
  */
+function orders(o: Partial<Record<'marches' | 'occupations' | 'stationed' | 'siegeHolds', unknown[]>> = {}) {
+  return { marches: [], occupations: [], stationed: [], siegeHolds: [], ...o };
+}
+
 function later<T>(value: T | (() => T)): () => Promise<T> {
   return async () => {
     await new Promise<void>((r) => { setTimeout(r, 0); });
@@ -172,7 +176,7 @@ describe('loaders — teardown', () => {
 
   it('a scene torn down during the order-slice refetch keeps the data but skips the paint', async () => {
     const f = fake();
-    f.api.getMarches!.mockImplementation(later(['m1']));
+    f.api.getOrders!.mockImplementation(later(orders({ marches: ['m1'] })));
     const p = refreshMarches(f.ctx);
     (f.ctx as unknown as { destroyed: boolean }).destroyed = true;
     await p;
@@ -408,10 +412,7 @@ describe('the order slices', () => {
     // in none of the other three, so a refresh that forgot it reported that team as idle at home
     // (2026-09-12).
     const f = fake();
-    f.api.getMarches!.mockImplementation(async () => ['m']);
-    f.api.getOccupations!.mockImplementation(async () => ['o']);
-    f.api.getStationed!.mockImplementation(async () => ['s']);
-    f.api.getSiegeHolds!.mockImplementation(async () => ['h']);
+    f.api.getOrders!.mockImplementation(async () => orders({ marches: ['m'], occupations: ['o'], stationed: ['s'], siegeHolds: ['h'] }));
     await refreshMarches(f.ctx);
     expect([f.ctx.marches, f.ctx.occupations, f.ctx.stationed, f.ctx.siegeHolds])
       .toEqual([['m'], ['o'], ['s'], ['h']]);
@@ -419,15 +420,66 @@ describe('the order slices', () => {
     expect(f.hudRenders).toBe(1);
   });
 
-  it('refreshMarches keeps every slice when any one of the four fails', async () => {
-    // Promise.all: one rejection loses the other three responses too. That is the intended
-    // all-or-nothing — a half-applied order set is what makes a team look busy forever.
+  it('refreshMarches keeps every slice when the read fails', async () => {
+    // All-or-nothing: a half-applied order set is what makes a team look busy forever.
     const f = fake();
-    f.api.getStationed!.mockImplementation(failsLater());
+    f.api.getOrders!.mockImplementation(failsLater());
     await refreshMarches(f.ctx);
     expect(f.ctx.marches).toEqual(['old']);
     expect(f.ctx.occupations).toEqual(['old']);
     expect(f.mapRenders).toBe(0);
+  });
+
+  // 2026-09-26: every march_update push, the team picker, recall and stop-hold all call this. Each
+  // used to be its own four requests, and during a five-team dispatch they queued behind the 5 req/s
+  // rate gate ahead of the player's next order.
+  it('collapses calls made while a read is in flight into ONE trailing read', async () => {
+    const f = fake();
+    const gates: Array<() => void> = [];
+    let n = 0;
+    f.api.getOrders!.mockImplementation(() => new Promise((resolve) => {
+      const tag = `read${++n}`;
+      gates.push(() => resolve(orders({ marches: [tag] })));
+    }));
+    const first = refreshMarches(f.ctx);
+    const joiners = [refreshMarches(f.ctx), refreshMarches(f.ctx), refreshMarches(f.ctx)];
+    expect(f.api.getOrders).toHaveBeenCalledTimes(1);
+
+    gates[0]!();
+    await vi.waitFor(() => expect(f.api.getOrders).toHaveBeenCalledTimes(2));
+    gates[1]!();
+    await Promise.all([first, ...joiners]);
+    expect(f.api.getOrders).toHaveBeenCalledTimes(2); // not 4
+    expect(f.ctx.marches).toEqual(['read2']);
+  });
+
+  it('a caller that joins mid-flight is resolved only after a read that started after it asked', async () => {
+    // The team picker awaits this and then judges who is busy from ctx — so "resolved" must mean
+    // "fresh as of my call", never "the read that was already half-way back when I asked".
+    const f = fake();
+    const gates: Array<() => void> = [];
+    let n = 0;
+    f.api.getOrders!.mockImplementation(() => new Promise((resolve) => {
+      const tag = `read${++n}`;
+      gates.push(() => resolve(orders({ marches: [tag] })));
+    }));
+    void refreshMarches(f.ctx);
+    let joinedSaw: unknown = null;
+    const joined = refreshMarches(f.ctx).then(() => { joinedSaw = f.ctx.marches; });
+
+    gates[0]!();
+    await vi.waitFor(() => expect(gates).toHaveLength(2));
+    expect(joinedSaw).toBeNull(); // the first read landing is NOT enough
+    gates[1]!();
+    await joined;
+    expect(joinedSaw).toEqual(['read2']);
+  });
+
+  it('once a refresh has fully settled, the next call starts a fresh read immediately', async () => {
+    const f = fake();
+    await refreshMarches(f.ctx);
+    await refreshMarches(f.ctx);
+    expect(f.api.getOrders).toHaveBeenCalledTimes(2);
   });
 
   it('refreshMe replaces me, repaints the HUD and picks up re-armed teams', async () => {

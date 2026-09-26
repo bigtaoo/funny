@@ -8,6 +8,7 @@
 // Note: SlgPushMsg kind/fields on the worldsvc side must match the SLG branch of
 // gateway matchsvcClient.PushMsg character-for-character (JSON wire contract, camelCase discriminator=kind).
 import { GW_PUSH_REDIS_CHANNEL, postInternal } from '@nw/shared';
+import { bumpCounter } from './metrics';
 
 export type SlgPushMsg =
   | {
@@ -110,6 +111,7 @@ export class HttpWorldGatewayClient implements WorldGatewayClient {
 
   async broadcast(recipients: string[], msg: SlgPushMsg): Promise<void> {
     if (recipients.length === 0) return;
+    bumpCounter('push.broadcastRecipients', recipients.length);
     if (this.redis) {
       try {
         await this.redis.publish(GW_PUSH_REDIS_CHANNEL, JSON.stringify({ recipients, msg }));
@@ -123,6 +125,10 @@ export class HttpWorldGatewayClient implements WorldGatewayClient {
 
   async push(accountId: string, msg: SlgPushMsg): Promise<void> {
     if (!this.baseUrl) return;
+    // Push fan-out is one of the 3000-player walls (audit §12.7): count it per kind so the load test can
+    // report pushes/s. `msg.kind` is a closed union from the proto, not client input.
+    bumpCounter('push.sent');
+    bumpCounter(`push.${msg.kind}`);
     // best-effort, self-healing (authoritative state is in DB; client re-polls) →
     // retries=0. The win is body-drain + timeout (a siege fanout is a burst).
     await postInternal(`${this.baseUrl}/gw/push`, { accountId, msg }, {

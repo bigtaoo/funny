@@ -73,7 +73,7 @@
 ## 5. 机房与渐进上线
 
 - **机房**：Hetzner 同时有欧洲（法兰克福/纽伦堡/赫尔辛基）和美国（Ashburn/Hillsboro）机房，gameserver 为纯中继小机器，**一个厂商覆盖欧美两区**，成本极低。
-- **SLG 大世界**：西方一个 SLG realm（欧洲托管），内部按人口分多张地图 shard（单 shard 上限 500 玩家，超出开新 shard），美洲 ~150ms REST——SLG 是确定性围攻/行军调度、**非帧实时**，可接受；中国区另一个独立 realm。
+- **SLG 大世界**：西方一个 SLG realm（欧洲托管），内部按人口分多张地图 shard（单 shard 上限目标 3000 玩家，ADR-092；代码常量现仍为 500；超出开新 shard），美洲 ~150ms REST——SLG 是确定性围攻/行军调度、**非帧实时**，可接受；中国区另一个独立 realm。
 - **渐进顺序**：
   1. 单机起步：现成 compose 在欧洲一台机器跑全栈，验证上线。
   2. 加美洲：Hetzner 美国开 gameserver（+ 一套 gateway/matchsvc），指向欧洲共享 meta。
@@ -126,7 +126,10 @@ pm2 侧另有一批只差在 `ecosystem.config.cjs` 的（两份 compose 都有�
 - **`NW_SLG_AUTO_SETTLE`** — 代码读的是 `!== '0'`，即「不显式关就是开」，而开正是 cloud/prod 想要的。
 - **`NW_COMPUTE_BACKEND` / `NW_COMPUTE_URL`** — 指向那个还没开始建的独立算力服务（`compute/index.ts`），
   非 `remote` 的一切取值（含未设置）都走进程内 worker 池，也就是 cloud/prod 实际在跑的东西。
-- 其余 13 条是纯调参旋钮（限流阈值、采样间隔、TTL、扫描上限、bot 出手概率……），代码默认值就是生产值。
+- **`NW_SLG_WORLD_LEASE`** — 按世界的调度租约（`WORLDSVC_CONCURRENCY_AUDIT` §12.12），默认关。
+  现在所有部署都只跑**一个** worldsvc 进程，租约对它毫无用处，反而会让「崩溃前留下的租约」在重启后拖住那个世界最多一个 TTL。
+  **加第二个 worldsvc 副本的那天，要在每个副本上把它提成 `=1` 的 compose 行。**
+- 其余 14 条是纯调参旋钮（限流阈值、采样间隔、TTL、扫描上限、bot 出手概率……），代码默认值就是生产值。
 
 > ⚠️ **留了一个待观察项**：`NW_COMPUTE_POOL_SIZE` 的默认值是 `cpus-1`（`compute/pool.ts`），
 > 而 **`os.cpus()` 在容器里报的是宿主机核数**，本仓库又没有任何服务设 cpu limit。目前 worldsvc 是唯一

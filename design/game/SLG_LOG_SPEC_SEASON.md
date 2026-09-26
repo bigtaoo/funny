@@ -328,7 +328,7 @@ if (path.startsWith('/admin/world/')) {
 ```
 1. 采集 SectStrength[]：每宗门 { sectId, lastSeasonRank(从上季 seasonResults.ranking 查 scope==='sect'),
                                  memberFamilyCount, prosperity(成员家族聚合) }
-2. shardCount = ceil(∑所有宗门成员人数 / WORLD_CAPACITY)   // WORLD_CAPACITY 默认 500（openSeason capacity 参数）
+2. shardCount = ceil(∑所有宗门成员人数 / WORLD_CAPACITY)   // WORLD_CAPACITY 默认 500（openSeason capacity 参数）；ADR-092 目标 3000，常量待改
 3. assignment = allocateSectsToShards(SectStrength[], shardCount)   // 蛇形均衡
 4. 同宗门成员随 sectId 进同一 shard；散家族/散人按家族强弱补位（次轮）
 5. 对每个 shardIndex 调 openSeason(`s{season}-{shardIndex}`, season, shardIndex, WORLD_CAPACITY)
@@ -336,7 +336,7 @@ if (path.startsWith('/admin/world/')) {
 
 **数据源缺口确认**（=天梯「战令依赖 RETENTION」同构）：在 `seasonResults` 落库（§17.5 ①）**之前**，G6 分配**无任何历史排名可读** → 首季所有宗门 `lastSeasonRank=undefined`（`sectStrengthScore` 给中位 500，纯按规模/繁荣度分配）；第二季起 `seasonResults` 提供历史。**这是为什么 §17.5 的排名落库是 G6 的硬前置**。
 
-**新常量** `WORLD_CAPACITY = 500`（`shared/slg.ts`，替代 `openSeason` 硬编码默认；上限即 `SLG_WORLD_CAPACITY_MAX=500`）。
+**新常量** `WORLD_CAPACITY = 500`（`shared/slg.ts`，替代 `openSeason` 硬编码默认；上限即 `SLG_WORLD_CAPACITY_MAX=500`）。**2026-09-26 注**：ADR-092 把目标改为 3000，常量尚未改，前置条件见该 ADR。
 
 ### 17.9 engineVersion pin（C7 / U9）
 
@@ -406,6 +406,21 @@ if (path.startsWith('/admin/world/')) {
 - **补记（同日）**：`server/admin` 层此前对整条 SLG 赛季生命周期（open/settle/reset/close/merge/allocate）**零测试覆盖**——`season-audit.e2e.test.ts` 只测异常审计工单流程，`FakeWorld` 把这几个方法全部桩成空操作。新增 `server/admin/test/season-ops.e2e.test.ts`（真实 Mongo）：逐方法断言转发给 `WorldClient` 的确切参数、返回值、写入 `auditLog` 的 `AuditAction`/`target`/`summary`；`slgResetSeason` 的「必须先 settle 才能 reset」409 守卫正反两个方向都覆盖；`slg.season.manage`/`slg.season.view` 两个能力的角色矩阵（support 都没有、viewer 只有 view、super 都有）。9 例全绿，admin 全量套件（10 文件 92 例）随之全绿。
 
 **遗留**：ops「Open a new world」表单仍保留作为低级 escape hatch（重开已关闭的世界、单独补一个分片），没有删除，只是在 UI 文案上标注了优先用「Allocate next season」。
+
+### 17.16 大比排名改读城池归属 + 旧世界补建城池（2026-09-26）
+
+> 背景：线上机器人体检时发现 `settleSeason` 读的是 `NationDoc.ownerId`，而 ADR-074（SLG_CITY_SIEGE_DESIGN §9）之后**没有任何代码再写这个字段**（`applyNationChange` 已删，`initNations` 只 `$unset`）。所以 ADR-074 之后的每一次结算（含 s2-0 将在 2026-10-09 到点的自动结算）排名都是空的，谁也拿不到大比奖励。
+
+- **排名数据源**：改读 `cities` 集合里 `kind ∈ {capital, worldCenter}` 且有 `ownerSectId` 的文档。9 座州府按 `provinceIdx` 记为 capitalIdx 0–8，世界中心记为 `CENTER_CAPITAL_IDX`（9），中原 ×2 奖励倍率不变（§2.4）。**野外驻城（garrison）不计入**：大比比的是首府。
+- **只剩宗门一级**：城池归属本来就只到宗门（ADR-074 决策 1），所以不再有「散家族 / 个人」条目；返回类型里的 `'family' | 'solo'` 只为兼容旧 `seasonResults` 行保留。
+- **并列**：首府数相同时，持有世界中心的排前；再并列按 sectId 字典序（结果稳定，重入结算顺序不变）。
+- **名称**：优先取 `sects` 集合当前名称，宗门已解散时回退到城池上的 `ownerSectName` 攻占时快照。
+- **发奖对象不变**：`expandToAccounts('sect')` 取该宗门全部成员家族在**本世界**的 `playerWorld`，所以同宗门没亲手打城的成员也拿奖。
+- **旧世界补建城池**：线上 s1-1 / s2-0 于 2026-08-10 开服，早于城池攻城上线，**`cities` 集合是空的**（实查 0 条）——既没有城可打，修了排名也照样空。`initCities` 只在 openSeason / resetSeason 跑，所以 worldsvc 启动时新增 `backfillMissingCities()`：对 `status ∈ {open, active}` 且**一条城池文档都没有**的世界调一次 `initCities`。严格限定「零条」，因为 `initCities` 同时会 `$unset` 归属，对已有城池的世界跑一遍就等于把所有已占城池还给 NPC。
+- **实查（2026-09-26）**：s1-1 / s2-0 的 `settleAt` 是 **2026-10-09**（= 08-10 开服 + 60 天，正常），此前笔记里的「11-07」是记错了，不存在额外改写。审计日志里 08-10 只有 settle s1-0 和 open s1-1 两条；s2-0 是当天应急直连内部 `/admin/world/allocate` 开的（§17.15），故无 ops 审计记录。
+- **已知隐患（未修）**：对一个已开着的世界再调 `openSeason`（同 season/shard 的「幂等 reopen」）会把 status 打回 `open`、重置 `settleAt`，并经 `initCities` 清掉所有城池归属。目前没有路径会自动这么做，只有 ops 手动误操作会触发。
+- 测试：`season-ops.e2e.test.ts` 新增 5 例（驻城与 NPC 城不计、并列时世界中心优先且已解散宗门用快照名、同宗门未参战成员也发奖、无人占城时排名为空但仍进入 settling、补建只动零城池的 open/active 世界且不碰已占城池）；`sect.e2e.test.ts` 的旧「宗门→家族→个人」用例改为按城池归属排名。旧实现下 7 例失败；去掉并列规则、把驻城算进去、去掉「零条」判断，三种变异各有用例失败。
+- 补测（同日）：`season-ops.e2e` 再加 1 例——只有世界中心持有者奖励 ×2、非持有者按原档；每封奖励邮件正文里的名次/档位/首府数都属于收件人所在宗门。`city-siege.e2e` 加 2 例，走真实攻城流程（出征 → 到达 → 延迟结算 → 破城）：打下首府后结算把它从原宗门移到攻方名下，打下驻城则不进入排名。前者保证攻城写入的字段就是结算读取的字段——`season-ops` 里的城池归属是手写的，两边任何一方改名都不会被它发现。变异验证：倍率改成无条件乘、结算去掉城池类型过滤，各有新用例失败。
 
 ---
 

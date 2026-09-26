@@ -78,6 +78,15 @@ export interface MarchDoc {
   maxX?: number;
   minY?: number;
   maxY?: number;
+  /**
+   * Stepping claim (2026-09-26, WORLDSVC_CONCURRENCY_AUDIT §12.7 phase 1): epoch ms until which one
+   * advanceMarch call owns this march's walk. A step can fight (resolveFieldEncounter writes the DEFENDER's
+   * ledger), so two processors walking the same march — two worldsvc processes, or two concurrent settlement
+   * lanes in one — would run the same battle twice. advanceMarch takes it with a conditional update and
+   * clears it with the cursor write; a crashed holder's claim simply expires (MARCH_STEP_LEASE_MS). Absent
+   * on docs that have never been stepped, which reads as unclaimed.
+   */
+  stepLeaseUntil?: number;
   rev: number;
 }
 

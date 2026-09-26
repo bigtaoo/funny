@@ -1408,6 +1408,7 @@ export const zh = {
   // ── Ranked season banner / settlement popup (SE-6) ────────────────────────────
   'season.banner': '赛季 {no} · 剩余 {days} 天',
   'season.bannerEnded': '赛季 {no} · 已结束',
+  'season.bannerCurrent': '赛季 {no}',
   'season.settlement.title': '赛季 {no} 结算',
   'season.settlement.peak': '本赛季最高段位',
   'season.settlement.newSeason': '新赛季 {no} 已开始',

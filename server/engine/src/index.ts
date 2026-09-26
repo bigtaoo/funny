@@ -126,4 +126,14 @@ export type {
 } from './campaign/LevelDefinition';
 export { parseLevelDefinition, LevelParseError } from './campaign/levelSchema';
 export { TUTORIAL_LEVEL_ID, TUTORIAL_TEACHING_CARDS } from './campaign/tutorial';
+export { CAMPAIGN_LEVELS, CAMPAIGN_LEVEL_ORDER, getLevel } from './campaign/levels';
+export {
+  buildStarContext,
+  computeStarScore,
+  computeStars,
+  countEnemies,
+  deriveParTicks,
+  remainingHpPct,
+  type StarContext,
+} from './campaign/stars';
 export { TutorialDrawPolicy } from './Card';

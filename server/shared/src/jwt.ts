@@ -1,4 +1,5 @@
 // Stateless JWT (SERVER_API.md §1.1). accountId is extracted from the token; the request body does not carry it.
+import { createSecretKey, type KeyObject } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 
 export interface TokenPayload {
@@ -37,11 +38,28 @@ export const TOKEN_RENEW_WINDOW_MS = 10 * 24 * 60 * 60 * 1000;
  */
 export const RENEWED_TOKEN_HEADER = 'x-nw-token';
 
+// jsonwebtoken turns a string secret into a KeyObject on EVERY call, and on verify it first tries
+// createPublicKey(secret), which throws for an HMAC secret before it falls back to createSecretKey. That
+// try-and-throw was ~5% of worldsvc's main-thread busy time in the phase-0 load profile
+// (WORLDSVC_CONCURRENCY_AUDIT §12.8). A process has one or two secrets, so the KeyObject is built once
+// per secret; a KeyObject argument skips jsonwebtoken's conversion entirely. HS256 is unchanged.
+const secretKeys = new Map<string, KeyObject>();
+function secretKey(secret: string): KeyObject | string {
+  // An empty secret stays a string so jsonwebtoken keeps reporting its own "must be provided" error.
+  if (!secret) return secret;
+  let key = secretKeys.get(secret);
+  if (!key) {
+    key = createSecretKey(Buffer.from(secret));
+    secretKeys.set(secret, key);
+  }
+  return key;
+}
+
 export function signToken(accountId: string, cfg: JwtConfig): string {
   const opts: jwt.SignOptions = {
     expiresIn: (cfg.expiresIn ?? '30d') as jwt.SignOptions['expiresIn'],
   };
-  return jwt.sign({ sub: accountId }, cfg.secret, opts);
+  return jwt.sign({ sub: accountId }, secretKey(cfg.secret), opts);
 }
 
 /**
@@ -50,7 +68,7 @@ export function signToken(accountId: string, cfg: JwtConfig): string {
  * the one caller that has to look at `exp` (metaserver's bearerAuth, for sliding renewal).
  */
 export function verifyTokenPayload(token: string, cfg: JwtConfig): TokenPayload {
-  const decoded = jwt.verify(token, cfg.secret);
+  const decoded = jwt.verify(token, secretKey(cfg.secret));
   if (typeof decoded === 'string' || typeof decoded.sub !== 'string') {
     throw new Error('invalid token payload');
   }

@@ -161,7 +161,7 @@ value(material) = DUPE_REFUND_COINS[该材料所在 gacha 稀有度档] / GACHA_
 | `SETTLE_REWARDS.participant.items` | scrap50/lead20/**binding0** | settle | 其余全部人头（主导项） |
 | `SETTLE_REWARDS.*.coins` | **0** | settle | 红线：保持 0 |
 | `CENTER_CAPITAL_MULT` / `CENTER_CAPITAL_IDX` | ×2 / 9 | settle | 持中原首府的宗门成员材料 ×2 |
-| `WORLD_CAPACITY` | **500**（ADR-032，2026-07-07 起；此前本表长期记 10000 已过期未同步——`prosperity.ts` 早在 2026-07-07 就把常量从 10000 降到 500，本节 §13-SLG.3 的三场景 JSON 从未跟着重算，见 §13-SLG.6） | 运维 | 单 shard 人口上限（触发开新 shard）→ shard 数 |
+| `WORLD_CAPACITY` | **500**（**ADR-092 目标 3000，常量未改**；改之前要重跑险地稀释与 econ-sim 场景缩放）（ADR-032，2026-07-07 起；此前本表长期记 10000 已过期未同步——`prosperity.ts` 早在 2026-07-07 就把常量从 10000 降到 500，本节 §13-SLG.3 的三场景 JSON 从未跟着重算，见 §13-SLG.6） | 运维 | 单 shard 人口上限（触发开新 shard）→ shard 数 |
 | 细水（日常/活动材料/人/日） | 场景输入 | settle | §0.1 计入 A 轨聚合 |
 
 繁荣度三参 `PROSPERITY_W_*`(10/50/5)、`PROSPERITY_DECAY_PER_DAY`(0.05)、`SECT_FOUND_PROSPERITY_MIN`(2000)、`sectStrengthScore` 权重、国民加成 0.10/0.15、碾压结算阈值**不在本节经济预算内**（分属 SLG_ECONOMY_CHECK B/C/D/E/F 轨，各自核验，登记见该文档）。

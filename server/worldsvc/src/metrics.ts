@@ -11,7 +11,9 @@
 // one), while the endpoint PEEKS (it can be polled at any cadence, by anything, without silently emptying
 // the next heartbeat). That asymmetry is the reason this module exists rather than the singletons living
 // wherever they happened to be constructed.
+import { performance } from 'node:perf_hooks';
 import { RouteTimings, startEventLoopMonitor, type Logger, type EventLoopMonitor, type LatencySnapshot, type LoopLagSnapshot } from '@nw/shared';
+import { INSTANCE_ID } from './instance';
 
 /**
  * Per-label latency for everything that competes for the one thread: HTTP routes (`GET /world/map`),
@@ -46,7 +48,32 @@ export function bumpCounter(label: string, n = 1): void {
   counters.set(label, (counters.get(label) ?? 0) + n);
 }
 
+/**
+ * Count every command the driver sends to Mongo (ADR-092 / audit §12.7 phase 0). Production runs on Atlas
+ * M0, whose shared tier throttles at 100 operations per second (audit §9) — the first wall a 3000-player
+ * world hits, and one the local stack cannot show because a local mongod has no quota. So the load test
+ * has to COUNT operations and compare the rate against 100, and prod gets the same number in its heartbeat.
+ *
+ * `mongo.ops` is the total; `mongo.op.<commandName>` splits it (find/update/insert/aggregate/getMore/...).
+ * The command name comes from the driver, never from client input, so the label set stays bounded.
+ * Driver heartbeats are SDAM events, not command events, so they are not counted here.
+ */
+export function countMongoCommands(client: { on(event: 'commandStarted', fn: (e: { commandName: string }) => void): unknown }): void {
+  client.on('commandStarted', (e) => {
+    bumpCounter('mongo.ops');
+    bumpCounter(`mongo.op.${e.commandName}`);
+  });
+}
+
+/** Cumulative counters, for the heartbeat (a peek — counters are never drained, see above). */
+export function worldCounters(): Record<string, number> {
+  return Object.fromEntries(counters);
+}
+
 export interface WorldMetrics {
+  /** Which process this snapshot is from (instance.ts). Every number below is per-process: with more than one
+   *  worldsvc, snapshots from different instances are separate series, never one to be diffed against another. */
+  instance: string;
   /** Milliseconds the event loop ran late. The headline number: a stall here IS the failure mode. */
   loopLagMs: LoopLagSnapshot;
   /** Per-route / per-task latency, slowest p99 first. */
@@ -57,6 +84,14 @@ export interface WorldMetrics {
   compute: string;
   uptimeSec: number;
   rssMb: number;
+  /**
+   * Main-thread event-loop utilization since process start, as cumulative ms (`performance.eventLoopUtilization`).
+   * A reader diffs two snapshots: active / (active + idle) over the window. Added 2026-09-26 because
+   * `loopLagMs` cannot see a SATURATED loop — when the thread is busy 100% of the time with many short
+   * callbacks, every timer still fires nearly on time (lag ~20-40ms) while each request's dozen sequential
+   * awaits each queue behind the whole backlog. The 1000-bot ladder run had lag max 38ms and march p50 3s.
+   */
+  elu: { activeMs: number; idleMs: number };
 }
 
 /** Start the event-loop gauge. Idempotent — a second call returns the running monitor. */
@@ -69,12 +104,14 @@ export function startWorldMetrics(log: Logger, compute?: string): EventLoopMonit
 /** Non-destructive read for the ops endpoint. Safe to poll; never disturbs the heartbeat's own window. */
 export function worldMetricsSnapshot(): WorldMetrics {
   return {
+    instance: INSTANCE_ID,
     loopLagMs: loopMonitor?.snapshot() ?? { p50: 0, p90: 0, p99: 0, max: 0 },
     labels: routeTimings.snapshot(),
     counters: Object.fromEntries(counters),
     compute: computeName,
     uptimeSec: Math.round(process.uptime()),
     rssMb: Math.round(process.memoryUsage().rss / 1048576),
+    elu: (() => { const u = performance.eventLoopUtilization(); return { activeMs: Math.round(u.active), idleMs: Math.round(u.idle) }; })(),
   };
 }
 

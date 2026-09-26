@@ -16,7 +16,7 @@ import type { GameSceneCallbacks, GameSceneOptions } from '../src/scenes/GameSce
 import type { WorldMapCallbacks } from '../src/scenes/WorldMapScene';
 import type { WorldApiClient } from '../src/net/WorldApiClient';
 import type { PlayerStats } from '@nw/engine/types';
-import { CAMPAIGN_LEVEL_ORDER } from '../src/game/campaign/levels';
+import { CAMPAIGN_LEVEL_ORDER } from '@nw/engine/campaign/levels';
 
 const zeroStats = (owner: 0 | 1): PlayerStats => ({
   owner,

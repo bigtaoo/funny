@@ -1,22 +1,19 @@
 // SLG city/world actions (BOTSVC_DESIGN §3.2 slg_action): public /world/* REST, same auth as any
 // real client (the bot's own player JWT). No auction/social endpoints here — B8 keeps bots out of
-// the auction house and chat entirely.
-export type BuildingKey =
-  | 'desk'
-  | 'inkPot'
-  | 'paperTray'
-  | 'graphiteMill'
-  | 'metalForge'
-  | 'stickerShop'
-  | 'cabinet'
-  | 'drillYard'
-  | 'wall'
-  | 'academy';
+// the auction house and chat entirely. Sect found/join (BOTSVC_DESIGN §3.3) lives here too because
+// sects are worldsvc-owned, not socialsvc.
+import type { BuildingKey } from '@nw/shared';
+import { envelopeError } from './apiError';
+
+// The shared union, not a local copy: the copy had fallen behind (no `satchel`), so a real
+// `/world/me` build queue was no longer assignable to the bot's own view type.
+export type { BuildingKey };
 
 /**
  * The `/world/me` projection, narrowed to the fields a bot actually reads (openapi-world.yml
  * PlayerWorldView). `resources`/`buildings`/`buildQueue` are typed because the upgrade decision is
- * made from them client-side — see BotSession.affordableBuilding().
+ * made from them client-side — see BotSession.affordableBuilding(); `troopCap`/`trainingQueue` for the
+ * training decision (training.ts), `yieldRate` for which resource tile to occupy next (expansion.ts).
  *
  * `resources` is the SETTLED balance at the moment of the read: worldsvc accrues `yieldRate` over
  * `lastTickAt` on every read and only persists it when something is spent. So a snapshot of this
@@ -30,10 +27,24 @@ export interface PlayerWorldView {
   resources?: Partial<Record<string, number>>;
   buildings?: Partial<Record<string, number>>;
   buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: number }[];
+  troopCap?: number;
+  /** Omitted by worldsvc when empty. */
+  trainingQueue?: { qty: number; startAt: number; completeAt: number }[];
+  /** Hourly yield per resource, from every tile held plus the buildings boosting it. */
+  yieldRate?: Partial<Record<string, number>>;
   [key: string]: unknown;
 }
 
-export type SparseTileType =
+/** `/sect/list` row, narrowed to what the join/found decision reads. */
+export interface SectView {
+  sectId: string;
+  name: string;
+  tag: string;
+  leaderFamilyId: string;
+  memberFamilyCount: number;
+}
+
+export type TileType =
   | 'neutral'
   | 'resource'
   | 'territory'
@@ -45,17 +56,34 @@ export type SparseTileType =
   | 'plankway'
   | 'stronghold';
 
-export interface WorldTileSparseView {
+/**
+ * One `/world/map` cell (openapi-world.yml WorldTileView), narrowed to what the expansion planner reads
+ * (expansion.ts). The full view, not `/world/map/sparse`: the sparse layer lists occupied tiles only,
+ * so it cannot say which neutral neighbour is a paper tile or what level it is.
+ */
+export interface WorldTileView {
   x: number;
   y: number;
-  type: SparseTileType;
+  type: TileType;
+  level: number;
+  resType?: string;
+  occupied?: boolean;
   mine?: boolean;
+  /** Same family. */
   ally?: boolean;
+  /** Same sect, other family — counts toward ADR-039 connectivity. */
+  sectmate?: boolean;
+  /** Allied sect — does NOT count toward connectivity. */
   allySect?: boolean;
+  protectedUntil?: number;
+  /** Mid occupation-hold (ADR-037): someone already won this tile's battle and is waiting out the hold. */
+  contestedUntil?: number;
 }
 
-/** Occupied structures worth marching on; resource/neutral/obstacle tiles are never attack targets. */
-const ATTACKABLE_TYPES: ReadonlySet<SparseTileType> = new Set(['territory', 'base', 'stronghold']);
+/** `POST /world/march` answer (MarchView), narrowed to the arrival time the bot paces its next march on. */
+export interface MarchStarted {
+  arriveAt?: number;
+}
 
 /** `{worldId}:{x}:{y}` (worldsvc's own tileId format, see server/worldsvc/src/coreKernel.ts). Split from the right since worldId itself never contains ':'. */
 function parseTileCoords(tileId: string): { x: number; y: number } | null {
@@ -79,8 +107,8 @@ export class WorldClient {
       },
       ...(body ? { body: JSON.stringify(body) } : {}),
     });
-    const parsed = (await res.json()) as { ok: boolean; data?: T; error?: string };
-    if (!parsed.ok) throw new Error(parsed.error ?? `world call failed: ${method} ${path}`);
+    const parsed = (await res.json()) as { ok: boolean; data?: T; error?: unknown };
+    if (!parsed.ok) throw envelopeError(parsed.error, `world call failed: ${method} ${path}`);
     return parsed.data as T;
   }
 
@@ -103,43 +131,54 @@ export class WorldClient {
     return this.call<PlayerWorldView>('POST', '/world/build/upgrade', token, { worldId, key });
   }
 
-  getWorldMapSparse(
-    token: string,
-    worldId: string,
-    cx: number,
-    cy: number,
-    r: number,
-  ): Promise<{ tiles: WorldTileSparseView[] }> {
-    const q = `worldId=${encodeURIComponent(worldId)}&cx=${cx}&cy=${cy}&r=${r}`;
-    return this.call<{ tiles: WorldTileSparseView[] }>('GET', `/world/map/sparse?${q}`, token);
+  /** Queues one training batch; like upgradeBuilding, answered with the post-spend `/world/me`. */
+  trainTroops(token: string, worldId: string, qty: number): Promise<PlayerWorldView> {
+    return this.call<PlayerWorldView>('POST', '/world/troops/train', token, { worldId, qty });
   }
 
-  startMarchAttack(
+  /** Full map view (every cell, with terrain/level/resource type) in the Chebyshev window of radius `r` around (cx, cy). */
+  getWorldMap(token: string, worldId: string, cx: number, cy: number, r: number): Promise<{ tiles: WorldTileView[] }> {
+    const q = `worldId=${encodeURIComponent(worldId)}&cx=${cx}&cy=${cy}&r=${r}`;
+    return this.call<{ tiles: WorldTileView[] }>('GET', `/world/map?${q}`, token);
+  }
+
+  /** A flat-pool march (no team): the troops leave `playerWorld.troops` at departure. */
+  startMarch(
     token: string,
     worldId: string,
     from: { x: number; y: number },
     to: { x: number; y: number },
+    kind: 'occupy' | 'attack',
     troops: number,
-  ): Promise<void> {
-    return this.call<void>('POST', '/world/march', token, {
+  ): Promise<MarchStarted> {
+    return this.call<MarchStarted>('POST', '/world/march', token, {
       worldId,
       fromX: from.x,
       fromY: from.y,
       toX: to.x,
       toY: to.y,
-      kind: 'attack',
+      kind,
       troops,
     });
+  }
+
+  /** Every sect in the world (worldsvc caps the list at 50, sorted by member-family count). */
+  listSects(token: string, worldId: string): Promise<SectView[]> {
+    return this.call<SectView[]>('GET', `/sect/list?worldId=${encodeURIComponent(worldId)}`, token);
+  }
+
+  /** Family-leader only; worldsvc charges SECT_CREATE_COST coins through commercial. */
+  createSect(token: string, worldId: string, name: string, tag: string): Promise<SectView> {
+    return this.call<SectView>('POST', '/sect/create', token, { worldId, name, tag });
+  }
+
+  /** Family-leader only; instant (no approval step for sects). */
+  joinSect(token: string, worldId: string, sectId: string): Promise<void> {
+    return this.call<void>('POST', '/sect/join', token, { worldId, sectId });
   }
 
   /** Own base coordinates parsed from `mainBaseTile`; null until the bot has a placed base. */
   baseCoords(view: PlayerWorldView): { x: number; y: number } | null {
     return view.mainBaseTile ? parseTileCoords(view.mainBaseTile) : null;
-  }
-
-  /** Nearest attackable (occupied, non-mine) tile in the given sparse viewport, or null if none. */
-  pickAttackTarget(tiles: WorldTileSparseView[]): { x: number; y: number } | null {
-    const candidates = tiles.filter((t) => !t.mine && ATTACKABLE_TYPES.has(t.type));
-    return candidates.length > 0 ? { x: candidates[0]!.x, y: candidates[0]!.y } : null;
   }
 }

@@ -42,8 +42,11 @@ export class SeasonService {
   settleSeason(worldId: string): ReturnType<SeasonManagementService['settleSeason']> {
     return this.management.settleSeason(worldId);
   }
-  processDueSeasonSettlement(): Promise<string[]> {
-    return this.management.processDueSeasonSettlement();
+  backfillMissingCities(): Promise<string[]> {
+    return this.management.backfillMissingCities();
+  }
+  processDueSeasonSettlement(worldIds?: readonly string[]): Promise<string[]> {
+    return this.management.processDueSeasonSettlement(worldIds);
   }
   resetSeason(worldId: string): ReturnType<SeasonManagementService['resetSeason']> {
     return this.management.resetSeason(worldId);

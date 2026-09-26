@@ -365,4 +365,12 @@ export interface WorldServiceDeps {
    * auto-placement path itself.
    */
   rng?: () => number;
+  /**
+   * Called after `openSeason` creates or reopens a world. The bootstrap uses it to warm the compute
+   * workers' per-world path index (~3s per world per worker): otherwise the FIRST march in a freshly opened
+   * world pays that build on a worker, and with prod's single worker every siege battle in every world
+   * queues behind it (measured 2026-09-26: a 50-bot run on a new world saw path wait p99 2.7s from this
+   * alone). Matters most for the overflow shard `resolveShardForJoin` opens mid-season. Default = no-op.
+   */
+  onWorldOpened?: (worldId: string) => void;
 }

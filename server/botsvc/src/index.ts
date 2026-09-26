@@ -9,7 +9,9 @@ import { CommercialClient } from './commercialClient';
 import { WorldClient } from './worldClient';
 import { CapacityClient } from './capacityClient';
 import { BotSession } from './bot';
+import { BotOrgRegistry } from './orgs';
 import { Scheduler } from './scheduler';
+import { DEFAULT_PVE_OPTIONS } from './bot';
 import { startInternalHttp } from './internalHttp';
 
 async function main(): Promise<void> {
@@ -23,8 +25,10 @@ async function main(): Promise<void> {
 
   const battleOpts = { gatewayWsUrl: env.gatewayWsUrl, chancePerTick: env.battleChancePerTick };
   const slgOpts = { intervalMs: env.slgIntervalMs };
+  const orgs = new BotOrgRegistry();
+  const pveOpts = { ...DEFAULT_PVE_OPTIONS, enabled: env.pve };
   const pool = generateBotPool(env.poolSize, env.deviceOffset).map(
-    (identity) => new BotSession(identity, meta, social, commercial, world, battleOpts, slgOpts),
+    (identity) => new BotSession(identity, meta, social, commercial, world, battleOpts, slgOpts, orgs, pveOpts),
   );
   const scheduler = new Scheduler(pool, capacity, {
     targetOnline: env.targetOnline,
@@ -33,6 +37,7 @@ async function main(): Promise<void> {
     batchSize: env.spawnBatch,
     upkeepConcurrency: env.upkeepConcurrency,
     upkeepRotations: env.upkeepRotations,
+    rotation: env.rotation,
   });
 
   const server = startInternalHttp(
@@ -52,7 +57,7 @@ async function main(): Promise<void> {
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
 
-  console.log(`botsvc internal admin API on :${env.port}; pool=${env.poolSize}; targetOnline=${env.targetOnline}`);
+  console.log(`botsvc internal admin API on :${env.port}; pool=${env.poolSize}; targetOnline=${env.targetOnline}; rotation=${env.rotation}; pve=${env.pve}`);
 }
 
 main().catch((e) => {

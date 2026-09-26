@@ -12,6 +12,7 @@ import * as analytics from '../../../analytics';
 import { CAMPAIGN_LEVEL_ORDER } from '../../../game';
 import { serverReplayToReplay } from '../../../net/serverReplay';
 import { CARD_DEFS } from '../../../game/meta/cardDefs';
+import type { ApiClient } from '../../../net/ApiClient';
 import type { AppCtx, Nav } from '../../appCtx';
 import { PLAYER_PUBLIC_ID_KEY, PLAYER_NAME_KEY, TOKEN_KEY } from '../../appConstants';
 
@@ -26,6 +27,9 @@ export function createCareerNav(ctx: AppCtx): CareerNav {
     const loggedIn = !state.offlineMode && !!platform.storage.getItem(TOKEN_KEY);
     const client = api;
     const pvp = saveManager.get().pvp;
+    // My-rank row and season banner both read /leaderboard: one request per Stats visit, shared.
+    let leaderboard: ReturnType<ApiClient['getLeaderboard']> | undefined;
+    const loadLeaderboard = () => (leaderboard ??= client!.getLeaderboard());
     views.showStats({
       onBack: () => back(),
       // Fetch server-side match history and enable replay viewing only when logged in online;
@@ -51,8 +55,15 @@ export function createCareerNav(ctx: AppCtx): CareerNav {
               const myId = platform.storage.getItem(PLAYER_PUBLIC_ID_KEY);
               if (!myId) return null;
               try {
-                const lb = await client.getLeaderboard();
+                const lb = await loadLeaderboard();
                 return lb.entries.find((e) => e.publicId === myId)?.rank ?? null;
+              } catch {
+                return null;
+              }
+            },
+            getSeasonEndAt: async () => {
+              try {
+                return (await loadLeaderboard()).seasonEndAt ?? null;
               } catch {
                 return null;
               }
@@ -65,8 +76,8 @@ export function createCareerNav(ctx: AppCtx): CareerNav {
       // hop: Titles' own back button should return straight to wherever Stats was entered from.
       ...(loggedIn ? { onOpenTitles: () => goTitles(back) } : {}),
       ...(loggedIn ? { onOpenCodex: () => goCodex(back) } : {}),
-      // Season banner: read from save pvp.seasonNo; endAt comes from the leaderboard cache or stays undefined (displays "ended").
-      ...(pvp.seasonNo ? { season: { seasonNo: pvp.seasonNo, endAt: 0 } } : {}),
+      // Season banner: number from save pvp.seasonNo; the countdown's endAt arrives via getSeasonEndAt (/leaderboard).
+      ...(pvp.seasonNo ? { season: { seasonNo: pvp.seasonNo } } : {}),
       getStats: () => {
         const save = saveManager.get();
         const stars = Object.values(save.progress.stars).reduce((a, b) => a + b, 0);

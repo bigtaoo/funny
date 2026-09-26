@@ -108,7 +108,9 @@ describe('CityScene teamOrder — the four-source away-from-home predicate (§8.
   });
 });
 
-describe('CityScene load fan-out (six slices, /world/teams first)', () => {
+// 2026-09-26: the four order slices (marches / occupations / siege holds / stationed) collapsed into one
+// GET /world/orders, so the load is three requests — teams, me, orders — instead of six.
+describe('CityScene load fan-out (three requests, /world/teams first)', () => {
   function recordingApi(): { api: WorldApiClient; calls: string[] } {
     const calls: string[] = [];
     const rec = <T>(name: string, v: T) => () => { calls.push(name); return Promise.resolve(v); };
@@ -117,24 +119,19 @@ describe('CityScene load fan-out (six slices, /world/teams first)', () => {
       getMe: rec('getMe', {
         resources: {}, buildings: {}, buildQueue: [], cardState: {}, teamState: {},
       } as unknown as PlayerWorldView),
-      getMarches: rec('getMarches', []),
-      getOccupations: rec('getOccupations', []),
-      getSiegeHolds: rec('getSiegeHolds', []),
-      getStationed: rec('getStationed', []),
+      getOrders: rec('getOrders', { marches: [], occupations: [], stationed: [], siegeHolds: [] }),
     } as unknown as WorldApiClient;
     return { api, calls };
   }
 
-  it('requests all six slices exactly once, with getTeams issued first', async () => {
+  it('requests teams, me and orders exactly once each, with getTeams issued first', async () => {
     const { api, calls } = recordingApi();
     const cb: CitySceneCallbacks = { onBack: () => {}, worldApi: api, worldId: 'world:1:0', getFlag: () => true };
     const scene = new CityScene(createLayout(800, 1280), new InputManager(), cb);
     await new Promise((r) => setTimeout(r, 0));
 
     expect(calls[0]).toBe('getTeams');
-    expect([...calls].sort()).toEqual(
-      ['getMarches', 'getMe', 'getOccupations', 'getSiegeHolds', 'getStationed', 'getTeams'].sort()
-    );
+    expect([...calls].sort()).toEqual(['getMe', 'getOrders', 'getTeams'].sort());
     scene.destroy();
   });
 });

@@ -145,7 +145,7 @@ describe.skipIf(!mongo)('worldsvc season ops e2e', () => {
   let svc: WorldService;
 
   /**
-   * Reset data and create one active world with two families holding nations (alice: center capital 9 + corner 0; bob: 1).
+   * Reset data and create one active world with two families, each its own sect, holding capital cities (SKY/alice: world center + capital 0; SEA/bob: capital 1).
    * Family identity/roster lives in socialsvc (P4) — registered on the fake; per-world membership is a PlayerWorldDoc.familyId
    * (which is what settleSeason reward expansion, battle-pass scan, and resetSeason season-state reset all read).
    */
@@ -181,15 +181,40 @@ describe.skipIf(!mongo)('worldsvc season ops e2e', () => {
     });
     await c.playerWorld.insertMany([pw('alice', famAA), pw('bob', famBB)] as never);
 
+    // One sect per family: capitals are held by SECTS (ADR-074, CityDoc.ownerSectId).
+    const sect = (sid: string, name: string, tag: string, fid: string, leader: string) => ({
+      _id: sid, worldId: W, name, tag, leaderFamilyId: fid, leaderId: leader,
+      memberFamilyCount: 1, allySectIds: [], prosperity: 0, rev: 1,
+    });
+    await c.sects.insertMany([sect(SKY, 'Sky Sect', 'SKY', famAA, 'alice'), sect(SEA, 'Sea Sect', 'SEA', famBB, 'bob')]);
+    await socialsvc.setSect(famAA, SKY);
+    await socialsvc.setSect(famBB, SEA);
+
+    await c.cities.insertMany([
+      heldCity('worldCenter', 'worldCenter', undefined, SKY), // center capital
+      heldCity('capital-0', 'capital', 0, SKY),               // SKY holds 2 capitals total → champion
+      heldCity('capital-1', 'capital', 1, SEA),               // SEA holds 1 → top3
+    ] as never);
+
+    // Pre-ADR-074 nation ownership, which nothing writes any more: settlement must ignore it. If it were
+    // still read, bob would be ranked by it (capitals 2 and 3) and outrank alice.
     const nation = (idx: number, owner: string, tag: string): NationDoc => ({
       _id: `nation:${W}:${idx}`, worldId: W, capitalIdx: idx, x: idx, y: idx,
       ownerId: owner, familyId: familyId(W, tag), rev: 1,
     });
-    await c.nations.insertMany([
-      nation(CENTER_CAPITAL_IDX, 'alice', 'AA'), // center capital
-      nation(0, 'alice', 'AA'),                  // corner capital (AA holds 2 nations total → champion)
-      nation(1, 'bob', 'BB'),                    // BB holds 1 nation → top3
-    ]);
+    await c.nations.insertMany([nation(2, 'bob', 'BB'), nation(3, 'bob', 'BB'), nation(4, 'bob', 'BB')]);
+  }
+
+  const SKY = `sect:${W}:SKY`;
+  const SEA = `sect:${W}:SEA`;
+  /** A capital / world-center city held by `sectId`, or an NPC-held city when `sectId` is omitted. */
+  function heldCity(nodeId: string, kind: 'capital' | 'worldCenter' | 'garrison', provinceIdx: number | undefined, sectId?: string) {
+    return {
+      _id: cityDocId(W, nodeId), worldId: W, nodeId, kind, x: 0, y: 0, level: 10, footprint: 9,
+      ...(provinceIdx != null ? { provinceIdx } : {}),
+      ...(sectId ? { ownerSectId: sectId, ownerSectName: `snap-${sectId}`, capturedAt: 1 } : {}),
+      durability: 1, durabilityMax: 1, durabilityRegenAt: 0, regenPerHour: 1, rev: 0,
+    };
   }
 
   afterAll(async () => {
@@ -199,12 +224,15 @@ describe.skipIf(!mongo)('worldsvc season ops e2e', () => {
   it('settle: writes seasonResults (idempotent) + sends reward mail (center capital materials ×2)', async () => {
     await seed('active');
     const ranking = await svc.settleSeason(W);
-    expect(ranking[0]).toMatchObject({ scope: 'family', familyId: familyId(W, 'AA'), nationCount: 2 });
+    expect(ranking).toEqual([
+      { rank: 1, scope: 'sect', familyId: SKY, name: 'Sky Sect', nationCount: 2, capitalIdxs: [0, CENTER_CAPITAL_IDX] },
+      { rank: 2, scope: 'sect', familyId: SEA, name: 'Sea Sect', nationCount: 1, capitalIdxs: [1] },
+    ]);
 
     // seasonResults written to database (idempotent _id + tier).
     const doc = await m.collections.seasonResults.findOne({ _id: `${W}:s${SEASON}` });
     expect(doc).toBeTruthy();
-    expect(doc!.ranking[0]).toMatchObject({ rank: 1, tier: 'champion', id: familyId(W, 'AA') });
+    expect(doc!.ranking[0]).toMatchObject({ rank: 1, tier: 'champion', id: SKY });
 
     // Champion alice receives reward mail: center capital → scrap ×2. Materials use kind:'material' (→ SaveData.materials
     // unified progression pool, SLG8), not the generic 'item' kind (which goes to the inventory.items orphan bucket).
@@ -220,6 +248,18 @@ describe.skipIf(!mongo)('worldsvc season ops e2e', () => {
     const again = await m.collections.seasonResults.findOne({ _id: `${W}:s${SEASON}` });
     expect(again!.settledAt).toBe(before);
     expect(await m.collections.seasonResults.countDocuments({ worldId: W })).toBe(1);
+  });
+
+  it('settle: only the world-center holder gets the multiplier; each mail carries its own rank, tier and capital count', async () => {
+    await seed('active');
+    await svc.settleSeason(W);
+    const settle = (acct: string) => mailCalls.find((x) => x.accountId === acct && x.dispatchKey === `slg-settle:${W}:s${SEASON}`)!;
+    const scrapOf = (acct: string) => settle(acct).content.attachments!.find((a) => a.kind === 'material' && a.id === 'scrap')!.count;
+    // bob's SEA is rank 2 (top3) and holds capital-1 only: base reward, no center multiplier.
+    expect(scrapOf('bob')).toBe(SETTLE_REWARDS.top3.items.scrap!);
+    expect(scrapOf('alice')).toBe(SETTLE_REWARDS.champion.items.scrap! * CENTER_CAPITAL_MULT);
+    expect(settle('alice').content.body).toBe('slg.settle.body|rank=1|tier=champion|nations=2');
+    expect(settle('bob').content.body).toBe('slg.settle.body|rank=2|tier=top3|nations=1');
   });
 
   it('settle: battle pass holders receive extra reward mail (S8-8 extra-settlement-reward tier)', async () => {
@@ -251,25 +291,87 @@ describe.skipIf(!mongo)('worldsvc season ops e2e', () => {
   it('settle: a sect-scoped ranking entry gets its prosperity snapshot + memberFamilyIds persisted (seasonResults + sect doc)', async () => {
     await seed('active');
     const famAA = familyId(W, 'AA');
-    const sectId = `sect:${W}:SKY`;
-    await m.collections.sects.insertOne({
-      _id: sectId, worldId: W, name: 'Sky Sect', tag: 'SKY', leaderFamilyId: famAA, leaderId: 'alice',
-      memberFamilyCount: 1, allySectIds: [], prosperity: 0, rev: 1,
-    });
-    await socialsvc.setSect(famAA, sectId);
+    const sectId = SKY;
 
     const ranking = await svc.settleSeason(W);
     expect(ranking[0]).toMatchObject({ scope: 'sect', familyId: sectId, nationCount: 2 });
 
     // seasonResults' sect-scope row carries prosperity + memberFamilyIds (only spread for scope:'sect').
     const doc = await m.collections.seasonResults.findOne({ _id: `${W}:s${SEASON}` });
-    const sectRow = doc!.ranking.find((r) => r.scope === 'sect')!;
+    const sectRow = doc!.ranking.find((r) => r.id === SKY)!;
     expect(sectRow.memberFamilyIds).toEqual([famAA]);
     expect(typeof sectRow.prosperity).toBe('number');
 
     // The sect doc's own prosperity field was refreshed too.
     const sectDoc = await m.collections.sects.findOne({ _id: sectId });
     expect(sectDoc!.prosperity).toBe(sectRow.prosperity);
+  });
+
+  // 2026-09-26: settleSeason read NationDoc.ownerId, which ADR-074 stopped writing — every settlement since
+  // would have ranked nobody. These pin the city-based source and what does NOT count.
+  it('settle: garrison cities and NPC-held capitals do not count toward the ranking', async () => {
+    await seed('active');
+    await m.collections.cities.insertMany([
+      heldCity('garrison-0', 'garrison', 2, SEA),
+      heldCity('garrison-1', 'garrison', 3, SEA),
+      heldCity('capital-2', 'capital', 2),
+    ] as never);
+    const ranking = await svc.settleSeason(W);
+    expect(ranking.map((r) => [r.familyId, r.nationCount])).toEqual([[SKY, 2], [SEA, 1]]);
+  });
+
+  it('settle: equal capital counts rank the world-center holder first; a dissolved sect keeps its capture-time name', async () => {
+    await seed('active');
+    // SEA now also holds 2 capitals, and sorts before SKY by id — so only the center tie-break puts SKY first.
+    await m.collections.cities.insertOne(heldCity('capital-2', 'capital', 2, SEA) as never);
+    await m.collections.sects.deleteOne({ _id: SEA }); // dissolved since: only the capture-time snapshot is left
+    const ranking = await svc.settleSeason(W);
+    expect(ranking.map((r) => [r.familyId, r.nationCount, r.name])).toEqual([
+      [SKY, 2, 'Sky Sect'],
+      [SEA, 2, `snap-${SEA}`],
+    ]);
+  });
+
+  it('settle: every member of the winning sect families is paid, not just the capturer', async () => {
+    await seed('active');
+    // carol is in family AA too (so in SKY) but never touched a capital herself.
+    await m.collections.playerWorld.insertOne({
+      _id: playerWorldId(W, 'carol'), worldId: W, accountId: 'carol', troops: 0, troopCap: 0,
+      resources: { ink: 0, paper: 0, graphite: 0, metal: 0, sticker: 0 },
+      yieldRate: { ink: 0, paper: 0, graphite: 0, metal: 0, sticker: 0 },
+      lastTickAt: 0, familyId: familyId(W, 'AA'), rev: 0,
+    } as never);
+    await svc.settleSeason(W);
+    const settle = mailCalls.filter((x) => x.dispatchKey === `slg-settle:${W}:s${SEASON}`).map((x) => x.accountId).sort();
+    expect(settle).toEqual(['alice', 'bob', 'carol']);
+  });
+
+  it('settle: no capital held by anyone -> empty ranking, nobody paid, world still moves to settling', async () => {
+    await seed('active');
+    await m.collections.cities.deleteMany({ worldId: W });
+    await expect(svc.settleSeason(W)).resolves.toEqual([]);
+    expect(mailCalls.filter((x) => x.dispatchKey.startsWith('slg-settle:'))).toEqual([]);
+    expect((await m.collections.worlds.findOne({ _id: W }))!.status).toBe('settling');
+  });
+
+  it('backfillMissingCities: fills only open/active worlds with NO city docs, never touching a held city', async () => {
+    await seed('active'); // W has 3 held city docs
+    const bare = (id: string, status: WorldDoc['status']) => ({
+      _id: id, season: 7, shard: 0, status, mapW: SLG_MAP_W, mapH: SLG_MAP_H, openAt: 1, capacity: 10, population: 0, rev: 0,
+    });
+    // Pre-ADR-074 worlds, like live s2-0 (active) and s1-1 (open), plus a closed one that must be left alone.
+    await m.collections.worlds.insertMany([bare('s7-0', 'active'), bare('s7-1', 'open'), bare('s7-2', 'closed')]);
+
+    expect((await svc.backfillMissingCities()).sort()).toEqual(['s7-0', 's7-1']);
+    const n = await m.collections.cities.countDocuments({ worldId: 's7-0' });
+    expect(n).toBeGreaterThan(60); // world center + 9 capitals + graded cities
+    expect(await m.collections.cities.countDocuments({ worldId: 's7-0', kind: 'capital' })).toBe(9);
+    expect(await m.collections.cities.countDocuments({ worldId: 's7-2' })).toBe(0);
+    // W already had cities: not re-inited, so its captures survive (initCities would have unset them).
+    expect(await m.collections.cities.countDocuments({ worldId: W })).toBe(3);
+    expect((await m.collections.cities.findOne({ _id: cityDocId(W, 'capital-0') }))!.ownerSectId).toBe(SKY);
+
+    expect(await svc.backfillMissingCities()).toEqual([]); // idempotent
   });
 
   it('getActiveSeasonNo: highest season among open/active worlds; falls back to 1 with no worlds at all', async () => {
@@ -389,6 +491,21 @@ describe.skipIf(!mongo)('worldsvc season ops e2e', () => {
     await m.collections.cities.deleteMany({});
     await svc.openSeason(W, SEASON, 5, 10000);
     expect(await m.collections.cities.countDocuments({ worldId: W })).toBeGreaterThan(60);
+  });
+
+  it('open: tells onWorldOpened about the world once its documents exist (the bootstrap warms the path index there)', async () => {
+    // Without the hook the first march in a new world builds the ~3s path index on a compute worker, and
+    // prod's single worker makes every world wait for it (audit §12.7 phase 0, 2026-09-26).
+    await seed('active');
+    await m.collections.worlds.deleteMany({});
+    const opened: string[] = [];
+    const hooked = new WorldService({
+      cols: m.collections, redis: null, socialsvc, mapW: SLG_MAP_W, mapH: SLG_MAP_H, mail: fakeMail, now: () => 1_700_000_000_000,
+      onWorldOpened: (id) => { opened.push(id); },
+    });
+    await hooked.openSeason(W, SEASON, 5, 10000);
+    expect(opened).toEqual([W]);
+    expect(await m.collections.worlds.countDocuments({ _id: W, status: 'open' })).toBe(1);
   });
 
   // Regression for the 2026-07-29 audit fix: resetSeason wiped tiles/marches/occupations/stationed in

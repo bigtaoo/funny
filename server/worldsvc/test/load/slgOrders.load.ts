@@ -60,26 +60,47 @@
 // orders before it legitimately runs out — that is the game's economy, not a defect. NO_TROOPS is
 // therefore counted separately from real failures and does not count against the success rate.
 //
-// ── ⚠ NOT REPEATABLE AGAINST THE SAME WORLD ──────────────────────────────────────────────────────────
-// Each run takes a fresh fleet id, but every fleet joins the SAME season world and its territory,
-// occupations and player docs accumulate. Measured 2026-09-05 over three back-to-back runs of identical
-// code (by the end: 1601 playerWorld docs, 17488 owned tiles, 1117 occupations still pending):
+// ── One dedicated world per run (2026-09-26, ADR-092 / audit §12.7 phase 0) ──────────────────────────
+// Until 2026-09-26 every run joined the SAME season world and state accumulated run over run (§6.6b:
+// `POST /world/march` p50 7.5ms → 122.8ms across three runs of identical code). Each run now opens its
+// own world in a season nothing else uses (see ./loadWorld.ts for why a fresh shard is not enough),
+// waits for the previous run's leftovers to stop generating work, and closes its world when done. Fleet
+// size is now the only variable, which is what the 500 → 1000 → 2000 → 3000 ladder needs.
 //
-//   POST /world/march p50    7.5ms  →  122.8ms
-//   client dispatch p99       99ms  →  7471ms
-//   sched:occupations p99     82ms  →  4381ms
+// Each run still takes a FRESH device-id prefix by default. Device login is idempotent per deviceId, so a
+// fixed prefix means the second run inherits the first run's accounts: the very first execution of this
+// test measured 200 bots, and the next one measured 200 bots answering NO_TROOPS in 5ms — a much
+// prettier latency number describing nothing. Set NW_LOAD_FLEET_ID to reuse a fleet deliberately.
 //
-// A crowded world makes dispatch itself expensive (vision and connectivity scan more tiles) and the
-// previous run's unsettled occupations compete for the same thread. So run-over-run numbers are NOT
-// comparable, and a failing latency budget on a re-run may be measuring the dirt rather than the code.
-// Compare against a run on a comparably-aged world, or give the run a fresh world first.
-// TODO: have the run provision its own world (or reset one) so the fleet size is the only variable.
+// ── Two load models ───────────────────────────────────────────────────────────────────────────────────
+//   storm  (default) every bot fires an occupy every NW_LOAD_ORDER_MS (2500) — the "pitched battle" upper
+//          bound. At 3000 bots that is 1200 orders/s, far above anything real players produce: read it as
+//          a ceiling probe, not a forecast.
+//   paced  per bot, exponential gaps with mean NW_LOAD_ORDER_MS (default 30000 in this mode), each order
+//          followed by the `GET /world/orders` the client issues when its march_update push lands
+//          (refreshMarches), plus a `GET /world/map` (r=20, a zoom-1 viewport) with mean gap
+//          NW_LOAD_MAP_MS (default 20000). The cadences are ASSUMPTIONS, not measured player behaviour —
+//          they are knobs so a better estimate can be plugged in without touching the code.
 //
-// That is also why each run gets a FRESH device-id prefix by default. Device login is idempotent per
-// deviceId, so a fixed prefix means the second run inherits the first run's spent troop pools: the very
-// first execution of this test measured 200 bots, and the next one measured 200 bots answering NO_TROOPS
-// in 5ms — a much prettier latency number describing nothing. Set NW_LOAD_FLEET_ID to reuse a fleet
-// deliberately (e.g. to keep re-running against the same accounts); expect exhausted pools if you do.
+// ── Knobs added 2026-09-26 ────────────────────────────────────────────────────────────────────────────
+//   NW_LOAD_MODEL          storm | paced                                     default storm
+//   NW_LOAD_MAP_MS         mean gap between map reads per bot (0 = none)     default 0 storm / 20000 paced
+//   NW_LOAD_CAPACITY       capacity of the run's world                       default 10000
+//   NW_LOAD_QUIET_OPS      Mongo ops/s under which the server counts as idle default 30
+//   NW_LOAD_QUIESCE_MS     longest wait for leftovers to settle              default 600000
+//   NW_LOAD_KEEP_WORLD     1 = leave the run's world open afterwards         default unset
+//   NW_LOAD_REPORT_FILE    append the run's summary as one JSON line here    default unset
+//
+// ── Reading the ladder ────────────────────────────────────────────────────────────────────────────────
+// Four walls, four numbers (audit §12.7):
+//   Mongo ops/s    local mongod has no quota, so the run COUNTS commands (driver command monitoring) and
+//                  prints the rate next to Atlas M0's 100 ops/s ceiling (§9). Includes the idle baseline.
+//   compute        `compute:siege:run` = one battle on a worker; `:wait` = time queued for a free worker.
+//                  Prod has ONE worker (2 vCPU). Set NW_COMPUTE_POOL_SIZE=1 on the local worldsvc to
+//                  match it — the local 22-core box otherwise gets 8 and hides this wall.
+//   settlement     `arrivals.deferred` growing during the window = settlement throughput is the ceiling.
+//   push fan-out   pushes/s and `vision:observers` (one Mongo query per tile push).
+import { appendFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import {
   proceduralTile,
@@ -88,12 +109,22 @@ import {
   SLG_MAP_H,
   runBounded,
 } from '@nw/shared';
+import { AdminClient, provisionLoadWorld, waitForQuiet, counterRates, labelCount, eluBetween, type MetricsSnapshot } from './loadWorld';
 
 const BASE = process.env.NW_LOAD_BASE ?? 'http://localhost:8088';
 const METRICS_BASE = process.env.NW_LOAD_METRICS_BASE ?? 'http://localhost:18084';
 const WORLD_BASE = process.env.NW_LOAD_WORLD_BASE ?? METRICS_BASE;
 const BOTS = Number(process.env.NW_LOAD_BOTS ?? 200);
-const ORDER_MS = Number(process.env.NW_LOAD_ORDER_MS ?? 2500);
+const MODEL: 'storm' | 'paced' = process.env.NW_LOAD_MODEL === 'paced' ? 'paced' : 'storm';
+const ORDER_MS = Number(process.env.NW_LOAD_ORDER_MS ?? (MODEL === 'paced' ? 30_000 : 2500));
+const MAP_MS = Number(process.env.NW_LOAD_MAP_MS ?? (MODEL === 'paced' ? 20_000 : 0));
+const CAPACITY = Number(process.env.NW_LOAD_CAPACITY ?? 10_000);
+const QUIET_OPS = Number(process.env.NW_LOAD_QUIET_OPS ?? 30);
+const QUIESCE_MS = Number(process.env.NW_LOAD_QUIESCE_MS ?? 600_000);
+const KEEP_WORLD = process.env.NW_LOAD_KEEP_WORLD === '1';
+const REPORT_FILE = process.env.NW_LOAD_REPORT_FILE;
+/** Atlas M0's shared-tier throttle (audit §9) — printed next to the counted rate, not asserted. */
+const ATLAS_M0_OPS_PER_SEC = 100;
 const WINDOW_MS = Number(process.env.NW_LOAD_WINDOW_MS ?? 30_000);
 const LOGIN_CONC = Number(process.env.NW_LOAD_LOGIN_CONC ?? 25);
 const MIN_OK_PCT = Number(process.env.NW_LOAD_MIN_OK_PCT ?? 90);
@@ -203,67 +234,94 @@ function pct(sorted: number[], q: number): number {
   return Math.round(sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))]!);
 }
 
-/** worldsvc's own view of itself; null when the internal port is not reachable (the run still measures client-side). */
-async function serverMetrics(): Promise<Record<string, unknown> | null> {
-  if (!INTERNAL_KEY) return null;
-  try {
-    const res = await fetch(`${METRICS_BASE}/admin/world/metrics`, { headers: { 'x-internal-key': INTERNAL_KEY } });
-    const parsed = (await res.json()) as { ok: boolean; data?: Record<string, unknown> };
-    return parsed.ok ? (parsed.data ?? null) : null;
-  } catch {
-    return null;
-  }
+/** Request kinds reported separately, so march / orders / map latencies never blur into one number. */
+type ReadKind = 'orders' | 'map';
+
+/** Exponential gap with the given mean — independent players, not a synchronised fleet. */
+function expGap(meanMs: number): number {
+  return -Math.log(1 - Math.random()) * meanMs;
+}
+
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+function latencyLine(xs: number[]): string {
+  const s = [...xs].sort((a, b) => a - b);
+  return `n ${s.length}  p50 ${pct(s, 0.5)}ms  p90 ${pct(s, 0.9)}ms  p99 ${pct(s, 0.99)}ms  max ${s.at(-1) ?? 0}ms`;
+}
+
+function labelLine(m: MetricsSnapshot, label: string): string {
+  const l = m.labels?.[label];
+  return l ? `p50 ${l.p50}ms  p90 ${l.p90}ms  p99 ${l.p99}ms  max ${l.max}ms` : '-';
 }
 
 describe('worldsvc SLG order throughput', () => {
-  it(`digests ${BOTS} bots issuing march orders every ${ORDER_MS}ms`, async () => {
+  it(`digests ${BOTS} bots (${MODEL}, one order per ${ORDER_MS}ms${MODEL === 'paced' ? ' mean' : ''})`, async () => {
+    /* eslint-disable no-console */
+    const log = (line: string): void => console.log(line);
+    const admin = new AdminClient(METRICS_BASE, INTERNAL_KEY);
+
     // Fail loudly rather than "0 bots, 100% success" if the stack is not up — a load test that passes
     // against nothing is worse than one that errors.
-    const season = await api<{ season: number }>('GET', '/world/active-season');
-    expect(season.season, 'no active season — is the stack up and a world open?').toBeGreaterThan(0);
+    await admin.listWorlds();
+    const idleOps = await waitForQuiet(admin, QUIET_OPS, QUIESCE_MS, log);
+    const { worldId: loadWorld, season } = await provisionLoadWorld(admin, CAPACITY);
+    log(`[load] world ${loadWorld} (season ${season}, capacity ${CAPACITY}) | model ${MODEL} | bots ${BOTS} | idle baseline ${idleOps?.toFixed(1) ?? '-'} Mongo ops/s`);
 
-    // ── Ramp: device login + join the season, bounded so the ramp itself is not the bottleneck ──
-    const bots: Bot[] = [];
-    const rampErrors: string[] = [];
-    const ids = Array.from({ length: BOTS }, (_, i) => i);
-    const rampStart = Date.now();
-    await runBounded(ids, LOGIN_CONC, async (i) => {
-      try {
-        const login = await api<{ token: string }>('POST', '/api/auth/device', {
-          body: { deviceId: `loadbot-${FLEET_ID}-${i}` },
-        });
-        const me = await api<{ worldId?: string; mainBaseTile?: string }>('POST', '/world/season/join', {
-          token: login.token,
-          body: { season: season.season },
-        });
-        const base = me.mainBaseTile ? parseTile(me.mainBaseTile) : null;
-        if (!me.worldId || !base) throw new Error('joined without a base');
-        const targets = ringTargets(me.worldId, base);
-        if (targets.length === 0) throw new Error('no legal occupy target around base');
-        bots.push({ id: i, token: login.token, worldId: me.worldId, base, targets, nextTargetIdx: 0 });
-      } catch (e) {
-        rampErrors.push((e as Error).message);
-      }
-    });
-    const rampMs = Date.now() - rampStart;
-    // eslint-disable-next-line no-console
-    console.log(`[load] ramp: ${bots.length}/${BOTS} bots ready in ${rampMs}ms (${rampErrors.length} failed)`);
-    if (rampErrors.length > 0) {
-      // eslint-disable-next-line no-console
-      console.log(`[load] ramp failure sample: ${JSON.stringify(rampErrors.slice(0, 5))}`);
-    }
-    expect(bots.length, `too few bots reached the world: ${JSON.stringify(rampErrors.slice(0, 3))}`).toBeGreaterThan(BOTS * 0.8);
+    try {
+      // ── Ramp: device login + join the load season, bounded so the ramp itself is not the bottleneck ──
+      const bots: Bot[] = [];
+      const rampErrors: string[] = [];
+      let strayJoins = 0;
+      const ids = Array.from({ length: BOTS }, (_, i) => i);
+      const rampStart = Date.now();
+      await runBounded(ids, LOGIN_CONC, async (i) => {
+        try {
+          const login = await api<{ token: string }>('POST', '/api/auth/device', {
+            body: { deviceId: `loadbot-${FLEET_ID}-${i}` },
+          });
+          const me = await api<{ worldId?: string; mainBaseTile?: string }>('POST', '/world/season/join', {
+            token: login.token,
+            body: { season },
+          });
+          const base = me.mainBaseTile ? parseTile(me.mainBaseTile) : null;
+          if (!me.worldId || !base) throw new Error('joined without a base');
+          // Only one world is open in the load season, so anything else means join routing changed under us.
+          if (me.worldId !== loadWorld) {
+            strayJoins++;
+            throw new Error(`joined ${me.worldId}, not ${loadWorld}`);
+          }
+          const targets = ringTargets(me.worldId, base);
+          if (targets.length === 0) throw new Error('no legal occupy target around base');
+          bots.push({ id: i, token: login.token, worldId: me.worldId, base, targets, nextTargetIdx: 0 });
+        } catch (e) {
+          rampErrors.push((e as Error).message);
+        }
+      });
+      const rampMs = Date.now() - rampStart;
+      log(`[load] ramp: ${bots.length}/${BOTS} bots ready in ${rampMs}ms (${rampErrors.length} failed, ${strayJoins} landed in another world)`);
+      if (rampErrors.length > 0) log(`[load] ramp failure sample: ${JSON.stringify(rampErrors.slice(0, 5))}`);
+      expect(bots.length, `too few bots reached the world: ${JSON.stringify(rampErrors.slice(0, 3))}`).toBeGreaterThan(BOTS * 0.8);
 
-    const before = await serverMetrics();
+      const before = await admin.metrics();
 
-    // ── Storm: every bot issues one order per ORDER_MS for WINDOW_MS ────────────────────────────────
-    const outcomes: OrderOutcome[] = [];
-    const stormStart = Date.now();
-    const runBot = async (bot: Bot): Promise<void> => {
-      // Stagger starts across one interval so the fleet spreads over the window instead of arriving as
-      // one thundering herd every ORDER_MS — real players are not synchronised.
-      await new Promise((r) => setTimeout(r, Math.random() * ORDER_MS));
-      while (Date.now() - stormStart < WINDOW_MS) {
+      // ── Load window ─────────────────────────────────────────────────────────────────────────────────
+      const outcomes: OrderOutcome[] = [];
+      const reads: Record<ReadKind, number[]> = { orders: [], map: [] };
+      let readFailures = 0;
+      const stormStart = Date.now();
+      const running = (): boolean => Date.now() - stormStart < WINDOW_MS;
+
+      const read = async (kind: ReadKind, bot: Bot, path: string): Promise<void> => {
+        const t0 = Date.now();
+        try {
+          await api('GET', path, { token: bot.token });
+          reads[kind].push(Date.now() - t0);
+        } catch {
+          readFailures++;
+        }
+      };
+
+      const march = async (bot: Bot): Promise<boolean> => {
         const target = bot.targets[bot.nextTargetIdx % bot.targets.length]!;
         bot.nextTargetIdx++;
         const t0 = Date.now();
@@ -281,75 +339,116 @@ describe('worldsvc SLG order throughput', () => {
             },
           });
           outcomes.push({ ms: Date.now() - t0, ok: true, reason: null });
+          return true;
         } catch (e) {
           outcomes.push({ ms: Date.now() - t0, ok: false, reason: (e as Error).message });
+          return false;
         }
-        const wait = ORDER_MS - (Date.now() - t0);
-        if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+      };
+
+      const orderLoop = async (bot: Bot): Promise<void> => {
+        if (MODEL === 'storm') {
+          // Stagger starts across one interval so the fleet spreads over the window instead of arriving
+          // as one thundering herd every ORDER_MS — real players are not synchronised.
+          await sleep(Math.random() * ORDER_MS);
+          while (running()) {
+            const t0 = Date.now();
+            await march(bot);
+            const wait = ORDER_MS - (Date.now() - t0);
+            if (wait > 0) await sleep(wait);
+          }
+          return;
+        }
+        for (;;) {
+          await sleep(expGap(ORDER_MS));
+          if (!running()) return;
+          // The client refetches its orders when the march_update push for a dispatch lands (refreshMarches).
+          if (await march(bot)) await read('orders', bot, `/world/orders?worldId=${bot.worldId}`);
+        }
+      };
+
+      const mapLoop = async (bot: Bot): Promise<void> => {
+        if (MAP_MS <= 0) return;
+        for (;;) {
+          await sleep(expGap(MAP_MS));
+          if (!running()) return;
+          await read('map', bot, `/world/map?worldId=${bot.worldId}&cx=${bot.base.x}&cy=${bot.base.y}&r=20`);
+        }
+      };
+
+      await Promise.all(bots.flatMap((b) => [orderLoop(b), mapLoop(b)]));
+      const stormMs = Date.now() - stormStart;
+      const after = await admin.metrics();
+
+      // ── Report ──────────────────────────────────────────────────────────────────────────────────────
+      const byReason = new Map<string, number>();
+      for (const o of outcomes) if (!o.ok) byReason.set(o.reason!, (byReason.get(o.reason!) ?? 0) + 1);
+      // An exhausted troop pool is the game's economy working, not the server failing: 5000 troops buys
+      // ~10 occupy orders. Counted, reported, and excluded from the success rate.
+      const exhausted = [...byReason.entries()].filter(([r]) => /NO_TROOPS|Insufficient/i.test(r)).reduce((n, [, c]) => n + c, 0);
+      const accepted = outcomes.filter((o) => o.ok).length;
+      const judged = outcomes.length - exhausted;
+      const okPct = judged > 0 ? (accepted / judged) * 100 : 0;
+      const lat = outcomes.filter((o) => o.ok).map((o) => o.ms).sort((a, b) => a - b);
+      const perSec = outcomes.length / (stormMs / 1000);
+
+      const delta = (k: string): number => (after.counters?.[k] ?? 0) - (before.counters?.[k] ?? 0);
+      const mongo = counterRates(before, after, stormMs, 'mongo.op');
+      const mongoTotal = mongo.find(([k]) => k === 'mongo.ops')?.[1] ?? 0;
+      const mongoTop = mongo.filter(([k]) => k !== 'mongo.ops').slice(0, 6);
+      const pushes = counterRates(before, after, stormMs, 'push.');
+      const pushTotal = pushes.find(([k]) => k === 'push.sent')?.[1] ?? 0;
+      const pushTop = pushes.filter(([k]) => k !== 'push.sent').slice(0, 5);
+      const sieges = labelCount(before, after, 'compute:siege:run');
+      const fmt = (xs: [string, number][], cut: number): string => xs.map(([k, v]) => `${k.slice(cut)} ${v.toFixed(1)}`).join(', ');
+
+      log(`[load] window ${stormMs}ms | orders ${outcomes.length} (${perSec.toFixed(1)}/s) | accepted ${accepted} | out-of-troops ${exhausted} | other rejects ${judged - accepted}`);
+      log(`[load] POST /world/march: ${latencyLine(lat)}`);
+      if (reads.orders.length > 0) log(`[load] GET /world/orders: ${latencyLine(reads.orders)}`);
+      if (reads.map.length > 0) log(`[load] GET /world/map r=20: ${latencyLine(reads.map)}`);
+      if (readFailures > 0) log(`[load] read failures: ${readFailures}`);
+      if (byReason.size > 0) log(`[load] rejects: ${JSON.stringify(Object.fromEntries(byReason))}`);
+      log(`[load] ① Mongo ${mongoTotal.toFixed(1)} ops/s (idle ${idleOps?.toFixed(1) ?? '-'}) = ${(mongoTotal / ATLAS_M0_OPS_PER_SEC).toFixed(1)}× Atlas M0's ${ATLAS_M0_OPS_PER_SEC} | ${fmt(mongoTop, 'mongo.op.'.length)}`);
+      log(`[load] ② compute (${after.compute}): ${sieges} sieges | run ${labelLine(after, 'compute:siege:run')} | wait ${labelLine(after, 'compute:siege:wait')}`);
+      log(`[load]    path: ${labelCount(before, after, 'compute:path:run')} jobs | run ${labelLine(after, 'compute:path:run')} | wait ${labelLine(after, 'compute:path:wait')}`);
+      log(`[load]    hang-guard timeouts: siege ${delta('compute.timeout.siege')}, path ${delta('compute.timeout.path')}, warm ${delta('compute.timeout.warm')} | worker restarts ${delta('compute.workerDown')}`);
+      log(`[load] ③ settlement: settled ${delta('arrivals.settled')}, deferred ${delta('arrivals.deferred')} | sched:arrivalSettle ${labelLine(after, 'sched:arrivalSettle')} | sched:arrivals ${labelLine(after, 'sched:arrivals')}`);
+      log(`[load] ④ push ${pushTotal.toFixed(1)}/s | ${fmt(pushTop, 'push.'.length)} | vision:observers ${labelCount(before, after, 'vision:observers')}× ${labelLine(after, 'vision:observers')}`);
+      const elu = eluBetween(before, after);
+      log(`[load] main thread: utilization ${elu == null ? '-' : `${(elu * 100).toFixed(0)}%`} | loop lag max ${after.loopLagMs?.max ?? '-'}ms  p99 ${after.loopLagMs?.p99 ?? '-'}ms`);
+
+      if (REPORT_FILE) {
+        appendFileSync(REPORT_FILE, JSON.stringify({
+          at: new Date().toISOString(), world: loadWorld, model: MODEL, bots: bots.length, orderMs: ORDER_MS, mapMs: MAP_MS,
+          windowMs: stormMs, ordersPerSec: perSec, accepted, exhausted, rejects: judged - accepted,
+          march: { p50: pct(lat, 0.5), p90: pct(lat, 0.9), p99: pct(lat, 0.99), max: lat.at(-1) ?? 0 },
+          mongoOpsPerSec: mongoTotal, idleMongoOpsPerSec: idleOps, mongoTop: Object.fromEntries(mongoTop),
+          compute: after.compute, sieges, pathJobs: labelCount(before, after, 'compute:path:run'),
+          timeouts: { siege: delta('compute.timeout.siege'), path: delta('compute.timeout.path') }, workerRestarts: delta('compute.workerDown'), siegeRun: after.labels?.['compute:siege:run'], siegeWait: after.labels?.['compute:siege:wait'],
+          settled: delta('arrivals.settled'), deferred: delta('arrivals.deferred'), arrivalSettle: after.labels?.['sched:arrivalSettle'],
+          pushesPerSec: pushTotal, visionObservers: after.labels?.['vision:observers'], loopLag: after.loopLagMs, elu,
+        }) + '\n');
       }
-    };
-    await Promise.all(bots.map(runBot));
-    const stormMs = Date.now() - stormStart;
 
-    const after = await serverMetrics();
+      expect(outcomes.length, 'no orders were issued at all').toBeGreaterThan(0);
+      expect(okPct, `too many rejected orders: ${JSON.stringify(Object.fromEntries(byReason))}`).toBeGreaterThanOrEqual(MIN_OK_PCT);
+      expect(pct(lat, 0.99)).toBeLessThan(P99_BUDGET_MS);
 
-    // ── Report ──────────────────────────────────────────────────────────────────────────────────────
-    const byReason = new Map<string, number>();
-    for (const o of outcomes) if (!o.ok) byReason.set(o.reason!, (byReason.get(o.reason!) ?? 0) + 1);
-    // An exhausted troop pool is the game's economy working, not the server failing: 5000 troops buys
-    // ~10 occupy orders. Counted, reported, and excluded from the success rate.
-    const exhausted = [...byReason.entries()].filter(([r]) => /NO_TROOPS|Insufficient/i.test(r)).reduce((s, [, n]) => s + n, 0);
-    const accepted = outcomes.filter((o) => o.ok).length;
-    const judged = outcomes.length - exhausted;
-    const okPct = judged > 0 ? (accepted / judged) * 100 : 0;
-    const lat = outcomes.filter((o) => o.ok).map((o) => o.ms).sort((a, b) => a - b);
-    const perSec = outcomes.length / (stormMs / 1000);
-
-    /* eslint-disable no-console */
-    console.log(`[load] window ${stormMs}ms | orders ${outcomes.length} (${perSec.toFixed(1)}/s) | accepted ${accepted} | out-of-troops ${exhausted} | other rejects ${judged - accepted}`);
-    console.log(`[load] dispatch latency: p50 ${pct(lat, 0.5)}ms  p90 ${pct(lat, 0.9)}ms  p99 ${pct(lat, 0.99)}ms  max ${lat.at(-1) ?? 0}ms`);
-    if (byReason.size > 0) console.log(`[load] rejects: ${JSON.stringify(Object.fromEntries(byReason))}`);
-    if (after) console.log(`[load] worldsvc after: ${JSON.stringify(after)}`);
-    else console.log(`[load] worldsvc metrics unreachable at ${METRICS_BASE} — is 18084 published? (client-side numbers above are still valid)`);
-    void before;
-    /* eslint-enable no-console */
-
-    expect(outcomes.length, 'no orders were issued at all').toBeGreaterThan(0);
-    expect(okPct, `too many rejected orders: ${JSON.stringify(Object.fromEntries(byReason))}`).toBeGreaterThanOrEqual(MIN_OK_PCT);
-    expect(pct(lat, 0.99)).toBeLessThan(P99_BUDGET_MS);
-
-    // The server-side assertion — the one a client-side latency number cannot make. Skipped rather than
-    // faked when the internal port is not reachable.
-    if (after) {
-      const loop = (after.loopLagMs ?? {}) as { max?: number };
-      expect(loop.max ?? 0, 'worldsvc event loop stalled — pathfinding or another sync CPU burst is back on the request thread').toBeLessThan(LOOP_BUDGET_MS);
-
-      // The arrival tick: the bottleneck this run surfaced in the first place. `arrivals.batched` /
-      // `arrivals.serial` say whether the batching engaged at all — a tick that quietly demoted every march
-      // back to the per-march path is slow in exactly the way everything else here is slow, so the split has
-      // to be read as a number rather than inferred from the timing.
-      const labels = (after.labels ?? {}) as Record<string, { p50?: number; p90?: number; max?: number }>;
-      const arrivals = labels['sched:arrivals'];
-      const counters = (after.counters ?? {}) as Record<string, number>;
-      /* eslint-disable-next-line no-console */
-      console.log(`[load] sched:arrivals p50 ${arrivals?.p50 ?? '-'}ms  p90 ${arrivals?.p90 ?? '-'}ms  max ${arrivals?.max ?? '-'}ms`);
-      /* eslint-disable-next-line no-console */
-      console.log(`[load] arrivals split: batched ${counters['arrivals.batched'] ?? 0} | serial ${counters['arrivals.serial'] ?? 0} (arriving ${counters['arrivals.arriving'] ?? 0}, blocked ${counters['arrivals.blocked'] ?? 0}, legacy ${counters['arrivals.legacy'] ?? 0})`);
-      // The settling half (2026-09-09, audit §7), printed and NOT asserted on purpose. Its latency is
-      // bounded by its own time slice, so a budget on it would only re-assert the slice; what is worth
-      // reading here is `deferred` — a value that climbs across runs says settlement THROUGHPUT is the
-      // ceiling, which is the one finding that would justify the cross-player-concurrency work. Printing
-      // `sched:arrivals` alone would now look excellent while a backlog quietly grew beside it.
-      const settle = labels['sched:arrivalSettle'];
-      /* eslint-disable-next-line no-console */
-      console.log(`[load] sched:arrivalSettle p50 ${settle?.p50 ?? '-'}ms  p90 ${settle?.p90 ?? '-'}ms  max ${settle?.max ?? '-'}ms — settled ${counters['arrivals.settled'] ?? 0}, deferred ${counters['arrivals.deferred'] ?? 0}`);
+      // The server-side assertions — the ones a client-side latency number cannot make.
+      expect(after.loopLagMs?.max ?? 0, 'worldsvc event loop stalled — pathfinding or another sync CPU burst is back on the request thread').toBeLessThan(LOOP_BUDGET_MS);
+      // The arrival tick: `arrivals.batched` says whether the batching engaged at all — a tick that quietly
+      // demoted every march back to the per-march path is slow in exactly the way everything else is slow.
+      const arrivals = after.labels?.['sched:arrivals'];
       if (arrivals) {
         expect(
           arrivals.p50 ?? 0,
           'a typical arrival tick is no longer cheap — the per-march stepping loop is back (see ARRIVALS_P50_BUDGET_MS)',
         ).toBeLessThan(ARRIVALS_P50_BUDGET_MS);
-        expect(counters['arrivals.batched'] ?? 0, 'no march took the batched path at all — the split rules rejected everything').toBeGreaterThan(0);
+        expect(delta('arrivals.batched'), 'no march took the batched path at all — the split rules rejected everything').toBeGreaterThan(0);
       }
+    } finally {
+      if (!KEEP_WORLD) await admin.closeWorld(loadWorld).catch((e: Error) => log(`[load] could not close ${loadWorld}: ${e.message}`));
     }
+    /* eslint-enable no-console */
   });
 });

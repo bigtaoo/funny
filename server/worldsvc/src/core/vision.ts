@@ -20,6 +20,7 @@ import {
 import type { WorldCore } from '../core';
 import type { PushService } from './push';
 import { tileVisionRadius } from './helpers';
+import { routeTimings, bumpCounter } from '../metrics';
 import { computeTerritoryCount } from '../prosperity';
 import type { TileDoc, PlayerWorldDoc } from '../db';
 
@@ -172,6 +173,16 @@ export class VisionService {
     exclude: ReadonlySet<string>,
   ): Promise<string[]> {
     if (cells.length === 0) return [];
+    bumpCounter('vision:observers.n');
+    return routeTimings.time('vision:observers', () => this.queryObservers(worldId, cells, exclude));
+  }
+
+  /** The body of {@link visionObservers}, timed as `vision:observers` — one Mongo query per tile push (audit §12.7). */
+  private async queryObservers(
+    worldId: string,
+    cells: readonly { x: number; y: number }[],
+    exclude: ReadonlySet<string>,
+  ): Promise<string[]> {
     const { cols } = this.core.deps;
     const xs = cells.map((c) => c.x);
     const ys = cells.map((c) => c.y);

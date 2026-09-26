@@ -133,3 +133,59 @@ describe('RateGate.acquire', () => {
     expect(gate.tryAcquire()).toBe(false);
   });
 });
+
+// 2026-09-26: one SLG dispatch fans out into ~10 requests (picker lists, the order, the push-triggered
+// refresh). With a single FIFO, the fifth team's order sat 2-3s behind the refreshes the first four had
+// caused. Mutations now take the interactive lane (WorldApiClient/core.ts).
+describe('RateGate lanes', () => {
+  it('an interactive waiter is served before background waiters queued ahead of it', async () => {
+    const gate = new RateGate();
+    for (let i = 0; i < 5; i++) gate.tryAcquire();
+
+    const order: string[] = [];
+    void gate.acquire('background').then(() => order.push('bg1'));
+    void gate.acquire('background').then(() => order.push('bg2'));
+    void gate.acquire('interactive').then(() => order.push('order'));
+
+    await vi.advanceTimersByTimeAsync(REFILL_MS);
+    expect(order).toEqual(['order']);
+    await vi.advanceTimersByTimeAsync(REFILL_MS * 2);
+    expect(order).toEqual(['order', 'bg1', 'bg2']);
+  });
+
+  it('interactive waiters stay FIFO among themselves', async () => {
+    const gate = new RateGate();
+    for (let i = 0; i < 5; i++) gate.tryAcquire();
+
+    const order: number[] = [];
+    void gate.acquire('interactive').then(() => order.push(1));
+    void gate.acquire('interactive').then(() => order.push(2));
+
+    await vi.advanceTimersByTimeAsync(REFILL_MS * 2);
+    expect(order).toEqual([1, 2]);
+  });
+
+  it('lanes share one bucket: the total rate cap is unchanged', async () => {
+    const gate = new RateGate();
+    for (let i = 0; i < 5; i++) gate.tryAcquire();
+
+    let served = 0;
+    for (let i = 0; i < 3; i++) void gate.acquire('interactive').then(() => { served++; });
+    for (let i = 0; i < 3; i++) void gate.acquire('background').then(() => { served++; });
+
+    await vi.advanceTimersByTimeAsync(REFILL_MS * 4);
+    expect(served).toBe(4); // one per refill tick, whichever lane
+  });
+
+  it('acquire() with no lane is background (the unchanged default for every other caller)', async () => {
+    const gate = new RateGate();
+    for (let i = 0; i < 5; i++) gate.tryAcquire();
+
+    const order: string[] = [];
+    void gate.acquire().then(() => order.push('default'));
+    void gate.acquire('interactive').then(() => order.push('order'));
+
+    await vi.advanceTimersByTimeAsync(REFILL_MS);
+    expect(order).toEqual(['order']);
+  });
+});

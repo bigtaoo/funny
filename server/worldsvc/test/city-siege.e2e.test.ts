@@ -599,6 +599,45 @@ describe.skipIf(!mongo)('worldsvc wild-city siege e2e (ADR-074 P1)', () => {
     expect(mailCalls[0]!.dispatchKey).toContain(wcId); // idempotent per city+time, not per player
   });
 
+  it('a capital taken through a real siege is what season settlement ranks (capture writes what settleSeason reads)', async () => {
+    // season-ops.e2e seeds CityDoc.ownerSectId by hand; this pins that the capture path actually writes the
+    // shape settlement reads — a kind:'capital' doc with provinceIdx and ownerSectId — so a rename on either
+    // side cannot silently empty the ranking again (the 2026-09-26 NationDoc.ownerId regression).
+    const capital = (await m.collections.cities.findOne({ worldId: W, kind: 'capital' }))!;
+    await m.collections.cities.updateOne({ _id: capital._id }, { $set: { ownerSectId: SECT_B } });
+    expect((await svc.settleSeason(W)).map((r) => [r.familyId, r.capitalIdxs])).toEqual([[SECT_B, [capital.provinceIdx]]]);
+
+    await armSiegeTeam(A, SECT_A, 300);
+    const capBase = findNearbyBase(capital.x + (capital.footprint - 1) / 2 + 3, capital.y);
+    await moveBase(A, capBase.x, capBase.y);
+    const capOutside = { x: capital.x + (capital.footprint - 1) / 2 + 1, y: capital.y };
+    await m.collections.tiles.updateOne(
+      { _id: tileId(W, capOutside.x, capOutside.y) },
+      { $set: { worldId: W, x: capOutside.x, y: capOutside.y, type: 'territory' as const, level: 1, ownerId: A, garrison: 500, rev: 0 } },
+      { upsert: true },
+    );
+    const view = await svc.startMarch(W, A, capBase.x, capBase.y, capital.x, capital.y, 'attack', 1, TEAM);
+    nowMs = view.arriveAt + 1;
+    await svc.processDueArrivals(nowMs);
+    nowMs += SLG_SIEGE_DAMAGE_DELAY_MS + 1;
+    await m.collections.cities.updateOne({ _id: capital._id }, { $set: { durability: 1, durabilityRegenAt: nowMs } });
+    await svc.processDueSiegeDamage(nowMs);
+    expect((await m.collections.cities.findOne({ _id: capital._id }))!.ownerSectId).toBe(SECT_A);
+
+    // The capture moved the capital from SECT_B to SECT_A in the ranking, under the capturer's sect name.
+    expect(await svc.settleSeason(W)).toEqual([
+      { rank: 1, scope: 'sect', familyId: SECT_A, name: SECT_A.toUpperCase(), nationCount: 1, capitalIdxs: [capital.provinceIdx] },
+    ]);
+  });
+
+  it('taking a graded (garrison) city through a real siege does not place the sect in the season ranking', async () => {
+    await armSiegeTeam(A, SECT_A, 300);
+    await claimBeachhead(A);
+    await siegeAndSettle(A, () => setDurability(1));
+    expect((await m.collections.cities.findOne({ _id: CITY_ID }))!.ownerSectId).toBe(SECT_A);
+    expect(await svc.settleSeason(W)).toEqual([]);
+  });
+
   // ── ④b Arrival-time re-validation (departure checks all go stale in transit) ───────────────
   it('a besieger who LEAVES their sect mid-flight lands a miss, not a hit', async () => {
     await armSiegeTeam(A, SECT_A, 300);

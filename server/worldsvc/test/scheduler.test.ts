@@ -217,4 +217,35 @@ describe('startScheduler', () => {
     await vi.advanceTimersByTimeAsync(10000);
     expect(svc.processDueArrivalSteps).toHaveBeenCalledTimes(1);
   });
+
+  it('with a lease set, scopes every task to it and skips a tick while it is empty (§12.12)', async () => {
+    const svc = makeSvc();
+    let held: string[] = [];
+    const sched = startScheduler(svc, { autoSettleSeasons: true, worlds: () => held });
+    await vi.advanceTimersByTimeAsync(30_000);
+    // Holding nothing means scanning nothing — not an unscoped scan of every world.
+    expect(svc.processDueArrivalSteps).not.toHaveBeenCalled();
+    expect(svc.processDueArrivalSettlements).not.toHaveBeenCalled();
+    expect(svc.processDueSeasonSettlement).not.toHaveBeenCalled();
+
+    held = ['w1', 'w2'];
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(svc.processDueArrivalSteps).toHaveBeenLastCalledWith(undefined, held);
+    expect(svc.processDueArrivalSettlements).toHaveBeenLastCalledWith(undefined, undefined, held);
+    expect(svc.processCompletedTraining).toHaveBeenLastCalledWith(undefined, held);
+    expect(svc.processCompletedBuilds).toHaveBeenLastCalledWith(undefined, held);
+    expect(svc.processDueSiegeDamage).toHaveBeenLastCalledWith(undefined, held);
+    expect(svc.processDueOccupations).toHaveBeenLastCalledWith(undefined, held);
+    expect(svc.processDueSeasonSettlement).toHaveBeenLastCalledWith(held);
+    sched.stop();
+  });
+
+  it('without a lease set, every task stays unscoped (the single-process default)', async () => {
+    const svc = makeSvc();
+    const sched = startScheduler(svc);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(svc.processDueArrivalSteps).toHaveBeenLastCalledWith(undefined, undefined);
+    expect(svc.processDueOccupations).toHaveBeenLastCalledWith(undefined, undefined);
+    sched.stop();
+  });
 });

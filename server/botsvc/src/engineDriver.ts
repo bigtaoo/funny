@@ -70,7 +70,7 @@ function flipRow(row: number): number {
  * home row instead of the opponent's. Only the handful of fields AISystem actually reads (see the
  * file-header note) are covered; this is not a general GameState mirror.
  */
-function buildMirroredView(state: GameState): GameState {
+export function buildMirroredView(state: GameState): GameState {
   const units = new Map<number, unknown>();
   for (const [id, u] of state.board.units) {
     units.set(id, { side: flipSide(u.side), isDead: u.isDead, col: u.col, row: flipRow(u.row), unitType: u.unitType });
@@ -88,7 +88,7 @@ function buildMirroredView(state: GameState): GameState {
 }
 
 /** Undoes `buildMirroredView`'s row flip on a decided command and stamps the bot's real owner. */
-function remapMirroredCommand(cmd: PlayerCommand, realOwner: 0 | 1): PlayerCommand {
+export function remapMirroredCommand(cmd: PlayerCommand, realOwner: 0 | 1): PlayerCommand {
   if (cmd.type === 'play_card' && cmd.row !== undefined) {
     return { ...cmd, owner: realOwner, row: flipRow(cmd.row) };
   }

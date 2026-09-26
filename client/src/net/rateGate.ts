@@ -4,12 +4,22 @@
 // short burst up to `capacity`, then settles to a steady `capacity` per `refillMs * capacity` window.
 // Callers await acquire() before sending; on saturation the call just waits its turn in FIFO order
 // instead of failing — this is a smoothing throttle, not a hard rejection.
+//
+// Two lanes (2026-09-26). A single FIFO made the player's own orders wait behind the background reads
+// they had just caused: one SLG dispatch fans out into ~10 requests (picker lists, the order itself,
+// the push-triggered refresh), so by the fifth team the order sat 2-3s behind refreshes for the first
+// four — the "fifth team leaves seconds late" report, with worldsvc answering in ~35ms throughout.
+// `interactive` waiters are served before any `background` waiter; within a lane it is still FIFO,
+// and both lanes draw from the same bucket, so the total rate cap is unchanged.
+export type GateLane = 'interactive' | 'background';
+
 const CAPACITY = 5;
 const REFILL_MS = 200; // 1 token every 200ms → steady-state 5 req/sec
 
 export class RateGate {
   private tokens = CAPACITY;
-  private readonly queue: Array<() => void> = [];
+  private readonly interactive: Array<() => void> = [];
+  private readonly background: Array<() => void> = [];
   /**
    * The refill interval, or `null` while the bucket is full and nothing is waiting.
    *
@@ -28,7 +38,7 @@ export class RateGate {
    * array right after a send call must not observe it as still-pending).
    */
   tryAcquire(): boolean {
-    if (this.tokens > 0 && this.queue.length === 0) {
+    if (this.tokens > 0 && this.waiting() === 0) {
       this.tokens--;
       this.startRefill();
       return true;
@@ -36,10 +46,10 @@ export class RateGate {
     return false;
   }
 
-  acquire(): Promise<void> {
+  acquire(lane: GateLane = 'background'): Promise<void> {
     if (this.tryAcquire()) return Promise.resolve();
     return new Promise((resolve) => {
-      this.queue.push(resolve);
+      (lane === 'interactive' ? this.interactive : this.background).push(resolve);
       // A waiter can be queued with the bucket already drained by `tryAcquire`, in which case the
       // timer is running; but also by a second `acquire` after the queue formed, where it may not be.
       this.startRefill();
@@ -59,7 +69,7 @@ export class RateGate {
       this.pump();
       // Back to a full bucket with nobody waiting: nothing for further ticks to do. The next
       // consumption arms it again.
-      if (this.tokens >= CAPACITY && this.queue.length === 0) this.stopRefill();
+      if (this.tokens >= CAPACITY && this.waiting() === 0) this.stopRefill();
     }, REFILL_MS);
   }
 
@@ -69,10 +79,14 @@ export class RateGate {
     this.refillTimer = null;
   }
 
+  private waiting(): number {
+    return this.interactive.length + this.background.length;
+  }
+
   private pump(): void {
-    while (this.tokens > 0 && this.queue.length > 0) {
+    while (this.tokens > 0 && this.waiting() > 0) {
       this.tokens--;
-      this.queue.shift()!();
+      (this.interactive.shift() ?? this.background.shift())!();
     }
   }
 }

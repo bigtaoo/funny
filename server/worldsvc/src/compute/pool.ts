@@ -107,6 +107,14 @@ interface PendingTask {
    * design, since a queued task isn't "hung"), and nothing ever re-armed it once a worker picked it up.
    */
   timer: NodeJS.Timeout | null;
+  /**
+   * `performance.now()` at submit and at hand-off to a worker. Recorded as `compute:<kind>:wait` (queueing)
+   * and `compute:<kind>:run` (on-worker time) — ADR-092 / audit §12.7 phase 0: prod has ONE worker (2 vCPU,
+   * `cpus - 1`) shared by every world's siege battles, and how long one battle takes had never been measured.
+   * A growing `wait` with a flat `run` is the signature of too few workers.
+   */
+  submittedAt: number;
+  startedAt: number;
 }
 
 interface PoolWorker {
@@ -116,6 +124,21 @@ interface PoolWorker {
   /** Set once terminate/crash handling has started, so the 'error' + 'exit' pair (both fire on a crash) only self-heals once. */
   retiring: boolean;
 }
+
+/**
+ * Where the pool reports `compute:<kind>:wait` / `compute:<kind>:run` durations. Injected by compute/index.ts
+ * (it points at worldsvc's routeTimings) rather than imported here: worker.ts type-imports this file, and the
+ * worker module-graph gate (test/compute-worker-module-graph.test.ts) keeps its load-time graph minimal.
+ */
+export type ComputeTimingSink = (label: string, ms: number) => void;
+
+/**
+ * Where the pool reports discrete events: `compute.timeout.<kind>` (a job hit the hang guard) and
+ * `compute.workerDown` (a worker was retired and respawned, which also throws away its warmed path indexes).
+ * Both used to be completely silent, which made the 2026-09-26 load ladder's ~30s path waits unexplainable
+ * from the metrics alone. Injected for the same reason as {@link ComputeTimingSink}.
+ */
+export type ComputeEventSink = (event: string, detail: string) => void;
 
 /**
  * Fixed-size pool of long-lived worker threads that run `runSiegeBattleSync` off the main thread.
@@ -129,6 +152,10 @@ interface PoolWorker {
  */
 export class ComputeWorkerPool implements ComputeBackend {
   readonly name = 'worker';
+  /** Optional timing sink (see {@link ComputeTimingSink}); null = timings are not recorded. */
+  timingSink: ComputeTimingSink | null = null;
+  /** Optional event sink (see {@link ComputeEventSink}); null = events are not reported. */
+  eventSink: ComputeEventSink | null = null;
 
   private readonly workers: PoolWorker[] = [];
   private readonly queue: PendingTask[] = [];
@@ -197,6 +224,7 @@ export class ComputeWorkerPool implements ComputeBackend {
     if (!task) return; // already timed out / worker replaced — response arrived late, discard
     this.pending.delete(msg.taskId);
     if (task.timer) clearTimeout(task.timer);
+    this.timingSink?.(`compute:${task.job.kind}:run`, performance.now() - task.startedAt);
     if (msg.ok) task.resolve(msg.result as never);
     else task.reject(new Error(msg.error));
     this.dispatch();
@@ -206,6 +234,7 @@ export class ComputeWorkerPool implements ComputeBackend {
   private onWorkerDown(entry: PoolWorker, err: Error): void {
     if (entry.retiring) return; // 'error' and 'exit' both fire for the same crash; handle once
     entry.retiring = true;
+    this.eventSink?.('compute.workerDown', err.message);
 
     const idx = this.workers.indexOf(entry);
     if (idx >= 0) this.workers.splice(idx, 1);
@@ -236,7 +265,7 @@ export class ComputeWorkerPool implements ComputeBackend {
     return new Promise<ComputeJobResult<J>>((resolve, reject) => {
       const taskId = this.nextTaskId++;
       // No timer yet — armed in `dispatch()` once a worker actually picks this up (see PendingTask.timer doc).
-      this.queue.push({ taskId, job, resolve: resolve as (r: never) => void, reject, timer: null });
+      this.queue.push({ taskId, job, resolve: resolve as (r: never) => void, reject, timer: null, submittedAt: performance.now(), startedAt: 0 });
       this.dispatch();
     });
   }
@@ -273,6 +302,7 @@ export class ComputeWorkerPool implements ComputeBackend {
     const task = this.pending.get(taskId);
     if (!task) return; // already resolved (queued-but-undispatched tasks have no timer and can't reach here)
     this.pending.delete(taskId);
+    this.eventSink?.(`compute.timeout.${task.job.kind}`, `after ${this.taskTimeoutMs}ms`);
     // Find and retire whichever worker is stuck on this task — it's hung (bad engine bug / infinite loop),
     // not merely slow, so terminating it (rather than waiting indefinitely) keeps the pool from shrinking
     // to zero usable workers over time.
@@ -292,6 +322,8 @@ export class ComputeWorkerPool implements ComputeBackend {
       task.timer = setTimeout(() => this.onTaskTimeout(task.taskId), this.taskTimeoutMs);
       task.timer.unref?.();
       idle.currentTaskId = task.taskId;
+      task.startedAt = performance.now();
+      this.timingSink?.(`compute:${task.job.kind}:wait`, task.startedAt - task.submittedAt);
       this.pending.set(task.taskId, task);
       const req: TaskRequest = { taskId: task.taskId, job: task.job };
       idle.worker.postMessage(req);

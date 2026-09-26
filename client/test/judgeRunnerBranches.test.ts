@@ -15,7 +15,7 @@
  * check this" and "this player cheated" must never be the same answer.
  */
 import { describe, it, expect } from 'vitest';
-import { CAMPAIGN_LEVELS, CAMPAIGN_LEVEL_ORDER } from '../src/game/campaign/levels';
+import { CAMPAIGN_LEVELS, CAMPAIGN_LEVEL_ORDER } from '@nw/engine/campaign/levels';
 import { runJudge } from '../src/net/judgeRunner';
 import { PlayerCommands } from '../src/net/proto/game';
 import type { JudgeRequest } from '../src/net/proto/transport';

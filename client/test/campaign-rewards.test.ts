@@ -7,7 +7,7 @@ import {
   buildStarContext,
   remainingHpPct,
   type StarContext,
-} from '../src/game/meta/campaignRewards';
+} from '@nw/engine/campaign/stars';
 import type { LevelDefinition } from '@nw/engine';
 
 // From PVE_INTEGRITY_PLAN §8, clear settlement (progress/stars/materials) is server-authoritative;
