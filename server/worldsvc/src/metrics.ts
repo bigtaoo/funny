@@ -13,6 +13,7 @@
 // wherever they happened to be constructed.
 import { performance } from 'node:perf_hooks';
 import { RouteTimings, startEventLoopMonitor, type Logger, type EventLoopMonitor, type LatencySnapshot, type LoopLagSnapshot } from '@nw/shared';
+import { INSTANCE_ID } from './instance';
 
 /**
  * Per-label latency for everything that competes for the one thread: HTTP routes (`GET /world/map`),
@@ -70,6 +71,9 @@ export function worldCounters(): Record<string, number> {
 }
 
 export interface WorldMetrics {
+  /** Which process this snapshot is from (instance.ts). Every number below is per-process: with more than one
+   *  worldsvc, snapshots from different instances are separate series, never one to be diffed against another. */
+  instance: string;
   /** Milliseconds the event loop ran late. The headline number: a stall here IS the failure mode. */
   loopLagMs: LoopLagSnapshot;
   /** Per-route / per-task latency, slowest p99 first. */
@@ -100,6 +104,7 @@ export function startWorldMetrics(log: Logger, compute?: string): EventLoopMonit
 /** Non-destructive read for the ops endpoint. Safe to poll; never disturbs the heartbeat's own window. */
 export function worldMetricsSnapshot(): WorldMetrics {
   return {
+    instance: INSTANCE_ID,
     loopLagMs: loopMonitor?.snapshot() ?? { p50: 0, p90: 0, p99: 0, max: 0 },
     labels: routeTimings.snapshot(),
     counters: Object.fromEntries(counters),

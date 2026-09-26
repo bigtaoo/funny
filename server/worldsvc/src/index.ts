@@ -17,6 +17,7 @@ import { HttpWorldMailClient, nullWorldMailClient } from './mailClient';
 import { HttpWorldSocialsvcClient, nullWorldSocialsvcClient } from './socialsvcClient';
 import { loadWorldsvcEnv } from './config';
 import { getComputeBackend, shutdownComputeBackend } from './compute';
+import { INSTANCE_ID } from './instance';
 
 async function main(): Promise<void> {
   const env = loadWorldsvcEnv();
@@ -47,8 +48,10 @@ async function main(): Promise<void> {
 
   // socialsvc internal client (P1: family route proxy + channel push delegation + familyId mirror).
   const socialsvc = env.socialsvcInternalUrl
-    ? new HttpWorldSocialsvcClient(env.socialsvcInternalUrl, env.internalKey)
+    ? new HttpWorldSocialsvcClient(env.socialsvcInternalUrl, env.internalKey, INSTANCE_ID)
     : nullWorldSocialsvcClient;
+  // Cross-process membership invalidation (§12.7 phase 1); without Redis the 10s TTL is the only bound, as before.
+  if (redis && socialsvc instanceof HttpWorldSocialsvcClient) await socialsvc.attachInvalidationBus(redis);
 
   // SLG shop price/effect override cache: polls admin for raw overrides + resolves locally (no DB connection,
   // refreshed every 30s; stale cache used when admin is unreachable, code defaults used if never fetched).
@@ -178,7 +181,7 @@ async function main(): Promise<void> {
   const compute = getComputeBackend();
   const loopMonitor = startWorldMetrics(hbLog, compute.name);
   startHeartbeat(hbLog, {
-    extra: () => ({ compute: compute.name, loopLagMs: loopMonitor.drain(), routes: routeTimings.drain(), counters: worldCounters() }),
+    extra: () => ({ instance: INSTANCE_ID, compute: compute.name, loopLagMs: loopMonitor.drain(), routes: routeTimings.drain(), counters: worldCounters() }),
   });
 
   // Warm the per-world terrain/connectivity index on every compute worker before players arrive

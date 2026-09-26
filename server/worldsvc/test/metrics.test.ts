@@ -6,6 +6,7 @@
 // stale windows forever. So the asymmetry is pinned here rather than left to the comment.
 import { describe, it, expect, afterEach } from 'vitest';
 import { createLogger } from '@nw/shared';
+import { INSTANCE_ID, initialSeq } from '../src/instance';
 import { routeTimings, startWorldMetrics, stopWorldMetrics, worldMetricsSnapshot, countMongoCommands, worldCounters } from '../src/metrics';
 
 const log = createLogger('worldsvc-metrics-test');
@@ -40,6 +41,11 @@ describe('worldMetricsSnapshot', () => {
     // Reading metrics must have no side effects: resolving the name via getComputeBackend() would spawn
     // the worker pool, so an ops poll (or this test) would create threads merely by looking.
     expect(worldMetricsSnapshot().compute).toBe('unset');
+  });
+
+  it('names the process it came from, so snapshots from two instances are never mixed up', () => {
+    expect(worldMetricsSnapshot().instance).toBe(INSTANCE_ID);
+    expect(INSTANCE_ID).toMatch(/^.+:\d+:[0-9a-f]{6}$/);
   });
 
   it('still answers before the monitor is started, with a zeroed lag block', () => {
@@ -105,3 +111,18 @@ describe('worldMetricsSnapshot elu', () => {
     expect(b.activeMs).toBeGreaterThanOrEqual(a.activeMs);
   });
 });
+
+describe('initialSeq', () => {
+  it('starts id counters at a random non-negative integer, well inside the safe-integer range', () => {
+    const seen = new Set<number>();
+    for (let i = 0; i < 20; i++) {
+      const n = initialSeq();
+      expect(Number.isSafeInteger(n)).toBe(true);
+      expect(n).toBeGreaterThanOrEqual(0);
+      expect(n).toBeLessThan(2 ** 40);
+      seen.add(n);
+    }
+    expect(seen.size).toBeGreaterThan(1);
+  });
+});
+

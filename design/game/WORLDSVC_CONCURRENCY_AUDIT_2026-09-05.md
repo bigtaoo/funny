@@ -1219,3 +1219,24 @@ p50 21.2 → 15.3ms（−28%），**p99 555 → 568ms（纹丝不动）**。并�
 `jwt.test.ts` 新增与 `jsonwebtoken` 字符串 secret 的互通、拒绝 `alg:none`、空 secret 仍失败三条。类型检查、构建、文件长度门禁通过。
 1000 人重测留待下次压测时一并做（本节只记单元测试与微基准的数字）。
 
+### 12.10 阶段 1：多进程的正确性前提（2026-09-26，接 §12.7）
+
+§12.7 列的四项小改动全部落地。它们不增加吞吐，只保证「将来起第二个 worldsvc 进程」或「阶段 2 在一个进程里并发结算」时不出错。
+
+| 项 | 以前 | 现在 |
+|---|---|---|
+| 行军 / 攻城 ID | `marchSeq` / `siegeSeq` 从 0 开始的进程内计数。两个进程（或同一毫秒内重启）会给同一玩家、同一毫秒铸出相同 ID | 新增 `worldsvc/src/instance.ts`：计数器从随机 40 位起点开始（`initialSeq`）。重合需要同玩家、同毫秒、两个计数器恰好落在同一值；万一重合，`_id` 唯一索引会让插入失败，而不是合并 |
+| `advanceMarch` 的认领 | 开头 `findOne` 重读一次，之后逐格走、逐格可能开战；两个处理者可以同时走同一支行军，同一场遭遇战打两遍（写的是**防守方**的账） | 重读改为**带租约的条件更新**（`MarchDoc.stepLeaseUntil`，`MARCH_STEP_LEASE_MS = 60s`），仍是一次往返。只有无人持有或租约已过期时才能拿到；游标写回时顺带释放，且只在仍持有时生效（过期被接管的旧持有者不能把游标写回去）；异常时立即交还。持有者崩溃时租约自然过期，最多晚 1 分钟 |
+| 批量推进（`applyFastSteps`） | 游标更新只守 `status` / `kind` | 再加两道比较并交换：`stepIndex` 必须还是做计划时的那一格；被 `advanceMarch` 持有的行军跳过。确认读分不出的唯一情况，是另一个处理者走了完全相同的一步，而批量推进只写游标和自己的占位格，这种情况是幂等的 |
+| socialsvc 成员缓存 | 「worldsvc 自己的写立即失效」只在写的那个进程里成立，其它进程要等满 10 秒 TTL | `setSect` / `resetSlgState` 写完后通过 Redis 频道 `nw:worldsvc:social-invalidate` 广播 `{familyId, from}`，每个进程收到后丢掉本地副本，自己发的忽略。`WorldRedis` 新增可选的 `subscribe`（首次使用时开第二条连接，订阅态连接不能发普通命令）。没有 Redis 或丢消息时退回 TTL，和单进程时的保证相同 |
+| 指标 | 心跳和 `/admin/world/metrics` 看不出来自哪个进程 | 两处都带 `instance`（`主机名:pid:随机后缀`）。多进程时这是各自独立的序列，不能拿来互相做差 |
+
+**代价**：`advanceMarch` 的重读从 `findOne` 变成 `findOneAndUpdate`，往返数不变；只有极少的非行军提前返回和异常路径多一次释放写。批量路径不增加往返。
+
+**验证**：新增 `march-step-lease.e2e.test.ts`（逐格路径：正常推进不留租约、被持有时不动也不抢、过期租约被接管；批量路径：跳过被持有的，照常推进空闲的）；
+`socialsvc-client-membership-cache.test.ts` 新增跨进程失效两条；`metrics.test.ts` 新增 `instance` 与 `initialSeq` 两条；
+`arrival-batch-roundtrips` 的往返断言从 `marches.findOne` 改为 `marches.findOneAndUpdate`（仍是 1 次）。
+worldsvc 全量：124 个文件 / 1476 条，1474 过；挂的 2 条都在 `city-siege.e2e`（world-center 占领、赛季结算排名），单独重跑 41/41 全过——是满载下的时序抖动，与本阶段无关。
+
+**阶段 1 不包含的**：按世界的调度租约（§12.7 阶段 3）。现在调度器仍然没有 `worldId` 过滤，两个进程会扫同一批到期行军；有了上面的认领，它们不会重复结算，但会互相抢。真起多副本前还要做阶段 3。
+
