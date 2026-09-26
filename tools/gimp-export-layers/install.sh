@@ -9,8 +9,11 @@
 
 set -euo pipefail
 
-SRC="$(cd "$(dirname "$0")" && pwd)/export_layers_cropped.py"
-[ -f "$SRC" ] || { echo "Plugin source file not found: $SRC" >&2; exit 1; }
+DIR="$(cd "$(dirname "$0")" && pwd)"
+FILES=(export_layers_cropped.py speckle.py)
+for f in "${FILES[@]}"; do
+  [ -f "$DIR/$f" ] || { echo "Plugin source file not found: $DIR/$f" >&2; exit 1; }
+done
 
 # Candidate config root directories: Linux and macOS
 CANDIDATES=(
@@ -25,7 +28,7 @@ for root in "${CANDIDATES[@]}"; do
     [ -d "$vdir" ] || continue
     dest="$vdir/plug-ins/export_layers_cropped"
     mkdir -p "$dest"
-    cp -f "$SRC" "$dest/export_layers_cropped.py"
+    for f in "${FILES[@]}"; do cp -f "$DIR/$f" "$dest/$f"; done
     chmod +x "$dest/export_layers_cropped.py"
     echo "Installed to $(basename "$vdir"): $dest"
     found=1
