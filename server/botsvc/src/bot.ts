@@ -1,16 +1,28 @@
 // Single bot session (BOTSVC_DESIGN §3.2): login, family join/leave-on-low-activity, payment-tier
 // bootstrap, SLG city actions (§3.2 slg_action), and — this increment — ranked matchmaking + battle
 // over a real gateway+gameserver WS connection driven by @nw/engine's AISystem (§1 B3, §8).
-import { BUILD_QUEUE_SLOTS, RESOURCE_TYPES, buildCost, buildGateReason } from '@nw/shared';
+import { BUILD_QUEUE_SLOTS, RESOURCE_TYPES, SECT_CREATE_COST, buildCost, buildGateReason } from '@nw/shared';
 import { MetaClient } from './metaClient';
-import { SocialClient } from './socialClient';
+import { SocialClient, type FamilyView } from './socialClient';
 import { CommercialClient } from './commercialClient';
 import { WorldClient, type BuildingKey, type PlayerWorldView } from './worldClient';
 import { playRankedMatch } from './battleSession';
 import type { BotIdentity } from './pool';
+import { hasCode } from './apiError';
+import { BOT_FAMILY_ROSTER, BOT_SECT_ROSTER, BotOrgRegistry, PENDING_SEAT_TTL_MS, botFamilySlot } from './orgs';
 
-/** Below this prosperity, a bot looks for a livelier family instead (mirrors a real player ditching a dead guild). */
-const FAMILY_PROSPERITY_LEAVE_THRESHOLD = 10;
+/** Family upkeep pacing per role (BOTSVC_DESIGN §3.3): officers approve applications, members just idle. */
+const FAMILY_SEEK_INTERVAL_MS = 60_000;
+const FAMILY_OFFICER_INTERVAL_MS = 60_000;
+const FAMILY_MEMBER_INTERVAL_MS = 10 * 60_000;
+/**
+ * After filing an application, don't try again for this long. The server allows one pending request
+ * per account and never expires or lets you withdraw it, so re-applying sooner can only ever answer
+ * ALREADY_REQUESTED; after this the bot looks again in case a full family rejected or dropped it.
+ */
+const PENDING_JOIN_RECHECK_MS = PENDING_SEAT_TTL_MS;
+/** A leader keeps this many elders so applications still get approved while it is offline. */
+const FAMILY_ELDER_TARGET = 2;
 
 /** P1-buildable keys only (BuildingKey's wall/academy are P2, not yet buildable — see contracts/openapi-world.yml). */
 const P1_BUILDING_KEYS: BuildingKey[] = [
@@ -102,6 +114,10 @@ export class BotSession {
   /** Set while a battle is in flight (runBattle) — logout() aborts it instead of leaving the match
    *  running to completion against an account the fleet no longer tracks as online (2026-08-04 fix). */
   private battleAbort: AbortController | undefined;
+  /** Earliest wall-clock time family upkeep runs again (interval depends on role, see tickFamily). */
+  private nextFamilyAt = 0;
+  /** Set after filing a join request: don't re-apply before this (PENDING_JOIN_RECHECK_MS). */
+  private pendingJoinUntil = 0;
 
   constructor(
     readonly identity: BotIdentity,
@@ -111,6 +127,8 @@ export class BotSession {
     private readonly world: WorldClient,
     private readonly battle: BattleOptions,
     private readonly slg: SlgOptions = { intervalMs: DEFAULT_SLG_INTERVAL_MS },
+    /** Process-wide: every session in the fleet must share one, or the seat/create bookkeeping is per-bot and useless. */
+    private readonly orgs: BotOrgRegistry = new BotOrgRegistry(),
   ) {}
 
   async login(): Promise<void> {
@@ -205,18 +223,135 @@ export class BotSession {
     }
   }
 
-  /** One tick of family upkeep (§3.3): join if familyless, leave+re-search if the current family looks dead. */
+  /**
+   * One tick of family + sect upkeep (§3.3). A familyless bot applies to the first bot family with a
+   * free seat, or founds the next roster slot once all earlier ones are full; officers approve every
+   * pending application; leaders also appoint elders and get their family into a bot sect.
+   *
+   * Until 2026-09-26 this failed on every single call (1.2M times on live): it searched with an empty
+   * `tag` the route rejects, joined by TAG instead of family id, and never knew joining had become an
+   * application someone has to approve. No bot was ever in a family.
+   */
   async tickFamily(): Promise<void> {
     if (!this.token) return;
+    const now = Date.now();
+    if (now < this.nextFamilyAt) return;
     const mine = await this.social.myFamily(this.token);
     if (!mine) {
-      const candidates = await this.social.searchFamilies(this.token, '');
-      const pick = candidates[0];
-      if (pick) await this.social.joinFamily(this.token, pick.tag);
+      this.nextFamilyAt = now + FAMILY_SEEK_INTERVAL_MS;
+      await this.seekFamily(now);
       return;
     }
-    if (mine.prosperity < FAMILY_PROSPERITY_LEAVE_THRESHOLD) {
-      await this.social.leaveFamily(this.token);
+    this.orgs.clearPending(this.identity.deviceId);
+    const role = mine.members?.find((m) => m.accountId === this.accountId)?.role ?? 'member';
+    if (role === 'member') {
+      this.nextFamilyAt = now + FAMILY_MEMBER_INTERVAL_MS;
+      return;
+    }
+    this.nextFamilyAt = now + FAMILY_OFFICER_INTERVAL_MS;
+    await this.approveJoinRequests();
+    if (role !== 'leader') return;
+    await this.appointElder(mine);
+    await this.tickSect(mine);
+  }
+
+  private async seekFamily(now: number): Promise<void> {
+    if (!this.token || now < this.pendingJoinUntil) return;
+    const pick = await this.orgs.pickFamily(this.social, this.token);
+    if (!pick) return;
+    if (pick.kind === 'create') {
+      const { name, tag } = BOT_FAMILY_ROSTER[pick.slot]!;
+      try {
+        this.orgs.noteFamily(pick.slot, await this.social.createFamily(this.token, name, tag));
+      } catch (e) {
+        // Lost the race to another founder, or a human took the TAG: re-read the slot next time.
+        this.orgs.forgetFamily(pick.slot);
+        throw e;
+      }
+      return;
+    }
+    try {
+      await this.social.requestJoin(this.token, pick.familyId);
+    } catch (e) {
+      if (hasCode(e, 'FAMILY_FULL', 'NOT_FOUND')) {
+        this.orgs.forgetFamily(pick.slot);
+        return;
+      }
+      // Our one allowed pending request already exists (possibly filed before a restart) — wait on it.
+      if (!hasCode(e, 'ALREADY_REQUESTED')) throw e;
+    }
+    this.orgs.notePending(pick.slot, this.identity.deviceId);
+    this.pendingJoinUntil = now + PENDING_JOIN_RECHECK_MS;
+  }
+
+  /**
+   * Accept every pending application. Once the family is full the rest are rejected rather than left
+   * sitting: an applicant can hold only one request and cannot withdraw it, so a request nobody will
+   * ever accept pins that bot familyless until someone says no.
+   */
+  private async approveJoinRequests(): Promise<void> {
+    if (!this.token) return;
+    const requests = await this.social.listJoinRequests(this.token);
+    let full = false;
+    for (const r of requests) {
+      if (!full) {
+        try {
+          await this.social.respondJoinRequest(this.token, r.requestId, true);
+          continue;
+        } catch (e) {
+          // FAMILY_FULL: the accept already consumed this request server-side; the applicant is free.
+          // ALREADY_IN_FAMILY: they got into another family first. Neither is ours to retry.
+          if (hasCode(e, 'FAMILY_FULL')) full = true;
+          else if (!hasCode(e, 'ALREADY_IN_FAMILY', 'NOT_FOUND')) throw e;
+          continue;
+        }
+      }
+      await this.social.respondJoinRequest(this.token, r.requestId, false).catch((e: unknown) => {
+        if (!hasCode(e, 'NOT_FOUND')) throw e;
+      });
+    }
+  }
+
+  /** Promote the longest-serving plain member, one per tick, until FAMILY_ELDER_TARGET elders exist. */
+  private async appointElder(mine: FamilyView): Promise<void> {
+    if (!this.token || !mine.members) return;
+    if (mine.members.filter((m) => m.role === 'elder').length >= FAMILY_ELDER_TARGET) return;
+    const candidate = mine.members
+      .filter((m) => m.role === 'member' && m.accountId)
+      .sort((a, b) => a.joinedAt - b.joinedAt)[0];
+    if (candidate) await this.social.setRole(this.token, candidate.accountId!, 'elder');
+  }
+
+  /**
+   * Leader-only sect step, in the world this bot joined via tickSlg. Leaders of family slots 0..2
+   * found the three roster sects; every other bot family joins the emptiest one with room.
+   */
+  private async tickSect(mine: FamilyView): Promise<void> {
+    if (!this.token || !this.accountId || !this.worldId || mine.sectId) return;
+    const familySlot = botFamilySlot(mine);
+    if (familySlot < 0) return;
+    const worldId = this.worldId;
+    const sects = await this.orgs.sectsIn(this.world, this.token, worldId);
+    const own = BOT_SECT_ROSTER[familySlot];
+    if (own && !sects.some((s) => s.tag === own.tag)) {
+      // No bot has SECT_CREATE_COST on its own (live max: 1450 coins), so the founder is granted it once;
+      // the orderId makes a retry after a failed create a no-op instead of a second grant.
+      await this.commercial.grantCoins(
+        this.accountId,
+        SECT_CREATE_COST,
+        `bot-sect-${this.identity.deviceId}-${worldId}`,
+        'bot_sect_found',
+      );
+      this.orgs.forgetSects(worldId);
+      await this.world.createSect(this.token, worldId, own.name, own.tag);
+      return;
+    }
+    const target = BotOrgRegistry.pickSect(sects);
+    if (!target) return;
+    try {
+      await this.world.joinSect(this.token, worldId, target.sectId);
+    } finally {
+      this.orgs.forgetSects(worldId);
     }
   }
 

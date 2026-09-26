@@ -60,6 +60,30 @@ describe('WorldClient HTTP methods', () => {
     }]);
   });
 
+  it('listSects GETs /sect/list?worldId=', async () => {
+    const calls = install({ ok: true, data: [] });
+    expect(await new WorldClient(BASE).listSects(TOKEN, 's3-0')).toEqual([]);
+    expect(calls[0]!.url).toBe(`${BASE}/sect/list?worldId=s3-0`);
+  });
+
+  it('createSect / joinSect POST their bodies', async () => {
+    const calls = install({ ok: true, data: {} });
+    await new WorldClient(BASE).createSect(TOKEN, 's3-0', 'Ink Pact', 'INKP');
+    await new WorldClient(BASE).joinSect(TOKEN, 's3-0', 's:s3-0:INKP');
+    expect(calls.map((c) => [c.url, c.body])).toEqual([
+      [`${BASE}/sect/create`, { worldId: 's3-0', name: 'Ink Pact', tag: 'INKP' }],
+      [`${BASE}/sect/join`, { worldId: 's3-0', sectId: 's:s3-0:INKP' }],
+    ]);
+  });
+
+  it('a {code, message} error envelope keeps its code instead of stringifying to [object Object]', async () => {
+    install({ ok: false, error: { code: 'SECT_FULL', message: 'sect is full' } });
+    await expect(new WorldClient(BASE).joinSect(TOKEN, 's3-0', 's:x')).rejects.toMatchObject({
+      code: 'SECT_FULL',
+      message: 'SECT_FULL: sect is full',
+    });
+  });
+
   it('a failed call (ok:false) throws the server-provided error message', async () => {
     install({ ok: false, error: 'season not open' });
     await expect(new WorldClient(BASE).joinSeason(TOKEN, 3)).rejects.toThrow('season not open');
