@@ -8,7 +8,7 @@ import { SectService } from './sectService';
 import { NationChannelService } from './nationChannelService';
 import { MapTemplateService } from './mapTemplateService';
 import { startHttpApi } from './httpApi';
-import { routeTimings, startWorldMetrics, stopWorldMetrics } from './metrics';
+import { routeTimings, startWorldMetrics, stopWorldMetrics, countMongoCommands, worldCounters } from './metrics';
 import { startScheduler } from './scheduler';
 import { HttpWorldGatewayClient } from './gatewayClient';
 import { HttpWorldCommercialClient, nullWorldCommercialClient } from './commercialClient';
@@ -21,7 +21,9 @@ import { getComputeBackend, shutdownComputeBackend } from './compute';
 async function main(): Promise<void> {
   const env = loadWorldsvcEnv();
 
-  const mongo = await createWorldMongo(env.worldMongoUri, env.worldMongoDb);
+  // monitorCommands: count every Mongo command (Atlas M0's 100 ops/s ceiling, audit §9 / §12.7).
+  const mongo = await createWorldMongo(env.worldMongoUri, env.worldMongoDb, { monitorCommands: true });
+  countMongoCommands(mongo.client);
   await mongo.ensureIndexes();
   await mongo.runMigrations();
 
@@ -88,6 +90,7 @@ async function main(): Promise<void> {
   });
   if (env.adminInternalUrl) void wordlists.start();
 
+  const openLog = createLogger('worldsvc');
   const svc = new WorldService({
     cols: mongo.collections,
     redis,
@@ -101,6 +104,14 @@ async function main(): Promise<void> {
     mapW: SLG_MAP_W,
     mapH: SLG_MAP_H,
     now: () => Date.now(),
+    // Warm the new world's path index before its first march (see WorldServiceDeps.onWorldOpened).
+    onWorldOpened: (worldId) => {
+      const t0 = Date.now();
+      void getComputeBackend()
+        .warmWorld(worldId, SLG_MAP_W, SLG_MAP_H)
+        .then(() => openLog.info('compute path index warmed', { world: worldId, ms: Date.now() - t0, on: 'open' }))
+        .catch((e) => openLog.warn('compute path index warmup failed (falling back to lazy build)', { world: worldId, err: (e as Error).message }));
+    },
   });
 
   const sectSvc = new SectService({
@@ -163,7 +174,7 @@ async function main(): Promise<void> {
   const compute = getComputeBackend();
   const loopMonitor = startWorldMetrics(hbLog, compute.name);
   startHeartbeat(hbLog, {
-    extra: () => ({ compute: compute.name, loopLagMs: loopMonitor.drain(), routes: routeTimings.drain() }),
+    extra: () => ({ compute: compute.name, loopLagMs: loopMonitor.drain(), routes: routeTimings.drain(), counters: worldCounters() }),
   });
 
   // Warm the per-world terrain/connectivity index on every compute worker before players arrive

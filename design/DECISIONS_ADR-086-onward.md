@@ -247,6 +247,9 @@ docker compose -f docker-compose.cloud.yml --env-file .env config | grep MONGO_U
 - **改常量之前必须完成的事（按顺序）**：
   1. **服务端容量验证**：在干净的专用测试世界上压 3000 人量级，确认单世界的指令率、`arrivals.deferred`、推送扇出、`getMap` 出口在预算内；
      不够就先做扩容（审计文档 §12.5 起的后续章节）。
+     **2026-09-26 第一轮实测（审计文档 §12.8）：不够。** 真人节奏 500 人时 Mongo 已是 Atlas M0 配额的 2.5 倍；
+     1000 人时主线程利用率 84%，单个计算 worker 让寻路排队到秒级，结算吞吐封顶在 8~10 条/秒且积压持续增长。
+     这一条仍未满足，常量继续保持 500。
   2. **经济重跑**，三处直接吃这个常量：
      - 险地 binding 稀释（`ECONOMY_VERIFICATION_LOG_CAPACITY.md` §13-SLG-STRONGHOLD）：分母 `SLG_WORLD_CAPACITY_TARGET` 从 400 变大，
        人均稀释会**大幅下降**（ADR-054 当初是为把 65% 压回 13% 才把每级掉落从 4 降到 0.8）——要重新校准，方向可能是把掉落调回去；

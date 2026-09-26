@@ -117,6 +117,7 @@ export class SeasonManagementService {
     // Initialize the 10 capital documents + the ~64 wild-city documents (ADR-074 P1).
     await this.core.initNations(worldId);
     await this.core.initCities(worldId);
+    this.core.deps.onWorldOpened?.(worldId);
   }
 
   /**

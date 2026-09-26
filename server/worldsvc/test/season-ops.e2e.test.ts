@@ -391,6 +391,21 @@ describe.skipIf(!mongo)('worldsvc season ops e2e', () => {
     expect(await m.collections.cities.countDocuments({ worldId: W })).toBeGreaterThan(60);
   });
 
+  it('open: tells onWorldOpened about the world once its documents exist (the bootstrap warms the path index there)', async () => {
+    // Without the hook the first march in a new world builds the ~3s path index on a compute worker, and
+    // prod's single worker makes every world wait for it (audit §12.7 phase 0, 2026-09-26).
+    await seed('active');
+    await m.collections.worlds.deleteMany({});
+    const opened: string[] = [];
+    const hooked = new WorldService({
+      cols: m.collections, redis: null, socialsvc, mapW: SLG_MAP_W, mapH: SLG_MAP_H, mail: fakeMail, now: () => 1_700_000_000_000,
+      onWorldOpened: (id) => { opened.push(id); },
+    });
+    await hooked.openSeason(W, SEASON, 5, 10000);
+    expect(opened).toEqual([W]);
+    expect(await m.collections.worlds.countDocuments({ _id: W, status: 'open' })).toBe(1);
+  });
+
   // Regression for the 2026-07-29 audit fix: resetSeason wiped tiles/marches/occupations/stationed in
   // Mongo but never cleared the ADR-051 occ/cover Redis hashes — a recycled worldId could inherit stale
   // spatial-index entries (a parked-team `leaveAt` is MAX_SAFE_INTEGER, so it never naturally expires)

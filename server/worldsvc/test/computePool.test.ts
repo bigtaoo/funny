@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ComputeWorkerPool, defaultComputePoolSize } from '../src/compute/pool';
+import { routeTimings } from '../src/metrics';
 import { runSiegeBattleSync, synthesizeArmy, SIEGE_SYNTH_ARMY_MAX_TROOPS, type SiegeBattleInput } from '../src/siegeEngine';
 
 const CRASH_WORKER = path.join(__dirname, 'fixtures', 'crashWorker.ts');
@@ -40,6 +41,24 @@ describe('defaultComputePoolSize', () => {
     const n = defaultComputePoolSize();
     expect(n).toBeGreaterThanOrEqual(1);
     expect(n).toBeLessThanOrEqual(Math.max(1, os.cpus().length - 1));
+  });
+});
+
+describe('ComputeWorkerPool timing labels (ADR-092 / audit §12.7 phase 0)', () => {
+  it('records queue wait and on-worker run per job kind, and a single worker makes the second task wait', async () => {
+    routeTimings.drain();
+    const pool = makePool(1);
+    pool.timingSink = (label, ms) => routeTimings.record(label, ms);
+    await Promise.all([pool.runSiege(bigEvenBattle(1)), pool.runSiege(bigEvenBattle(2))]);
+    const snap = routeTimings.snapshot();
+    const run = snap['compute:siege:run']!;
+    const wait = snap['compute:siege:wait']!;
+    expect(run.count).toBe(2);
+    expect(wait.count).toBe(2);
+    // One worker: the second battle queues behind the first, so the longest wait covers at least most
+    // of one run. That queueing is exactly what prod's single worker (2 vCPU) does to every world.
+    expect(wait.max).toBeGreaterThanOrEqual(run.max * 0.5);
+    routeTimings.drain();
   });
 });
 
@@ -117,6 +136,14 @@ describe('ComputeWorkerPool task timeout', () => {
     await expect(pool.runSiege(bigEvenBattle(1))).rejects.toThrow(/timed out/);
     expect(Date.now() - start).toBeGreaterThanOrEqual(190); // allow a few ms of scheduling slop
     expect(pool.size).toBe(1); // hung worker was terminated + replaced
+  });
+
+  it('reports the timeout and the worker restart to the event sink (both used to be silent)', async () => {
+    const pool = makePool(1, 200, HANG_WORKER);
+    const events: string[] = [];
+    pool.eventSink = (event) => events.push(event);
+    await expect(pool.runSiege(bigEvenBattle(1))).rejects.toThrow(/timed out/);
+    expect(events).toEqual(['compute.timeout.siege', 'compute.workerDown']);
   });
 });
 

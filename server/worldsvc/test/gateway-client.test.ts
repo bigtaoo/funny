@@ -10,6 +10,7 @@ import {
   type SlgPushMsg,
   type BroadcastRedis,
 } from '../src/gatewayClient';
+import { worldCounters } from '../src/metrics';
 
 const KEY = 'k-internal';
 
@@ -90,6 +91,15 @@ describe('HttpWorldGatewayClient.push', () => {
     const c = new HttpWorldGatewayClient(null, KEY);
     await expect(c.push('acc1', msg)).resolves.toBeUndefined();
     expect(requests).toHaveLength(0);
+  });
+
+  it('counts each sent push in total and per kind (audit §12.7 push fan-out), and not the no-op ones', async () => {
+    const before = worldCounters();
+    await new HttpWorldGatewayClient(base, KEY).push('acc1', msg);
+    await new HttpWorldGatewayClient(null, KEY).push('acc1', msg);
+    const after = worldCounters();
+    expect((after['push.sent'] ?? 0) - (before['push.sent'] ?? 0)).toBe(1);
+    expect((after[`push.${msg.kind}`] ?? 0) - (before[`push.${msg.kind}`] ?? 0)).toBe(1);
   });
 });
 
