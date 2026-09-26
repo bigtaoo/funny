@@ -12,10 +12,12 @@
 // Independent sibling class (2026-08-11 mixin-chain split, 形态②): the only one of the three march
 // domains that needs `siege` — assembled by composition in ../combatMarch.ts.
 import type { WorldCore } from '../core';
+import type { MarchDoc } from '../db';
 import type { SiegeService } from '../combatSiege';
 import { applyFastSteps, collectArrivalBatch } from './arrivalBatch';
 import { advanceMarch } from './arrivalWalk';
 import { applyArrival } from './arrivalSettle';
+import { collectSettlementKeys, concurrentEligible } from './settlePlan';
 import { bumpCounter } from '../metrics';
 
 /**
@@ -49,7 +51,8 @@ const lastCapWarnAt: Record<'step' | 'settlement', number> = { step: 0, settleme
  * The deep batching of 2026-09-05 took the *stepping* half of the arrival tick from p50 1761ms to ~2ms, and
  * the counters it added then named what was left: in a 32s storm, 1071 of the 1797 serial marches were
  * `arriving` — each one a real capture battle plus a metaserver round trip. That half cannot be batched (it
- * writes the DEFENDER's ledger) and cannot be made concurrent for the same reason, so a tick with dozens of
+ * writes the DEFENDER's ledger) and, at the time, could not be made concurrent for the same reason (2026-09-26:
+ * now it partly can — see SETTLE_CONCURRENCY and settlePlan.ts), so a tick with dozens of
  * them due simply ran for seconds, and while it ran nothing else on this single thread moved: not the other
  * scheduler tasks, not `POST /world/march`, not `getMap`.
  *
@@ -71,6 +74,15 @@ const SETTLE_SLICE_MS = (() => {
   const n = Number(raw);
   return Number.isFinite(n) && n >= 0 ? n : 150;
 })();
+
+/**
+ * How many settlements one pass may have in flight at once (§12.7 phase 2 / §12.11, settlePlan.ts). Only
+ * settlements whose predicted write sets are disjoint from every other settlement of the pass ever overlap;
+ * the rest still run alone, in due order. The bound is on in-flight work, not on correctness: it keeps a storm
+ * from firing hundreds of battles at the compute pool and hundreds of round trips at Atlas in the same instant.
+ * `NW_SLG_SETTLE_CONCURRENCY=1` is the kill switch — back to strictly serial, and the prediction reads skipped.
+ */
+const SETTLE_CONCURRENCY = Math.max(1, Math.floor(Number(process.env.NW_SLG_SETTLE_CONCURRENCY) || 8));
 
 /**
  * Hitting the cap means more marches were due this pass than one scan will return. The remainder is not
@@ -181,34 +193,72 @@ export class ArrivalService {
       .toArray();
     warnIfCapped(due.length, t, 'settlement');
     const startedAt = performance.now();
+    // Which of them may overlap (settlePlan.ts). Skipped — and its reads with it — when nothing could overlap.
+    const eligible =
+      SETTLE_CONCURRENCY > 1 && due.length > 1
+        ? concurrentEligible(await collectSettlementKeys(this.core, due, t))
+        : due.map(() => false);
     let n = 0;
     let i = 0;
-    for (; i < due.length; i++) {
-      // Checked between settlements, never during one: a half-applied capture is not a thing this code can
-      // represent. The first march always runs, so a slice smaller than one settlement still makes progress
-      // rather than deadlocking the queue.
-      if (sliceMs > 0 && i > 0 && performance.now() - startedAt >= sliceMs) break;
-      const m = due[i]!;
-      if (m.path && m.stepIndex != null && m.nextStepAt != null) {
-        // Stepping march at its destination: walk out the remaining cells (it may be several, if this task
-        // has fallen behind) and settle on the final one.
-        if (await advanceMarch(this.core, this.siege, m, t)) n++;
-      } else {
-        // Legacy / return leg: single-arrival model. Atomic claim + delete; skip if lost to a recall or a
-        // concurrent processor.
-        const claimed = await cols.marches.findOneAndDelete({ _id: m._id, status: 'marching' });
-        if (!claimed) continue;
-        await applyArrival(this.core, this.siege, claimed, t);
-        n++;
+    let concurrent = 0;
+    const inFlight = new Set<Promise<void>>();
+    let failure: { error: unknown } | null = null;
+    try {
+      for (; i < due.length; i++) {
+        // Checked between settlements, never during one: a half-applied capture is not a thing this code can
+        // represent. The first march always runs, so a slice smaller than one settlement still makes progress
+        // rather than deadlocking the queue. In-flight settlements are never abandoned — the pass waits for them.
+        if (sliceMs > 0 && i > 0 && performance.now() - startedAt >= sliceMs) break;
+        if (failure) break;
+        const m = due[i]!;
+        if (eligible[i]) {
+          while (inFlight.size >= SETTLE_CONCURRENCY) await Promise.race(inFlight);
+          const p: Promise<void> = this.settleOne(m, t)
+            .then(
+              (ok) => { if (ok) n++; },
+              (error: unknown) => { failure ??= { error }; },
+            )
+            .finally(() => inFlight.delete(p));
+          inFlight.add(p);
+          concurrent++;
+        } else {
+          // A barrier: everything launched before it finishes first, nothing after it starts until it is done —
+          // exactly the serial order the pass always had, for every settlement that was not cleared to overlap.
+          await Promise.all(inFlight);
+          if (failure) break;
+          if (await this.settleOne(m, t)) n++;
+        }
       }
+    } finally {
+      await Promise.all(inFlight);
     }
+    // Same contract as the serial loop had: a settlement that throws fails the pass (after its siblings finish).
+    if (failure) throw (failure as { error: unknown }).error;
+    bumpCounter('arrivals.concurrent', concurrent);
     // What THIS pass left behind, as a number — not the whole backlog: marches past the scan cap were never
     // in `due` to begin with, and that overflow has its own warning above. Under an ordinary load this is
     // always 0; a value that keeps growing is the honest statement that settlement throughput — not the
     // scheduler, not the batching — is the ceiling, and the signal that the next lever (cross-player
     // concurrency, §6.7) is finally due.
+    // `arrivals.concurrent` (bumped above) is how many of them were cleared to overlap (settlePlan.ts): the
+    // share of settlements the per-pass write-set prediction managed to parallelise.
     bumpCounter('arrivals.settled', n);
     bumpCounter('arrivals.deferred', due.length - i);
     return n;
+  }
+
+  /** Settle one due march. True when it was actually handled (not lost to a recall or another processor). */
+  private async settleOne(m: MarchDoc, t: number): Promise<boolean> {
+    if (m.path && m.stepIndex != null && m.nextStepAt != null) {
+      // Stepping march at its destination: walk out the remaining cells (it may be several, if this task
+      // has fallen behind) and settle on the final one.
+      return advanceMarch(this.core, this.siege, m, t);
+    }
+    // Legacy / return leg: single-arrival model. Atomic claim + delete; skip if lost to a recall or a
+    // concurrent processor.
+    const claimed = await this.core.deps.cols.marches.findOneAndDelete({ _id: m._id, status: 'marching' });
+    if (!claimed) return false;
+    await applyArrival(this.core, this.siege, claimed, t);
+    return true;
   }
 }
