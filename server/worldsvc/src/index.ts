@@ -125,6 +125,10 @@ async function main(): Promise<void> {
 
   const mapTemplateSvc = new MapTemplateService({ cols: mongo.collections, now: () => Date.now() });
 
+  // Worlds opened before ADR-074 city sieges have no city docs (nothing to besiege, nothing to settle on).
+  const citiesFilled = await svc.backfillMissingCities();
+  if (citiesFilled.length > 0) console.log('[worldsvc] backfilled city documents', { worldIds: citiesFilled });
+
   const scheduler = startScheduler(svc, { autoSettleSeasons: env.autoSettleSeasons, timings: routeTimings });
 
   const server = startHttpApi(

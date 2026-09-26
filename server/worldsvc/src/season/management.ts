@@ -135,10 +135,19 @@ export class SeasonManagementService {
   }
 
   /**
-   * Season settlement (settling): rank entities by the number of capitals they occupy (§2.1 grand contest = shard-level ranking of sects by capital count).
-   * Aggregation priority: sect → unaffiliated family → individual (owner), cascading fallback for occupiers with no sect/family.
-   * Settlement only computes rankings; it does not wipe data (data wipe goes through resetSeason). Returns the ranking list (descending by capital count).
-   * `scope` identifies the aggregation dimension: 'sect' | 'family' | 'solo'.
+   * Season settlement (settling): rank sects by the capitals they hold (SLG_DESIGN §2.1 grand contest =
+   * shard-level ranking of sects by capital count; the world center counts as capital CENTER_CAPITAL_IDX
+   * and multiplies its holder's reward, §2.4).
+   *
+   * Ownership is read from `CityDoc.ownerSectId` on the 9 province-capital cities + the world center —
+   * the only place ADR-074 records it. Until 2026-09-26 this read `NationDoc.ownerId`, which ADR-074
+   * stopped writing (`initNations` clears it and nothing sets it again), so every settlement since then
+   * would have produced an empty ranking and paid nobody. Garrison cities do not count: the contest is
+   * over capitals. Since city ownership is sect-only, every entry is scope 'sect'; 'family' / 'solo'
+   * remain in the type because older `seasonResults` rows carry them.
+   *
+   * Settlement only computes rankings; it does not wipe data (data wipe goes through resetSeason).
+   * Returns the ranking list: most capitals first, ties broken by holding the world center, then sectId.
    */
   async settleSeason(worldId: string): Promise<Array<{
     rank: number;
@@ -162,44 +171,34 @@ export class SeasonManagementService {
       if (!moved) throw new SlgError('WORLD_CLOSED', 'World cannot be settled (must be active/settling)');
     }
 
-    const nations = await cols.nations.find({ worldId, ownerId: { $exists: true } }).toArray();
-
-    // family → sectId mapping (which sect each occupier's family belongs to), fetched from socialsvc for just the families that occupy a nation.
-    const occupyingFamilyIds = [...new Set(nations.map((n) => n.familyId).filter((id): id is string => !!id))];
-    const fams = await this.core.socialsvc.getFamiliesByIds(occupyingFamilyIds);
-    const familySect = new Map<string, string | undefined>();
-    const familyName = new Map<string, string>();
-    for (const f of fams) {
-      familySect.set(f.familyId, f.sectId);
-      familyName.set(f.familyId, f.name);
-    }
+    const held = await cols.cities
+      .find(
+        { worldId, kind: { $in: ['capital', 'worldCenter'] }, ownerSectId: { $exists: true } },
+        { projection: { kind: 1, provinceIdx: 1, ownerSectId: 1, ownerSectName: 1 } },
+      )
+      .toArray();
     const sectName = new Map<string, string>();
-    for (const s of await cols.sects.find({ worldId }).toArray()) sectName.set(s._id, s.name);
+    for (const s of await cols.sects.find({ worldId }, { projection: { name: 1 } }).toArray()) sectName.set(s._id, s.name);
 
-    // Aggregate capital counts by "sect → family → individual" in order of priority.
-    const agg = new Map<string, { scope: 'sect' | 'family' | 'solo'; name?: string; capitalIdxs: number[] }>();
-    for (const n of nations) {
-      let scope: 'sect' | 'family' | 'solo';
-      let key: string;
-      let name: string | undefined;
-      const sid = n.familyId ? familySect.get(n.familyId) : undefined;
-      if (sid) {
-        scope = 'sect'; key = sid; name = sectName.get(sid);
-      } else if (n.familyId) {
-        scope = 'family'; key = n.familyId; name = familyName.get(n.familyId);
-      } else {
-        scope = 'solo'; key = n.ownerId ?? 'solo';
-      }
-      const cur = agg.get(key) ?? { scope, name, capitalIdxs: [] };
-      cur.capitalIdxs.push(n.capitalIdx);
-      agg.set(key, cur);
+    const agg = new Map<string, { name?: string; capitalIdxs: number[] }>();
+    for (const c of held) {
+      const capitalIdx = c.kind === 'worldCenter' ? CENTER_CAPITAL_IDX : c.provinceIdx;
+      if (capitalIdx == null || !c.ownerSectId) continue;
+      const cur = agg.get(c.ownerSectId) ?? { name: sectName.get(c.ownerSectId) ?? c.ownerSectName, capitalIdxs: [] };
+      cur.capitalIdxs.push(capitalIdx);
+      agg.set(c.ownerSectId, cur);
     }
 
+    const holdsCenter = (idxs: number[]) => (idxs.includes(CENTER_CAPITAL_IDX) ? 1 : 0);
     const ranking = [...agg.entries()]
-      .sort((a, b) => b[1].capitalIdxs.length - a[1].capitalIdxs.length)
+      .map(([id, v]) => [id, { ...v, capitalIdxs: [...v.capitalIdxs].sort((a, b) => a - b) }] as const)
+      .sort((a, b) =>
+        b[1].capitalIdxs.length - a[1].capitalIdxs.length
+        || holdsCenter(b[1].capitalIdxs) - holdsCenter(a[1].capitalIdxs)
+        || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
       .map(([id, v], i) => ({
         rank: i + 1,
-        scope: v.scope,
+        scope: 'sect' as const,
         familyId: id,
         ...(v.name ? { name: v.name } : {}),
         nationCount: v.capitalIdxs.length,
@@ -304,6 +303,27 @@ export class SeasonManagementService {
     }
 
     return ranking;
+  }
+
+  /**
+   * Startup repair: create the ADR-074 city documents for any open/active world that has none.
+   *
+   * `initCities` only runs from openSeason / resetSeason, so a world opened before city sieges shipped
+   * (live s1-1 / s2-0, opened 2026-08-10) never got them: no capital could be besieged, and settleSeason —
+   * which ranks by capital-city ownership — would settle it with an empty ranking. Strictly for worlds
+   * with ZERO city docs: `initCities` also unsets ownership, so running it on a world that has cities
+   * would hand every captured city back to the NPCs. Returns the worldIds it filled.
+   */
+  async backfillMissingCities(): Promise<string[]> {
+    const { cols } = this.core.deps;
+    const worlds = await cols.worlds.find({ status: { $in: ['open', 'active'] } }, { projection: { _id: 1 } }).toArray();
+    const filled: string[] = [];
+    for (const w of worlds) {
+      if (await cols.cities.countDocuments({ worldId: w._id }, { limit: 1 })) continue;
+      await this.core.initCities(w._id);
+      filled.push(w._id);
+    }
+    return filled;
   }
 
   /**

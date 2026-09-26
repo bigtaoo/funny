@@ -349,6 +349,7 @@ interface CityDoc {
 - ✅ **`nations` 归属清空已落地**（用户拍板，不做赛季内迁移）：`initNations` 现在会 `$unset` 既有文档的 `ownerId`/`familyId`/`nationName`/`foundedAt`。已建国玩家会失去国家 —— 可接受，因为该状态本身来自漏洞。**注意生效时机**：只在赛季开启 / 世界重置时跑，**已经开着的世界要跑一次 `/admin/world/reset` 或手动清 `nations`**，否则旧归属（及其 +10%/+15% 加成）会一直留着。刻意没做「玩家进世界时自愈」。
 - **`NATION_BONUS_PRODUCTION`(+10% 全省产量) 移除**：州府的经济收益已并入 §8.1 的产量表，保留就是双计。
 - **`NATION_BONUS_DEFENSE`(+15% 守军防御) 保留**：作为州府的军事身份，且它是防守侧、不参与 §6 的攻方模型。
+- ✅ **大比排名已改读城池归属**（2026-09-26）：`settleSeason` 此前仍读 `NationDoc.ownerId`，而该字段自本节落地后无人再写，排名恒为空。现按州府/世界中心城池的 `ownerSectId` 排名；开服早于本系统的旧世界由 worldsvc 启动时补建城池文档。详见 SLG_LOG_SPEC_SEASON §17.16。
 - `nations` 集合本身是否保留取决于 P3 实现：若城池 `CityDoc` 能完全承载州府语义（省份归属 + 防御加成查询），则整个集合与 `NationService` 一并删除；这个判断留到 P3 动手时做，不在本文预先拍。
 
 ---
