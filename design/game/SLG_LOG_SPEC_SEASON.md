@@ -328,7 +328,7 @@ if (path.startsWith('/admin/world/')) {
 ```
 1. 采集 SectStrength[]：每宗门 { sectId, lastSeasonRank(从上季 seasonResults.ranking 查 scope==='sect'),
                                  memberFamilyCount, prosperity(成员家族聚合) }
-2. shardCount = ceil(∑所有宗门成员人数 / WORLD_CAPACITY)   // WORLD_CAPACITY 默认 500（openSeason capacity 参数）
+2. shardCount = ceil(∑所有宗门成员人数 / WORLD_CAPACITY)   // WORLD_CAPACITY 默认 500（openSeason capacity 参数）；ADR-092 目标 3000，常量待改
 3. assignment = allocateSectsToShards(SectStrength[], shardCount)   // 蛇形均衡
 4. 同宗门成员随 sectId 进同一 shard；散家族/散人按家族强弱补位（次轮）
 5. 对每个 shardIndex 调 openSeason(`s{season}-{shardIndex}`, season, shardIndex, WORLD_CAPACITY)
@@ -336,7 +336,7 @@ if (path.startsWith('/admin/world/')) {
 
 **数据源缺口确认**（=天梯「战令依赖 RETENTION」同构）：在 `seasonResults` 落库（§17.5 ①）**之前**，G6 分配**无任何历史排名可读** → 首季所有宗门 `lastSeasonRank=undefined`（`sectStrengthScore` 给中位 500，纯按规模/繁荣度分配）；第二季起 `seasonResults` 提供历史。**这是为什么 §17.5 的排名落库是 G6 的硬前置**。
 
-**新常量** `WORLD_CAPACITY = 500`（`shared/slg.ts`，替代 `openSeason` 硬编码默认；上限即 `SLG_WORLD_CAPACITY_MAX=500`）。
+**新常量** `WORLD_CAPACITY = 500`（`shared/slg.ts`，替代 `openSeason` 硬编码默认；上限即 `SLG_WORLD_CAPACITY_MAX=500`）。**2026-09-26 注**：ADR-092 把目标改为 3000，常量尚未改，前置条件见该 ADR。
 
 ### 17.9 engineVersion pin（C7 / U9）
 

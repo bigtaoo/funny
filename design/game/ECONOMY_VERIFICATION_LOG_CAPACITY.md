@@ -1,6 +1,7 @@
 # 经济核验记录 — 容量 / 险地 / NPC 血量 / 行军（F 轨起）
 
 > 从 [`ECONOMY_VERIFICATION_LOG.md`](ECONOMY_VERIFICATION_LOG.md) 拆出（2026-08-17，原文件 526 行）。**小节编号沿用原文**，`ECONOMY_VERIFICATION_LOG.md §N` 引用照旧有效。
+> **2026-09-26（ADR-092）**：单大区容量目标改为 3000（代码仍 500）。本册 §13-SLG-F 的文档量估算按 10000 人做，3000 在其包络内；§13-SLG-STRONGHOLD 的人均稀释以 `SLG_WORLD_CAPACITY_TARGET`=400 为分母，**改常量时必须重跑**。
 > 本册内容：13-SLG-F 容量估算、13-SLG-STRONGHOLD 险地、13-SLG-NPC-BASEHP、13-SLG-MARCH 行军疲劳。总览与在先小节见 [`ECONOMY_VERIFICATION_LOG.md`](ECONOMY_VERIFICATION_LOG.md)。
 
 ---
