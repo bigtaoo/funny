@@ -10,6 +10,7 @@ import { MapTemplateService } from './mapTemplateService';
 import { startHttpApi } from './httpApi';
 import { routeTimings, startWorldMetrics, stopWorldMetrics, countMongoCommands, worldCounters } from './metrics';
 import { startScheduler } from './scheduler';
+import { WorldLeases, type SchedulerLeaseDoc } from './worldLease';
 import { HttpWorldGatewayClient } from './gatewayClient';
 import { HttpWorldCommercialClient, nullWorldCommercialClient } from './commercialClient';
 import { HttpWorldMetaClient, nullWorldMetaClient } from './metaClient';
@@ -143,7 +144,17 @@ async function main(): Promise<void> {
   const citiesFilled = await svc.backfillMissingCities();
   if (citiesFilled.length > 0) console.log('[worldsvc] backfilled city documents', { worldIds: citiesFilled });
 
-  const scheduler = startScheduler(svc, { autoSettleSeasons: env.autoSettleSeasons, timings: routeTimings });
+  // Phase 3 (worldLease.ts): with leases on, this process schedules only the worlds it holds; HTTP stays open
+  // for every world regardless, because every write path is already safe across processes (§12.10).
+  const leases = env.worldLease
+    ? new WorldLeases({ leases: mongo.db.collection<SchedulerLeaseDoc>('schedulerLeases'), worlds: mongo.collections.worlds })
+    : null;
+  if (leases) await leases.start();
+  const scheduler = startScheduler(svc, {
+    autoSettleSeasons: env.autoSettleSeasons,
+    timings: routeTimings,
+    ...(leases ? { worlds: () => leases.owned() } : {}),
+  });
 
   const server = startHttpApi(
     { host: env.host, port: env.port, jwtSecret: env.jwtSecret, internalKey: env.internalKey },
@@ -156,6 +167,7 @@ async function main(): Promise<void> {
 
   const shutdown = async (): Promise<void> => {
     scheduler.stop();
+    await leases?.stop().catch(() => {});
     server.close();
     stopWorldMetrics();
     await shutdownComputeBackend();

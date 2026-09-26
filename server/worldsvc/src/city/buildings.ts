@@ -19,6 +19,7 @@ import {
 import { WorldCore } from '../core';
 import { buildQueueOps, type BuildQueueEntry } from '../db';
 import type { PlayerWorldView } from '../worldTypes';
+import { worldScope } from '../worldLease';
 
 export class CityBuildingsService {
   constructor(private readonly core: WorldCore) {}
@@ -137,12 +138,12 @@ export class CityBuildingsService {
    * Process completed builds (scheduler, every tick). Mirrors processCompletedTraining: finds players whose first queued build is due,
    * applies the new levels + refreshes derived state (yield / troopCap). Returns the number of builds applied.
    */
-  async processCompletedBuilds(nowMs?: number): Promise<number> {
+  async processCompletedBuilds(nowMs?: number, worldIds?: readonly string[]): Promise<number> {
     const { cols } = this.core.deps;
     const t = nowMs ?? this.core.deps.now();
     // Via the indexed `nextBuildCompleteAt` mirror, not the array itself — see buildQueueOps.
     const docs = await cols.playerWorld
-      .find({ nextBuildCompleteAt: { $lte: t } })
+      .find({ ...worldScope(worldIds), nextBuildCompleteAt: { $lte: t } })
       .project<{ _id: string; worldId: string; accountId: string }>({ _id: 1, worldId: 1, accountId: 1 })
       .toArray();
     let n = 0;

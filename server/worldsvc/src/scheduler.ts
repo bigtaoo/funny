@@ -36,6 +36,11 @@ export interface SchedulerOptions {
    * so reading them apart is how you end up blaming the wrong one.
    */
   timings?: RouteTimings;
+  /**
+   * The worlds this process schedules (phase 3, worldLease.ts): every task restricts its scan to them, and a tick
+   * with none is skipped outright. Omitted = every world, the single-process behaviour.
+   */
+  worlds?: () => readonly string[];
 }
 
 /**
@@ -62,12 +67,13 @@ const MIN_SETTLE_TICK_MS = 250;
 interface TaskSpec {
   label: string;
   intervalMs: number;
-  run: () => Promise<unknown>;
+  /** `worldIds` is undefined when the scheduler is unscoped (no leases), never an empty list. */
+  run: (worldIds: readonly string[] | undefined) => Promise<unknown>;
 }
 
 /** Process due marches + completed training/builds + (optionally) due season settlement, each on its own timer. */
 export function startScheduler(svc: WorldService, opts: SchedulerOptions = {}): Scheduler {
-  const { tickMs = 2000, autoSettleSeasons = false, timings } = opts;
+  const { tickMs = 2000, autoSettleSeasons = false, timings, worlds } = opts;
 
   // Never slower than the base tick (so a test that passes tickMs=10 still gets settlements at 10ms), never
   // busier than MIN_SETTLE_TICK_MS unless the caller asked for a faster base tick than that.
@@ -80,28 +86,31 @@ export function startScheduler(svc: WorldService, opts: SchedulerOptions = {}): 
     // seconds at a time — during which the walking half, every other task and every HTTP request waited on
     // the one thread. Splitting them lets the cheap half keep its cadence while the expensive half runs
     // more often in smaller, time-sliced bites.
-    { label: 'sched:arrivals', intervalMs: tickMs, run: () => svc.processDueArrivalSteps() },
-    { label: 'sched:arrivalSettle', intervalMs: settleTickMs, run: () => svc.processDueArrivalSettlements() },
-    { label: 'sched:training', intervalMs: tickMs, run: () => svc.processCompletedTraining() },
-    { label: 'sched:builds', intervalMs: tickMs, run: () => svc.processCompletedBuilds() },
+    { label: 'sched:arrivals', intervalMs: tickMs, run: (w) => svc.processDueArrivalSteps(undefined, w) },
+    { label: 'sched:arrivalSettle', intervalMs: settleTickMs, run: (w) => svc.processDueArrivalSettlements(undefined, undefined, w) },
+    { label: 'sched:training', intervalMs: tickMs, run: (w) => svc.processCompletedTraining(undefined, w) },
+    { label: 'sched:builds', intervalMs: tickMs, run: (w) => svc.processCompletedBuilds(undefined, w) },
     // ADR-026: settle due delayed building-HP hits (5-min siege-value settlement → HP deduction / capture).
-    { label: 'sched:siegeDamage', intervalMs: tickMs, run: () => svc.processDueSiegeDamage() },
+    { label: 'sched:siegeDamage', intervalMs: tickMs, run: (w) => svc.processDueSiegeDamage(undefined, w) },
     // ADR-037 (§5.4): settle due occupation holds (occupy-march PvE win → 5-min hold → territory ownership).
-    { label: 'sched:occupations', intervalMs: tickMs, run: () => svc.processDueOccupations() },
+    { label: 'sched:occupations', intervalMs: tickMs, run: (w) => svc.processDueOccupations(undefined, w) },
   ];
   // §17.14: auto season settlement (opt-out via NW_SLG_AUTO_SETTLE=0).
   if (autoSettleSeasons) {
-    tasks.push({ label: 'sched:season', intervalMs: SEASON_TICK_MS, run: () => svc.processDueSeasonSettlement() });
+    tasks.push({ label: 'sched:season', intervalMs: SEASON_TICK_MS, run: (w) => svc.processDueSeasonSettlement(w) });
   }
 
   const timers = tasks.map((task) => {
     let running = false;
     const timer = setInterval(() => {
       if (running) return; // still working on the previous tick — skip rather than pile up
+      // Read per tick, not captured once: the lease set changes as processes come and go.
+      const worldIds = worlds?.();
+      if (worldIds && worldIds.length === 0) return; // this process holds no world right now — nothing to scan
       running = true;
       const startedAt = performance.now();
       void task
-        .run()
+        .run(worldIds)
         .catch((e) => console.error(`[world-scheduler] ${task.label} failed:`, (e as Error).message))
         .finally(() => {
           const ms = performance.now() - startedAt;
