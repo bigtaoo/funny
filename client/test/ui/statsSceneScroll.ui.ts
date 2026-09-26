@@ -53,7 +53,8 @@ function buildStats(input: InputManager, w: number, h: number, cb: Partial<Stats
     loadHistory: async () => FULL_HISTORY,
     getMyRank: async () => 3,
     onOpenLeaderboard() {},
-    season: { seasonNo: 1, endAt: Date.now() + 86400000 },
+    season: { seasonNo: 1 },
+    getSeasonEndAt: async () => Date.now() + 86400000,
     // Career hub peer strip — reserves bottom-nav height out of the portrait viewport.
     onOpenTitles() {}, onOpenAchievements() {}, onOpenCodex() {},
     ...cb,

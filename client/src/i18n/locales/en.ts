@@ -1384,6 +1384,7 @@ export const en: Record<TranslationKey, string> = {
   // ── Season banner / settlement (SE-6) ────────────────────────────────────────
   'season.banner': 'Season {no} · {days}d left',
   'season.bannerEnded': 'Season {no} · Ended',
+  'season.bannerCurrent': 'Season {no}',
   'season.settlement.title': 'Season {no} Results',
   'season.settlement.peak': 'Peak rank',
   'season.settlement.newSeason': 'Season {no} has started',

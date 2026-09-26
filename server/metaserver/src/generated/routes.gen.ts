@@ -19111,11 +19111,16 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
           "type": "object",
           "required": [
             "seasonNo",
+            "seasonEndAt",
             "entries"
           ],
           "properties": {
             "seasonNo": {
               "type": "integer"
+            },
+            "seasonEndAt": {
+              "type": "integer",
+              "description": "Current ladder season end (ms epoch). Display-only: seasons roll by ops, not by this timestamp"
             },
             "entries": {
               "type": "array",

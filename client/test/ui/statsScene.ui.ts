@@ -124,3 +124,37 @@ describe('StatsScene match history', () => {
     scene.destroy();
   });
 });
+
+// The banner used to be fed a hardcoded `endAt: 0`, so every client read "Season N · Ended" for the
+// whole life of season 1 — including the seven weeks it stayed active past its nominal end.
+describe('StatsScene season banner', () => {
+  const DAY = 86_400_000;
+  const banner = (scene: StatsScene) => texts(scene.container).filter((s) => s.startsWith('Season 3'));
+
+  it('counts down from the server-provided end', async () => {
+    const scene = build({ season: { seasonNo: 3 }, getSeasonEndAt: async () => Date.now() + 10 * DAY - 1000 });
+    await flush();
+    expect(banner(scene)).toEqual([t('season.banner', { no: '3', days: '10' })]);
+    scene.destroy();
+  });
+
+  it('shows "ended" only once the server end has actually passed', async () => {
+    const scene = build({ season: { seasonNo: 3 }, getSeasonEndAt: async () => Date.now() - DAY });
+    await flush();
+    expect(banner(scene)).toEqual([t('season.bannerEnded', { no: '3' })]);
+    scene.destroy();
+  });
+
+  const cases: Array<[string, Partial<StatsCallbacks>]> = [
+    ['pending', { getSeasonEndAt: () => new Promise<number | null>(() => {}) }],
+    ['unknown (null)', { getSeasonEndAt: async () => null }],
+    ['fetch rejects', { getSeasonEndAt: async (): Promise<number | null> => { throw new Error('offline'); } }],
+    ['offline (no fetcher)', {}],
+  ];
+  it.each(cases)('end %s → season number alone, never "ended"', async (_label, cb) => {
+    const scene = build({ season: { seasonNo: 3 }, ...cb });
+    await flush();
+    expect(banner(scene)).toEqual([t('season.bannerCurrent', { no: '3' })]);
+    scene.destroy();
+  });
+});

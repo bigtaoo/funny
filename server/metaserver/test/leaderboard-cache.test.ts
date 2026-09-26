@@ -65,9 +65,12 @@ describe('SE-5 leaderboard 60s process cache', () => {
     const svc = makeService(nowRef, counters);
 
     const r1 = (await svc.getLeaderboard(reqOf('caller'))) as {
-      data: { seasonNo: number; entries: unknown[]; me?: { rank: number } };
+      data: { seasonNo: number; seasonEndAt: number; entries: unknown[]; me?: { rank: number } };
     };
     expect(r1.data.seasonNo).toBe(7);
+    // The client's season banner counts down from this; before 2026-09-26 it was never sent and every
+    // client showed "ended" regardless of the real season state.
+    expect(r1.data.seasonEndAt).toBe(1e12);
     expect(r1.data.entries).toHaveLength(2);
     // buildLeaderboardTop100 must map displayName/publicId/elo/equippedTitle through from the joined
     // accounts row + save.pvp/save.equipped, not just the row count.
