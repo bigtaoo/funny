@@ -260,8 +260,12 @@ interface LoadFixture {
   setMeCalls: number;
 }
 
+function orders(o: Partial<Record<'marches' | 'occupations' | 'stationed' | 'siegeHolds', unknown[]>> = {}) {
+  return { marches: [], occupations: [], stationed: [], siegeHolds: [], ...o };
+}
+
 function loadFixture(
-  api: Partial<Record<'getTeams' | 'getMe' | 'getMarches' | 'getOccupations' | 'getSiegeHolds' | 'getStationed', () => Promise<unknown>>>,
+  api: Partial<Record<'getTeams' | 'getMe' | 'getOrders', () => Promise<unknown>>>,
 ): LoadFixture {
   let destroyed = false;
   const fx: LoadFixture = {
@@ -278,10 +282,7 @@ function loadFixture(
       worldApi: {
         getTeams: wrap('getTeams', []),
         getMe: wrap('getMe', me()),
-        getMarches: wrap('getMarches', []),
-        getOccupations: wrap('getOccupations', []),
-        getStationed: wrap('getStationed', []),
-        getSiegeHolds: wrap('getSiegeHolds', []),
+        getOrders: wrap('getOrders', orders()),
       },
     } as never,
     get destroyed() { return destroyed; },
@@ -304,13 +305,11 @@ describe('CityScene/data load', () => {
     // The order is load-bearing, not cosmetic: with the 5-token bucket drained on world-map entry,
     // whatever went last waits for a refill. The team row is what the player is looking at here.
     expect(fx.calls[0]).toBe('getTeams:w1');
-    expect(fx.calls).toEqual([
-      'getTeams:w1', 'getMe:w1', 'getMarches:w1', 'getOccupations:w1', 'getSiegeHolds:w1', 'getStationed:w1',
-    ]);
+    expect(fx.calls).toEqual(['getTeams:w1', 'getMe:w1', 'getOrders:w1']);
   });
 
   it('paints as each slice lands instead of waiting for the slowest (not a Promise.all barrier)', async () => {
-    // The 2026-08-02 decision. Hold the three order slices open; teams alone must already have
+    // The 2026-08-02 decision. Hold the order slices open; teams alone must already have
     // painted. Reintroduce a barrier and this goes red at `renders === 0` — the only other signal
     // is a few hundred ms of placeholder in the team row, which reads as a slow network.
     // Atlases held open: otherwise their two unconditional `.then(() => host.render())` edges
@@ -318,13 +317,8 @@ describe('CityScene/data load', () => {
     // vacuous-assertion trap from claudedocs/client-testing.md).
     resAtlas.mockReturnValueOnce(new Promise<void>(() => {}));
     cityBldAtlas.mockReturnValueOnce(new Promise<void>(() => {}));
-    const held = deferred<unknown[]>();
-    const fx = loadFixture({
-      getMarches: () => held.promise,
-      getOccupations: () => held.promise,
-      getStationed: () => held.promise,
-      getSiegeHolds: () => held.promise,
-    });
+    const held = deferred<unknown>();
+    const fx = loadFixture({ getOrders: () => held.promise });
     load(fx.host);
     await settle();
 
@@ -333,40 +327,30 @@ describe('CityScene/data load', () => {
     expect(fx.renders).toBeGreaterThan(0);
     expect(fx.host.ordersLoaded).toBe(false); // and the order line is still honestly "loading"
 
-    held.resolve([]);
+    held.resolve(orders());
     await settle();
     expect(fx.host.ordersLoaded).toBe(true);
   });
 
-  it('flips ordersLoaded only once ALL FOUR order slices have settled', async () => {
+  it('lands all four order slices from the one GET /world/orders before flipping ordersLoaded', async () => {
     // marches + occupations + siege holds + stationed all feed teamOrder(); the status line must not
-    // claim 驻军在家 while any one of them is still open. Three of four must not be enough.
+    // claim 驻军在家 until every one of them is in. They arrive as one response (2026-09-26), so the
+    // thing to pin is that all four are copied over — a dropped slice reads a busy team as idle.
     // (The siege-hold slice joined 2026-09-12, 围攻驻留 — a team standing on a base/city it has
     // beaten, waiting out the durability hit, is in none of the other three.)
-    const marches = deferred<unknown[]>();
-    const occupations = deferred<unknown[]>();
-    const siegeHolds = deferred<unknown[]>();
-    const stationed = deferred<unknown[]>();
-    const fx = loadFixture({
-      getMarches: () => marches.promise,
-      getOccupations: () => occupations.promise,
-      getSiegeHolds: () => siegeHolds.promise,
-      getStationed: () => stationed.promise,
-    });
+    const held = deferred<unknown>();
+    const fx = loadFixture({ getOrders: () => held.promise });
     load(fx.host);
+    await settle();
+    expect(fx.host.ordersLoaded).toBe(false);
 
-    marches.resolve([]);
-    await settle();
-    expect(fx.host.ordersLoaded).toBe(false);
-    occupations.resolve([]);
-    await settle();
-    expect(fx.host.ordersLoaded).toBe(false);
-    stationed.resolve([]);
-    await settle();
-    expect(fx.host.ordersLoaded).toBe(false);
-    siegeHolds.resolve([]);
+    held.resolve(orders({ marches: ['m'], occupations: ['o'], stationed: ['s'], siegeHolds: ['h'] }));
     await settle();
     expect(fx.host.ordersLoaded).toBe(true);
+    expect(fx.host.marches).toEqual(['m']);
+    expect(fx.host.occupations).toEqual(['o']);
+    expect(fx.host.stationed).toEqual(['s']);
+    expect(fx.host.siegeHolds).toEqual(['h']);
   });
 
   it('an offline slice still settles its flag — the row falls through to its real empty state', async () => {
@@ -375,10 +359,7 @@ describe('CityScene/data load', () => {
     const fx = loadFixture({
       getTeams: () => Promise.reject(new Error('offline')),
       getMe: () => Promise.reject(new Error('offline')),
-      getMarches: () => Promise.reject(new Error('offline')),
-      getOccupations: () => Promise.reject(new Error('offline')),
-      getStationed: () => Promise.reject(new Error('offline')),
-      getSiegeHolds: () => Promise.reject(new Error('offline')),
+      getOrders: () => Promise.reject(new Error('offline')),
     });
     load(fx.host);
     await settle();
@@ -412,10 +393,7 @@ describe('CityScene/data load', () => {
     const fx = loadFixture({
       getTeams: () => held.promise,
       getMe: () => held.promise as never,
-      getMarches: () => held.promise,
-      getOccupations: () => held.promise,
-      getStationed: () => held.promise,
-      getSiegeHolds: () => held.promise,
+      getOrders: () => held.promise,
     });
     load(fx.host);
     fx.kill();
@@ -439,10 +417,7 @@ describe('CityScene/data load', () => {
     const fx = loadFixture({
       getTeams: () => new Promise(() => {}),
       getMe: () => new Promise(() => {}),
-      getMarches: () => new Promise(() => {}),
-      getOccupations: () => new Promise(() => {}),
-      getStationed: () => new Promise(() => {}),
-      getSiegeHolds: () => new Promise(() => {}),
+      getOrders: () => new Promise(() => {}),
     });
     load(fx.host);
     fx.kill();

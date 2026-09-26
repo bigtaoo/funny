@@ -11,9 +11,34 @@ import type { WorldMapContext } from '../WorldMapContext';
 import { loadMapViewport, refreshMarches, refreshMe } from './loaders';
 import { formatDuration } from '../logic/formatDuration';
 
-export function applyMarchUpdate(ctx: WorldMapContext, _m: MarchUpdate): void {
+/**
+ * How long a `marching` push waits for the HTTP response of the order that caused it. worldsvc fires
+ * the push to the dispatcher before answering the request, and it travels an extra hop (gateway WS), so
+ * the two usually land within a few tens of ms of each other in either order.
+ */
+export const OWN_ORDER_GRACE_MS = 300;
+
+export function applyMarchUpdate(ctx: WorldMapContext, m: MarchUpdate): void {
   if (ctx.destroyed) return;
-  void refreshMarches(ctx);
+  // Arrivals, recalls-by-encounter, settlements: always news. Re-read.
+  if (m.status !== 'marching') {
+    void refreshMarches(ctx);
+    return;
+  }
+  // 2026-09-26: a `marching` push is usually the echo of the player's own dispatch/recall, and that
+  // order's HTTP response puts the exact same march into `ctx.marches` (doMarchTeam appends it; recall
+  // re-reads). Re-reading all four order slices for it was a quarter of every dispatch's request budget
+  // — see rateGate.ts. The response may land after the push, so decide once the grace has passed.
+  setTimeout(() => {
+    if (!ctx.destroyed && !describesCachedMarch(ctx, m)) void refreshMarches(ctx);
+  }, OWN_ORDER_GRACE_MS);
+}
+
+/** The push says nothing the cache doesn't already: same march, same leg, same state. */
+function describesCachedMarch(ctx: WorldMapContext, m: MarchUpdate): boolean {
+  return ctx.marches.some((c) =>
+    c.marchId === m.marchId && c.kind === m.kind && c.status === m.status
+    && c.toTile === m.toTile && c.arriveAt === m.arriveAt);
 }
 
 /**

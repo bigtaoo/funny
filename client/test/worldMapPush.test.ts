@@ -26,7 +26,7 @@
 //   · the damage vignette fires only on our own base and only when hp actually dropped — it is
 //     diffed around the refetch because TileUpdate carries no hp;
 //   · an attacker-controlled display name reaches the toast verbatim (the 2026-08-03 fix).
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Two stubs, and both are seams rather than conveniences. `render/sketchUi` is the only
 // pixi.js-legacy import in the module — it is used purely for two palette entries, so distinctive
@@ -49,7 +49,7 @@ vi.mock('../src/scenes/worldmap/net/loaders', () => ({
 }));
 
 import {
-  applyMarchUpdate, applyNationMsg, applyTileUpdate, applyUnderAttack, applySiegeResult,
+  applyMarchUpdate, applyNationMsg, applyTileUpdate, applyUnderAttack, applySiegeResult, OWN_ORDER_GRACE_MS,
 } from '../src/scenes/worldmap/net/push';
 import { setLocale, t } from '../src/i18n';
 import type { WorldMapContext } from '../src/scenes/worldmap/WorldMapContext';
@@ -93,6 +93,7 @@ function fake(over: Partial<{ destroyed: boolean; mainBaseTile: string; seenTs: 
     },
     tileCache: f.tiles,
     siegeHolds: f.siegeHolds,
+    marches: [] as unknown[],
     view: {
       renderMap: () => { f.mapRenders++; },
       flashDamageVignette: () => { f.vignettes++; },
@@ -167,11 +168,69 @@ describe('worldmap push — teardown', () => {
 });
 
 describe('worldmap push — applyMarchUpdate', () => {
-  it('refetches marches (authoritative) rather than merging the payload', () => {
+  const push = (over: Partial<MarchUpdate> = {}): MarchUpdate => ({
+    marchId: 'm1', kind: 'occupy', fromTile: 'w1:1:1', toTile: 'w1:2:1', arriveAt: 5000, status: 'marching', ...over,
+  });
+  const cached = (u: MarchUpdate) => ({ ...u, troops: 10, departAt: 0, mine: true });
+
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('refetches marches (authoritative) for a state change the cache has not seen', () => {
     const f = fake();
-    applyMarchUpdate(f.ctx, { marchId: 'm1' } as MarchUpdate);
+    f.ctx.marches = [cached(push())] as never;
+    applyMarchUpdate(f.ctx, push({ status: 'arrived' }));
     expect(refreshMarches).toHaveBeenCalledTimes(1);
     expect(refreshMarches).toHaveBeenCalledWith(f.ctx);
+  });
+
+  // 2026-09-26: the player's own dispatch echoes back as a push whose march doMarchTeam has already
+  // appended from the HTTP response. Re-reading all four order slices for it was a quarter of every
+  // dispatch's request budget, which queued the NEXT team's order behind it.
+  it('ignores the echo of a march the cache already holds exactly', () => {
+    vi.useFakeTimers();
+    const f = fake();
+    f.ctx.marches = [cached(push())] as never;
+    applyMarchUpdate(f.ctx, push());
+    vi.advanceTimersByTime(OWN_ORDER_GRACE_MS * 2);
+    expect(refreshMarches).not.toHaveBeenCalled();
+  });
+
+  it('a push that beats its own HTTP response is dropped once the response lands within the grace', () => {
+    vi.useFakeTimers();
+    const f = fake();
+    applyMarchUpdate(f.ctx, push());
+    expect(refreshMarches).not.toHaveBeenCalled();
+    f.ctx.marches = [cached(push())] as never; // doMarchTeam appends from the response
+    vi.advanceTimersByTime(OWN_ORDER_GRACE_MS);
+    expect(refreshMarches).not.toHaveBeenCalled();
+  });
+
+  it('a new march nobody put in the cache (e.g. enemy entering vision) still refetches after the grace', () => {
+    vi.useFakeTimers();
+    const f = fake();
+    applyMarchUpdate(f.ctx, push({ marchId: 'enemy' }));
+    vi.advanceTimersByTime(OWN_ORDER_GRACE_MS - 1);
+    expect(refreshMarches).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(refreshMarches).toHaveBeenCalledTimes(1);
+  });
+
+  it('the same march on a different leg is not an echo (recall flips kind to return)', () => {
+    vi.useFakeTimers();
+    const f = fake();
+    f.ctx.marches = [cached(push())] as never;
+    applyMarchUpdate(f.ctx, push({ kind: 'return', toTile: 'w1:1:1', arriveAt: 9000 }));
+    vi.advanceTimersByTime(OWN_ORDER_GRACE_MS);
+    expect(refreshMarches).toHaveBeenCalledTimes(1);
+  });
+
+  it('a scene torn down during the grace does not refetch', () => {
+    vi.useFakeTimers();
+    const f = fake();
+    applyMarchUpdate(f.ctx, push({ marchId: 'enemy' }));
+    (f.ctx as unknown as { destroyed: boolean }).destroyed = true;
+    vi.advanceTimersByTime(OWN_ORDER_GRACE_MS);
+    expect(refreshMarches).not.toHaveBeenCalled();
   });
 });
 

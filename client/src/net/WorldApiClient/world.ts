@@ -7,9 +7,7 @@ import type {
   WorldMapSparseView,
   WorldTileView,
   MarchView,
-  OccupationView,
-  SiegeHoldView,
-  StationedView,
+  OrdersView,
   PlayerWorldView,
   EnterWorldView,
   ShardTransferTargetView,
@@ -56,27 +54,14 @@ export class WorldService {
     return this.core.req('GET', `/world/tile/${x}:${y}:${encodeURIComponent(worldId)}`);
   }
 
-  async getMarches(worldId: string): Promise<MarchView[]> {
-    return this.core.req('GET', `/world/march?worldId=${encodeURIComponent(worldId)}`);
-  }
-
-  /** Own active occupation-holds (2026-07-15 team management: status + cancel affordance). */
-  async getOccupations(worldId: string): Promise<OccupationView[]> {
-    return this.core.req('GET', `/world/occupations?worldId=${encodeURIComponent(worldId)}`);
-  }
-
   /**
-   * Own pending delayed siege hits (围攻驻留, 2026-09-12): a main-base or wild-city assault whose garrison
-   * battle is won and whose durability hit lands five minutes later. The team stands on the target until
-   * then — this is what the map's besieging token and the team panel's countdown read.
+   * Everything the caller's teams are doing, in one round trip (2026-09-26): marches, occupation holds,
+   * field-stationed teams and pending siege holds (围攻驻留). Every reader needs all four together — they
+   * jointly decide whether a team is busy — and as four separate requests they were most of what queued
+   * behind the client's rate gate during a multi-team dispatch.
    */
-  async getSiegeHolds(worldId: string): Promise<SiegeHoldView[]> {
-    return this.core.req('GET', `/world/siegeholds?worldId=${encodeURIComponent(worldId)}`);
-  }
-
-  /** Own teams stationed on tiles (2026-07-23 field-stationing: idle-sprite rendering + recall affordance). */
-  async getStationed(worldId: string): Promise<StationedView[]> {
-    return this.core.req('GET', `/world/stationed?worldId=${encodeURIComponent(worldId)}`);
+  async getOrders(worldId: string): Promise<OrdersView> {
+    return this.core.req('GET', `/world/orders?worldId=${encodeURIComponent(worldId)}`);
   }
 
   /** Full list of owned tiles (territory + captured stronghold; excludes the 3×3 capital footprint). Backs the Territory Overview panel (SLG_DESIGN_LOG.md §26). */
