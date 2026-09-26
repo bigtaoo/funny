@@ -334,6 +334,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/world/orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * All four of the caller's order slices in one response (2026-09-26)
+         * @description marches + occupations + stationed + siegeHolds — exactly what GET /world/march, /world/occupations, /world/stationed and /world/siegeholds return, in one round trip. The client re-reads these four together every time (team picker, march_update push, City screen), and as four requests they were the bulk of what queued behind the client's 5 req/s rate gate during a multi-team dispatch. The four single-slice routes stay for already-shipped clients.
+         */
+        get: operations["getOrders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/world/cities": {
         parameters: {
             query?: never;
@@ -2049,6 +2069,38 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["OkResponse"] & {
                         data?: components["schemas"]["StationedView"][];
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
+        };
+    };
+    getOrders: {
+        parameters: {
+            query: {
+                worldId: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The caller's four order slices */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"] & {
+                        data?: {
+                            marches: components["schemas"]["MarchView"][];
+                            occupations: components["schemas"]["OccupationView"][];
+                            stationed: components["schemas"]["StationedView"][];
+                            siegeHolds: components["schemas"]["SiegeHoldView"][];
+                        };
                     };
                 };
             };

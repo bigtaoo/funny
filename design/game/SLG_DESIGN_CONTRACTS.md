@@ -197,6 +197,7 @@ GET  /world/tile/{tileId}           单格详情（含防守摘要）
 PUT  /world/defense                 设/改主城或领地防守 config
 POST /world/march                   发起行军（attack/reinforce/occupy/sweep/move）
 GET  /world/stationed               我方就地驻留队伍列表（§38）
+GET  /world/orders                 我方四条命令分片一次返回：marches/occupations/stationed/siegeHolds（2026-09-26，WORLDSVC_CONCURRENCY_AUDIT §12）
 POST /world/team/{teamId}/recall-stationed  召回驻留队伍回城（§38）
 POST /world/march/{id}/recall       撤军
 POST /world/sweep                   扫荡（自己领地/中立 NPC，廉价结算）

@@ -100,7 +100,10 @@ export class WorldApiCore {
     };
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    await globalRequestGate.acquire();
+    // Every worldsvc mutation is a player's own order (march, recall, build, ...); the reads are what
+    // piles up behind them — list refreshes fired by pushes and panels. Mutations therefore take the
+    // gate's interactive lane so they never queue behind those reads (see rateGate.ts).
+    await globalRequestGate.acquire(method === 'GET' ? 'background' : 'interactive');
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
     let res: NetResponse;

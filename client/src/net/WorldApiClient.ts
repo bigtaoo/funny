@@ -43,9 +43,7 @@ import type {
   WorldMapSparseView,
   WorldTileView,
   MarchView,
-  OccupationView,
-  SiegeHoldView,
-  StationedView,
+  OrdersView,
   PlayerWorldView,
   EnterWorldView,
   ShardTransferTargetView,
@@ -85,6 +83,7 @@ export type {
   OccupationView,
   SiegeHoldView,
   StationedView,
+  OrdersView,
   FamilyMemberView,
   FamilyView,
   FamilyDetailView,
@@ -177,20 +176,8 @@ export class WorldApiClient {
     return this.world.getTile(worldId, x, y);
   }
 
-  getMarches(worldId: string): Promise<MarchView[]> {
-    return this.world.getMarches(worldId);
-  }
-
-  getOccupations(worldId: string): Promise<OccupationView[]> {
-    return this.world.getOccupations(worldId);
-  }
-
-  getSiegeHolds(worldId: string): Promise<SiegeHoldView[]> {
-    return this.world.getSiegeHolds(worldId);
-  }
-
-  getStationed(worldId: string): Promise<StationedView[]> {
-    return this.world.getStationed(worldId);
+  getOrders(worldId: string): Promise<OrdersView> {
+    return this.world.getOrders(worldId);
   }
 
   getTerritories(worldId: string): Promise<WorldTileView[]> {

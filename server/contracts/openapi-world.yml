@@ -1567,6 +1567,49 @@ paths:
         '401': { $ref: '#/components/responses/ErrorResp' }
         '500': { $ref: '#/components/responses/ErrorResp' }
 
+  /world/orders:
+    get:
+      operationId: getOrders
+      summary: All four of the caller's order slices in one response (2026-09-26)
+      description: >-
+        marches + occupations + stationed + siegeHolds — exactly what GET /world/march, /world/occupations,
+        /world/stationed and /world/siegeholds return, in one round trip. The client re-reads these four
+        together every time (team picker, march_update push, City screen), and as four requests they were
+        the bulk of what queued behind the client's 5 req/s rate gate during a multi-team dispatch.
+        The four single-slice routes stay for already-shipped clients.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: worldId, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: The caller's four order slices
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [marches, occupations, stationed, siegeHolds]
+                        properties:
+                          marches:
+                            type: array
+                            items: { $ref: '#/components/schemas/MarchView' }
+                          occupations:
+                            type: array
+                            items: { $ref: '#/components/schemas/OccupationView' }
+                          stationed:
+                            type: array
+                            items: { $ref: '#/components/schemas/StationedView' }
+                          siegeHolds:
+                            type: array
+                            items: { $ref: '#/components/schemas/SiegeHoldView' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
+
   /world/cities:
     get:
       operationId: getWorldCities
