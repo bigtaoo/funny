@@ -214,6 +214,11 @@ Anna 三人随偶数章出场（[characters.md](../product/characters.md)：Ch2/
   ② **idle/attack/hurt/death/spawn** 全部以同一个持弓姿为基准重做。attack：举弓瞄准 → 满弓 → 放箭 → 收回，首尾同姿，便于按攻击间隔连续重播。
   ③ **rig 的几何下限**：箭画在 `r_lower_arm` 贴图里，箭的朝向恒等于前臂世界角；而拉弓臂 `r_upper_arm` 长度倍率 2.5（95px，比躯干还长），"箭朝前 + 手贴脸"在几何上不可能——满弓只能折臂、肘从背后露出来。箭与弓臂共线会被弓臂挡住，两者要错开约 20°。
   ④ **已上线**：animator 导出，`art/units/archer/archer.tao` 与 `client/src/assets/units/archer.tao` 同步覆盖（逐字节相同）；这次导出也吃进了 `91dbfbec1` 去杂点后的小图。`naturalHeight` 仍是 348（由静息姿决定），场上尺寸不变。
+- [x] **Mara 6 条 clip 按 archer 的持弓姿重做，身体语言女性化（精灵女猎手）**（2026-09-26）：原 6 条全是人形预设——静息姿就是劈叉 + 双臂平展、箭朝天，`walk` 中段整个人腾空劈叉。rig 结构与苏远一致（箭画在 `r_lower_arm`、弓画在 `l_lower_arm`），所以沿用 archer 那轮的做法：脚本里用**世界角**定姿、转成 delta，`translateY` 让最低那只脚落在地平线上。
+  ① **基准姿**：弓在前平举（`l_lower_arm` 世界角≈-5°，弓身竖直），箭低位搭弦、拉弦手在腰前——比苏远的高举更放松，也贴原画的持弓姿。
+  ② **女性化**：`walk` 窄步、摆动腿过中线时屈膝脚跟上勾、胸口微挺、头随步点轻摆；`idle` 是对立式站姿（重心在后腿，前腿交叉在前、脚尖点地）+ 缓慢呼吸；`attack` 举弓→拉至胸前→放弦后手沿下颌向后弹开→回到搭弦；`death` 先跪下再向后仰倒；`spawn` 轻跃入场、屈膝落地。
+  ③ **rig 下限（同苏远）**：拉弦臂 `r_upper_arm` 长 100px，"箭朝前 + 手贴脸"几何上做不到——试过的满弓会把手摆到后脑勺后面，所以满弓定为"拉到胸前"。放弦后箭仍在手里（贴图一体），靠手向后弹开来读"已放箭"。
+  ④ **已上线**：animator 按 **S 档**（`UNIT_SIZE_TIER[Mara] = Small`，旧包烤的是 M 档）导出，`art/units/mara/mara.tao` 与 `client/src/assets/units/mara.tao` 逐字节相同。shadow `offsetY` 139 → 224（落在新站姿的鞋底）。**`naturalHeight` 468 → 342**：旧的包围盒被朝天的箭和劈叉撑大了，现在与苏远（348）同量级，所以 Mara 在场上会比以前大约 1.37 倍——这是修正，不是回归。`skins/skin_mara.tao` 是另一套 rig，未改。
 - [ ] **卫安（Medic）绑骨没做完，战斗里仍是旧的淡线稿**（2026-09-03 核对）：v7 新图早在 `f05ad876a`（2026-07-29）就出了，卡面图也已随 2026-08-20 那批 `exportUnitCardArt.mjs` 上线；但 `client/src/assets/units/medic.tao` 与**归档的旧 rig** `art/units/old/medic/medic.tao` **md5 完全相同**——也就是上线的战斗骨骼还是被显式标为 old 的那一份。`art/units/medic/` 目前只有 `medic.xcf`，图层零件还没导出。**剩下的步骤**：GIMP 图层导出 → animator 绑骨（照 Runner 那轮）→ 导出 `.tao` 覆盖 `client/src/assets/units/medic.tao`。**核对方式别看文件日期**（资产重组/压缩批次会刷新时间戳），用上面那个 md5 对比。
 
 ### 7.6 涛阵营三个新英雄（具名+背景+视觉，2026-07-02 定稿）
