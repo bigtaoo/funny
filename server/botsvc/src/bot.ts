@@ -13,6 +13,9 @@ import { hasCode } from './apiError';
 import { BOT_FAMILY_ROSTER, BOT_SECT_ROSTER, BotOrgRegistry, PENDING_SEAT_TTL_MS, botFamilySlot } from './orgs';
 import { EXPAND_MARCH_MIN_POOL, planExpansion } from './expansion';
 import { planTraining, troopsFirst } from './training';
+import { getLevel, type AIDifficulty } from '@nw/engine';
+import { pickLevel, playLevel, toEngineCards } from './pve';
+import { planPveDay, utcDayStart } from './rotation';
 
 /** Family upkeep pacing per role (BOTSVC_DESIGN §3.3): officers approve applications, members just idle. */
 const FAMILY_SEEK_INTERVAL_MS = 60_000;
@@ -74,7 +77,61 @@ const BOT_DECK: string[] = [];
 /** Mid-curve difficulty (AISystem.ts DIFFICULTY, L1-L10) — bots aren't meant to feel unbeatable or free wins. */
 const BOT_AI_DIFFICULTY = 5;
 
-export type BotState = 'offline' | 'logging_in' | 'lobby_idle' | 'family_task' | 'slg_action' | 'matchmaking' | 'in_battle';
+export type BotState =
+  | 'offline'
+  | 'logging_in'
+  | 'lobby_idle'
+  | 'family_task'
+  | 'slg_action'
+  | 'matchmaking'
+  | 'in_battle'
+  | 'in_pve';
+
+/** PvE pacing (BOTSVC_DESIGN §3.5); injected so tests control the dice and the in-level wait. */
+export interface PveOptions {
+  enabled: boolean;
+  random: () => number;
+  /** Waits `ms` (the level's own play time) or rejects when `signal` aborts (logout). */
+  sleep: (ms: number, signal: AbortSignal) => Promise<void>;
+  /** The level itself (pve.ts playLevel). */
+  play: typeof playLevel;
+}
+
+function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) return reject(new Error('aborted'));
+    const t = setTimeout(resolve, Math.max(0, ms));
+    signal.addEventListener('abort', () => { clearTimeout(t); reject(new Error('aborted')); }, { once: true });
+  });
+}
+
+export const DEFAULT_PVE_OPTIONS: PveOptions = { enabled: true, random: Math.random, sleep: abortableSleep, play: playLevel };
+
+/** Cumulative PvE outcomes for one bot, summed into /internal/bots/status by the scheduler. */
+export interface PveCounters {
+  /** Levels entered (stamina spent). */
+  entered: number;
+  cleared: number;
+  lost: number;
+  /** Clears the server picked for a spot check, and how many of those it accepted. */
+  spotChecked: number;
+  verified: number;
+}
+
+/** 32-bit FNV-1a of a string: a stable per-bot number for skill and seeds. */
+function hash32(s: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193);
+  return h >>> 0;
+}
+
+/**
+ * AISystem difficulty a bot plays PvE at, fixed per bot from its deviceId: 6..10. Players differ in
+ * skill, and at 5 (the ranked setting) the AI clears only 7 of the 60 levels with no cards at all.
+ */
+export function pveDifficulty(deviceId: string): AIDifficulty {
+  return (6 + (hash32(deviceId) % 5)) as AIDifficulty;
+}
 
 export interface BattleOptions {
   gatewayWsUrl: string;
@@ -102,6 +159,12 @@ export class BotSession {
   private nextFamilyAt = 0;
   /** Set after filing a join request: don't re-apply before this (PENDING_JOIN_RECHECK_MS). */
   private pendingJoinUntil = 0;
+  /** UTC day `pveDue` was planned for; a new day replans and drops the old day's unplayed runs. */
+  private pveDay = -1;
+  /** Today's PvE start times still to play, ascending (rotation.ts planPveDay). */
+  private pveDue: number[] = [];
+  private pveAbort: AbortController | undefined;
+  readonly pveCounters: PveCounters = { entered: 0, cleared: 0, lost: 0, spotChecked: 0, verified: 0 };
 
   constructor(
     readonly identity: BotIdentity,
@@ -113,6 +176,7 @@ export class BotSession {
     private readonly slg: SlgOptions = { intervalMs: DEFAULT_SLG_INTERVAL_MS },
     /** Process-wide: every session in the fleet must share one, or the seat/create bookkeeping is per-bot and useless. */
     private readonly orgs: BotOrgRegistry = new BotOrgRegistry(),
+    private readonly pve: PveOptions = DEFAULT_PVE_OPTIONS,
   ) {}
 
   async login(): Promise<void> {
@@ -149,6 +213,7 @@ export class BotSession {
     // in the background after logout(), holding a live gateway/gameserver WS connection open for an
     // account the fleet no longer tracks as online — defeating load-shedding (despawnDownTo) entirely.
     this.battleAbort?.abort();
+    this.pveAbort?.abort();
     this.token = undefined;
     this.accountId = undefined;
     this.gatewayUrl = undefined;
@@ -193,6 +258,85 @@ export class BotSession {
       });
     } finally {
       this.battleAbort = undefined;
+    }
+  }
+
+  /**
+   * Earliest PvE run this bot still owes today (Infinity when none), planning the day on first ask.
+   * The scheduler reads it for OFFLINE bots too: one whose run is due logs in ahead of the others.
+   */
+  pveDueAt(now: number): number {
+    if (!this.pve.enabled) return Infinity;
+    const day = utcDayStart(now);
+    if (day !== this.pveDay) {
+      this.pveDay = day;
+      this.pveDue = planPveDay(day, this.pve.random);
+    }
+    return this.pveDue[0] ?? Infinity;
+  }
+
+  /**
+   * Starts today's next PvE run once it is due (BOTSVC_DESIGN §3.5), from lobby_idle only — a bot
+   * mid-match finishes the match first. Like tickBattle(), the run is not awaited by the caller's
+   * upkeep pass: it holds the bot in `in_pve` for the level's own play time. The returned promise
+   * settles when the run does, so the scheduler can count failures.
+   */
+  tickPve(now = Date.now()): Promise<void> {
+    if (this.state !== 'lobby_idle' || this.battling || !this.token) return Promise.resolve();
+    if (this.pveDueAt(now) > now) return Promise.resolve();
+    this.pveDue.shift();
+    this.state = 'in_pve';
+    const abort = (this.pveAbort = new AbortController());
+    return this.runPve(this.token, abort.signal)
+      .catch((e: unknown) => {
+        // Logged out mid-level (session end, shedding): the player walked away, not a failure.
+        if (!abort.signal.aborted) throw e;
+      })
+      .finally(() => {
+        this.pveAbort = undefined;
+        if (this.state === 'in_pve') this.state = 'lobby_idle';
+      });
+  }
+
+  /**
+   * One level, the way the client plays it: read the save, pick a level, spend stamina at
+   * /pve/enter, play it, and — having taken as long as the level really lasts — report a clear to
+   * /pve/clear, sending the frames to /pve/verify when the server picks it for a spot check. A loss is
+   * reported nowhere, same as the client (stamina stays spent).
+   */
+  private async runPve(token: string, signal: AbortSignal): Promise<void> {
+    const save = await this.meta.getSave(token);
+    if (signal.aborted) return;
+    const levelId = pickLevel(save.progress, this.pve.random);
+    const level = levelId ? getLevel(levelId) : null;
+    if (!levelId || !level) return;
+    try {
+      await this.meta.pveEnter(token, levelId);
+    } catch (e) {
+      // 10 stamina a run against 120 held and 1 per 6 min regained: only a bot that bought nothing
+      // and played far past its plan runs dry, and a player who is out of stamina just doesn't play.
+      if (hasCode(e, 'INSUFFICIENT_STAMINA')) return;
+      throw e;
+    }
+    this.pveCounters.entered++;
+    const startedAt = Date.now();
+    const run = await this.pve.play(
+      level,
+      { cardInstances: toEngineCards(save.cardInv), equipmentInv: save.equipmentInv ?? {} },
+      { aiSeed: hash32(this.identity.deviceId) ^ startedAt, difficulty: pveDifficulty(this.identity.deviceId) },
+    );
+    // The simulation takes milliseconds; the level takes endFrame/30 seconds. Report when a player would.
+    await this.pve.sleep(startedAt + (run.endFrame * 1000) / 30 - Date.now(), signal);
+    if (!run.won) {
+      this.pveCounters.lost++;
+      return;
+    }
+    const clear = await this.meta.pveClear(token, levelId, run.stars, run.stats);
+    this.pveCounters.cleared++;
+    if (clear.needsReplay && clear.verifyId) {
+      this.pveCounters.spotChecked++;
+      const v = await this.meta.pveVerify(token, clear.verifyId, run.endFrame, run.frames);
+      if (v.verified) this.pveCounters.verified++;
     }
   }
 

@@ -98,7 +98,7 @@
 
 ### 3.3 教学关数据（level JSON 草案）
 
-存放：`client/src/game/campaign/levels/ch0_tutorial.json`（与其它关卡同目录、同 schema，不改 `@nw/engine` 数据结构）。
+存放：`server/engine/src/campaign/levels/ch0_tutorial.json`（2026-09-26 前在 `client/src/game/campaign/levels/`）（与其它关卡同目录、同 schema，不改 `@nw/engine` 数据结构）。
 
 ```jsonc
 {
@@ -268,7 +268,7 @@
 | 首启故事 IntroScene + `nw_seen_intro` | ✅ 已有（含跳过、`story.*`） |
 | 登录门控 + 单机试玩 | ✅ 已有（SA-3） |
 | 关卡数据结构 / WaveDirector（脚本波次、固定种子） | ✅ 已有（`@nw/engine campaign/`），教学关复用，无需改 schema |
-| **教学关 `ch0_tutorial` JSON**（满 loadout） | ✅ 已建。`client/src/game/campaign/levels/ch0_tutorial.json`，仅入 `CAMPAIGN_LEVELS` 不入 `CAMPAIGN_LEVEL_ORDER`（不计进度） |
+| **教学关 `ch0_tutorial` JSON**（满 loadout） | ✅ 已建。`server/engine/src/campaign/levels/ch0_tutorial.json`（2026-09-26 前在 `client/src/game/campaign/levels/`），仅入 `CAMPAIGN_LEVELS` 不入 `CAMPAIGN_LEVEL_ORDER`（不计进度） |
 | **TutorialDirector（认知导览 O1–O7 + 卡点暂停门 + 脚本反应 + 自由发挥窗）** | ✅ 已建。`client/src/render/TutorialDirector.ts`（表现层：读同步态差分 + 控时钟 + 控 UI） |
 | **TutorialDrawPolicy（保证引导卡按拍到手，确定性纯引擎）** | ✅ 已建。`@nw/engine Card.ts`，`GameEngine` 据 `id===ch0_tutorial` 注入；含 `enterFreePlay()`（阶段 C 切随机） |
 | `flags.tutorial_done` + 「重看教学」 | ✅ 已加。`tutorial_done` 门控；设置「帮助 → 重看新手教学」重跑。**`SaveData.flags.tutorial_step` 断点续教未做**（见 §10——⚠️ 与下面「FTUE 漏斗埋点」行提到的 `tutorial_step` **同名不同物**：这里指存档断点续教字段，未建；那里指 analyticsvc 的 `tutorial_step` 埋点事件，已建，两者互不影响，勿混淆） |

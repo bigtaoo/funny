@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { findClearThreshold, formatThresholdTable, type ThresholdResult } from '../difficultySim';
-import { CAMPAIGN_LEVEL_ORDER } from '../../src/game/campaign/levels';
+import { CAMPAIGN_LEVEL_ORDER } from '@nw/engine/campaign/levels';
 import {
   UPDATING, describeDrift, readBaseline, toBaselineRows, writeChapterBaseline,
 } from './baseline';
