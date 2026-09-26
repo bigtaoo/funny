@@ -1,6 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
-import { buildCost } from '@nw/shared';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { FAMILY_CAP, SECT_CREATE_COST, SECT_FAMILY_CAP, buildCost } from '@nw/shared';
 import { BotSession } from '../src/bot';
+import { BotApiError } from '../src/apiError';
+import { BOT_FAMILY_ROSTER, BOT_SECT_ROSTER, BotOrgRegistry } from '../src/orgs';
 import type { BotIdentity } from '../src/pool';
 import * as battleSession from '../src/battleSession';
 
@@ -21,13 +23,18 @@ function fakeMeta(): any {
 function fakeSocial(): any {
   return {
     myFamily: vi.fn().mockResolvedValue(null),
-    searchFamilies: vi.fn().mockResolvedValue([]),
-    joinFamily: vi.fn(),
-    leaveFamily: vi.fn(),
+    getFamily: vi.fn().mockResolvedValue(null),
+    createFamily: vi.fn().mockImplementation(async (_t: string, name: string, tag: string) => ({
+      familyId: `fam:${tag}`, name, tag, leaderId: 'a1', memberCount: 1, prosperity: 0,
+    })),
+    requestJoin: vi.fn().mockResolvedValue({ requestId: 'r' }),
+    listJoinRequests: vi.fn().mockResolvedValue([]),
+    respondJoinRequest: vi.fn().mockResolvedValue(undefined),
+    setRole: vi.fn().mockResolvedValue(undefined),
   };
 }
 function fakeCommercial(): any {
-  return { buyMonthlyCard: vi.fn(), buyStarterGrowth: vi.fn() };
+  return { buyMonthlyCard: vi.fn(), buyStarterGrowth: vi.fn(), grantCoins: vi.fn().mockResolvedValue(undefined) };
 }
 
 /** A world fake complete enough to reach trySiege's own checks, so a case can knock out one piece. */
@@ -359,58 +366,240 @@ describe('BotSession.login / logout', () => {
 });
 
 describe('BotSession.tickFamily', () => {
+  const MIN = 60_000;
+  /** A family as socialsvc returns it; `slot` picks the roster name+TAG so it counts as a bot family. */
+  function fam(slot: number, over: Record<string, unknown> = {}): Record<string, unknown> {
+    const { name, tag } = BOT_FAMILY_ROSTER[slot]!;
+    return { familyId: `fam:${tag}`, name, tag, leaderId: 'lead', memberCount: 5, prosperity: 0, ...over };
+  }
+  /** getFamily answering from a slot → family map; unknown ids are "not founded yet". */
+  function roster(bySlot: Record<number, Record<string, unknown>>): (t: string, id: string) => Promise<unknown> {
+    return async (_t, id) => Object.values(bySlot).find((f) => f.familyId === id) ?? null;
+  }
+  async function session(
+    social: any,
+    opts: { orgs?: BotOrgRegistry; commercial?: any; world?: any; id?: BotIdentity } = {},
+  ): Promise<BotSession> {
+    const s = new BotSession(
+      opts.id ?? identity, fakeMeta(), social, opts.commercial ?? fakeCommercial(), opts.world ?? fakeWorld(),
+      battleOpts, unpacedSlg, opts.orgs ?? new BotOrgRegistry(),
+    );
+    await s.login();
+    return s;
+  }
+  /** Leader view of `slot`: the bot itself (a1, from fakeMeta) leads, plus the given extra members. */
+  function led(slot: number, members: Array<Record<string, unknown>> = [], over: Record<string, unknown> = {}) {
+    return fam(slot, { leaderId: 'a1', members: [{ accountId: 'a1', role: 'leader', joinedAt: 0 }, ...members], ...over });
+  }
+  const bot2: BotIdentity = { deviceId: 'bot-0002', paymentTier: 'free' };
+
+  afterEach(() => { vi.useRealTimers(); });
+
   it('no token (not logged in) -> no-op, no social calls', async () => {
     const social = fakeSocial();
-    const session = new BotSession(identity, fakeMeta(), social, fakeCommercial(), fakeWorld(), battleOpts);
-    await session.tickFamily();
+    const s = new BotSession(identity, fakeMeta(), social, fakeCommercial(), fakeWorld(), battleOpts);
+    await s.tickFamily();
     expect(social.myFamily).not.toHaveBeenCalled();
   });
 
-  it('familyless -> searches, joins the first candidate found', async () => {
+  it('familyless and no bot family exists yet -> founds roster slot 0', async () => {
     const social = fakeSocial();
-    social.searchFamilies.mockResolvedValue([{ familyId: 'f1', tag: 'ABC', memberCount: 5, prosperity: 50 }]);
-    const session = new BotSession(identity, fakeMeta(), social, fakeCommercial(), fakeWorld(), battleOpts);
-    await session.login();
-
-    await session.tickFamily();
-
-    expect(social.searchFamilies).toHaveBeenCalledWith('t', '');
-    expect(social.joinFamily).toHaveBeenCalledWith('t', 'ABC');
-    expect(social.leaveFamily).not.toHaveBeenCalled();
+    await (await session(social)).tickFamily();
+    expect(social.getFamily).toHaveBeenCalledWith('t', `fam:${BOT_FAMILY_ROSTER[0]!.tag}`);
+    expect(social.createFamily).toHaveBeenCalledWith('t', BOT_FAMILY_ROSTER[0]!.name, BOT_FAMILY_ROSTER[0]!.tag);
+    expect(social.requestJoin).not.toHaveBeenCalled();
   });
 
-  it('familyless with no candidates found -> searches but joins nothing', async () => {
-    const social = fakeSocial(); // searchFamilies defaults to []
-    const session = new BotSession(identity, fakeMeta(), social, fakeCommercial(), fakeWorld(), battleOpts);
-    await session.login();
-
-    await session.tickFamily();
-
-    expect(social.joinFamily).not.toHaveBeenCalled();
+  it('applies (by family id) to the first bot family with a free seat, skipping full ones', async () => {
+    const social = fakeSocial();
+    social.getFamily.mockImplementation(roster({ 0: fam(0, { memberCount: FAMILY_CAP }), 1: fam(1) }));
+    await (await session(social)).tickFamily();
+    expect(social.requestJoin).toHaveBeenCalledWith('t', `fam:${BOT_FAMILY_ROSTER[1]!.tag}`);
+    expect(social.createFamily).not.toHaveBeenCalled();
   });
 
-  it('already in a healthy (high-prosperity) family -> no-op, no leave/search', async () => {
+  it('a human family that happens to hold a roster TAG is skipped, not joined', async () => {
     const social = fakeSocial();
-    social.myFamily.mockResolvedValue({ familyId: 'f1', tag: 'ABC', memberCount: 5, prosperity: 50 });
-    const session = new BotSession(identity, fakeMeta(), social, fakeCommercial(), fakeWorld(), battleOpts);
-    await session.login();
-
-    await session.tickFamily();
-
-    expect(social.searchFamilies).not.toHaveBeenCalled();
-    expect(social.leaveFamily).not.toHaveBeenCalled();
+    social.getFamily.mockImplementation(roster({ 0: fam(0, { name: 'Someone Else' }), 1: fam(1) }));
+    await (await session(social)).tickFamily();
+    expect(social.requestJoin).toHaveBeenCalledWith('t', `fam:${BOT_FAMILY_ROSTER[1]!.tag}`);
   });
 
-  it('in a low-prosperity ("dead") family -> leaves it (a later tick re-searches once familyless)', async () => {
+  it('does not re-apply while its application is pending, then looks again after the recheck window', async () => {
+    vi.useFakeTimers({ now: 1e12 });
     const social = fakeSocial();
-    social.myFamily.mockResolvedValue({ familyId: 'f1', tag: 'ABC', memberCount: 1, prosperity: 5 });
-    const session = new BotSession(identity, fakeMeta(), social, fakeCommercial(), fakeWorld(), battleOpts);
-    await session.login();
+    social.getFamily.mockImplementation(roster({ 0: fam(0) }));
+    const s = await session(social);
+    await s.tickFamily();
+    vi.setSystemTime(1e12 + 5 * MIN);
+    await s.tickFamily();
+    expect(social.requestJoin).toHaveBeenCalledTimes(1);
+    vi.setSystemTime(1e12 + 11 * MIN);
+    await s.tickFamily();
+    expect(social.requestJoin).toHaveBeenCalledTimes(2);
+  });
 
-    await session.tickFamily();
+  it('ALREADY_REQUESTED (a pending request from before a restart) is waited on, not counted as a failure', async () => {
+    const social = fakeSocial();
+    social.getFamily.mockImplementation(roster({ 0: fam(0) }));
+    social.requestJoin.mockRejectedValue(new BotApiError('ALREADY_REQUESTED', 'x'));
+    await expect((await session(social)).tickFamily()).resolves.toBeUndefined();
+  });
 
-    expect(social.leaveFamily).toHaveBeenCalledWith('t');
-    expect(social.searchFamilies).not.toHaveBeenCalled(); // same tick doesn't also re-search
+  it('FAMILY_FULL on apply is an expected race: no throw, and the slot is re-read next time', async () => {
+    vi.useFakeTimers({ now: 1e12 });
+    const social = fakeSocial();
+    social.getFamily.mockImplementation(roster({ 0: fam(0) }));
+    social.requestJoin.mockRejectedValueOnce(new BotApiError('FAMILY_FULL', 'x'));
+    const s = await session(social);
+    await expect(s.tickFamily()).resolves.toBeUndefined();
+    vi.setSystemTime(1e12 + MIN);
+    await s.tickFamily();
+    expect(social.getFamily).toHaveBeenCalledTimes(2); // cache dropped, not served stale
+    expect(social.requestJoin).toHaveBeenCalledTimes(2); // and no pending backoff was set
+  });
+
+  it('with a shared registry, two familyless bots do not both found the same slot', async () => {
+    const orgs = new BotOrgRegistry();
+    const a = fakeSocial();
+    const b = fakeSocial();
+    await (await session(a, { orgs })).tickFamily();
+    await (await session(b, { orgs, id: bot2 })).tickFamily();
+    expect(a.createFamily).toHaveBeenCalledTimes(1);
+    expect(b.createFamily).not.toHaveBeenCalled();
+  });
+
+  it("seats held by this process's own pending applications count toward full", async () => {
+    const orgs = new BotOrgRegistry();
+    const families = roster({ 0: fam(0, { memberCount: FAMILY_CAP - 1 }) });
+    const a = fakeSocial();
+    const b = fakeSocial();
+    a.getFamily.mockImplementation(families);
+    b.getFamily.mockImplementation(families);
+    await (await session(a, { orgs })).tickFamily();
+    await (await session(b, { orgs, id: bot2 })).tickFamily();
+    expect(a.requestJoin).toHaveBeenCalledWith('t', `fam:${BOT_FAMILY_ROSTER[0]!.tag}`);
+    expect(b.requestJoin).not.toHaveBeenCalled();
+    expect(b.createFamily).toHaveBeenCalledWith('t', BOT_FAMILY_ROSTER[1]!.name, BOT_FAMILY_ROSTER[1]!.tag);
+  });
+
+  it('plain member -> nothing to do, and it waits 10 minutes before looking again', async () => {
+    vi.useFakeTimers({ now: 1e12 });
+    const social = fakeSocial();
+    social.myFamily.mockResolvedValue(fam(0, { members: [{ accountId: 'a1', role: 'member', joinedAt: 0 }] }));
+    const s = await session(social);
+    await s.tickFamily();
+    vi.setSystemTime(1e12 + 9 * MIN);
+    await s.tickFamily();
+    expect(social.myFamily).toHaveBeenCalledTimes(1);
+    expect(social.listJoinRequests).not.toHaveBeenCalled();
+    expect(social.getFamily).not.toHaveBeenCalled();
+  });
+
+  it('officer accepts applications; once the family is full the rest are rejected, not left pending', async () => {
+    const social = fakeSocial();
+    social.myFamily.mockResolvedValue(fam(3, { members: [{ accountId: 'a1', role: 'elder', joinedAt: 0 }] }));
+    social.listJoinRequests.mockResolvedValue([
+      { requestId: 'r1', accountId: 'x1', createdAt: 1 },
+      { requestId: 'r2', accountId: 'x2', createdAt: 2 },
+      { requestId: 'r3', accountId: 'x3', createdAt: 3 },
+    ]);
+    social.respondJoinRequest.mockImplementation(async (_t: string, id: string, accept: boolean) => {
+      if (id === 'r2' && accept) throw new BotApiError('FAMILY_FULL', 'full');
+    });
+    await (await session(social)).tickFamily();
+    expect(social.respondJoinRequest.mock.calls.map((c: unknown[]) => [c[1], c[2]])).toEqual([
+      ['r1', true],
+      ['r2', true],
+      ['r3', false],
+    ]);
+    expect(social.setRole).not.toHaveBeenCalled(); // elders don't appoint elders
+  });
+
+  it('leader appoints the longest-serving plain member as elder, one per tick, up to two', async () => {
+    const social = fakeSocial();
+    social.myFamily.mockResolvedValue(led(3, [
+      { accountId: 'late', role: 'member', joinedAt: 20 },
+      { accountId: 'early', role: 'member', joinedAt: 10 },
+    ]));
+    await (await session(social)).tickFamily();
+    expect(social.setRole).toHaveBeenCalledTimes(1);
+    expect(social.setRole).toHaveBeenCalledWith('t', 'early', 'elder');
+
+    const full = fakeSocial();
+    full.myFamily.mockResolvedValue(led(3, [
+      { accountId: 'e1', role: 'elder', joinedAt: 1 },
+      { accountId: 'e2', role: 'elder', joinedAt: 2 },
+      { accountId: 'm', role: 'member', joinedAt: 3 },
+    ]));
+    await (await session(full)).tickFamily();
+    expect(full.setRole).not.toHaveBeenCalled();
+  });
+
+  describe('sects', () => {
+    function sectWorld(sects: unknown[]): any {
+      return {
+        listSects: vi.fn().mockResolvedValue(sects),
+        createSect: vi.fn().mockResolvedValue({}),
+        joinSect: vi.fn().mockResolvedValue(undefined),
+      };
+    }
+    function sect(slot: number, memberFamilyCount: number): Record<string, unknown> {
+      const { name, tag } = BOT_SECT_ROSTER[slot]!;
+      return { sectId: `s:s3-0:${tag}`, name, tag, leaderFamilyId: 'f', memberFamilyCount };
+    }
+    async function leaderIn(worldId: string | undefined, social: any, world: any): Promise<any> {
+      const commercial = fakeCommercial();
+      const s = await session(social, { world, commercial });
+      (s as any).worldId = worldId; // normally set by tickSlg's season join
+      await s.tickFamily();
+      return commercial;
+    }
+
+    it('leader of family slot 0 founds sect 0, after being granted the founding cost (idempotent orderId)', async () => {
+      const social = fakeSocial();
+      social.myFamily.mockResolvedValue(led(0));
+      const world = sectWorld([]);
+      const commercial = await leaderIn('s3-0', social, world);
+      expect(commercial.grantCoins).toHaveBeenCalledWith('a1', SECT_CREATE_COST, 'bot-sect-bot-0001-s3-0', 'bot_sect_found');
+      expect(world.createSect).toHaveBeenCalledWith('t', 's3-0', BOT_SECT_ROSTER[0]!.name, BOT_SECT_ROSTER[0]!.tag);
+      expect(world.joinSect).not.toHaveBeenCalled();
+    });
+
+    it('other bot-family leaders join the emptiest bot sect with room, never a human one', async () => {
+      const social = fakeSocial();
+      social.myFamily.mockResolvedValue(led(7));
+      const human = { sectId: 's:s3-0:HUM', name: 'Humans', tag: 'HUM', leaderFamilyId: 'h', memberFamilyCount: 0 };
+      const world = sectWorld([sect(0, 4), human, sect(1, SECT_FAMILY_CAP), sect(2, 2)]);
+      const commercial = await leaderIn('s3-0', social, world);
+      expect(world.joinSect).toHaveBeenCalledWith('t', 's3-0', sect(2, 2).sectId);
+      expect(world.createSect).not.toHaveBeenCalled();
+      expect(commercial.grantCoins).not.toHaveBeenCalled();
+    });
+
+    it('a founder whose sect already exists joins like everyone else instead of founding a second', async () => {
+      const social = fakeSocial();
+      social.myFamily.mockResolvedValue(led(1));
+      const world = sectWorld([sect(0, 3), sect(1, 5)]);
+      await leaderIn('s3-0', social, world);
+      expect(world.createSect).not.toHaveBeenCalled();
+      expect(world.joinSect).toHaveBeenCalledWith('t', 's3-0', sect(0, 3).sectId);
+    });
+
+    it('no sect step when already in a sect, before the bot has a world, or for a non-bot family', async () => {
+      const cases: Array<[string | undefined, Record<string, unknown>]> = [
+        ['s3-0', led(4, [], { sectId: 's:s3-0:INKP' })],
+        [undefined, led(4)],
+        ['s3-0', led(4, [], { name: 'Not A Bot Family' })],
+      ];
+      for (const [worldId, view] of cases) {
+        const social = fakeSocial();
+        social.myFamily.mockResolvedValue(view);
+        const world = sectWorld([sect(0, 1)]);
+        await leaderIn(worldId, social, world);
+        expect(world.listSects).not.toHaveBeenCalled();
+      }
+    });
   });
 });
 

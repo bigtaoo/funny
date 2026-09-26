@@ -94,10 +94,63 @@ offline → logging_in → lobby_idle ⇄ matchmaking → in_battle → lobby_id
 - **登录失败卡死在 `logging_in`（2026-08-04 修复）**：`login()` 原先先置 `state='logging_in'` 再 `await meta.deviceLogin(...)`，deviceLogin 抛错时状态就再也回不去了——`scheduler.ts` 的 `spawnUpTo` 只从 `state==='offline'` 里挑候选重试，卡死的会话永远排不上重登；更糟的是它同时通过了 `spawnUpTo` 里 `state !== 'offline'` 的判断被塞进 `online` 集合，占着舰队名额却没有 token、什么都不做。修法：`deviceLogin` 包一层 try/catch，失败时把 `state` 复位为 `'offline'` 再重新抛出，让下一轮 `spawnUpTo` 能正常重试。
 - **`logout()` 不取消进行中的对局（2026-08-04 修复）**：`logout()` 原先只清本地 `token`/`state`，`runBattle()`（`playRankedMatch`）留下的真实 gateway/gameserver WS 连接会继续跑到打完——`despawnDownTo`（容量降级，见 §4）调 `logout()` 本意是"立刻减负"，实际却让这条连接继续占着资源，降级完全没生效。修法：`BotSession` 持有一个 `battleAbort: AbortController`，`runBattle()` 开局时创建、结束时清空；`logout()` 调 `battleAbort?.abort()`。`battleSession.ts` 的 `playRankedMatch` 新增 `abortSignal?: AbortSignal` 选项——排队阶段 `enqueueRanked` 返回后检查一次 `aborted`（提前退出，不必再连 gameserver），已连上后则在 executor 里监听 `abort` 事件，跟其余失败路径一样统一走 `finish()`（`game.close()` + reject）。
 
-### 3.3 家族加入/离开
+### 3.3 家族与宗门（2026-09-26 重写）
 
-- 空闲机器人有概率申请加入一个开放家族（socialsvc `/social/family/*`）。
-- **离开逻辑挂在家族活跃度上**：botsvc 定期（如每小时）轮询已加入家族的活跃指标（成员在线率/任务完成率，具体字段取 socialsvc 现有家族统计），低于阈值则退出重新找一个更活跃的家族——这是模拟真人"进了个死家族就跑"的行为，不是机器人自己发起破坏。
+**用户拍板**：机器人**只**申请机器人建的家族；机器人家族全满了，就由下一个找不到家族的机器人新建一个。
+另有 2–3 个机器人建宗门，其余机器人家族的族长优先加入机器人宗门。
+
+**旧实现从上线起就没成功过一次**（线上 2026-09-26 实测：`familyMembers` 里机器人 0 个，
+botsvc 日志 `family` 失败累计 **123 万次**，最后一条错误显示为 `[object Object]`）。一共四处错：
+① 调的 `/social/family/search?tag=` 传空串，服务端直接回 400 `tag required`；
+② 就算搜到了，`join` 路径里传的是 TAG，服务端要的是 familyId（`fam:TAG`）；
+③ 加入早已改成「申请 → 族长/长老审批」，旧代码不知道审批这一步，也没有任何机器人去审批；
+④ 服务端错误信封是 `{code, message}` 对象，客户端直接 `new Error(对象)`，于是日志只剩 `[object Object]`。
+
+**机器人家族怎么认**：`src/orgs.ts` 里有一张固定名册 `BOT_FAMILY_ROSTER`，共 64 个
+（8 个形容词 × 8 个名词，如 `Red Quills` / `REQU`，TAG 取两个词各前两个字母，构造上唯一）。
+64 × 30 = 1920 个名额，大于现有 1700 个机器人账号。名册第 k 格存在且 **name 与 TAG 都对得上**，才算机器人家族。
+只比 TAG 的话，真人碰巧占了同名 TAG 就会被误认；两样都一样的概率可以忽略。
+没有持久化：botsvc 仍然不带数据库，重启后照名册按 id（`GET /social/family/fam:TAG`）重新查一遍即可。
+
+**没家族的机器人**（每 60s 一次）：
+- 从第 0 格往后找第一个「存在、是机器人家族、没满」的格子，提交申请。
+  计「满」时把本进程内还没被处理的申请也算进去，免得 30 个机器人同时挤一个只剩 1 个空位的家族。
+- 如果先碰到一个还不存在的格子，说明前面的都满了，就由它自己用这一格的名字建家族。
+  同一格同时只放一个机器人去建。
+- 申请提交后 10 分钟内不再重复申请（服务端一个账号只能有一条待审申请，申请不过期也撤不回）。
+
+**族长 / 长老**（每 60s 一次）：
+- 审批全部待审申请，一律同意。家族满员后，剩下的申请全部拒绝，好让申请人尽快转去下一个家族。
+- 族长每次提拔一名最早入族的成员当长老，直到有 2 名长老。这样族长不在线时也有人审批。
+
+**普通成员**：每 10 分钟看一次，什么都不做。
+
+**删掉的逻辑**：按繁荣度退族，也就是原来的 `FAMILY_PROSPERITY_LEAVE_THRESHOLD`。
+机器人只进机器人家族，这条规则只会让它们互相拆台。
+
+**宗门**（族长专属，只在当前赛季世界里；要等 `tickSlg` 已经进入世界、拿到 worldId）：
+- 名册 `BOT_SECT_ROSTER` 有 3 个：`Ink Pact`/`INKP`、`Paper Crown`/`PAPER`、`Lead Legion`/`LEAD`。
+- 家族名册第 0–2 格的族长，就是对应宗门的创始人。
+  - 建宗门要 `SECT_CREATE_COST` = 5000 金币，而线上机器人金币最多 1450。
+    所以创始人先调 commercial 的 `/internal/grant` 领一次 5000，orderId 为 `bot-sect-<deviceId>-<worldId>`，天然幂等，重试不会重复发。
+    然后再调 `/sect/create`。
+  - 做法和 §5 的充值模拟一样，都走内部接口，botsvc 自己不写任何支付代码。
+- 其它机器人家族的族长，加入成员家族数最少、且没满（`SECT_FAMILY_CAP` = 30）的机器人宗门。
+  一个机器人宗门都还没有时就等下一轮。
+- 已知限制：如果家族的 `sectId` 挂在别的世界（上一个赛季）里，这里不处理，只跳过。
+  目前机器人家族一个宗门都没有，等换赛季时再说。
+
+**本地实测（2026-09-26）**：对本地 docker 栈跑了 40 个机器人（`NW_BOT_DEVICE_OFFSET=5000`），大约 5 分钟内：
+- `Red Quills` 满员 30 人（族长 1、长老 2），多出来的 3 个申请被拒。
+- 第 1 格 `Blue Inks` 由下一个机器人新建，已有 6 人和 2 名长老。
+- 两个族长分别建出 `Ink Pact` 和 `Paper Crown`。
+- 家族相关调用失败 **0 次**。
+- 报错信封修好后，SLG 的失败第一次能读了：全是 `TERRITORY_NOT_CONNECTED`，也就是出征不守连地规则，下一步修。
+
+**顺带发现**：两个宗门落在了**不同的世界**（`s1-4` 和 `s1-3`）。
+`/world/season/join` 按账号分片，同一个家族的成员会分散在同季的几个分片里，而宗门是按世界建的。
+所以在当前分片规则下，机器人宗门只能管到族长所在分片里的那部分成员。
+要改就得改分片规则（让同家族进同一个分片），不在 botsvc 的范围内，先记在这里。
 
 ---
 

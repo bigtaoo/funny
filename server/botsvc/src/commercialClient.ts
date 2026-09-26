@@ -26,6 +26,15 @@ export class CommercialClient {
     return this.post('/internal/monthly-card/buy', { accountId, orderId });
   }
 
+  /**
+   * Credit coins through commercial's internal grant (idempotent on orderId). Used once per sect
+   * founder (BOTSVC_DESIGN §3.3): no bot ever earns SECT_CREATE_COST on its own — the richest had 1450.
+   */
+  async grantCoins(accountId: string, amount: number, orderId: string, reason: string): Promise<void> {
+    const res = await this.post('/internal/grant', { accountId, amount, orderId, reason });
+    if (!res.ok) throw new Error(`commercial grant failed: ${orderId}`);
+  }
+
   async buyStarterGrowth(accountId: string, orderId: string): Promise<{ ok: boolean }> {
     return this.post('/internal/starter/buy', {
       accountId,

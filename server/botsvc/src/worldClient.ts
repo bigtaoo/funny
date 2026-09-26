@@ -1,6 +1,9 @@
 // SLG city/world actions (BOTSVC_DESIGN §3.2 slg_action): public /world/* REST, same auth as any
 // real client (the bot's own player JWT). No auction/social endpoints here — B8 keeps bots out of
-// the auction house and chat entirely.
+// the auction house and chat entirely. Sect found/join (BOTSVC_DESIGN §3.3) lives here too because
+// sects are worldsvc-owned, not socialsvc.
+import { envelopeError } from './apiError';
+
 export type BuildingKey =
   | 'desk'
   | 'inkPot'
@@ -31,6 +34,15 @@ export interface PlayerWorldView {
   buildings?: Partial<Record<string, number>>;
   buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: number }[];
   [key: string]: unknown;
+}
+
+/** `/sect/list` row, narrowed to what the join/found decision reads. */
+export interface SectView {
+  sectId: string;
+  name: string;
+  tag: string;
+  leaderFamilyId: string;
+  memberFamilyCount: number;
 }
 
 export type SparseTileType =
@@ -79,8 +91,8 @@ export class WorldClient {
       },
       ...(body ? { body: JSON.stringify(body) } : {}),
     });
-    const parsed = (await res.json()) as { ok: boolean; data?: T; error?: string };
-    if (!parsed.ok) throw new Error(parsed.error ?? `world call failed: ${method} ${path}`);
+    const parsed = (await res.json()) as { ok: boolean; data?: T; error?: unknown };
+    if (!parsed.ok) throw envelopeError(parsed.error, `world call failed: ${method} ${path}`);
     return parsed.data as T;
   }
 
@@ -130,6 +142,21 @@ export class WorldClient {
       kind: 'attack',
       troops,
     });
+  }
+
+  /** Every sect in the world (worldsvc caps the list at 50, sorted by member-family count). */
+  listSects(token: string, worldId: string): Promise<SectView[]> {
+    return this.call<SectView[]>('GET', `/sect/list?worldId=${encodeURIComponent(worldId)}`, token);
+  }
+
+  /** Family-leader only; worldsvc charges SECT_CREATE_COST coins through commercial. */
+  createSect(token: string, worldId: string, name: string, tag: string): Promise<SectView> {
+    return this.call<SectView>('POST', '/sect/create', token, { worldId, name, tag });
+  }
+
+  /** Family-leader only; instant (no approval step for sects). */
+  joinSect(token: string, worldId: string, sectId: string): Promise<void> {
+    return this.call<void>('POST', '/sect/join', token, { worldId, sectId });
   }
 
   /** Own base coordinates parsed from `mainBaseTile`; null until the bot has a placed base. */

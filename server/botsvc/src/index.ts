@@ -9,6 +9,7 @@ import { CommercialClient } from './commercialClient';
 import { WorldClient } from './worldClient';
 import { CapacityClient } from './capacityClient';
 import { BotSession } from './bot';
+import { BotOrgRegistry } from './orgs';
 import { Scheduler } from './scheduler';
 import { startInternalHttp } from './internalHttp';
 
@@ -23,8 +24,9 @@ async function main(): Promise<void> {
 
   const battleOpts = { gatewayWsUrl: env.gatewayWsUrl, chancePerTick: env.battleChancePerTick };
   const slgOpts = { intervalMs: env.slgIntervalMs };
+  const orgs = new BotOrgRegistry();
   const pool = generateBotPool(env.poolSize, env.deviceOffset).map(
-    (identity) => new BotSession(identity, meta, social, commercial, world, battleOpts, slgOpts),
+    (identity) => new BotSession(identity, meta, social, commercial, world, battleOpts, slgOpts, orgs),
   );
   const scheduler = new Scheduler(pool, capacity, {
     targetOnline: env.targetOnline,
