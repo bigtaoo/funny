@@ -63,6 +63,8 @@ export interface BuildAppOpts {
   jwt: JwtConfig;
   /** Internal service auth key (used by gateway to fetch ELO / gameserver to report match results / commercial calls). */
   internalKey: string;
+  /** Per-caller internal key registry (strict mode); defaults to NW_INTERNAL_KEYS. Injectable for tests. */
+  internalKeys?: Record<string, string>;
   /** commercial internal base URL (null = economy endpoints return 503); or inject a client directly (for tests). */
   commercialUrl?: string | null;
   commercial?: CommercialClient;
@@ -226,7 +228,8 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
   const accountCache = new AccountCache();
   // botsvc presents its internal key on /pve/verify (see ServiceDeps.isBotsvcRequest). Strict mode names
   // the caller; the shared-key fallback can't, but any holder of that key is a trusted service anyway.
-  const internalAuth = createInternalAuth({ keys: internalKeysFromEnv(), legacyKey: opts.internalKey });
+  const internalKeys = opts.internalKeys ?? internalKeysFromEnv();
+  const internalAuth = createInternalAuth({ keys: internalKeys, legacyKey: opts.internalKey });
   const isBotsvcRequest = (headers: Record<string, string | string[] | undefined>): boolean => {
     const r = internalAuth.verify(headers);
     return r.ok && (!internalAuth.strict || r.caller === 'botsvc');
@@ -276,7 +279,7 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
   registerInternalRoutes(app, {
     cols: opts.cols,
     internalKey: opts.internalKey,
-    internalKeys: internalKeysFromEnv(),
+    internalKeys,
     accountCache,
     now,
     gateway,

@@ -153,6 +153,35 @@ describe.skipIf(!mongo)('botsvc PvE run settles on the real metaserver', () => {
     expect(judged).toHaveLength(1);
   });
 
+  describe('strict per-caller keys (NW_INTERNAL_KEYS)', () => {
+    const KEYS = { botsvc: 'kb', matchsvc: 'km' };
+    beforeEach(async () => {
+      await app.close();
+      const gateway = fakeGateway({ available: true });
+      (gateway as { judge: GatewayClient['judge'] }).judge = async (req) => {
+        judged.push(req);
+        return peerJudge(req);
+      };
+      app = await buildApp({ cols: m.collections, jwt, internalKey: 'k', internalKeys: KEYS, gateway });
+    });
+
+    it("botsvc's own key skips the judge", async () => {
+      await botRun(10, { 'x-internal-key': 'kb' });
+      expect(judged).toEqual([]);
+    });
+
+    it("another service's valid key is not botsvc: the clear still goes to the judge", async () => {
+      // Claiming to be botsvc in the advisory caller header changes nothing — the key names the caller.
+      await botRun(10, { 'x-internal-key': 'km', 'x-internal-caller': 'botsvc' });
+      expect(judged).toHaveLength(1);
+    });
+
+    it('the legacy shared key is not accepted once strict mode is on', async () => {
+      await botRun(10, internalHeaders('botsvc', 'k'));
+      expect(judged).toHaveLength(1);
+    });
+  });
+
   it('the next run pushes the frontier, and its spot check passes too', async () => {
     await botRun();
     const r = await botRun();

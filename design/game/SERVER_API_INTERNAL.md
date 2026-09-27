@@ -93,6 +93,12 @@ client → gateway: ClientMsg.client_caps { can_judge }                         
   2. **gateway 服务端判据**：`pickJudge` 用一次 `MGET nw:activeMatch:<id>` 剔除正在打在线对局的候选人（matchsvc 开局写入该记录）。旧版本客户端不会退池，这一层兜住它们。Redis 不可用时只看 `can_judge`。
   3. **客户端兜底**：战斗中收到 `judge_request` 直接回 `ok:false`，meta 作废这次抽查，不罚。
 - **复算跑在后台优先级**：`client/src/net/judgeExecutor.ts` 是执行接缝。Web / CrazyGames / 移动端的入口装 `platform/web/workerJudge.ts`：一个常驻 Web Worker，串行排队，每跑 60 帧睡 8ms。浏览器没有线程优先级 API，只能这样手工让出。微信包必须是单文件（webpack `asyncChunks:false`），不能带 Worker chunk，所以用默认实现：主线程每 30 帧让出一帧，战斗中完全停步。引擎侧新增 `runHeadlessSliced`，和 `runHeadless` 用同一个循环，只在分片间 `await pause()`，确定性不变。两种实现都在 19s 后放弃，因为 gateway 20s 就不等了，算完的结果也会被丢弃。实测（2026-09-27，Chrome）：一局 30700 帧的 PvP，Worker 结果与 Node 同步复算逐字一致；同步 50ms，Worker 4.5s。
+- **这套规则由哪些测试钉住**（2026-09-27 补齐，每条都做过变异验证：改坏对应代码，测试确实变红）：
+  - 客户端退池与兜底：`client/test/net-session-judge-busy.test.ts`（开连接、进出战斗时 caps 的发送序列；战斗中来的请求根本不调执行器）；`client/test/ui/gameScenes.ui.ts` 末尾（`GameScene` 恰好在生命周期内占用；「再来一局」先建新场景后销毁旧场景仍连续占用；看回放不退池）。
+  - gateway：`server/gateway/test/judge-idle.test.ts`（在对局中的候选人被跳过、Redis 故障退回、等 Redis 期间断线直接作废而不往死连接发、被裁判的两人永不入选）。
+  - 机器人跳过裁判：`server/metaserver/test/bot-pve.e2e.test.ts`。严格模式（`NW_INTERNAL_KEYS`）下只认 **botsvc 自己的 key**——别的服务的有效 key 加上伪造的 `x-internal-caller: botsvc` 照样派单，旧的共享 key 也不再认。`buildApp` 因此多了可注入的 `internalKeys`（默认仍读环境变量）。
+  - 后台执行：`client/test/worker-judge-executor.test.ts`（懒建常驻 Worker、乱序回复按 id 分发、崩溃时所有挂起任务得 FAIL 且下个请求重建、构造失败不抛）；`client/test/judge-worker-queue.test.ts`（严格串行；**截止时间从到达时算**——排在长任务后面的任务不会重新拿满 19s）；`server/engine/src/__tests__/run-headless-sliced.test.ts`（切片 1/7/60 帧结果与同步逐字一致、每片恰好让出一次、`pause` 抛错后不再推进）。
+  - 微信包：`check:wechatpackage` 第 5 条（见 [`ASSET_PACKAGING.md`](ASSET_PACKAGING.md) §4）。
 - meta 加 `NW_GATEWAY_INTERNAL_URL`（→ gateway 内部 HTTP `:8090`，无 depends_on 避环）。**简化**：gameserver 未改，mismatch 的 `match_over` 文案仍标 mismatch，但 ELO 已按裁决下发。
 - **补漏（2026-07-15）**：ranked 局若启用了卡组限制（`PVP_LOADOUT_DESIGN.md §6.2`），裁判复算必须用原局的 `decks`，否则全卡池复算的哈希永远对不上双方真实哈希——仲裁永久失效。`decks` 从 `matchReport.ts` 的 `body.replay.decks` 一路透传到 `judge_request.top_deck`/`bottom_deck`，`judgeRunner.buildReplay()` 写回 `Replay.decks` 并喂给 `runHeadless` 的引擎配置。详见 `PVP_LOADOUT_DESIGN.md §6.5`。
 
