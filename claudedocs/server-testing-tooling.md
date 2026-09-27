@@ -98,6 +98,12 @@
 > 修法：拆成两例，两个交错**各自注入**。①第二次出价注入进第一次的「领账本行 → topBid CAS」窗口（`svcWithHook`），必然被 `begin` 拦下——这才是修复前真会出钱的那条分支。②另一例钉 replay 那个顺序，而它**写不成顺序调用**：第一笔落完 `topBid` 就是 10，同额重提会死在**最小加价检查**（`BID_TOO_LOW`）、永远到不了 `begin`；replay 分支只对「取快照时 `topBid` 还是 null」的调用方可达，所以注入点是输家**自己的快照读**——`svcWithHook` 表达不了（它的 hook 永远跑在真调用**之前**，而这里要读先发生），用了一个局部 proxy。两例都做了变异验证（拆掉 `begin` 的 in-flight 守卫 / 把 `done` 当成可重开的 `aborted`），全量套件 `--retry=0` 连跑 5 次 255/255。
 >
 > **两条可复用的判据**：①**一份把规则写在头注释里的文件，不等于它每一例都遵守**——审查并发用例要看代码，不要看文件声称的纪律。②看到 flakyReporter 报「重试才过」时，先问的不是「哪里有竞态」，而是「**这条断言对所有合法交错都成立吗**」；本例里产品代码一点问题都没有，红的是断言。
+
+> **规则 2 的变体：固定 sleep 等一个带退避的重试链（2026-09-27 抓到）**：`matchsvc/test/gatewayClient.test.ts` 的「match_found still gives up at error」等 400ms 看 `internal POST failed`。但 `postInternal` 的 `retries=2` 两次退避是 `150·2^attempt + jitter(0..149)`，合计 **450–748ms**——400ms **永远等不到**，`--retry=0` 下是 100% 红，不是偶发。它能「重试才过」是因为**第一次尝试留下的那条 push 还在跑**，在重试那次重新装好的 `console.error` spy 里写进了错误。所以 flakyReporter 连着几晚报它（2026-09-24 ~ 27 四次 flake-hunt 里三次），CI 却一直绿。
+>
+> 修法：`vi.useFakeTimers()` + `advanceTimersByTimeAsync`。并且把退避窗口的两端都钉住：推进 449ms（最短合计退避之下）时应当只有 2 次 fetch、没有 ERROR；再推进到 749ms 时 3 次 fetch + 一条 ERROR。`--retry=0` 连跑 12 次 9/9，全包 260/260。
+>
+> **可复用的判据**：①一条「重试才过」的用例，先用 `--retry=0` 跑三遍——**次次红的不是 flaky，是等待时长算错了**，而通过全靠上一次尝试泄漏过来的异步尾巴。②等一条已知时长的定时器链，用假时钟推进，不要用真 sleep 去猜一个「够长」的数：带 jitter 的退避，只有把上下界都算出来才知道「够长」是多少。
 ---
 
 ## 规则 4 的来源：`economy.e2e.test.ts` 的三个 equipment 用例卡在 15s 线上（2026-09-07，worktree `cranky-bhaskara-50e749`）
