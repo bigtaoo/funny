@@ -284,6 +284,14 @@ describe.skipIf(!mongo)('worldsvc wild-city siege e2e (ADR-074 P1)', () => {
       mapH: SLG_MAP_H,
       now,
     });
+    // Pin the march sequence. Every siege battle's seed is waveSeed(marchId, wave), and marchId embeds
+    // `marchSeq`, which starts at a RANDOM value per process on purpose (instance.ts initialSeq: two workers
+    // or a restart must not mint the same ids). Left random, the capital / world-center ladders — a
+    // 300-troops-per-card team against a L10 wave ladder is a close fight — were won or lost by the seed:
+    // about one run in four lost a wave and the capture assertions failed (sect-b stayed owner). With the
+    // seed pinned every battle in this file is reproducible; a balance change that flips one now fails
+    // every run instead of one in four.
+    (svc as unknown as { core: { marchSeq: number } }).core.marchSeq = 0;
     await svc.initNations(W);
     await svc.initCities(W);
     for (const sid of [SECT_A, SECT_B]) {
