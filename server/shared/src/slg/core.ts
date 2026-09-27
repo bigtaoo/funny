@@ -317,6 +317,14 @@ export const MARCH_MORALE_COMBAT_FLOOR = 0.7;
 export const MARCH_MORALE_FLOOR_RADIUS_RATIO = 0.35;
 export const RESOURCE_CAP = 200_000;
 export const RESOURCE_YIELD_BASE = 100; // base yield per tile per hour (× level multiplier)
+/**
+ * ADR-093: hourly floor the home city (base anchor) pays in each of the three non-ink land resources
+ * (paper / graphite / metal), on top of its RESOURCE_YIELD_BASE ink. Troop training needs all five resources,
+ * and metal is only mined from metal tiles (~1 in 5 low-level resource tiles) — a city with no metal tile on its
+ * frontier could never train a single troop. 50/h ≈ 10 troops/h, a trickle that unsticks a player without
+ * replacing the map as the main source. Sticker is not floored: the stickerShop already self-produces it.
+ */
+export const BASE_FLOOR_YIELD = 50;
 export const PROTECTION_SEC = 8 * 3600; // protection duration for new players / after home-city is destroyed
 export const FAMILY_CAP = 30; // S8-4 decision: max family size 30 members
 /**

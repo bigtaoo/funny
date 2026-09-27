@@ -849,8 +849,9 @@ export const zh = {
   'world.speedup': '训练加速 x2（剩{d}天{h}时{m}分{s}秒）',
   'world.garrison': '驻军 {n}',
   'world.resLevel': '{res} · Lv.{lv}',
-  // Base tiles show this INSTEAD of world.resLevel: a capital's buried resource pays a flat ink
-  // rate regardless of type/level (tileYield), so the only level worth printing there is its own.
+  // Base tiles show this INSTEAD of world.resLevel: a capital's buried resource pays nothing — the
+  // capital pays a fixed home-city rate regardless of type/level (tileYield), so the only level worth
+  // printing there is its own.
   'world.baseLevel': '主城 Lv.{lv}',
   // One resource-cost line of a build confirm; the resource motif is the line's icon.
   'world.costLine': '{res} ×{n}',

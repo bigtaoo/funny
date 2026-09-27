@@ -232,9 +232,10 @@ describe.skipIf(!mongo)('worldsvc nation-bonus e2e', () => {
 
     const rate = (await svc.getMe(W, 'a')).yieldRate!;
     const rawResource = RESOURCE_YIELD_BASE * Math.max(1, proc.level);
-    expect(rate[rt]).toBe(rawResource);
+    const homeFloor = tileYield('base', 1)[rt] ?? 0; // ADR-093: the capital's own floor in this resource
+    expect(rate[rt]).toBe(rawResource + homeFloor);
     // Spelled out so a re-add fails loudly rather than by an off-by-10%: the old expectation, now wrong.
-    expect(rate[rt]).not.toBe(Math.floor(rawResource * (1 + NATION_BONUS_PRODUCTION)));
+    expect(rate[rt]).not.toBe(Math.floor(rawResource * (1 + NATION_BONUS_PRODUCTION)) + homeFloor);
     // ...and the control case below must now be indistinguishable from this one.
   });
 
@@ -246,7 +247,8 @@ describe.skipIf(!mongo)('worldsvc nation-bonus e2e', () => {
     await svc.occupyTile(W, 'a', r.x, r.y); // no capital occupied
 
     const rate = (await svc.getMe(W, 'a')).yieldRate!;
-    expect(rate[rt]).toBe(tileYield('resource', proc.level, rt)[rt]); // raw value, no amplification
+    // raw value, no amplification (plus the capital's own ADR-093 floor in this resource)
+    expect(rate[rt]).toBe(tileYield('resource', proc.level, rt)[rt]! + (tileYield('base', 1)[rt] ?? 0));
   });
 
   // ── Defense bonus ──

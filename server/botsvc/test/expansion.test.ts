@@ -1,8 +1,10 @@
 // BOTSVC_DESIGN §3.4: which tile a bot marches on next. The planner is pure, so the rules are pinned here
 // one at a time; bot.test.ts covers how BotSession paces and sends what it returns.
 import { describe, it, expect } from 'vitest';
-import { OCCUPY_MIN_TROOPS } from '@nw/shared';
-import { EXPAND_MARCH_MIN_POOL, EXPAND_MAX_LEVEL, EXPAND_TROOP_FLOOR, planExpansion } from '../src/expansion';
+import {
+  OCCUPY_MIN_TROOPS, RESOURCE_YIELD_BASE, BASE_FLOOR_YIELD, BP_YIELD_MULT, BUILDING_MAX_LEVEL, buildingYieldMult, tileYield,
+} from '@nw/shared';
+import { EXPAND_MARCH_MIN_POOL, EXPAND_MAX_LEVEL, EXPAND_TROOP_FLOOR, planExpansion, producesFromTiles } from '../src/expansion';
 import type { WorldTileView } from '../src/worldClient';
 
 /** Base anchored at (10,10): its 3x3 footprint is x,y in 9..11, so x=12 / x=8 / y=12 / y=8 border it. */
@@ -14,6 +16,14 @@ const res = (x: number, y: number, over: Partial<WorldTileView> = {}): WorldTile
   ({ x, y, type: 'resource', level: 1, resType: 'paper', ...over });
 const enemy = (x: number, y: number, over: Partial<WorldTileView> = {}): WorldTileView =>
   ({ x, y, type: 'territory', level: 1, occupied: true, ...over });
+/** What `/world/me` reports for a bot that holds only its home city (ADR-093: ink plus the floor). */
+const HOME = tileYield('base', 1) as Record<string, number>;
+/** HOME plus one L1 tile of each listed resource. */
+const withTiles = (...rts: string[]) => {
+  const r = { ...HOME };
+  for (const rt of rts) r[rt] = (r[rt] ?? 0) + RESOURCE_YIELD_BASE;
+  return r;
+};
 const target = (tiles: WorldTileView[], troops = RICH, yieldRate: Record<string, number> = {}) => {
   const p = planExpansion(tiles, BASE, troops, NOW, yieldRate);
   return p && { kind: p.kind, x: p.x, y: p.y };
@@ -67,19 +77,28 @@ describe('planExpansion — which tile to occupy', () => {
       .toEqual({ kind: 'occupy', x: 10, y: 12 });
   });
 
-  it('a resource it does not produce at all comes before everything else, paper/graphite included', () => {
-    // Training costs all five: one missing input and no troop can ever be trained.
+  it('a resource it has no tile for comes before everything else, paper/graphite included', () => {
+    // Training costs all five, and the home city's floor alone trains only ~10 troops an hour.
     const offer = [res(12, 10, { resType: 'paper' }), res(8, 10, { resType: 'metal', level: 2 })];
-    expect(target(offer, RICH, { ink: 100, paper: 100 })).toEqual({ kind: 'occupy', x: 8, y: 10 });
-    // Only an actual yield counts as produced; a 0 entry is as missing as an absent one.
-    expect(target(offer, RICH, { ink: 100, paper: 100, metal: 0 })).toEqual({ kind: 'occupy', x: 8, y: 10 });
+    expect(target(offer, RICH, withTiles('ink', 'paper'))).toEqual({ kind: 'occupy', x: 8, y: 10 });
+    // An absent entry is as missing as the floor.
+    expect(target(offer, RICH, { ink: 200, paper: 150 })).toEqual({ kind: 'occupy', x: 8, y: 10 });
     // With nothing missing, paper/graphite first again.
-    expect(target(offer, RICH, { ink: 100, paper: 100, metal: 100 })).toEqual({ kind: 'occupy', x: 12, y: 10 });
+    expect(target(offer, RICH, withTiles('ink', 'paper', 'metal'))).toEqual({ kind: 'occupy', x: 12, y: 10 });
   });
 
-  it('a fresh bot (base ink only) is missing all four, and still takes paper/graphite first among them', () => {
+  it('a fresh bot (home city only) is missing all four, and still takes paper/graphite first among them', () => {
     const offer = [res(12, 10, { resType: 'metal' }), res(8, 10, { resType: 'ink' }), res(10, 12, { resType: 'graphite', level: 2 })];
-    expect(target(offer, RICH, { ink: 100 })).toEqual({ kind: 'occupy', x: 10, y: 12 });
+    expect(target(offer, RICH, HOME)).toEqual({ kind: 'occupy', x: 10, y: 12 });
+  });
+
+  it('the home floor never reads as a tile, whatever multiplies it; one L1 tile always does (ADR-093)', () => {
+    const maxMult = buildingYieldMult({ metalForge: BUILDING_MAX_LEVEL }, 'metal') * BP_YIELD_MULT; // maxed building × battle pass
+    expect(producesFromTiles({ metal: 0 }, 'metal')).toBe(false);
+    expect(producesFromTiles({ metal: BASE_FLOOR_YIELD }, 'metal')).toBe(false);
+    expect(producesFromTiles({ metal: Math.floor(BASE_FLOOR_YIELD * maxMult) }, 'metal')).toBe(false);
+    expect(producesFromTiles({ metal: BASE_FLOOR_YIELD + RESOURCE_YIELD_BASE }, 'metal')).toBe(true);
+    expect(producesFromTiles({ sticker: RESOURCE_YIELD_BASE }, 'sticker')).toBe(true); // no floor on sticker
   });
 
   it('then the lower level, then the tile nearer the base', () => {

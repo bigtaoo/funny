@@ -16,8 +16,8 @@ import type { ModalLine } from '../WorldMapPanels/modalLine';
  * motifResType for the matching map-icon fix). Returns null when the tile carries no resType.
  *
  * A main base is the one exception, and the reason is not cosmetic: tileYield() (@nw/shared
- * slg/march.ts) short-circuits on `type === 'base'` and pays a flat ink rate, ignoring resType and
- * level entirely. Printing "Metal Lv.3" on a capital therefore advertises production that does not
+ * slg/march.ts) short-circuits on `type === 'base'` and pays a fixed home-city rate (ink plus the
+ * ADR-093 paper/graphite/metal floor), ignoring resType and level entirely. Printing "Metal Lv.3" on a capital therefore advertises production that does not
  * exist, and the level shown is the buried resource TILE's — unrelated to the base's own level, and
  * unrelated to the durability line right above it, which comes from the owner's WALL level
  * (2026-09-02 user report). {@link baseLevelLine} takes its place there.

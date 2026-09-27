@@ -32,6 +32,13 @@ export interface WorldDoc {
    * no stored list; the read path falls back to `allCityNodes(worldId)`, exactly the old behavior.
    */
   cities?: MapEditorCityNode[];
+  /**
+   * ADR-093 one-shot repair marker: set once `backfillBaseFloorYield` has re-derived every player's stored
+   * `yieldRate` in this world under the home-city floor. Absent = not yet repaired (every world opened before
+   * the floor shipped, and — harmlessly — every newer world until the next worldsvc start, whose pass writes
+   * nothing because its players joined with the floor already in place).
+   */
+  baseFloorYieldAt?: number;
   rev: number;
 }
 
