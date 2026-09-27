@@ -202,12 +202,18 @@ export function drawHelp(host: PanelHost, page: Page, col: Column): void {
  */
 export function drawAccount(host: PanelHost, page: Page, col: Column): void {
   const { cb } = host;
-  if (!cb.offline && !cb.onLogout) return;
+  if (!cb.offline && !cb.onLogout && !cb.onLinkPortalAccount) return;
   section(page, col, t('settings.account'), (sec) => {
     if (cb.offline) {
       sec.row({
         hint: t('settings.offlineHint'),
         control: cb.onLogin ? buttonControl(page, t('auth.loginEntry'), 'key', () => cb.onLogin!(), true) : undefined,
+      });
+    } else if (cb.onLinkPortalAccount) {
+      // CrazyGames guest (CRAZYGAMES_LAUNCH.md §4.1): the portal's own sign-in keeps this progress.
+      sec.row({
+        hint: t('settings.portalSaveHint'),
+        control: buttonControl(page, t('auth.signInCrazyGames'), 'key', () => cb.onLinkPortalAccount!(), true),
       });
     } else {
       sec.linkRow({ label: t('auth.logout'), icon: 'power', onTap: () => cb.onLogout!() });

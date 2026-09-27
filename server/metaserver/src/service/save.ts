@@ -10,7 +10,7 @@ import { getOrCreateSave, writeMigratedSave } from '../save.js';
 import { readArchivedMeta, readArchivedReplayGz } from '../replayArchive.js';
 import { grantTitleToPlayer } from '../titles.js';
 import { getCurrentSeason, migrateIfStale } from '../ladderSeason.js';
-import { getDisplayName, ensurePublicId, hasFreeRename, AccountGoneError } from '../accounts.js';
+import { getDisplayName, ensurePublicId, hasFreeRename, getPortalProfile, AccountGoneError } from '../accounts.js';
 import { mirrorWalletFrom, reconcileUndelivered } from '../economy.js';
 import { nullMetaSocialsvcClient } from '../socialsvcClient.js';
 import type { MetaHandlers } from '../generated/routes.gen.js';
@@ -105,13 +105,15 @@ export class SaveService implements SaveHandlers {
       let displayName: string | undefined;
       let publicId: string;
       let freeRename: boolean;
+      let portal: Awaited<ReturnType<typeof getPortalProfile>>;
       try {
-        [stamina, displayName, publicId, freeRename] = await Promise.all([
+        [stamina, displayName, publicId, freeRename, portal] = await Promise.all([
           this.core.readStaminaSnapshot(accountId, now()),
           getDisplayName(cols, accountId),
           ensurePublicId(cols, accountId),
           // freeRename: the player still holds their one-time free rename (current name is a system default).
           hasFreeRename(cols, accountId),
+          getPortalProfile(cols, accountId),
         ]);
       } catch (e) {
         // Hard-deleted account still holding a non-expired JWT: rejectIfBanned only catches the SOFT
@@ -131,6 +133,7 @@ export class SaveService implements SaveHandlers {
         // queue, subscription expiry, speedup pricing, …) — see client/src/net/serverClock.ts.
         serverNow: now(),
         ...(displayName ? { displayName } : {}),
+        ...portal,
         ...this.core.gatewayField,
         ...(await this.core.activeMatchFieldFor(accountId)),
       });

@@ -7,6 +7,20 @@ import type { ApiClientCore } from './core';
 import type { AuthResult, ActiveMatchInfo } from './types';
 import { sampleServerNow } from '../serverClock';
 
+/** GET /save as the client sees it (the profile fields feed SaveManager's `onProfile`). */
+export interface SaveResponse {
+  save: SaveData;
+  displayName?: string;
+  publicId?: string;
+  gatewayUrl?: string;
+  freeRename?: boolean;
+  /** The display name is owned by a portal account (CrazyGames) — no rename. */
+  nameLocked?: boolean;
+  /** Portal profile picture as a `url:` avatar id; outranks the equipped avatar. */
+  platformAvatarId?: string;
+  activeMatch?: ActiveMatchInfo;
+}
+
 export interface AuthApi {
   auth(cred: AuthCredential): Promise<AuthResult>;
   register(loginId: string, password: string, displayName?: string): Promise<AuthResult>;
@@ -15,14 +29,7 @@ export interface AuthApi {
   deleteAccount(): Promise<{ confirmToken: string }>;
   cancelAccountDeletion(confirmToken: string): Promise<void>;
   recordGdprConsent(consent: boolean): Promise<void>;
-  getSave(): Promise<{
-    save: SaveData;
-    displayName?: string;
-    publicId?: string;
-    gatewayUrl?: string;
-    freeRename?: boolean;
-    activeMatch?: ActiveMatchInfo;
-  }>;
+  getSave(): Promise<SaveResponse>;
   rename(
     displayName: string
   ): Promise<{ save: SaveData; displayName: string; freeRename?: boolean }>;
@@ -48,7 +55,12 @@ export class AuthService implements AuthApi {
   /** Exchange a platform anonymous credential for a token + accountId; on success the token is retained automatically. */
   async auth(cred: AuthCredential): Promise<AuthResult> {
     const path = cred.kind === 'wx' ? '/auth/wx' : cred.kind === 'crazygames' ? '/auth/crazygames' : '/auth/device';
-    const body = cred.kind === 'wx' ? { code: cred.code } : cred.kind === 'crazygames' ? { token: cred.token } : { deviceId: cred.deviceId };
+    // CrazyGames also hands over the session it is replacing: when that is a device guest, the server
+    // binds the portal account to it instead of opening a new one (guest progress kept).
+    const guestToken = this.core.token;
+    const body = cred.kind === 'wx' ? { code: cred.code }
+      : cred.kind === 'crazygames' ? { token: cred.token, ...(guestToken ? { guestToken } : {}) }
+      : { deviceId: cred.deviceId };
     const data = await this.core.post<AuthResult>(path, body);
     this.core.token = data.token;
     return data;
@@ -106,20 +118,15 @@ export class AuthService implements AuthApi {
 
   // ── save (S0-7) ─────────────────────────────────────────
   /** Fetch the current account's cloud save (also returns the display name + public id + gateway URL for use in the profile / online play). */
-  async getSave(): Promise<{
-    save: SaveData;
-    displayName?: string;
-    publicId?: string;
-    gatewayUrl?: string;
-    freeRename?: boolean;
-    activeMatch?: ActiveMatchInfo;
-  }> {
+  async getSave(): Promise<SaveResponse> {
     const data = await this.core.request<{
       save: SaveData;
       displayName?: string;
       publicId?: string;
       gatewayUrl?: string;
       freeRename?: boolean;
+      nameLocked?: boolean;
+      platformAvatarId?: string;
       activeMatch?: ActiveMatchInfo;
       serverNow?: number;
     }>('GET', '/save');
@@ -131,6 +138,8 @@ export class AuthService implements AuthApi {
       publicId: data.publicId,
       gatewayUrl: data.gatewayUrl,
       freeRename: data.freeRename,
+      nameLocked: data.nameLocked === true,
+      ...(data.platformAvatarId ? { platformAvatarId: data.platformAvatarId } : {}),
       activeMatch: data.activeMatch,
     };
   }

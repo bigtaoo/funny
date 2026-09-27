@@ -1123,6 +1123,8 @@ paths:
                 token:
                   type: string
                   minLength: 8
+                guestToken:
+                  type: string
       responses:
         '200':
           description: Success
@@ -1703,6 +1705,10 @@ paths:
                         type: string
                       freeRename:
                         type: boolean
+                      nameLocked:
+                        type: boolean
+                      platformAvatarId:
+                        type: string
                       serverNow:
                         type: integer
                       activeMatch:

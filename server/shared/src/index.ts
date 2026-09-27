@@ -21,6 +21,7 @@ export * from './unitCards';
 export * from './social';
 export * from './slg';
 export * from './chatFilter';
+export * from './platformAvatar';
 export * from './admin';
 export * from './config';
 export * from './internalAuth';

@@ -39,7 +39,7 @@ function buildShopNav(): Harness {
   const state: AppState = {
     inLobby: true, offlineMode: false, gatewayUrl: null, netSession: null,
     firstLobbyHandled: false, socialBadgeTotal: 0, mailBadgeCount: 0, achievementClaimable: false,
-    shopCardClaimable: false, achievementReached: null,
+    shopCardClaimable: false, achievementReached: null, pendingRoomIntent: null,
   };
 
   const nav = {} as Nav;

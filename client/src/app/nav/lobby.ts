@@ -125,7 +125,19 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
     // FTUE step ⑤: on the first lobby entry of this session, redirect to the dedicated tutorial
     // level if it has not been completed (ONBOARDING_DESIGN §2).
     // One-shot gate — subsequent returns to the lobby from child scenes do not re-trigger; resize redraws skip it too.
-    if (!state.firstLobbyHandled && !opts?.fromResize) {
+    // A friend room the platform asked for (invite link, "play with friends") comes first, ahead of the
+    // tutorial: whoever invited this player is waiting in that room. It needs a server connection,
+    // which a first launch only has after the silent sign-in — until then the lobby shows and this
+    // runs again on the refresh that sign-in triggers.
+    if (state.pendingRoomIntent && !opts?.fromResize) {
+      if (getNetSession()) {
+        const intent = state.pendingRoomIntent;
+        state.pendingRoomIntent = null;
+        state.firstLobbyHandled = true;
+        nav.goRoom({ intent });
+        return;
+      }
+    } else if (!state.firstLobbyHandled && !opts?.fromResize) {
       state.firstLobbyHandled = true;
       if (!saveManager.getFlag(TUTORIAL_DONE_FLAG)) {
         if (opts?.offline !== undefined) state.offlineMode = opts.offline;

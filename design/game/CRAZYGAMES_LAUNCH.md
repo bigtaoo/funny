@@ -57,12 +57,26 @@
 
 ## 4. Full Launch 清单（Basic 评估期内做）
 
-1. **账号集成**：
-   - CG `username` 替代随机名池（服务端 `/auth/crazygames` 目前只取 `userId`），每次登录都同步；CG 包禁改名。
-   - **头像只用 CG 头像**（用户 2026-09-27 定）：做成通用的「平台头像」机制——账号带一个平台头像地址，所有画头像的地方走同一个入口，有平台头像就画它、没有才用游戏自带头像。这次只有 CG 写入；其他平台不写就不变。微信规则不同（不能静默读头像，要玩家授权/自选），以后单独接。
-   - 访客后来登录 CG：用 `addAuthListener` 接住游戏中途的登录，重跑静默入口；服务端在该 CG `userId` 首次出现且客户端当前是设备访客时，**把 CG 身份挂到这个访客账号上**（进度原样保留），已有账号则切过去。
-   - 不能只靠本地数据认访客（官方原话）：设备 id 在本地存储里，清了就丢。设置页加一行「用 CrazyGames 登录以保存进度」（只调 `showAuthPrompt`，不做主按钮、不自动弹）。
-2. **多人**：好友房接 `inviteLink` / `updateRoom` / `leftRoom` / 邀请参数 / `addJoinRoomListener`；`isInstantMultiplayer` 时启动直接进多人；连续对局不回 CG 界面；显示 CG 用户名；聊天（好友/家族/国家频道）响应 `disableChat`（服务端已有脏词过滤 `server/shared/src/chatFilter.ts`，改名也过同一套过滤）。
+1. **账号集成**（✅ 2026-09-27 完成，分支 `feat/cg-account`）：
+   - **用户名**：`/auth/crazygames` 每次登录用 token 里的 `username` 覆盖 `displayName`（截到 24 字，空的保留原名），同时写 `nameLockedBy='crazygames'`；`/profile/rename` 见到它一律 400（在扣费之前）。客户端：GET /save 返回 `nameLocked` → 设置页不给改名按钮。
+   - **头像只用 CG 头像**（用户 2026-09-27 定）：通用「平台头像」机制，**头像 id 新增一种 `url:<https>`**，走现有的 avatarId 字段传给所有人（好友、家族、资料卡、PvP 对手的 `opponent_avatar_id`），协议/proto 一个字段都没加。
+     - 服务端：账号行 `platformAvatarUrl`（只收白名单主机 `images.crazygames.com`，`shared/src/platformAvatar.ts`）；`getProfile` / `profileOf` / `profilesOf` 统一经 `effectiveAvatarId()`：有平台头像就是它，否则是装备的游戏头像。自己的头像由 GET /save 的 `platformAvatarId` 带回。
+     - 客户端：`render/avatar.ts::buildAvatar` 认 `url:`——先画字母底、图片加载完再覆盖（加载失败就一直是字母）；**只在 `IPlatform.remoteAvatars` 为真的平台画**（现在只有 CG），网页/微信/原生看到 CG 玩家是字母头像，渲染行为不变。客户端再校验一次主机白名单（值来自别的玩家）。CG 头像服务器回 `Access-Control-Allow-Origin: *`，WebGL 纹理能直接用。有平台头像时设置页不开头像选择器。
+     - 以后微信要接：它不能静默读头像（要玩家授权/自选），拿到后写同一个 `platformAvatarUrl`、白名单加主机、`WechatPlatform.remoteAvatars=true` 即可。
+   - **访客登录 CG 后进度保留**：客户端在 `/auth/crazygames` 里带上当前会话 `guestToken`（只有这一种凭据会带）；服务端在该 CG `userId` 还没账号、且 guestToken 是纯设备访客时 `bindOAuth` 到这个访客号，否则走原来的 resolve-or-create（已有 CG 账号的人回自己的号，访客号不动）。
+   - **游戏中途登录 CG**：`IPlatform.onPortalSignIn`（SDK `addAuthListener`）→ `resync()` 原地重新认证，**不跳场景**（对局中不会被踢回大厅），与设置页按钮共用同一个「最多一个在飞」的 resync。静默入口每次启动前先把存着的 token 交给 api，这样上次是访客、这次已登录 CG 的回访玩家也会被挂上。
+   - **设置页「用 CrazyGames 登录」**：只给 CG 包里的访客（`!nameLocked`），提示「登录后进度跟着账号走」；只调门户自己的 `showAuthPrompt`，不是主按钮、不自动弹。显式登录会清掉之前的 `declinePortalIdentity`（否则服务端曾拒过一次后，按钮只会弹框然后照旧以设备身份登录——实测发现的）。
+   - **验证**：metaserver 单测 10 例（绑定/已有号/有密码的号不绑/伪造 token/名字头像同步/白名单/改名拒绝/他人看到的头像）；客户端单测（guestToken 只随 CG 发、resync 去重、设置页三种状态、URL 白名单）；真 Chrome 里 CG 开发包：写入门户资料后设置页显示远程加载的 CG 头像、无改名、无账号区，访客态显示改名 + 「Sign in with CrazyGames」，点击后请求体带 `guestToken`。**本地后端没配 CG SSO，完整的「登录 → 挂号」链路要在门户 QA 工具里跑一遍。**
+2. **多人**（✅ 2026-09-27 完成，分支 `feat/cg-account`）：接口是通用的 `IPlatform.rooms`（`PlatformRooms`）与 `IPlatform.watchChatDisabled`，**只有 `CrazyGamesPlatform` 实现**，网页/微信没有这两个字段，好友房和聊天行为不变。
+   - **房间码不变**：我们仍用 6 位数字房间码；门户只以邀请参数 `room=<码>` 看到它（`platform/crazygames/crazyGamesRooms.ts`）。
+   - **邀请链接**：房间页「复制」在 CG 上复制 `game.inviteLink({ room })`（门户游戏页链接，按钮改叫「复制链接」），网页/微信仍复制裸码。
+   - **房间状态**：`room_state` 到达 → `updateRoom({ roomId: 码, isJoinable, inviteParams })`；可加入 = `WAITING` 且不满 2 人，可加入时 `showInviteButton`，否则 `hideInviteButton`。开局 → `isJoinable:false`；返回、加入失败、控制连接永久断开、对局结束或中途退出 → `leftRoom`。SDK 对 `updateRoom`/`leftRoom` 有 250 ms 节流且**超限直接抛错**，所以合并成「只发最新状态」、间隔 ≥ 300 ms，被节流就重试（最多 3 次）。
+   - **从邀请启动**：启动 URL 带 `room=` → 加入该房；带 `instantJoin=true`（门户「和朋友玩」，即 SDK 的 `isInstantMultiplayer`）→ 直接建房。意图存进 `AppState.pendingRoomIntent`，**下一次有服务器连接的大厅入口**用它开房间页，**排在新手教程前面**（邀请人在房里等）；首次启动时静默登录还没回来就先显示大厅，登录完成那次大厅刷新再打开房间。进房后本局不再触发教程。非法房间码（不是 6 位数字）直接忽略。
+   - **游戏中接受邀请**（`addJoinRoomListener`）：在房间页 → 关掉当前房、加入新房；在大厅 → 立即打开；在对局中 → **不打断对局**，记为待办，回到大厅时打开。
+   - **连续对局**：结算页「再来一局」对友谊赛仍是回大厅（在游戏内，不回 CG 界面）；友谊赛结束后房间随对局结束，所以不做「同房再开」。
+   - **CG 用户名**：见上一条账号集成（名字从门户同步、锁定）。
+   - **`disableChat`**：`ui/chatPolicy.ts` 一个开关，开启后隐藏世界频道页签（和世界地图底栏的消息预览/未读数，底栏改显示「社交」、点进去落在好友页）、家族/国家频道（显示「聊天已关闭。」）、好友/家族成员资料卡上的「发消息」、好友页签上的私信未读数；`goChat` 本身也拦。好友、家族、国家、邮件照常。设置在运行中改变时，下一次重绘生效。
+   - **验证**：`crazyGamesRooms.test.ts`（合并节流、邀请参数、leftRoom 只在告知过房间后发、节流重试、启动意图、加入监听）、`roomNav.test.ts` 平台房间 9 例、`lobbyRoomIntent.test.ts`（邀请优先于教程、未连上服务器时等待、resize 不消费）、`test/ui/chatDisabledSocialRail.ui.ts`。**门户侧的邀请按钮、个人页「加入」按钮要在门户 QA 工具里实测。**
 3. **广告**：激励视频已按「完全可选、只在非战斗界面、只在 `adFinished` 发奖」实现；考虑补「看广告回体力」（设计里有，未实现）。奖励仍以 `platform:'dev'` 提交，客户端可伪造，只靠冷却+每日上限——门户没有服务端回调，是取舍。
 4. **gameplayStop 缺口**：投降弹窗暂停、从战绩页看回放返回时没有 stop；回放被算作 gameplay。
 5. **内购**（受邀后）：Xsolla token（`user.getXsollaUserToken()`）、webhook、`analytics.trackOrder`；访客不能买；BE/NL/CN/RS/SK 禁售盲盒类，TW/KR/JP 另有公示要求；CG App 内（`applicationType` 为商店）禁用。

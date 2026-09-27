@@ -26,7 +26,7 @@ import type {
   CardInstance,
 } from '../game/meta/SaveData';
 import { ApiClientCore } from './ApiClient/core';
-import { AuthService } from './ApiClient/auth';
+import { AuthService, type SaveResponse } from './ApiClient/auth';
 import { PveService } from './ApiClient/pve';
 import { EquipmentService, type FuseRound, type FuseBatchResponse } from './ApiClient/equipment';
 import { ShopService } from './ApiClient/shop';
@@ -35,7 +35,7 @@ import { SocialService } from './ApiClient/social';
 import { MailService } from './ApiClient/mail';
 import { AchievementsService } from './ApiClient/achievements';
 import { MiscService } from './ApiClient/misc';
-import type { AuthResult, ActiveMatchInfo } from './ApiClient/types';
+import type { AuthResult } from './ApiClient/types';
 import type { ServerReplay, MatchHistoryEntry } from './ApiClient/types';
 import type { ShopItem } from './ApiClient/types';
 import type { GachaOverflow, GachaPool, GachaResultEntry, RechargeReward } from './ApiClient/types';
@@ -155,14 +155,7 @@ export class ApiClient {
     return this.authSvc.recordGdprConsent(consent);
   }
 
-  getSave(): Promise<{
-    save: SaveData;
-    displayName?: string;
-    publicId?: string;
-    gatewayUrl?: string;
-    freeRename?: boolean;
-    activeMatch?: ActiveMatchInfo;
-  }> {
+  getSave(): Promise<SaveResponse> {
     return this.authSvc.getSave();
   }
 

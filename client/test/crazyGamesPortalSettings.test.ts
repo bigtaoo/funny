@@ -10,7 +10,7 @@
  * callbacks with the whole settings object, and `inviteLink(params)` returns the URL synchronously.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { AudioBus, AudioCue, MusicTrack } from '../src/audio/audioBus';
+import type { AudioBus, AudioCue, MusicTrack } from '../src/audio/types';
 
 class RecordingBus implements AudioBus {
   sfx: number[] = [];

@@ -8,7 +8,7 @@ import { showToastMessage } from '../../net/log';
 import type { AppCtx, Nav } from '../appCtx';
 import {
   SEEN_INTRO_FLAG, TOKEN_KEY, PLAYER_NAME_KEY, PLAYER_PUBLIC_ID_KEY, PLAYER_AVATAR_KEY, RENAME_COST,
-  FREE_RENAME_KEY, GDPR_CONSENT_FLAG,
+  FREE_RENAME_KEY, GDPR_CONSENT_FLAG, PLATFORM_AVATAR_KEY, NAME_LOCKED_KEY,
 } from '../appConstants';
 
 /**
@@ -81,22 +81,29 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
     analytics.track('screen_view', { scene: 'SettingsScene' });
     const pvp = saveManager.get().pvp;
     const loggedIn = !state.offlineMode && !!platform.storage.getItem(TOKEN_KEY);
-    const canRename = !state.offlineMode && !!api && loggedIn;
+    // A portal-owned name (CrazyGames username) cannot be renamed; the server refuses it too.
+    const nameLocked = platform.storage.getItem(NAME_LOCKED_KEY) === '1';
+    const canRename = !state.offlineMode && !!api && loggedIn && !nameLocked;
+    // A portal picture outranks the in-game avatar, so there is nothing to pick.
+    const portalAvatar = !!platform.storage.getItem(PLATFORM_AVATAR_KEY);
     // No login screen to log into or to land on afterwards (IPlatform.silentAccountOnly).
     const accountSwitchable = !platform.silentAccountOnly;
+    // A guest on a portal with its own accounts may sign into it (never as the main path, never
+    // prompted unasked — CrazyGames account-integration rules) so their progress follows them.
+    const canLinkPortal = !accountSwitchable && loggedIn && !nameLocked && !!platform.signInWithCrazyGames;
     views.showSettings({
       openTextInput: (opts) => platform.openTextInput(opts),
       onBack() { nav.goLobby(); },
       playerName: playerName(),
       avatarId: avatarId(),
-      onSetAvatar: (id) => {
+      ...(portalAvatar ? {} : { onSetAvatar: (id: string) => {
         // PLAYER_AVATAR_KEY is the pure-offline-mode fallback (avatarId() in createAppCore.ts falls
         // back to it when there's no account/equipped.avatar at all) — kept even though the real,
         // server-authoritative avatar now goes through equipAvatar (PUT /avatar/equip, ownership-
         // validated) rather than the old generic PUT /save sync.
         platform.storage.setItem(PLAYER_AVATAR_KEY, id);
         saveManager.equipAvatar(id);
-      },
+      } }),
       ownedTitles: saveManager.get().titles ?? [],
       ownedSkins: saveManager.get().inventory.skins,
       // Current-inventory fallback for hero unlocks: the everOwned ledger was introduced after
@@ -110,6 +117,7 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
       pvp: { rank: pvp.rank, elo: pvp.elo },
       offline: state.offlineMode,
       ...(accountSwitchable ? { onLogin: () => goLogin() } : {}),
+      ...(canLinkPortal ? { onLinkPortalAccount: () => { void linkPortalAccount(); } } : {}),
       onLogout: loggedIn && accountSwitchable ? () => doLogout() : undefined,
       ...(canRename
         ? {
@@ -393,7 +401,21 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
    * only (the NetSession.freshToken self-heal path depends on that), so it passes false.
    */
   function enterSilently(persist: boolean): void {
-    void (async () => {
+    if (persist) watchPortalSignIn();
+    void resync(persist);
+    nav.goLobby({ offline: false });
+  }
+
+  /** In flight at most once: the portal's auth listener and the settings button can both fire it. */
+  let resyncing: Promise<boolean> | null = null;
+
+  /** Re-resolve identity in place (no navigation) and persist the session; see {@link enterSilently}. */
+  function resync(persist: boolean): Promise<boolean> {
+    resyncing ??= (async () => {
+      // Hand the stored session to the api first: on a portal with accounts the server uses it to
+      // bind a newly signed-in portal account to this guest instead of opening a fresh one.
+      const stored = persist ? platform.storage.getItem(TOKEN_KEY) : null;
+      if (stored && api && !api.hasToken()) api.setToken(stored);
       let ok = await saveManager.bootstrap();
       // A portal identity the server refuses must not leave the player with no account at all
       // (SSO never configured on this deployment, a bad token): retry once as an anonymous guest.
@@ -405,8 +427,27 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
         if (state.inLobby) nav.goLobby({ offline: false });
       }
       offerResume(() => nav.goLobby({ offline: false }));
-    })();
-    nav.goLobby({ offline: false });
+      return ok;
+    })().finally(() => { resyncing = null; });
+    return resyncing;
+  }
+
+  let portalSignInWatched = false;
+
+  /** Signing into the portal mid-session (its own menu, or our settings button) re-resolves identity
+   *  where the player is — never a scene change mid-match. */
+  function watchPortalSignIn(): void {
+    if (portalSignInWatched || !platform.onPortalSignIn) return;
+    portalSignInWatched = true;
+    platform.onPortalSignIn(() => { void resync(true); });
+  }
+
+  /** Settings' "Sign in with CrazyGames": the portal's own prompt, then the same in-place resync. */
+  async function linkPortalAccount(): Promise<void> {
+    const cred = await platform.signInWithCrazyGames?.();
+    if (!cred) return; // cancelled / unavailable: stay put, nothing to report
+    await resync(true);
+    goSettings(); // redraw: the name, avatar and this row now reflect the portal account
   }
 
   return { goIntro, goLogin, doLogout, forceLogout, resolveEntry, goSettings };

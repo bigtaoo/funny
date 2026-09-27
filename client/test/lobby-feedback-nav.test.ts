@@ -48,7 +48,7 @@ function buildLobbyNav(opts: { online: boolean }): { views: HeadlessAppViews; go
     // step ⑤) — irrelevant to the feedback-entry wiring under test, matching a returning player.
     firstLobbyHandled: true,
     socialBadgeTotal: 0, mailBadgeCount: 0, achievementClaimable: false,
-    shopCardClaimable: false, achievementReached: null,
+    shopCardClaimable: false, achievementReached: null, pendingRoomIntent: null,
   };
 
   const nav = {} as Nav;

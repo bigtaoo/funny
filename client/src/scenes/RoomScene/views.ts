@@ -239,7 +239,8 @@ export function drawInRoom(host: RoomViewHost): void {
 
   const copyW = Math.round(w * 0.34);
   const copyH = Math.round(h * 0.06);
-  addButton(host, t('room.copy'), (w - copyW) / 2, Math.round(h * 0.30), copyW, copyH,
+  // With a platform invite link (CrazyGames) the button copies that link, and says so.
+  addButton(host, t(host.cb.inviteLink ? 'room.copyLink' : 'room.copy'), (w - copyW) / 2, Math.round(h * 0.30), copyW, copyH,
     C.paper, C.accent, () => host.copyCode(code), C.accent, Math.round(copyH * 0.40), 'sheets');
 
   // Player slots (side 0 then side 1).

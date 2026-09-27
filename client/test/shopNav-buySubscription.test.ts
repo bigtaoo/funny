@@ -85,7 +85,7 @@ function buildShopNav(opts: FakeApiOpts) {
   const state: AppState = {
     inLobby: true, offlineMode: false, gatewayUrl: null, netSession: null,
     firstLobbyHandled: false, socialBadgeTotal: 0, mailBadgeCount: 0, achievementClaimable: false,
-    shopCardClaimable: false, achievementReached: null,
+    shopCardClaimable: false, achievementReached: null, pendingRoomIntent: null,
   };
   const nav = {} as Nav;
   nav.goLobby = () => {};
@@ -246,7 +246,7 @@ describe('createShopNav — buyMonthlyCard/buyYearCard', () => {
         platform, views, api: fakeApi, baseUrl: null, saveManager,
         replayStore: {} as AppCtx['replayStore'],
         featureFlags: null, // no token available
-        state: { inLobby: true, offlineMode: false, gatewayUrl: null, netSession: null, firstLobbyHandled: false, socialBadgeTotal: 0, mailBadgeCount: 0, achievementClaimable: false, shopCardClaimable: false, achievementReached: null },
+        state: { inLobby: true, offlineMode: false, gatewayUrl: null, netSession: null, firstLobbyHandled: false, socialBadgeTotal: 0, mailBadgeCount: 0, achievementClaimable: false, shopCardClaimable: false, achievementReached: null, pendingRoomIntent: null },
         nav, getNetSession: () => null, applyGatewayUrl: () => {}, playerName: () => 'tester', avatarId: () => undefined,
         gateConsent: (next) => next(), resolvePvpDeck: () => [], keepReplay: (r) => r, resolveWorldShard: () => {},
       };

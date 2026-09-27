@@ -28,7 +28,7 @@ import * as analytics from '../analytics';
 import {
   clientPlatformName,
   SEEN_INTRO_FLAG, GDPR_CONSENT_FLAG, AGE_DECLARED_FLAG, MIN_AGE_YEARS, TOKEN_KEY, PLAYER_NAME_KEY, PLAYER_PUBLIC_ID_KEY,
-  PLAYER_AVATAR_KEY, FALLBACK_SEASON, FREE_RENAME_KEY,
+  PLAYER_AVATAR_KEY, FALLBACK_SEASON, FREE_RENAME_KEY, PLATFORM_AVATAR_KEY, NAME_LOCKED_KEY,
 } from './appConstants';
 import type { AppCtx, AppState, Nav } from './appCtx';
 import { createAuthNav } from './nav/auth';
@@ -93,6 +93,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     achievementClaimable: false,
     shopCardClaimable: false,
     achievementReached: null,
+    pendingRoomIntent: platform.rooms?.launchIntent() ?? null,
   };
 
   // Navigation registry — populated by the module factories after helpers/ctx are ready.
@@ -106,10 +107,17 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     // L1 spot-check (§8.6): when a queued offline flush is selected for verification, fetch the
     // local replay by replayId and submit it for re-evaluation.
     loadReplay: (id) => replayStore.load(id),
-    onProfile: ({ displayName, publicId, gatewayUrl: gw, freeRename }) => {
+    onProfile: ({ displayName, publicId, gatewayUrl: gw, freeRename, nameLocked, platformAvatarId }) => {
       applyGatewayUrl(gw);
       // Cache the server-authoritative free-rename entitlement so the settings screen can render it offline.
       if (freeRename !== undefined) platform.storage.setItem(FREE_RENAME_KEY, freeRename ? '1' : '0');
+      // Portal-imposed profile: every GET /save states it in full, so absence clears it.
+      const avatarChanged = (platform.storage.getItem(PLATFORM_AVATAR_KEY) ?? undefined) !== platformAvatarId;
+      if (platformAvatarId) platform.storage.setItem(PLATFORM_AVATAR_KEY, platformAvatarId);
+      else platform.storage.removeItem(PLATFORM_AVATAR_KEY);
+      if (nameLocked) platform.storage.setItem(NAME_LOCKED_KEY, '1');
+      else platform.storage.removeItem(NAME_LOCKED_KEY);
+      if (avatarChanged && state.inLobby) nav.goLobby();
       if (publicId) {
         platform.storage.setItem(PLAYER_PUBLIC_ID_KEY, publicId);
         void featureFlags?.refresh(); // publicId received from save response → re-fetch bootstrap so targeted log capture takes effect immediately
@@ -181,7 +189,9 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
    * falls back to the local-only key from before avatar sync existed / offline mode.
    */
   function avatarId(): string | undefined {
-    return saveManager.get().equipped['avatar'] || platform.storage.getItem(PLAYER_AVATAR_KEY) || undefined;
+    // A portal picture outranks the in-game pick, exactly as other players see it (server effectiveAvatarId).
+    return platform.storage.getItem(PLATFORM_AVATAR_KEY)
+      || saveManager.get().equipped['avatar'] || platform.storage.getItem(PLAYER_AVATAR_KEY) || undefined;
   }
 
   /**

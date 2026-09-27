@@ -175,6 +175,8 @@ export function createResultNav(ctx: AppCtx): ResultNav {
       // duplicate net event in that window is simply dropped rather than reaching `view` (2026-08-03,
       // paired with GameScene's own destroyed-guard on applyNetState/applyPeerDc/applyMatchOver).
       session.handlers = {};
+      // The friend room is over with its match (the platform's room presence, e.g. CrazyGames).
+      platform.rooms?.left();
       if (isRanked) void saveManager.refresh();
       // Ranked: "play again" re-enters the ranked queue (fresh session), and a
       // secondary "back to lobby" gives an explicit exit. Friendly/AI keep the
@@ -221,6 +223,7 @@ export function createResultNav(ctx: AppCtx): ResultNav {
       },
       onExitToLobby() {
         analytics.track('game_end', { mode: isRanked ? 'pvp_ranked' : 'pvp_friendly', result: 'abandon', duration_sec: Math.round((Date.now() - netGameStartTs) / 1000) });
+        platform.rooms?.left();
         session.close(); nav.goLobby({ fade: true }); // exiting a match — one of the transitions that cross-fade
       },
     }, { engine, net: true, profiles, equippedSkins: allEquippedSkins(saveManager.get().equipped), opponentSkins: info.opponentSkins });

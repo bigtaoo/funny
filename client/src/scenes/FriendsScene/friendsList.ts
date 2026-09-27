@@ -7,6 +7,7 @@
 // claudedocs/client-modules.md's split-form priority note).
 import * as PIXI from 'pixi.js-legacy';
 import { t, TranslationKey } from '../../i18n';
+import { isChatDisabled } from '../../ui/chatPolicy';
 import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor } from '../../render/sketchUi';
 import { FS, snapFont, fitFont } from '../../render/fontScale';
 import type { FriendView, FriendRequestView } from '../../net/ApiClient';
@@ -291,7 +292,7 @@ export class FriendsListPanel {
       publicId: f.publicId,
       ...(f.avatarId ? { avatarId: f.avatarId } : {}),
       actions: [
-        { labelKey: 'friends.message', fn: () => core.cb.openChat(f.publicId, f.alias || f.displayName) },
+        ...(isChatDisabled() ? [] : [{ labelKey: 'friends.message' as const, fn: () => core.cb.openChat(f.publicId, f.alias || f.displayName) }]),
         { labelKey: 'friends.report', fn: () => void this.network.doReport(f.publicId), danger: true },
         { labelKey: 'friends.block', fn: () => void this.network.doBlock(f.publicId), danger: true },
       ],

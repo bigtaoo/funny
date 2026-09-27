@@ -57,6 +57,7 @@ function fakeSdk(o: SdkOpts = {}) {
     user: {
       systemInfo: o.locale ? { locale: o.locale } : {},
       getUserToken: () => Promise.resolve('portal-jwt'),
+      showAuthPrompt: () => Promise.resolve({ username: 'U', profilePictureUrl: '' }),
     },
   };
 }
@@ -126,5 +127,15 @@ describe('CrazyGamesPlatform — Basic Launch obligations', () => {
     expect(platform.declinePortalIdentity(), 'there was a portal identity to give up').toBe(true);
     expect((await platform.getAuthCredential()).kind).toBe('device');
     expect(platform.declinePortalIdentity(), 'nothing left to decline — no second retry').toBe(false);
+  });
+
+  it('REGRESSION: an explicit CrazyGames sign-in retries the portal identity after an earlier refusal', async () => {
+    // Without the reset, the settings "Sign in with CrazyGames" button showed the portal prompt and
+    // then re-authenticated as the device guest anyway — the sign-in could never link anything.
+    const platform = await boot();
+    platform.declinePortalIdentity();
+    expect((await platform.getAuthCredential()).kind).toBe('device');
+    expect(await platform.signInWithCrazyGames()).toEqual({ kind: 'crazygames', token: 'portal-jwt' });
+    expect((await platform.getAuthCredential()).kind).toBe('crazygames');
   });
 });

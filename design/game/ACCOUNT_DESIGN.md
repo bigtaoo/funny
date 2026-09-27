@@ -94,6 +94,11 @@ POST /auth/crazygames { token }                   → AuthResult | OAUTH_FAILED
   # 不进 OAuthProvider 联合类型（google-only）——机制是验 JWT 不是换码，不走 /auth/oauth 那条路。
   # 未配置 NW_CRAZYGAMES_GAME_ID（游戏尚未在 CrazyGames 开发者后台登记）时返回 OAUTH_FAILED，
   # 不影响其它登录方式。
+  # 2026-09-27 起 body 可带 guestToken（客户端当前会话）：该 CG userId 还没有账号、且 guestToken 是
+  # 纯设备访客（isAnonymousAccount）时，bindOAuth 把 CG 身份挂到这个访客账号上（进度保留，不新开号）；
+  # 已有账号的 CG 用户照旧回到自己的号，访客号不动。每次登录用 token 里的 username / profilePictureUrl
+  # 覆盖 displayName（nameChosen=true）与 platformAvatarUrl（只收白名单 https 主机），并写
+  # nameLockedBy='crazygames' → /profile/rename 一律拒绝。详见 CRAZYGAMES_LAUNCH.md §4.1。
 
 # 新增：密码
 POST /auth/register { loginId, password, displayName? }   → AuthResult | LOGIN_ID_TAKEN

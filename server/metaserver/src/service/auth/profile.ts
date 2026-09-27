@@ -37,6 +37,14 @@ export async function profileRenameHandler(core: MetaCore, req: FastifyRequest, 
 
   const { cols, commercial, now } = core.deps;
 
+  // A portal-owned name (CrazyGames re-syncs the portal username on every login) cannot be renamed:
+  // the rename would be silently undone next launch, and the portal rule is that the player keeps
+  // their portal name. Checked before the paid path, so no coins are spent on a refused rename.
+  const lock = await cols.accounts.findOne({ _id: accountId }, { projection: { nameLockedBy: 1 } });
+  if (lock?.nameLockedBy) {
+    return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'display name is managed by the platform account'));
+  }
+
   // One-time free rename for players who still carry a default name (never chose one).
   if (await hasFreeRename(cols, accountId)) {
     await setDisplayName(cols, accountId, name); // also marks nameChosen → subsequent renames are paid

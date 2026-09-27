@@ -10,6 +10,7 @@ import { openDomTextInput } from '../web/domTextInput';
 import { setAudioSuspended } from '../../audio/audioSettings';
 import type { SafeAreaInsets } from '../../layout/ILayout';
 import { readSafeAreaInsets, observeSafeAreaInsets } from '../web/safeAreaProbe';
+import { CrazyGamesRooms, type CrazyGamesRoomSdk } from './crazyGamesRooms';
 
 /**
  * CrazyGames platform adapter.
@@ -50,7 +51,7 @@ declare global {
           addSettingsChangeListener(cb: (s: { muteAudio: boolean; disableChat: boolean }) => void): void;
           /** A portal link to this game carrying `params` as query parameters (synchronous in v3). */
           inviteLink(params: Record<string, string>): string;
-        };
+        } & CrazyGamesRoomSdk;
         ad: {
           requestAd(
             type: 'midgame' | 'rewarded',
@@ -73,6 +74,9 @@ declare global {
           getUserToken(): Promise<string>;
           /** Throws { error: 'userCancelled' | 'userAlreadySignedIn' | 'showAuthPromptInProgress' }. */
           showAuthPrompt(): Promise<{ username: string; profilePictureUrl: string }>;
+          /** Called with the user object when the player signs in (and with null on sign-out, though
+           *  the portal reloads the page then anyway). */
+          addAuthListener(cb: (user: { username: string } | null) => void): void;
           /** Populated by init(); `locale` is the player's portal language, e.g. "de-DE". */
           readonly systemInfo?: { locale?: string };
         };
@@ -92,6 +96,8 @@ export class CrazyGamesPlatform implements IPlatform {
   readonly supportedLocales: readonly Locale[] = ['en', 'de', 'zh'];
   readonly silentAccountOnly = true;
   readonly skipStoryIntro = true;
+  readonly remoteAvatars = true;
+  readonly rooms: CrazyGamesRooms;
 
   private sdk: NonNullable<typeof window.CrazyGames>['SDK'] | null = null;
   /** Resolves once `SDK.init()` has settled (either way). See {@link ready}. */
@@ -119,6 +125,7 @@ export class CrazyGamesPlatform implements IPlatform {
     }
     this.canvas = canvas;
     this.initDone = this.ready();
+    this.rooms = new CrazyGamesRooms(() => this.sdk?.game ?? null, this.initDone);
   }
 
   /**
@@ -341,6 +348,31 @@ export class CrazyGamesPlatform implements IPlatform {
     return { kind: 'device', deviceId: await getOrCreateDeviceId(this.storage) };
   }
 
+  onPortalSignIn(cb: () => void): void {
+    void this.initDone.then(() => {
+      try {
+        this.sdk?.user.addAuthListener((user) => {
+          if (!user) return;
+          // A fresh portal session is worth trying again even if an earlier one was refused.
+          this.portalIdentityDeclined = false;
+          cb();
+        });
+      } catch { /* no user module on this host */ }
+    });
+  }
+
+  /** `game.settings.disableChat`: the portal's own "no chat" setting (child accounts, player choice). */
+  watchChatDisabled(cb: (disabled: boolean) => void): void {
+    void this.initDone.then(() => {
+      const game = this.sdk?.game;
+      if (!game) return;
+      try {
+        cb(!!game.settings?.disableChat);
+        game.addSettingsChangeListener((s) => cb(!!s.disableChat));
+      } catch { /* settings unavailable on this host: chat stays on */ }
+    });
+  }
+
   declinePortalIdentity(): boolean {
     if (!this.sdk || this.portalIdentityDeclined) return false;
     this.portalIdentityDeclined = true;
@@ -363,6 +395,8 @@ export class CrazyGamesPlatform implements IPlatform {
         if ((e as { error?: string } | undefined)?.error !== 'userAlreadySignedIn') throw e;
       });
       const token = await this.sdk.user.getUserToken();
+      // An explicit sign-in is a fresh portal session: try it again even if an earlier one was refused.
+      this.portalIdentityDeclined = false;
       return { kind: 'crazygames', token };
     } catch (e) {
       console.warn('[CrazyGames] sign-in failed or cancelled:', e);
