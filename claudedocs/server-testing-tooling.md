@@ -91,6 +91,8 @@
 > - **`retry: 1` 把失败率压低了一半**：关掉重试（`--retry=0`）后 8 跑挂 4。
 > - **修法**：在 `beforeEach` 里把 `core.marchSeq` 钉成 0，整份文件的战斗都能复现。加上修复后 `--retry=0` 连跑 12 次 41/41。没有去加兵：单位血量有上限，加兵加不出余量，只会把问题藏得更深。
 > - **可复用的判据**：任何带「战斗 / 攻城结果」的 e2e，先查种子从哪来。只要链上有 `initialSeq` 这类随机起步的序号，就要在测试里钉住。
+> - **同日第二个会话独立复核**：另一个会话在不含上述修复的树上也看到了同样的症状，`--retry=0` 5 跑挂 3，错误里还多一种 `expected undefined to be 'sect-a'`，也就是城没被打下来、没有主人，同样是输了一波。复核时把 worldsvc 里所有种子来源翻了一遍：`waveSeed` 只在 `baseSiege.ts`、`cityDefenders.ts`、`citySiege.ts` 三处被调用，种子全都取自 `marchId`；`siegeSeq` 虽然也是随机起步，但只用来铸 `siegeId`，不喂任何种子；`deps.rng`（`core/spawn.ts`）只管自动落点，而本文件的 `joinWorld` 给的是显式坐标，用不到它。所以钉住 `marchSeq` 一处就够了。在合进当日分支的树上 `--retry=0` 单独再连跑 12 次，全部 41/41。
+> - **顺带一条教训**：跑多次循环时别用 `grep "Tests  41 passed"` 判断通过。vitest 的输出里有 ANSI 颜色码，这个字面串永远匹配不上，12 次全过也会被判成 12 次全挂。要么设 `NO_COLOR=1`，要么只 grep `41 passed`。
 
 > **规则 3 又被违反过一次（2026-08-27 抓到）**：`auctionsvc/test/journal-atomicity.e2e.test.ts` 的「同一竞拍者同一金额两次出价」那例写的是 `Promise.allSettled([placeBid, placeBid])` + `expect(fulfilled).toHaveLength(1)`——**这个文件自己的头注释就写着「并发一律在读写窗口内注入，绝不用顺序调两次代替」，而这一例恰好是被禁的那种写法**。
 >
