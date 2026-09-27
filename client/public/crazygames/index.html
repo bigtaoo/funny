@@ -2,7 +2,10 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <!-- viewport-fit=cover: the CrazyGames App runs the game edge to edge, and env(safe-area-inset-*)
+         only reports the notch / rounded corners with it (CrazyGamesPlatform.getSafeAreaInsets).
+         Inside the website's iframe the insets stay zero either way. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <title>Nivara — Notebook Wars</title>
