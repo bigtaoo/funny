@@ -13,10 +13,13 @@ import { wheelScrollY } from '../ui/wheelScroll';
 import type { SettingsSceneCallbacks } from './SettingsScene/types';
 import type { ITextInput } from '../platform/IPlatform';
 import { dispatchHit, hitAction, hitTest, inRect, type Hit } from '../ui/hits';
-import { drawProfile, drawLanguage, drawDataSaver, drawAnalyticsConsent, drawHelp, drawAccount, drawLegal, drawViewportDiagnostics, type PanelHost } from './SettingsScene/panels';
+import { drawPage, type PanelHost } from './SettingsScene/panels';
+import { Page } from './SettingsScene/layout';
+import { scrollRegionLayer } from '../ui/widgets/scrollRegionLayer';
+import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { drawAvatarPickerOverlay, type PickerHost } from './SettingsScene/avatarPicker';
 import { drawRenameOverlay, drawDeleteConfirm, type OverlayHost } from './SettingsScene/overlays';
-import { drawAudio, type AudioPanelHost, type AudioSlider } from './SettingsScene/audioPanel';
+import type { AudioSlider } from './SettingsScene/audioPanel';
 
 export type { SettingsSceneCallbacks, RenameOutcome } from './SettingsScene/types';
 
@@ -24,8 +27,9 @@ export type { SettingsSceneCallbacks, RenameOutcome } from './SettingsScene/type
 //
 // Reached from the lobby's top-left profile chip. Canvas-drawn (mirrors ShopScene):
 // a render()-on-change tree with a flat hit-list, plus a hidden <input> for the
-// rename overlay. Shows the player's avatar + name, a rename action (spends coins,
-// online only), a language switcher, and an account action (log in / log out).
+// rename overlay. The page itself is a flow layout of grouped sections
+// (SettingsScene/layout.ts, UI_DESIGN_LOG_2026-09 §65) that scrolls vertically once it is
+// taller than the viewport — portrait usually is.
 //
 // 2026-08-13: the avatar-picker modal, rename/delete overlays, and profile/language/help/account
 // panels were pulled out into SettingsScene/{avatarPicker,overlays,panels}.ts as form① free
@@ -77,6 +81,16 @@ export class SettingsScene implements Scene {
   /** Set by a slider drag; update() turns it into at most ONE render per frame (a render() per
    *  pointer-move rebuilds the whole scene tree and janks — the scroll-drag-throttle pattern). */
   private audioDirty = false;
+  /**
+   * Page scroll. Only live when the content is taller than the viewport (`pageMaxScroll > 0`); a
+   * press inside the viewport then starts a tap-vs-drag gesture instead of firing on down.
+   * Public so the UI tests can bring a row below the fold into view.
+   */
+  pageScrollY = 0;
+  pageMaxScroll = 0;
+  private pageView: Rect | null = null;
+  private readonly pageGesture = new ScrollTapGesture();
+  private pageDirty = false;
   /** Transient "why is this locked" hint shown under the grid; cleared after a couple seconds. */
   toastMsg: string | null = null;
   toastTimer = 0;
@@ -97,17 +111,23 @@ export class SettingsScene implements Scene {
     this.playerName = cb.playerName;
     this.currentAvatarId = cb.avatarId;
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
-    this.unsubs.push(input.onMove((x, y) => { this.handleAudioMove(x); this.handlePickerMove(y); }));
+    this.unsubs.push(input.onMove((x, y) => { this.handleAudioMove(x); this.handlePickerMove(y); this.handlePageMove(y); }));
     this.unsubs.push(input.onUp(() => {
       // Release the slider BEFORE clearing it: the panel hangs its audition cue off onRelease so
       // that "does letting go make a sound" stays a decision in audioPanel.ts (see there).
       this.activeAudioSlider?.onRelease?.();
       this.activeAudioSlider = null;
       this.handlePickerUp();
+      this.handlePageUp();
     }));
     // Avatar picker grid mouse-wheel scroll (browser/PC only — see wheelScroll.ts); only live while
     // the picker overlay is open, same viewport rect handleDown's inRect gate uses.
     this.unsubs.push(input.onWheel((x, y, deltaY) => {
+      if (!this.overlayOpen && this.pageView) {
+        const next = wheelScrollY(this.pageView.y, this.pageView.y + this.pageView.h, y, deltaY, this.pageScrollY, this.pageMaxScroll);
+        if (next !== null) { this.pageScrollY = next; this.render(); }
+        return;
+      }
       if (!this.avatarPickerOpen || !this.pickerViewRect) return;
       const r = this.pickerViewRect;
       if (x < r.x || x > r.x + r.w) return;
@@ -127,7 +147,7 @@ export class SettingsScene implements Scene {
       this.toastTimer -= dt;
       if (this.toastTimer <= 0) { this.toastMsg = null; this.render(); }
     }
-    if (this.audioDirty) { this.audioDirty = false; this.render(); }
+    if (this.audioDirty || this.pageDirty) { this.audioDirty = false; this.pageDirty = false; this.render(); }
     if (this.bt.tick(dt)) this.render();
   }
 
@@ -151,7 +171,32 @@ export class SettingsScene implements Scene {
       this.pickerGesture.down(this.pickerScrollY, y, hitAction(this.pickerCellHits, x, y));
       return;
     }
+    // A scrollable page defers taps inside its viewport to pointer-up, so a drag that starts on a
+    // row scrolls instead of pressing it. Unscrollable, a press fires on down exactly as before.
+    if (!this.overlayOpen && this.pageMaxScroll > 0 && this.pageView && inRect(x, y, this.pageView)) {
+      this.pageGesture.down(this.pageScrollY, y, hitAction(this.hits, x, y));
+      return;
+    }
     dispatchHit(this.hits, x, y);
+  }
+
+  private get overlayOpen(): boolean {
+    return this.avatarPickerOpen || this.renameOpen || this.deleteConfirmOpen;
+  }
+
+  private handlePageMove(y: number): void {
+    if (!this.pageGesture.active) return;
+    const scroll = this.pageGesture.move(y);
+    if (scroll !== null) {
+      this.pageScrollY = Math.max(0, Math.min(scroll, this.pageMaxScroll));
+      this.pageDirty = true;
+    }
+  }
+
+  private handlePageUp(): void {
+    if (!this.pageGesture.active) return;
+    const tap = this.pageGesture.up();
+    if (tap) tap();
   }
 
   private handlePickerMove(y: number): void {
@@ -244,15 +289,7 @@ export class SettingsScene implements Scene {
 
     this.drawBackground();
     const tbH = this.drawHeader();
-    drawProfile(this.asPanelHost(), tbH);
-    drawLanguage(this.asPanelHost());
-    drawDataSaver(this.asPanelHost());
-    drawAnalyticsConsent(this.asPanelHost());
-    drawAudio(this.asAudioHost());
-    if (this.cb.onReplayTutorial) drawHelp(this.asPanelHost());
-    drawAccount(this.asPanelHost());
-    drawLegal(this.asPanelHost());
-    drawViewportDiagnostics(this.asPanelHost());
+    if (!this.drawPageContent(tbH)) return;
     if (this.avatarPickerOpen) drawAvatarPickerOverlay(this.asPickerHost());
     if (this.renameOpen) drawRenameOverlay(this.asOverlayHost());
     if (this.deleteConfirmOpen) drawDeleteConfirm(this.asOverlayHost());
@@ -262,30 +299,43 @@ export class SettingsScene implements Scene {
     if (this.bt.loadingVisible) drawLoadingOverlay(this.container, this.w, this.h, this.bt.dots, t('common.processing'));
   }
 
+  /**
+   * The scrolled page: every section is drawn into one masked layer in content coordinates, and
+   * `Page` shifts/clips the hit and slider rects to match. The scroll range is only known once the
+   * content has been laid out, so an offset left over from a taller layout (a locale switch, a
+   * setting that removed a row) is clamped and the whole scene drawn once more — returns false
+   * when it did that, so the caller stops drawing into the tree it just replaced.
+   */
+  private drawPageContent(tbH: number): boolean {
+    const { w, h } = this;
+    const view: Rect = { x: 0, y: tbH, w, h: h - tbH };
+    this.pageView = view;
+    const { layer } = scrollRegionLayer(this.container, view);
+    layer.y = -this.pageScrollY;
+    const page = new Page(layer, w, h, view, this.pageScrollY, this.hits, this.audioSliders);
+    const bottom = drawPage(this.asPanelHost(), page, tbH + page.m.sectionGap);
+    this.pageMaxScroll = Math.max(0, Math.round(bottom + page.m.sectionGap - (view.y + view.h)));
+    if (this.pageScrollY > this.pageMaxScroll) {
+      this.pageScrollY = this.pageMaxScroll;
+      this.render();
+      return false;
+    }
+    drawScrollIndicator(this.container, view, this.pageScrollY, this.pageMaxScroll);
+    return true;
+  }
+
   // asXxxHost() are cheap object literals (not stored) — each render() call gets a fresh one so
   // `hits`/other mutable fields always reflect the current instance state; the panels/overlays
   // mutate through these references exactly as they used to mutate `this` directly.
   private asPanelHost(): PanelHost {
     return {
-      container: this.container, w: this.w, h: this.h, cb: this.cb,
+      cb: this.cb,
       playerName: this.playerName, currentAvatarId: this.currentAvatarId, busy: this.bt.busy,
-      hits: this.hits,
       render: () => this.render(),
+      markAudioDirty: () => { this.audioDirty = true; },
       openAvatarPicker: () => this.openAvatarPicker(),
       openRename: () => this.openRename(),
       openDelete: () => this.openDelete(),
-    };
-  }
-
-  private asAudioHost(): AudioPanelHost {
-    const scene = this;
-    return {
-      container: this.container, w: this.w, h: this.h,
-      hits: this.hits,
-      get audioSliders() { return scene.audioSliders; },
-      set audioSliders(v) { scene.audioSliders = v; },
-      markAudioDirty: () => { this.audioDirty = true; },
-      render: () => this.render(),
     };
   }
 
