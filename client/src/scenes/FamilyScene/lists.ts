@@ -5,6 +5,7 @@
 // their own domain class.
 import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
+import { isChatDisabled } from '../../ui/chatPolicy';
 import { ui as C, txt, sketchPanel, sketchButton, sketchAccentBar, seedFor } from '../../render/sketchUi';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { scrollRegionLayer } from '../../ui/widgets/scrollRegionLayer';
@@ -265,6 +266,12 @@ export function renderChannel(
   maxH: number,
   scrollKey: 'scrollY' | 'scrollYChannel'
 ): void {
+  if (isChatDisabled()) {
+    const off = txt(t('chat.disabled'), FS.label, C.mid);
+    off.anchor.set(0.5, 0); off.x = x0 + colW / 2; off.y = y0 + 8;
+    core.bodyLayer.addChild(off);
+    return;
+  }
   const right = x0 + colW;
   const R = core.rowH;
   const inputH = Math.round(core.h * 0.05);

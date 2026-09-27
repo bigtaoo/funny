@@ -77,6 +77,10 @@ export class RoomScene implements Scene {
     if (cb.autoRanked && cb.available) {
       this.view = 'searching';
       this.connectingKey = 'room.searching';
+    } else if (cb.startIn && cb.available) {
+      this.mySide = cb.startIn === 'create' ? 0 : 1;
+      this.connectingKey = cb.startIn === 'create' ? 'room.creating' : 'room.joining';
+      this.view = 'connecting';
     }
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.render();
@@ -221,9 +225,10 @@ export class RoomScene implements Scene {
   }
 
   private copyCode(code: string): void {
+    const link = this.cb.inviteLink?.(code) ?? null;
     try {
-      void (navigator as Navigator | undefined)?.clipboard?.writeText(code);
-      this.toast('room.copied', 'success');
+      void (navigator as Navigator | undefined)?.clipboard?.writeText(link ?? code);
+      this.toast(link ? 'room.linkCopied' : 'room.copied', 'success');
     } catch { /* clipboard unavailable — ignore */ }
   }
 

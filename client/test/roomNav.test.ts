@@ -17,6 +17,8 @@ import type { NetSession } from '../src/net/NetSession';
 import type { NetState } from '../src/net/NetClient';
 import { HeadlessAppViews } from './harness/HeadlessAppViews';
 import { WorldApiClient } from '../src/net/WorldApiClient';
+import type { PlatformRooms } from '../src/platform/IPlatform';
+import { RoomPhase } from '../src/net/proto/transport';
 
 type FakeSession = NetSession & {
   createRoom: ReturnType<typeof vi.fn>; joinRoom: ReturnType<typeof vi.fn>; setReady: ReturnType<typeof vi.fn>;
@@ -42,8 +44,8 @@ function makeFakeSession(opts: { gatewayState?: NetState } = {}): FakeSession {
 
 /** Builds ctx+nav (wired to createRoomNav) but does NOT call goRoom() itself — each test drives
  *  that explicitly so it controls the exact opts (autoRanked etc.) goRoom() sees. */
-function buildRoomNav(opts: { session?: FakeSession | null; deck?: string[]; api?: AppCtx['api'] | null } = {}): {
-  views: HeadlessAppViews; nav: Nav; session: FakeSession | null;
+function buildRoomNav(opts: { session?: FakeSession | null; deck?: string[]; api?: AppCtx['api'] | null; rooms?: PlatformRooms } = {}): {
+  views: HeadlessAppViews; nav: Nav; session: FakeSession | null; state: AppState;
 } {
   const session = opts.session === undefined ? makeFakeSession() : opts.session;
   const views = new HeadlessAppViews();
@@ -51,7 +53,7 @@ function buildRoomNav(opts: { session?: FakeSession | null; deck?: string[]; api
     inLobby: true, offlineMode: false, gatewayUrl: session ? 'wss://x/gw' : null,
     netSession: null, firstLobbyHandled: true,
     socialBadgeTotal: 0, mailBadgeCount: 0, achievementClaimable: false,
-    shopCardClaimable: false, achievementReached: null,
+    shopCardClaimable: false, achievementReached: null, pendingRoomIntent: null,
   };
   const nav = {} as Nav;
   nav.goLobby = vi.fn();
@@ -59,7 +61,10 @@ function buildRoomNav(opts: { session?: FakeSession | null; deck?: string[]; api
   nav.goGame = vi.fn();
 
   const ctx: AppCtx = {
-    platform: { storage: { getItem: () => null, setItem: () => {}, removeItem: () => {} } } as unknown as AppCtx['platform'],
+    platform: {
+      storage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+      ...(opts.rooms ? { rooms: opts.rooms } : {}),
+    } as unknown as AppCtx['platform'],
     views,
     api: (opts.api === undefined ? ({} as AppCtx['api']) : opts.api) as AppCtx['api'],
     baseUrl: null,
@@ -79,7 +84,7 @@ function buildRoomNav(opts: { session?: FakeSession | null; deck?: string[]; api
   };
 
   Object.assign(nav, createRoomNav(ctx));
-  return { views, nav, session };
+  return { views, nav, session, state };
 }
 
 afterEach(() => {
@@ -382,5 +387,122 @@ describe('room.ts — goDeckBuilder()', () => {
     expect(outerOnSave).toHaveBeenCalled();
     const saved = outerOnSave.mock.calls[0]![0] as string[];
     expect(saved.length).toBeGreaterThan(0);
+  });
+});
+
+// Platform-hosted friend rooms (CrazyGames multiplayer, CRAZYGAMES_LAUNCH.md §4.2). Everything
+// below goes through the optional `platform.rooms`; the tests above run without one, which is
+// every platform but CrazyGames.
+function fakeRooms(): PlatformRooms & {
+  update: ReturnType<typeof vi.fn>; left: ReturnType<typeof vi.fn>; joinCb: ((code: string) => void) | null;
+} {
+  const r = {
+    joinCb: null as ((code: string) => void) | null,
+    inviteLink: vi.fn((code: string) => `https://portal/game?room=${code}`),
+    update: vi.fn(),
+    left: vi.fn(),
+    launchIntent: vi.fn(() => null),
+    onJoinRequest: vi.fn((cb: (code: string) => void) => { r.joinCb = cb; }),
+  };
+  return r;
+}
+
+const waiting = (code: string, players: number) =>
+  ({ code, phase: RoomPhase.WAITING, players: Array.from({ length: players }, (_, i) => ({ side: i })) }) as never;
+
+describe('room.ts — platform rooms', () => {
+  it('tells the platform which room the player is in, and whether a friend can still join', () => {
+    const rooms = fakeRooms();
+    const { nav, session } = buildRoomNav({ rooms });
+    nav.goRoom();
+    session!.handlers.onRoomState?.(waiting('123456', 1));
+    expect(rooms.update).toHaveBeenLastCalledWith('123456', true);
+    session!.handlers.onRoomState?.(waiting('123456', 2));
+    expect(rooms.update).toHaveBeenLastCalledWith('123456', false);
+  });
+
+  it('a started match closes the room to joiners; backing out leaves it', () => {
+    const rooms = fakeRooms();
+    const { nav, views, session } = buildRoomNav({ rooms });
+    nav.goRoom();
+    session!.handlers.onRoomState?.(waiting('123456', 1));
+    session!.handlers.onMatchStart?.({ roomId: 'r', localSide: 0 } as never);
+    expect(rooms.update).toHaveBeenLastCalledWith('123456', false);
+
+    nav.goRoom();
+    views.room!.onBack();
+    expect(rooms.left).toHaveBeenCalled();
+  });
+
+  it('a failed join leaves the room presence too', () => {
+    const rooms = fakeRooms();
+    const { nav, session } = buildRoomNav({ rooms });
+    nav.goRoom();
+    session!.handlers.onRoomError?.({ code: 'ROOM_NOT_FOUND', message: '' });
+    expect(rooms.left).toHaveBeenCalled();
+  });
+
+  it('REGRESSION: ALREADY_IN_ROOM while a room is held keeps the presence (reload into a held room)', () => {
+    const rooms = fakeRooms();
+    const { nav, session } = buildRoomNav({ rooms });
+    nav.goRoom({ intent: { kind: 'create' } });
+    session!.handlers.onRoomState?.(waiting('165070', 1));
+    session!.handlers.onRoomError?.({ code: 'ALREADY_IN_ROOM', message: '' });
+    expect(rooms.left).not.toHaveBeenCalled();
+  });
+
+  it('an invite intent joins that room as soon as the gateway is open', () => {
+    const rooms = fakeRooms();
+    const { nav, views, session } = buildRoomNav({ rooms, deck: ['d'] });
+    nav.goRoom({ intent: { kind: 'join', code: '654321' } });
+    expect(session!.joinRoom).not.toHaveBeenCalled();
+    expect(views.room!.startIn).toBe('join');
+    session!.handlers.onNetState?.('open');
+    session!.handlers.onNetState?.('open'); // a reconnect must not join twice
+    expect(session!.joinRoom).toHaveBeenCalledTimes(1);
+    expect(session!.joinRoom).toHaveBeenCalledWith('654321', ['d']);
+  });
+
+  it('"play with friends" creates a room straight away (gateway already open)', () => {
+    const rooms = fakeRooms();
+    const { nav, session } = buildRoomNav({ rooms, session: makeFakeSession({ gatewayState: 'open' }) });
+    nav.goRoom({ intent: { kind: 'create' } });
+    expect(session!.createRoom).toHaveBeenCalledTimes(1);
+  });
+
+  it('REGRESSION: an invite carrying something that is not a room code is ignored', () => {
+    const rooms = fakeRooms();
+    const { nav, views, session } = buildRoomNav({ rooms, session: makeFakeSession({ gatewayState: 'open' }) });
+    nav.goRoom({ intent: { kind: 'join', code: '../x' } });
+    expect(session!.joinRoom).not.toHaveBeenCalled();
+    expect(views.room!.startIn).toBeUndefined();
+  });
+
+  it('Copy uses the platform invite link', () => {
+    const rooms = fakeRooms();
+    const { nav, views } = buildRoomNav({ rooms });
+    nav.goRoom();
+    expect(views.room!.inviteLink?.('123456')).toBe('https://portal/game?room=123456');
+  });
+
+  it('an invite accepted in the room scene swaps rooms; elsewhere it waits for the lobby', () => {
+    const rooms = fakeRooms();
+    const { nav, session, state } = buildRoomNav({ rooms, session: makeFakeSession({ gatewayState: 'open' }) });
+    nav.goRoom();
+    rooms.joinCb!('111111');
+    expect(session!.close).toHaveBeenCalled();
+    expect(session!.joinRoom).toHaveBeenCalledWith('111111', ['deck_card']);
+
+    session!.handlers.onMatchStart?.({ roomId: 'r', localSide: 1 } as never); // now in a match
+    state.inLobby = false;
+    rooms.joinCb!('222222');
+    expect(session!.joinRoom).toHaveBeenCalledTimes(1); // never pulled out of the match
+    expect(state.pendingRoomIntent).toEqual({ kind: 'join', code: '222222' });
+  });
+
+  it('without platform rooms nothing changes: Copy has no link', () => {
+    const { nav, views } = buildRoomNav();
+    nav.goRoom();
+    expect(views.room!.inviteLink).toBeUndefined();
   });
 });

@@ -32,6 +32,15 @@ export interface AccountDoc {
    * **free** rename (see metaserver profileRename). Once true, renames cost RENAME_COST coins.
    */
   nameChosen?: boolean;
+  /**
+   * Profile picture supplied by a portal account (today: CrazyGames, from the verified SDK token on
+   * every login). Outranks the in-game avatar everywhere it is shown (`effectiveAvatarId`,
+   * platformAvatar.ts). Only allowlisted https URLs are ever stored.
+   */
+  platformAvatarUrl?: string;
+  /** Display name is owned by a portal account (CrazyGames: the portal username, re-synced on every
+   *  login) — renames are refused (profileRename). */
+  nameLockedBy?: string;
   /** 9-digit numeric public id (globally unique, used for player communication/reports). Lazily generated on first auth. */
   publicId?: string;
   /**

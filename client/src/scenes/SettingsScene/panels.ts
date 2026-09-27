@@ -290,7 +290,7 @@ export function drawAccount(host: PanelHost): void {
   const { w, h, container, cb } = host;
   // Online with nothing to offer (a silent-account platform: no logout, no deletion) — a bare
   // "Account" heading over an empty band reads as a broken section.
-  if (!cb.offline && !cb.onLogout) return;
+  if (!cb.offline && !cb.onLogout && !cb.onLinkPortalAccount) return;
   const secY = Math.round(h * 0.73);
   const x = Math.round(w * 0.12);
   const btnW = Math.round(w * 0.4);
@@ -305,6 +305,11 @@ export function drawAccount(host: PanelHost): void {
     if (cb.onLogin) {
       addButton(host, t('auth.loginEntry'), secY + Math.round(h * 0.09), C.gold, () => cb.onLogin!(), btnW, x, 'key');
     }
+  } else if (cb.onLinkPortalAccount) {
+    const hint = txt(t('settings.portalSaveHint'), FS.label, C.mid);
+    hint.anchor.set(0, 0.5); hint.x = x; hint.y = secY + Math.round(h * 0.045);
+    container.addChild(hint);
+    addButton(host, t('auth.signInCrazyGames'), secY + Math.round(h * 0.09), C.gold, () => cb.onLinkPortalAccount!(), btnW, x, 'key');
   } else if (cb.onLogout) {
     addButton(host, t('auth.logout'), secY + Math.round(h * 0.045), C.dark, () => cb.onLogout!(), btnW, x, 'power');
     // Account deletion (C5-b, Apple 5.1.1(v)) — danger entry below logout, online only.

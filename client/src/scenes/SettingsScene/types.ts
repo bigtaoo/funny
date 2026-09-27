@@ -31,6 +31,9 @@ export interface SettingsSceneCallbacks {
   offline?: boolean;
   onLogin?(): void;
   onLogout?(): void;
+  /** Guest on a portal with its own accounts (CrazyGames): sign into it so progress is kept.
+   *  Opens the portal's prompt only; never a login form of ours. */
+  onLinkPortalAccount?(): void;
   /**
    * Delete account (C5-b, Apple 5.1.1(v)). Only available when logged in online; called after a second confirmation.
    * On success, core clears local state and jumps to the login page, so no navigation return value is needed —

@@ -126,7 +126,7 @@ function buildShop(opts: HarnessOpts) {
   const state: AppState = {
     inLobby: true, offlineMode: false, gatewayUrl: null, netSession: null,
     firstLobbyHandled: false, socialBadgeTotal: 0, mailBadgeCount: 0, achievementClaimable: false,
-    shopCardClaimable: false, achievementReached: null,
+    shopCardClaimable: false, achievementReached: null, pendingRoomIntent: null,
   };
   const ctx: AppCtx = {
     platform, views, api: fakeApi, baseUrl: null, saveManager,

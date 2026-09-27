@@ -64,6 +64,10 @@
             required: [token]
             properties:
               token: { type: string, minLength: 8 }
+              # The client's current session token, when it has one. If it belongs to a pure device guest and
+              # this CrazyGames user has no account yet, the CrazyGames identity is bound to that guest account
+              # (progress kept) instead of creating a new one.
+              guestToken: { type: string }
     responses:
       '200':
         description: Success

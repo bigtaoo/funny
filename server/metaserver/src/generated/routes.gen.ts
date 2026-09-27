@@ -334,6 +334,9 @@ const BODY_SCHEMAS: Record<string, unknown> = {
       "token": {
         "type": "string",
         "minLength": 8
+      },
+      "guestToken": {
+        "type": "string"
       }
     }
   },
@@ -3423,6 +3426,12 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
             },
             "freeRename": {
               "type": "boolean"
+            },
+            "nameLocked": {
+              "type": "boolean"
+            },
+            "platformAvatarId": {
+              "type": "string"
             },
             "serverNow": {
               "type": "integer"

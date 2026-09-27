@@ -13,6 +13,7 @@ import { buildIcon, type IconKind } from '../../render/icons';
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { caretDisplay } from '../../ui/inputDisplay';
 import { drawSocialTabRail, SOCIAL_TAB_ICON, type SocialTab } from '../../ui/widgets/socialTabRail';
+import { isChatDisabled } from '../../ui/chatPolicy';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import { drawButtonLabel } from '../../ui/widgets/buttonLabel';
 import { drawSceneHeader, drawHeaderCurrency, headerCurrencyWidth, sceneHeaderHeight } from '../../ui/widgets/SceneHeader';
@@ -70,7 +71,7 @@ export function drawTabBar(core: FriendsSceneCore): void {
   const hidden: SocialTab[] = s && !s.isLeader && !s.sectId ? ['sect'] : [];
   const hits = drawSocialTabRail(
     core.container, core.w, core.h, core.bodyTop, core.landscape, core.tab,
-    { friends: core.incoming.length + core.totalUnreadChat, mail: core.mailUnread, family: core.slgStatus?.pendingJoinRequests ?? 0 },
+    { friends: core.incoming.length + (isChatDisabled() ? 0 : core.totalUnreadChat), mail: core.mailUnread, family: core.slgStatus?.pendingJoinRequests ?? 0 },
     (tab) => core.switchTab(tab),
     hidden,
     true, // activeTappable: re-tapping the active Mail tab must close an open detail view
