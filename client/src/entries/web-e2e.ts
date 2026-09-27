@@ -9,6 +9,8 @@ import { ALL_CUES } from '../audio/cueCatalogue';
 import { WebAudioBus } from '../platform/web/WebAudioBus';
 import { bakeStats, bakeEntries } from '../render/bake';
 import { probeTextMetrics, type TextMetricsReport } from '../render/textMetricsProbe';
+import { setJudgeExecutor } from '../net/judgeExecutor';
+import { createWorkerJudgeExecutor } from '../platform/web/workerJudge';
 
 // Test-only entry (client/test/browser Playwright specs) — boots the exact same real
 // PixiJS/WebGL app as entries/web.ts, but wraps AppViews so a Playwright script can drive
@@ -93,6 +95,11 @@ const recordingBus: AudioBus = {
   resume: () => audio.resume(),
 };
 setAudioBus(recordingBus);
+
+// Peer-judge recomputes run in a background Web Worker (net/judgeExecutor.ts); WeChat keeps main-thread slices.
+const workerJudge = createWorkerJudgeExecutor();
+if (workerJudge) setJudgeExecutor(workerJudge);
+
 (window as unknown as { __nwAudio: unknown }).__nwAudio = {
   play: (cue: string, count?: number) => audioBus().play(cue as never, count),
   resume: () => audioBus().resume(),

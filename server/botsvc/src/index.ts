@@ -17,7 +17,7 @@ import { startInternalHttp } from './internalHttp';
 async function main(): Promise<void> {
   const env = loadBotsvcEnv();
 
-  const meta = new MetaClient(env.metaBaseUrl);
+  const meta = new MetaClient(env.metaBaseUrl, env.internalKey);
   const social = new SocialClient(env.socialBaseUrl);
   const commercial = new CommercialClient(env.commercialInternalUrl, env.internalKey);
   const world = new WorldClient(env.worldBaseUrl);

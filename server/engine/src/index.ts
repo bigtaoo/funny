@@ -14,7 +14,7 @@ export { createGameEngine } from './GameEngine';
 export type { IGameEngine } from './types';
 
 // ── Headless driver (worldsvc authoritative siege / gateway self-judge) ───────
-export { runHeadless } from './runHeadless';
+export { runHeadless, runHeadlessSliced } from './runHeadless';
 export type { HeadlessOutcome } from './runHeadless';
 
 // ── Unified input pipeline (M13) — proto-free sources only ────────────────────

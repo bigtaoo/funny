@@ -2,8 +2,11 @@
 // picks an eligible idle online player to headlessly re-compute a match and report the verdict back to meta.
 // Depends only on connRegistry's `ConnLookup.values()` (to enumerate judge candidates) — never the WS
 // handshake/heartbeat internals.
+import { activeMatchKey, createLogger, type RedisLike } from '@nw/shared';
 import { encodeServer } from '../proto';
 import { JUDGE_TIMEOUT_MS, type ConnLookup, type GwConn, type JudgeArgs, type JudgeResult, type PendingJudge } from './types';
+
+const log = createLogger('gateway');
 
 export interface PeerJudgeDeps {
   conns: ConnLookup;
@@ -13,16 +16,22 @@ export class PeerJudgeService {
   /** In-flight judge requests (requestId → pending). Cleared when a verdict arrives or on timeout. */
   private readonly pendingJudges = new Map<string, PendingJudge>();
   private judgeSeq = 0;
+  /** Redis holding matchsvc's `activeMatch` records (Gateway.setPresenceStore); null = only the client's canJudge flag gates. */
+  private activeMatchStore: RedisLike | null = null;
 
   constructor(private readonly deps: PeerJudgeDeps) {}
+
+  setActiveMatchStore(store: RedisLike): void {
+    this.activeMatchStore = store;
+  }
 
   /**
    * Called by meta (via /gw/judge): picks an eligible idle online player to headlessly re-compute the match and report the final-state hash.
    * No eligible candidate / timeout / re-computation failed → {ok:false}; meta voids the result (no penalty).
    */
-  judge(args: JudgeArgs): Promise<JudgeResult> {
-    const candidate = this.pickJudge(args.exclude);
-    if (!candidate) return Promise.resolve({ ok: false });
+  async judge(args: JudgeArgs): Promise<JudgeResult> {
+    const candidate = await this.pickJudge(args.exclude);
+    if (!candidate) return { ok: false };
 
     const requestId = `j${++this.judgeSeq}:${Date.now()}`;
     return new Promise<JudgeResult>((resolve) => {
@@ -92,12 +101,17 @@ export class PeerJudgeService {
   }
 
   /**
-   * Picks one online player who has canJudge set and is not in the exclude list (single-judge model).
-   * Uniformly random among candidates (comm-audit-internal-2026-07-28 P0-10): the old "first match
-   * in conns iteration order" both over-drafted long-lived connections and let a colluder park an
-   * early connection to reliably occupy the judge seat for an accomplice's disputes.
+   * Picks one online player who has canJudge set, is not in the exclude list and is not in an online
+   * match (single-judge model). Uniformly random among candidates (comm-audit-internal-2026-07-28 P0-10):
+   * the old "first match in conns iteration order" both over-drafted long-lived connections and let a
+   * colluder park an early connection to reliably occupy the judge seat for an accomplice's disputes.
+   *
+   * "Not in a match" has two sources: the client withdraws canJudge while a battle is on screen
+   * (covers local bot/campaign battles too), and matchsvc's activeMatch record covers online matches
+   * server-side, so an old or misbehaving client can't be handed a recompute mid-match — which is what
+   * made live PvP stall once bot PvE spot-checks began (2026-09-27). Redis unavailable → the flag alone.
    */
-  private pickJudge(exclude: string[]): GwConn | null {
+  private async pickJudge(exclude: string[]): Promise<GwConn | null> {
     const candidates: GwConn[] = [];
     for (const conn of this.deps.conns.values()) {
       if (!conn.canJudge) continue;
@@ -105,7 +119,21 @@ export class PeerJudgeService {
       if (exclude.includes(conn.accountId)) continue;
       candidates.push(conn);
     }
-    if (candidates.length === 0) return null;
-    return candidates[Math.floor(Math.random() * candidates.length)]!;
+    const idle = await this.withoutActiveMatch(candidates);
+    if (idle.length === 0) return null;
+    const pick = idle[Math.floor(Math.random() * idle.length)]!;
+    // The await above may have spanned a disconnect.
+    return pick.ws.readyState === pick.ws.OPEN ? pick : null;
+  }
+
+  private async withoutActiveMatch(candidates: GwConn[]): Promise<GwConn[]> {
+    if (!this.activeMatchStore || candidates.length === 0) return candidates;
+    try {
+      const records = await this.activeMatchStore.mget(...candidates.map((c) => activeMatchKey(c.accountId)));
+      return candidates.filter((_, i) => !records[i]);
+    } catch (e) {
+      log.warn('activeMatch lookup failed; judging on canJudge alone', { err: (e as Error).message });
+      return candidates;
+    }
   }
 }

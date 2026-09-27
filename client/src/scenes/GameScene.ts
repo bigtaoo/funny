@@ -18,6 +18,7 @@ import { createLocalMatch } from '../app/matchEngine';
 import { preloadL1CardArtTextures } from '../render/cardArt';
 import type { NetState } from '../net/NetClient';
 import type { MatchOver, PeerDc } from '../net/proto/transport';
+import { acquireBattleBusy } from '../net/battleBusy';
 
 export interface GameSceneCallbacks {
   /**
@@ -124,6 +125,8 @@ export class GameScene implements Scene {
    * ResultScene. Without this guard they'd touch the already-destroyed GameRenderer's container.
    */
   private destroyed = false;
+  /** Keeps peer-judge requests away from this client while the battle is on screen. */
+  private readonly releaseBattleBusy = acquireBattleBusy();
 
   constructor(layout: ILayout, input: InputManager, cb: GameSceneCallbacks, opts: GameSceneOptions = {}) {
     this.cb = cb;
@@ -174,7 +177,7 @@ export class GameScene implements Scene {
   }
 
   update(dt: number): void { this.renderer.update(dt); }
-  destroy():         void { this.destroyed = true; this.renderer.destroy(); }
+  destroy():         void { this.destroyed = true; this.releaseBattleBusy(); this.renderer.destroy(); }
 
   // ── Network status (driven by app.ts from NetSession events, S1-9) ───────────
 

@@ -1,7 +1,7 @@
 // Bots log in exactly like a real Web/CrazyGames client: metaserver's public anonymous device-login
 // (contracts/openapi.yml POST /auth/device), no bot-specific account API (BOTSVC_DESIGN §3.1/B2).
 // The PvE calls are the client's own (contracts/openapi/paths/pve.yml, save.yml) — BOTSVC_DESIGN §3.5.
-import type { CardInstance, EquipmentInstance } from '@nw/shared';
+import { internalHeaders, type CardInstance, type EquipmentInstance } from '@nw/shared';
 import { envelopeError } from './apiError';
 import type { UploadFrame } from './pve';
 
@@ -27,7 +27,8 @@ export interface PveClearResult {
 }
 
 export class MetaClient {
-  constructor(private readonly baseUrl: string) {}
+  /** `internalKey` is presented only on /pve/verify, so meta skips the peer judge for bot clears (BOTSVC_DESIGN §3.5). */
+  constructor(private readonly baseUrl: string, private readonly internalKey?: string) {}
 
   async deviceLogin(deviceId: string): Promise<DeviceLoginResult> {
     const res = await fetch(`${this.baseUrl}/auth/device`, {
@@ -41,10 +42,10 @@ export class MetaClient {
     return body.data;
   }
 
-  private async call<T>(method: string, path: string, token: string, body?: unknown): Promise<T> {
+  private async call<T>(method: string, path: string, token: string, body?: unknown, extraHeaders?: Record<string, string>): Promise<T> {
     const res = await fetch(`${this.baseUrl}${path}`, {
       method,
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}`, ...extraHeaders },
       ...(body ? { body: JSON.stringify(body) } : {}),
     });
     const parsed = (await res.json()) as { ok: boolean; data?: T; error?: unknown };
@@ -66,6 +67,9 @@ export class MetaClient {
   }
 
   async pveVerify(token: string, verifyId: string, endFrame: number, frames: UploadFrame[]): Promise<{ verified: boolean }> {
-    return this.call<{ verified: boolean }>('POST', '/pve/verify', token, { verifyId, endFrame, frames });
+    // Identifying as botsvc keeps these spot-checks off human judges: a live player's browser
+    // would otherwise replay the level on its main thread, mid-match.
+    const extra = this.internalKey ? internalHeaders('botsvc', this.internalKey) : undefined;
+    return this.call<{ verified: boolean }>('POST', '/pve/verify', token, { verifyId, endFrame, frames }, extra);
   }
 }

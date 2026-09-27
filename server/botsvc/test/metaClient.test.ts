@@ -43,11 +43,11 @@ describe('MetaClient.deviceLogin', () => {
 describe('MetaClient PvE calls (BOTSVC_DESIGN §3.5) — the client\'s own endpoints, bearer-authenticated', () => {
   afterEach(() => { vi.restoreAllMocks(); });
 
-  function installAuthed(body: unknown, status = 200): { url: string; method?: string; auth?: string; body: unknown }[] {
-    const calls: { url: string; method?: string; auth?: string; body: unknown }[] = [];
+  function installAuthed(body: unknown, status = 200): { url: string; method?: string; auth?: string; key?: string; body: unknown }[] {
+    const calls: { url: string; method?: string; auth?: string; key?: string; body: unknown }[] = [];
     globalThis.fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
       const h = init?.headers as Record<string, string>;
-      calls.push({ url: String(url), method: init?.method, auth: h?.authorization, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+      calls.push({ url: String(url), method: init?.method, auth: h?.authorization, key: h?.['x-internal-key'], body: init?.body ? JSON.parse(String(init.body)) : undefined });
       return { ok: status < 300, status, json: async () => body } as Response;
     }) as typeof fetch;
     return calls;
@@ -71,6 +71,17 @@ describe('MetaClient PvE calls (BOTSVC_DESIGN §3.5) — the client\'s own endpo
       ['POST', '/pve/enter', 'Bearer jwt', { levelId: 'ch1_lv2' }],
       ['POST', '/pve/clear', 'Bearer jwt', { levelId: 'ch1_lv2', stars: 3, stats: { 'kill.archer': 2 } }],
       ['POST', '/pve/verify', 'Bearer jwt', { verifyId: 'v1', endFrame: 900, frames }],
+    ]);
+  });
+
+  it('only /pve/verify presents the internal key, so meta skips the peer judge for bot clears', async () => {
+    const calls = installAuthed({ ok: true, data: { capped: false, verified: true } });
+    const meta = new MetaClient(BASE, 'secret');
+    await meta.pveClear('jwt', 'ch1_lv2', 3, {});
+    await meta.pveVerify('jwt', 'v1', 900, []);
+    expect(calls.map((c) => [c.url.slice(BASE.length), c.key])).toEqual([
+      ['/pve/clear', undefined],
+      ['/pve/verify', 'secret'],
     ]);
   });
 
