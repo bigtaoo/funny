@@ -88,6 +88,11 @@ client → gateway: ClientMsg.client_caps { can_judge }                         
 - gateway 挑非参赛、`can_judge` 的在线 socket，push `judge_request`、挂 pending 等 `judge_verdict`（20s 超时 / 候选掉线即作废）；阻塞返回 `/gw/judge`。
 - meta `judgeMismatch()`：裁判 `state_hash` 命中哪方上报哪方诚实、另一方判负 + `settleElo` + 写 `matches.cheat{side,accountId,judgeAccountId}`；裁判不可用/超时/对不上任一方 → 退回作废（不结算、不标记）。
 - 客户端 `runJudge`（`client/src/net/judgeRunner.ts`）：proto 帧 → `Replay` → netplay 引擎跑到 GameOver → 同 `matchStateHash`（FNV-1a）算终局 hash，与对局上报逐字同源。
+- **裁判只找空闲玩家（2026-09-27）**。起因：botsvc 上线 PvE 后，机器人的首通抽查全派给了唯一在线的真人，而客户端当时在主线程同步整关复算，对局中卡成「等待对手」。现在有三层：
+  1. **客户端退池**：`GameScene` 在屏上期间（`client/src/net/battleBusy.ts`）把 `client_caps.can_judge` 重发为 false，退场再发回 true。本地人机和关卡也算在内。
+  2. **gateway 服务端判据**：`pickJudge` 用一次 `MGET nw:activeMatch:<id>` 剔除正在打在线对局的候选人（matchsvc 开局写入该记录）。旧版本客户端不会退池，这一层兜住它们。Redis 不可用时只看 `can_judge`。
+  3. **客户端兜底**：战斗中收到 `judge_request` 直接回 `ok:false`，meta 作废这次抽查，不罚。
+- **复算跑在后台优先级**：`client/src/net/judgeExecutor.ts` 是执行接缝。Web / CrazyGames / 移动端的入口装 `platform/web/workerJudge.ts`：一个常驻 Web Worker，串行排队，每跑 60 帧睡 8ms。浏览器没有线程优先级 API，只能这样手工让出。微信包必须是单文件（webpack `asyncChunks:false`），不能带 Worker chunk，所以用默认实现：主线程每 30 帧让出一帧，战斗中完全停步。引擎侧新增 `runHeadlessSliced`，和 `runHeadless` 用同一个循环，只在分片间 `await pause()`，确定性不变。两种实现都在 19s 后放弃，因为 gateway 20s 就不等了，算完的结果也会被丢弃。实测（2026-09-27，Chrome）：一局 30700 帧的 PvP，Worker 结果与 Node 同步复算逐字一致；同步 50ms，Worker 4.5s。
 - meta 加 `NW_GATEWAY_INTERNAL_URL`（→ gateway 内部 HTTP `:8090`，无 depends_on 避环）。**简化**：gameserver 未改，mismatch 的 `match_over` 文案仍标 mismatch，但 ELO 已按裁决下发。
 - **补漏（2026-07-15）**：ranked 局若启用了卡组限制（`PVP_LOADOUT_DESIGN.md §6.2`），裁判复算必须用原局的 `decks`，否则全卡池复算的哈希永远对不上双方真实哈希——仲裁永久失效。`decks` 从 `matchReport.ts` 的 `body.replay.decks` 一路透传到 `judge_request.top_deck`/`bottom_deck`，`judgeRunner.buildReplay()` 写回 `Replay.decks` 并喂给 `runHeadless` 的引擎配置。详见 `PVP_LOADOUT_DESIGN.md §6.5`。
 

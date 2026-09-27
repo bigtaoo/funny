@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import type { Collections, JwtConfig, FeatureFlagCache, RedisLike, SaveData, WordlistCache } from '@nw/shared';
-import { createLogger, internalKeysFromEnv, RENEWED_TOKEN_HEADER } from '@nw/shared';
+import { createInternalAuth, createLogger, internalKeysFromEnv, RENEWED_TOKEN_HEADER } from '@nw/shared';
 import { MetaService } from './service.js';
 import { assembleEquipmentInv } from './equipment.js';
 import { assembleCardInv } from './cards.js';
@@ -224,6 +224,13 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
   // Shared with registerInternalRoutes below so an admin ban/unban (internal API) invalidates the same
   // cache rejectIfBanned (public API) reads — one instance per buildApp call, see accountCache.ts.
   const accountCache = new AccountCache();
+  // botsvc presents its internal key on /pve/verify (see ServiceDeps.isBotsvcRequest). Strict mode names
+  // the caller; the shared-key fallback can't, but any holder of that key is a trusted service anyway.
+  const internalAuth = createInternalAuth({ keys: internalKeysFromEnv(), legacyKey: opts.internalKey });
+  const isBotsvcRequest = (headers: Record<string, string | string[] | undefined>): boolean => {
+    const r = internalAuth.verify(headers);
+    return r.ok && (!internalAuth.strict || r.caller === 'botsvc');
+  };
   const service = new MetaService({
     cols: opts.cols,
     jwt: opts.jwt,
@@ -239,6 +246,7 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
     socialsvc,
     redis,
     accountCache,
+    isBotsvcRequest,
   });
 
   // Ad platform SSV callbacks (platform-initiated; no player authentication).

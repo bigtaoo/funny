@@ -85,6 +85,8 @@ export class Gateway {
   setPresenceStore(store: GatewaySubscriber): void {
     this.connRegistry.setPresenceStore(store);
     this.dispatcher.upgradeRateLimiters(store.rateLimitClient);
+    // Same Redis matchsvc writes activeMatch records to: lets pickJudge skip players in an online match.
+    this.peerJudge.setActiveMatchStore(store.rateLimitClient);
   }
 
   /** Cross-instance account takeover (2026-07-18, §8.4) — see connRegistry.routeKick for the full doc. */

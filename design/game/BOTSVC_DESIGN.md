@@ -242,6 +242,12 @@ client、peer judge、关卡编辑器、调参脚本现在读的都是这一份�
 - 第 t 帧后决定的指令在第 t+1 帧执行，并记在 t+1 帧名下。
 - 用同一份关卡 JSON、同一份卡牌。
 
+**机器人的抽查不派给真人（2026-09-27）**：`MetaClient.pveVerify` 带上 botsvc 的内部密钥头（`internalHeaders('botsvc', …)`，只有这一个调用带）。metaserver 验过密钥（strict 模式下还要求 caller 是 `botsvc`）后，跳过 `gateway.judge`，直接记为 `unverified` 并照发奖励，和「没有裁判在线」的处理一致。原因有两个：
+- 能当裁判的只有真人客户端。上线当天 1 小时 29 次复算全派给了唯一在线的真人，还正好落在这位玩家的对局里。
+- 机器人自己打、自己验，复算没有反作弊意义。
+
+`deviceId` 前缀（`bot-xxxx`）**不能**用来判断：任何人都能用这个 deviceId 走公开的 device-login，那样等于给作弊者留了一个跳过抽查的口子。所以机器人抽查的 e2e 断言分两部分：带密钥的 verify 不经 judge；带错误密钥的仍然正常派单。
+
 **统计**：`/internal/bots/status` 的 `pve` 是全池累计的 `{entered, cleared, lost, spotChecked, verified}`。失败的 run 计入 `upkeepErrors.pve`。`NW_BOT_PVE=0` 关掉 PvE。
 
 **测试**：

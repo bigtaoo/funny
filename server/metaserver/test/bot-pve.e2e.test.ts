@@ -5,7 +5,7 @@
 // runPveJudge): from the level's seed, the server's own card snapshot in the judge request, and the
 // bot's uploaded frames. An honest bot has to come out verified, never flagged.
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import { createMongo, type JwtConfig, type MongoHandle } from '@nw/shared';
+import { createMongo, internalHeaders, type JwtConfig, type MongoHandle } from '@nw/shared';
 import {
   ENGINE_VERSION,
   ReplayInputSource,
@@ -93,8 +93,9 @@ describe.skipIf(!mongo)('botsvc PvE run settles on the real metaserver', () => {
   });
   afterAll(async () => { if (app) await app.close(); });
 
-  /** One run exactly as BotSession.runPve does it; returns what the server said at each step. */
-  async function botRun(difficulty: 8 | 10 = 10) {
+  /** One run exactly as BotSession.runPve does it; returns what the server said at each step.
+   *  `verifyHeaders` = what MetaClient.pveVerify adds (botsvc's internal key); default none. */
+  async function botRun(difficulty: 8 | 10 = 10, verifyHeaders: Record<string, string> = {}) {
     const save = body(await app.inject({ method: 'GET', url: '/save', headers: auth() })).data.save;
     const levelId = pickLevel(save.progress, () => 0.99)!;
     const enter = await post('/pve/enter', { levelId });
@@ -106,7 +107,12 @@ describe.skipIf(!mongo)('botsvc PvE run settles on the real metaserver', () => {
     if (!run.won) return { levelId, enter, run };
     const clear = await post('/pve/clear', { levelId, stars: run.stars, stats: run.stats });
     const verify = clear.data?.needsReplay
-      ? await post('/pve/verify', { verifyId: clear.data.verifyId, endFrame: run.endFrame, frames: run.frames })
+      ? body(await app.inject({
+          method: 'POST',
+          url: '/pve/verify',
+          headers: { ...auth(), ...verifyHeaders },
+          payload: { verifyId: clear.data.verifyId, endFrame: run.endFrame, frames: run.frames },
+        }))
       : undefined;
     return { levelId, enter, run, clear, verify };
   }
@@ -129,6 +135,22 @@ describe.skipIf(!mongo)('botsvc PvE run settles on the real metaserver', () => {
     expect(r.verify!.data.save.progress.stars.ch1_lv1).toBe(r.run.stars);
     const flagged = await m.collections.pveVerifications.find({ status: 'rejected' }).toArray();
     expect(flagged).toEqual([]);
+  });
+
+  it("a verify carrying botsvc's internal key skips the peer judge and still delivers (unverified)", async () => {
+    const r = await botRun(10, internalHeaders('botsvc', 'k'));
+    expect(r.clear!.data.needsReplay).toBe(true);
+    // No human client is asked to replay a bot's clear.
+    expect(judged).toEqual([]);
+    expect(r.verify!.ok).toBe(true);
+    expect(r.verify!.data.verified).toBe(true);
+    const docs = await m.collections.pveVerifications.find({}).toArray();
+    expect(docs.map((d) => d.status)).toEqual(['unverified']);
+  });
+
+  it('a wrong internal key is just a player: the clear goes to the judge as usual', async () => {
+    await botRun(10, internalHeaders('botsvc', 'not-the-key'));
+    expect(judged).toHaveLength(1);
   });
 
   it('the next run pushes the frontier, and its spot check passes too', async () => {

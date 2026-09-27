@@ -53,6 +53,9 @@ export interface ServiceDeps {
   /** Ban-status / publicId reverse-lookup cache (2026-07-27), shared with registerInternalRoutes so an
    *  admin ban/unban via the internal API is visible to this process's next rejectIfBanned check. */
   accountCache: AccountCache;
+  /** True when the request carries botsvc's internal key: /pve/verify then skips the peer judge, so
+   *  bot spot-checks never land on a human player's client (BOTSVC_DESIGN §3.5). Absent = never. */
+  isBotsvcRequest?: (headers: Record<string, string | string[] | undefined>) => boolean;
 }
 
 // ── Stamina system constants (A4) — shared by base.readStaminaSnapshot + PveMixin.deductStamina. ──

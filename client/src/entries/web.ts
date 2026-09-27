@@ -2,10 +2,16 @@ import { startApp } from '../app';
 import { WebPlatform } from '../platform/web/WebPlatform';
 import { setAudioBus } from '../audio/audioBus';
 import { WebAudioBus } from '../platform/web/WebAudioBus';
+import { setJudgeExecutor } from '../net/judgeExecutor';
+import { createWorkerJudgeExecutor } from '../platform/web/workerJudge';
 
 // Audio device (AUDIO_DESIGN.md §3). Installed the same way as setAssetIO in entries/wechat.ts:
 // a module-level seam rather than an IPlatform member — see audio/audioBus.ts for why.
 setAudioBus(new WebAudioBus());
+
+// Peer-judge recomputes run in a background Web Worker (net/judgeExecutor.ts); WeChat keeps main-thread slices.
+const workerJudge = createWorkerJudgeExecutor();
+if (workerJudge) setJudgeExecutor(workerJudge);
 
 // Version check: when the player returns to the foreground, compare against /version.json and
 // reload immediately if a newer version is detected.
