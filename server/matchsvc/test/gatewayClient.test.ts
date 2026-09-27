@@ -134,12 +134,27 @@ describe('GatewayClient.push', () => {
     });
 
     it('match_found still gives up at error — nothing re-sends it', async () => {
-      const MATCH_FOUND: PushMsg = { kind: 'match_found', gameUrl: 'ws://game:1/ws', ticket: 'tkt' };
-      const client = new GatewayClient('http://gateway:8090', 'key', null);
-      client.push('acc-1', MATCH_FOUND);
-      await new Promise((r) => setTimeout(r, 400)); // retries=2 with the default 150ms backoff
+      // Fake timers, not a real sleep. retries=2 sleeps 150·2^attempt + jitter(0..149) between attempts,
+      // i.e. 450–748ms in total — a fixed 400ms wait could never cover it. The test only ever passed
+      // on vitest's retry, because the FIRST attempt's still-running push logged its error into the
+      // retry's freshly re-installed console spy.
+      vi.useFakeTimers();
+      try {
+        const MATCH_FOUND: PushMsg = { kind: 'match_found', gameUrl: 'ws://game:1/ws', ticket: 'tkt' };
+        const client = new GatewayClient('http://gateway:8090', 'key', null);
+        client.push('acc-1', MATCH_FOUND);
 
-      expect(errors.some((a) => String(a[0]).includes('internal POST failed'))).toBe(true);
+        await vi.advanceTimersByTimeAsync(449); // below the shortest possible total backoff
+        expect(global.fetch).toHaveBeenCalledTimes(2);
+        expect(errors).toHaveLength(0);
+
+        await vi.advanceTimersByTimeAsync(300); // past the longest (748ms)
+        expect(global.fetch).toHaveBeenCalledTimes(3);
+        expect(errors.some((a) => String(a[0]).includes('internal POST failed'))).toBe(true);
+        expect(warns.some((a) => String(a[0]).includes('self-healing'))).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });
