@@ -76,6 +76,8 @@ export class GameRenderer {
   }
   get onExitToLobby(): (() => void) | null { return this.core.onExitToLobby; }
   set onExitToLobby(fn: (() => void) | null) { this.core.onExitToLobby = fn; }
+  get onPauseChange(): ((paused: boolean) => void) | null { return this.core.onPauseChange; }
+  set onPauseChange(fn: ((paused: boolean) => void) | null) { this.core.onPauseChange = fn; }
   get onTutorialStep(): ((stepKey: string) => void) | null { return this.core.onTutorialStep; }
   set onTutorialStep(fn: ((stepKey: string) => void) | null) { this.core.onTutorialStep = fn; }
 

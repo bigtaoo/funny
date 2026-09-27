@@ -7,6 +7,15 @@ export const ADS_REWARD_COINS = 10;
 export const ADS_DAILY_CAP = 5;
 export const ADS_MIN_INTERVAL_MS = 10 * 60 * 1000; // 10min minimum interval between two ads (2026-07-21, was 30min — DailyScene "Ads" tab)
 
+/**
+ * Rewarded-ad stamina refill (ECONOMY_NUMBERS STAMINA_REFILL_AD, 2026-09-27). CrazyGames build only
+ * (CRAZYGAMES_LAUNCH §4): its own daily counter, independent of the coin ads above.
+ */
+export const STAMINA_AD_AMOUNT = 30;
+export const STAMINA_AD_DAILY_CAP = 3;
+/** The only `x-nw-platform` the stamina-ad endpoint serves. */
+export const STAMINA_AD_CLIENT_PLATFORM = 'crazygames';
+
 /** Rename cost (coins). Deducted once per display-name change (commercial wallet deducts → meta renames). */
 export const RENAME_COST = 500;
 

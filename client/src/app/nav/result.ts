@@ -27,7 +27,8 @@ export function createResultNav(ctx: AppCtx): ResultNav {
 
   function goReplay(replay: Replay, onExit: () => void = () => nav.goLobby()): void {
     state.inLobby = false;
-    platform.onGameplayStart();
+    // Watching a replay is not gameplay (CRAZYGAMES_LAUNCH §4): every caller arrives from a menu
+    // (result / records), which already reported the stop, so no gameplayStart here.
     views.showReplay(replay, {
       onExit() { onExit(); },
       ...(api ? { onShare: () => void doShareReplay({ mode: replay.mode, winner: replay.meta?.winner }) } : {}),
@@ -81,7 +82,7 @@ export function createResultNav(ctx: AppCtx): ResultNav {
       const { blob } = await api.getStateReplayShare(shareCode);
       const enc = blob as EncodedStateReplay;
       const replay = decodeStateReplay(enc);
-      platform.onGameplayStart();
+      // A shared replay is playback, not gameplay — no gameplayStart (see goReplay).
       views.showStatePlayer(
         replay,
         {

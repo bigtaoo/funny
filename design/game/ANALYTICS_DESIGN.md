@@ -422,7 +422,7 @@ scene 取值：`IntroScene / LobbyScene / LoginScene / CampaignMapScene / LevelP
 | `starter_buy` | `product_id, platform` | — | 新手礼包购买成功 |
 | `battlepass_buy` / `battlepass_claim` | — | — | 战令购买 / 领取 |
 | `recharge_milestone_claim` / `promo_redeem` / `fate_redeem` | — | — | 充值里程碑 / 兑换码 / 命运点兑换 |
-| `ads_reward` | `coins, platform` | — | 激励视频发奖成功 |
+| `ads_reward` | `coins, platform`；体力广告为 `kind:'stamina', stamina_after, ads_left, platform` | — | 激励视频发奖成功（体力那种只在 CrazyGames 包，2026-09-27） |
 | `daily_checkin` / `daily_reward_claim` / `weekly_chest_claim` / `event_claim` | — | — | 留存四件套的领取（RETENTION_DESIGN） |
 | `equip_craft` / `equip_enhance` / `equip_reforge` / `equip_salvage` / `equip_equip` / `card_fuse` / `card_lock` | — | — | 养成动作（"这系统有没有人用"） |
 

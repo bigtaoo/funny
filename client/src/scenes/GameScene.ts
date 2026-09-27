@@ -30,6 +30,8 @@ export interface GameSceneCallbacks {
    */
   onGameEnd(winner: OwnerId | null, stats: [PlayerStats, PlayerStats], replay?: Replay, summary?: MatchSummary): void;
   onExitToLobby(): void;
+  /** Surrender dialog opened (true) / cancelled (false). Confirming goes to onExitToLobby instead. */
+  onPauseChange?(paused: boolean): void;
   /**
    * Online match ended by the *server* (opponent timed out / desync), not by
    * the local simulation reaching a decisive state. No result hash is reported
@@ -171,6 +173,7 @@ export class GameScene implements Scene {
     // Attach the recording (if any) to the end-of-game callback.
     this.renderer.onGameEnd = (winner, stats, summary) => this.cb.onGameEnd(winner, stats, buildReplay(winner), summary);
     this.renderer.onExitToLobby = cb.onExitToLobby;
+    if (cb.onPauseChange) this.renderer.onPauseChange = (p) => cb.onPauseChange?.(p);
     if (cb.onTutorialStep) this.renderer.onTutorialStep = cb.onTutorialStep;
 
     this.container = this.renderer.container;

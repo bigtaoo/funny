@@ -84,6 +84,8 @@ export class GameRendererCore {
 
   onGameEnd:     ((winner: OwnerId | null, stats: [PlayerStats, PlayerStats], summary: MatchSummary) => void) | null = null;
   onExitToLobby: (() => void) | null = null;
+  /** Surrender dialog opened (true) / cancelled (false) — the dialog freezes the local sim (see update()). */
+  onPauseChange: ((paused: boolean) => void) | null = null;
   /** Tutorial step-level analytics hook (A9-9); wired to TutorialDirector's onStepChange when tutorialEnabled. */
   onTutorialStep: ((stepKey: string) => void) | null = null;
 

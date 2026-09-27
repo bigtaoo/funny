@@ -23,6 +23,7 @@ import type { CardRosterView } from '../../../scenes/CardScene';
 import type { IconKind } from '../../../render/icons';
 import { matchBadgeTelemetry } from '../../../scenes/ResultScene';
 import { buildEquipmentActions } from './equipmentActions';
+import { createStaminaAd } from './staminaAd';
 import type { MountOpts } from '../../AppViews';
 import type { AppCtx, Nav } from '../../appCtx';
 import { TOKEN_KEY, TUTORIAL_DONE_FLAG } from '../../appConstants';
@@ -37,6 +38,7 @@ const CARD_ROSTER_SLG_BUDGET_MS = 2500;
 
 export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
   const { api, saveManager, platform, state, views, nav, keepReplay, resolvePvpDeck, resolveWorldShard } = ctx;
+  const staminaAd = createStaminaAd(ctx);
 
   /**
    * Local PvP-vs-AI match. `opts.fromBotFallback` = triggered by a matchmaking-timeout fallback
@@ -132,7 +134,9 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
     analytics.track('screen_view', { scene: 'LevelPrepScene' });
     // A4 stamina system: cost is deducted at entry (onStart), not on clear — no refund on retreat/loss.
     const staminaCost = level.staminaCost ?? 10;
+    const onWatchAdStamina = staminaAd.offer(() => goLevelPrep(levelId));
     views.showLevelPrep({
+      ...(onWatchAdStamina ? { onWatchAdStamina } : {}),
       onBack() { analytics.track('level_abandon', { level_id: levelId, phase: 'prep' }); goCampaignMap(); },
       onStart() {
         // Deducts locally even offline; UI already blocks Start when insufficient, so this is a defensive no-op.

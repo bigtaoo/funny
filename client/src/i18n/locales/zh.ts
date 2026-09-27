@@ -532,6 +532,8 @@ export const zh = {
   // ── Stamina system (A4) ───────────────────────────────────────────────────────
   'stamina.cost': '体力 {current} / 120 · 本关消耗 {cost}',
   'stamina.buy': '补充体力（30 金币 → +60）',
+  'stamina.watchAd': '看广告 → +30',
+  'stamina.adCapReached': '今天的广告补充次数已用完',
 
   // ── Level objective labels ────────────────────────────────────────────────
   'level.objective.label': '关卡目标',

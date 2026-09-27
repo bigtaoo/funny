@@ -109,7 +109,10 @@ export class InputPanel {
       const cancel  = this.core.hudView.getSurrenderCancelRect();
       const confirm = this.core.hudView.getSurrenderConfirmRect();
       const overlay: Hit[] = [];
-      if (cancel)  overlay.push({ rect: cancel, sound: 'sfx.ui.back', fn: () => this.core.hudView.hideSurrenderConfirm() });
+      if (cancel)  overlay.push({ rect: cancel, sound: 'sfx.ui.back', fn: () => {
+        this.core.hudView.hideSurrenderConfirm();
+        this.core.onPauseChange?.(false);
+      } });
       if (confirm) overlay.push({ rect: confirm, fn: () => {
         this.core.hudView.hideSurrenderConfirm();
         this.core.onExitToLobby?.();
@@ -126,6 +129,7 @@ export class InputPanel {
       { rect: this.core.hudView.getSurrenderRect(), fn: () => {
         this.cancelTapSelect();
         this.core.hudView.showSurrenderConfirm();
+        this.core.onPauseChange?.(true);
       } },
     ];
     // Upgrade button — tap to upgrade immediately, no drag-onto-base needed.

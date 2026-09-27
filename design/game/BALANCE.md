@@ -205,6 +205,7 @@
 | 自然恢复速率 | **1 点 / 6 分钟** |
 | 关卡消耗 | **统一 10 / 次**（定额，2026-07-06 拍板；**进入关卡时**扣 = `POST /pve/enter`，非结算时扣；数值权威见 `ECONOMY_NUMBERS.md §3`） |
 | 付费补充 | **30 金币 → +60 体力**（`POST /pve/stamina/purchase`，走 commercial.spend；SERVER_API §2.7） |
+| 看广告补充 | **+30 体力，每 UTC 日 3 次**，仅 CrazyGames 包（`POST /pve/stamina/ad`，2026-09-27；ECONOMY_NUMBERS §3） |
 | 错误码 | `INSUFFICIENT_STAMINA`（HTTP 402）|
 
 **实现说明**：

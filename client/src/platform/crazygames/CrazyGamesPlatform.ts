@@ -97,6 +97,7 @@ export class CrazyGamesPlatform implements IPlatform {
   readonly silentAccountOnly = true;
   readonly skipStoryIntro = true;
   readonly remoteAvatars = true;
+  readonly staminaRewardedAd = true;
   readonly rooms: CrazyGamesRooms;
 
   private sdk: NonNullable<typeof window.CrazyGames>['SDK'] | null = null;
