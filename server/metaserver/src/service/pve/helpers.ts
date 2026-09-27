@@ -177,6 +177,37 @@ export async function deductStamina(
 }
 
 /**
+ * Add stamina (rewarded-ad refill): natural regen is applied first so the ad never swallows points
+ * the clock already owed, then `amount` is added, capped at STAMINA_CAP (excess discarded). A refill
+ * that reaches the cap stops the regen timer; one that stays below keeps the running timer (or starts
+ * one). Same read → compute → write shape as deductStamina (its concurrency note applies here too).
+ */
+export async function grantStamina(
+  cols: Collections,
+  accountId: string,
+  amount: number,
+  now: number,
+): Promise<{ current: number; regenAt: number }> {
+  await cols.pveStamina.updateOne(
+    { _id: accountId },
+    { $setOnInsert: { _id: accountId, current: STAMINA_CAP, regenAt: 0 } },
+    { upsert: true },
+  );
+  const stDoc = await cols.pveStamina.findOne({ _id: accountId });
+  let current = stDoc?.current ?? STAMINA_CAP;
+  let regenAt = stDoc?.regenAt ?? 0;
+  if (current < STAMINA_CAP && regenAt > 0 && now >= regenAt) {
+    const ticks = Math.floor((now - regenAt) / STAMINA_REGEN_MS) + 1;
+    current = Math.min(STAMINA_CAP, current + ticks);
+    regenAt = current >= STAMINA_CAP ? 0 : regenAt + ticks * STAMINA_REGEN_MS;
+  }
+  current = Math.min(STAMINA_CAP, current + amount);
+  regenAt = current >= STAMINA_CAP ? 0 : regenAt !== 0 ? regenAt : now + STAMINA_REGEN_MS;
+  await cols.pveStamina.updateOne({ _id: accountId }, { $set: { current, regenAt } });
+  return { current, regenAt };
+}
+
+/**
  * Chapter-clear exclusive reward (CHARACTER_CARDS_DESIGN §4): grant a level-2 instance of the chapter's
  * anchor character card (§5.1 mapping) on the FIRST clear of that chapter's finale. Distinct from the
  * per-level drop (level 1, granted via settleNormalClear/deliverVerifiedClearReward) — this is a

@@ -525,6 +525,8 @@ export const en: Record<TranslationKey, string> = {
   // ── Stamina (A4) ──────────────────────────────────────────────────────────
   'stamina.cost': 'Stamina {current}/120 · Cost {cost}',
   'stamina.buy': 'Refill Stamina (30 coins → +60)',
+  'stamina.watchAd': 'Watch ad → +30',
+  'stamina.adCapReached': 'No more ad refills today',
 
   // ── Level objective labels ────────────────────────────────────────────────
   'level.objective.label': 'Objective',

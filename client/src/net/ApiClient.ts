@@ -240,6 +240,10 @@ export class ApiClient {
     return this.pveSvc.purchaseStamina();
   }
 
+  adStamina(adToken: string, platform: string): Promise<{ stamina: { current: number; regenAt: number }; adsLeft: number }> {
+    return this.pveSvc.adStamina(adToken, platform);
+  }
+
   pveEnter(levelId: string): Promise<{ stamina: { current: number; regenAt: number } }> {
     return this.pveSvc.pveEnter(levelId);
   }

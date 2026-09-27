@@ -429,6 +429,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/pve/stamina/ad": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rewarded-ad stamina refill (CrazyGames build only; +30 per ad, 3 per UTC day) */
+        post: operations["adStamina"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/shop/items": {
         parameters: {
             query?: never;
@@ -2075,6 +2092,7 @@ export interface operations {
             content: {
                 "application/json": {
                     token: string;
+                    guestToken?: string;
                 };
             };
         };
@@ -2503,6 +2521,8 @@ export interface operations {
                             publicId?: string;
                             gatewayUrl?: string;
                             freeRename?: boolean;
+                            nameLocked?: boolean;
+                            platformAvatarId?: string;
                             serverNow?: number;
                             activeMatch?: {
                                 roomId: string;
@@ -2909,6 +2929,52 @@ export interface operations {
             400: components["responses"]["ErrorResp"];
             401: components["responses"]["ErrorResp"];
             402: components["responses"]["ErrorResp"];
+        };
+    };
+    adStamina: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    adToken: string;
+                    /**
+                     * @description Ad platform (the portal SDK has no server callback, so the token is client-issued)
+                     * @enum {string}
+                     */
+                    platform?: "dev";
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            stamina: {
+                                current: number;
+                                regenAt: number;
+                            };
+                            /** @description Stamina ads still available today */
+                            adsLeft: number;
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            429: components["responses"]["ErrorResp"];
         };
     };
     getShopItems: {

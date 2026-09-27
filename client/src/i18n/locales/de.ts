@@ -525,6 +525,8 @@ export const de: Record<TranslationKey, string> = {
   // ── Ausdauer (A4) ─────────────────────────────────────────────────────────
   'stamina.cost': 'Ausdauer {current}/120 · Kosten {cost}',
   'stamina.buy': 'Ausdauer auffüllen (30 Münzen → +60)',
+  'stamina.watchAd': 'Werbung → +30',
+  'stamina.adCapReached': 'Heute keine Werbe-Auffüllung mehr',
 
   // ── Level-Ziele ───────────────────────────────────────────────────────────
   'level.objective.label': 'Ziel',

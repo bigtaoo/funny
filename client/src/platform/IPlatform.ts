@@ -206,6 +206,13 @@ export interface IPlatform {
   hasRewardedAd(): boolean;
 
   /**
+   * Whether a rewarded ad may also refill PvE stamina (level prep, `POST /pve/stamina/ad`). Only
+   * `CrazyGamesPlatform` sets it (CRAZYGAMES_LAUNCH §4) — elsewhere, including the iOS shell's
+   * AdMob, stamina stays coin-only, and the server refuses every other `x-nw-platform` too.
+   */
+  readonly staminaRewardedAd?: boolean;
+
+  /**
    * Show a rewarded video ad for the DailyScene "Ads" tab (ECONOMY_NUMBERS §6.2). Only ever called
    * when {@link hasRewardedAd} is true. `accountId` is forwarded to platforms whose SSV callback
    * needs it explicitly (AdMob's `customRewardText` — WeChat's SSV already identifies the account

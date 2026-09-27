@@ -77,8 +77,12 @@
    - **CG 用户名**：见上一条账号集成（名字从门户同步、锁定）。
    - **`disableChat`**：`ui/chatPolicy.ts` 一个开关，开启后隐藏世界频道页签（和世界地图底栏的消息预览/未读数，底栏改显示「社交」、点进去落在好友页）、家族/国家频道（显示「聊天已关闭。」）、好友/家族成员资料卡上的「发消息」、好友页签上的私信未读数；`goChat` 本身也拦。好友、家族、国家、邮件照常。设置在运行中改变时，下一次重绘生效。
    - **验证**：`crazyGamesRooms.test.ts`（合并节流、邀请参数、leftRoom 只在告知过房间后发、节流重试、启动意图、加入监听）、`roomNav.test.ts` 平台房间 9 例、`lobbyRoomIntent.test.ts`（邀请优先于教程、未连上服务器时等待、resize 不消费）、`test/ui/chatDisabledSocialRail.ui.ts`。**门户侧的邀请按钮、个人页「加入」按钮要在门户 QA 工具里实测。**
-3. **广告**：激励视频已按「完全可选、只在非战斗界面、只在 `adFinished` 发奖」实现；考虑补「看广告回体力」（设计里有，未实现）。奖励仍以 `platform:'dev'` 提交，客户端可伪造，只靠冷却+每日上限——门户没有服务端回调，是取舍。
-4. **gameplayStop 缺口**：投降弹窗暂停、从战绩页看回放返回时没有 stop；回放被算作 gameplay。
+3. **广告**：激励视频已按「完全可选、只在非战斗界面、只在 `adFinished` 发奖」实现。奖励仍以 `platform:'dev'` 提交，客户端可伪造，只靠冷却+每日上限——门户没有服务端回调，是取舍。
+   - **看广告回体力**（✅ 2026-09-27，分支 `feat/cg-stop`）：关卡准备页体力不足时，「补充体力（金币）」旁边多一个「看广告 → +30」，每 UTC 日 3 次，当天用完按钮消失。开关是 `IPlatform.staminaRewardedAd`（只有 `CrazyGamesPlatform` 为真，iOS 壳的 AdMob 和微信都不出现）；服务端 `POST /pve/stamina/ad` 也只认 `x-nw-platform: crazygames`。数值见 ECONOMY_NUMBERS §3。顺带修了关卡准备页底部排版：原来的补充按钮压在「开战」按钮上（横屏最明显），现在「开战 → 补充行 → 体力行」自下而上排，补充行与开战按钮同宽。
+4. **gameplayStop 缺口**（✅ 2026-09-27，分支 `feat/cg-stop`）：
+   - **投降/退出关卡弹窗**会冻结对局，打开时 `gameplayStop`、取消时 `gameplayStart`；确认退出不再发 start（去向页面自己发 stop）。接线：`GameRendererCore.onPauseChange` → `GameSceneCallbacks.onPauseChange` → `PixiAppViews` 的 `withGameplayPause`（`showGame`/`showGameNet` 两个入口都包上，以后新增的对局入口自动覆盖）。
+   - **回放不算 gameplay**：`goReplay`（结算页/战绩页）和分享回放 `goStatePlayer` 不再调 `gameplayStart`；进回放之前的页面都已发过 stop，所以战绩页看完回放返回时也不会停在「游戏中」。
+   - 其他平台的 `onGameplayStart/Stop` 都是空实现，行为不变。
 5. **内购**（受邀后）：Xsolla token（`user.getXsollaUserToken()`）、webhook、`analytics.trackOrder`；访客不能买；BE/NL/CN/RS/SK 禁售盲盒类，TW/KR/JP 另有公示要求；CG App 内（`applicationType` 为商店）禁用。
 
 ## 5. 不是代码的项

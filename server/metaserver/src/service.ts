@@ -88,6 +88,7 @@ export class MetaService implements MetaHandlers {
 
   // ── pve ──
   purchaseStamina(...args: Parameters<PveService['purchaseStamina']>) { return this.pveSvc.purchaseStamina(...args); }
+  adStamina(...args: Parameters<PveService['adStamina']>) { return this.pveSvc.adStamina(...args); }
   pveEnter(...args: Parameters<PveService['pveEnter']>) { return this.pveSvc.pveEnter(...args); }
   pveClear(...args: Parameters<PveService['pveClear']>) { return this.pveSvc.pveClear(...args); }
   pveVerify(...args: Parameters<PveService['pveVerify']>) { return this.pveSvc.pveVerify(...args); }
