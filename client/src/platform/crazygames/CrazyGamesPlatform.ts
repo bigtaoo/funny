@@ -8,6 +8,8 @@ import type { Locale } from '../../i18n';
 import type { IapKind } from '../iap';
 import { openDomTextInput } from '../web/domTextInput';
 import { setAudioSuspended } from '../../audio/audioSettings';
+import type { SafeAreaInsets } from '../../layout/ILayout';
+import { readSafeAreaInsets, observeSafeAreaInsets } from '../web/safeAreaProbe';
 
 /**
  * CrazyGames platform adapter.
@@ -23,7 +25,9 @@ import { setAudioSuspended } from '../../audio/audioSettings';
  *  * gameplay is bracketed with `gameplayStart`/`gameplayStop` (called by app/nav);
  *  * **the game is silent while an ad plays** — `adStarted` suspends audio, and every exit from an
  *    ad (finish, error, throw, timeout) restores it. Portal QA checks this; a game playing its BGM
- *    over the advertiser's audio is the thing it checks for.
+ *    over the advertiser's audio is the thing it checks for;
+ *  * **the game is silent while the portal's own mute is on** (`game.settings.muteAudio`, which
+ *    outranks our volume controls) — see {@link syncAudio}.
  */
 
 // ─── SDK type shim ────────────────────────────────────────────────────────────
@@ -40,6 +44,12 @@ declare global {
           // strings internally as postMessage types, so calling them on v3 was a silent no-op.
           loadingStart(): void;
           loadingStop(): void;
+          /** Portal-side player settings. `muteAudio` must silence the game and outranks the
+           *  in-game volume controls (sdk/game "Settings"). */
+          readonly settings: { muteAudio: boolean; disableChat: boolean };
+          addSettingsChangeListener(cb: (s: { muteAudio: boolean; disableChat: boolean }) => void): void;
+          /** A portal link to this game carrying `params` as query parameters (synchronous in v3). */
+          inviteLink(params: Record<string, string>): string;
         };
         ad: {
           requestAd(
@@ -95,6 +105,10 @@ export class CrazyGamesPlatform implements IPlatform {
   /** Set by {@link declinePortalIdentity}; getAuthCredential then skips the portal session. */
   private portalIdentityDeclined = false;
   private adblocked = false;
+  /** An ad is on screen. One of the two reasons for silence — see {@link syncAudio}. */
+  private adPlaying = false;
+  /** The portal's mute setting. The other reason — see {@link syncAudio}. */
+  private portalMuted = false;
 
   constructor(canvasId = 'game-canvas') {
     let canvas = document.getElementById(canvasId) as HTMLCanvasElement | null;
@@ -125,6 +139,7 @@ export class CrazyGamesPlatform implements IPlatform {
       await this.sdk.init();
       this.sdk.game.loadingStart();
       this.probeAds(this.sdk);
+      this.watchPortalMute(this.sdk);
     } catch (e) {
       console.warn('[CrazyGames] init failed:', e);
       this.sdk = null;
@@ -146,15 +161,50 @@ export class CrazyGamesPlatform implements IPlatform {
     void sdk.ad.hasAdblock().then((b) => { this.adblocked = b; }, () => { /* unknown: leave offered */ });
   }
 
+  /**
+   * Portal mute is read once after init and then followed through the settings listener; it only
+   * ever silences, never persists, and never touches the player's own mute (same channel as ads).
+   */
+  private watchPortalMute(sdk: NonNullable<typeof window.CrazyGames>['SDK']): void {
+    try {
+      this.portalMuted = !!sdk.game.settings?.muteAudio;
+      sdk.game.addSettingsChangeListener((s) => { this.portalMuted = !!s.muteAudio; this.syncAudio(); });
+    } catch { /* settings unavailable on this host: nothing to follow */ }
+    this.syncAudio();
+  }
+
+  /**
+   * Two independent reasons to be silent share the one host-suspend switch, so each is tracked
+   * separately and the switch is their OR: an ad ending must not unmute a portal that is muted,
+   * and the portal unmuting mid-ad must not bring the game's audio in over the ad.
+   */
+  private syncAudio(): void {
+    setAudioSuspended(this.adPlaying || this.portalMuted);
+  }
+
+  private setAdPlaying(v: boolean): void {
+    this.adPlaying = v;
+    this.syncAudio();
+  }
+
   getCanvas(): HTMLCanvasElement { return this.canvas; }
 
   getScreenSize(): { width: number; height: number } {
     return { width: window.innerWidth, height: window.innerHeight };
   }
 
-  // No safe-area hooks (all three are optional on IPlatform): the game runs in the portal's iframe,
-  // whose box is already inside whatever chrome the host page has, so `env(safe-area-inset-*)` is
-  // zero there by construction and there is nothing to subscribe to. Absent = all-zero insets.
+  // Safe area: on the desktop/mobile website the game's iframe sits inside the portal's own chrome
+  // and `env(safe-area-inset-*)` reads zero. The CrazyGames App, though, runs the game full-screen
+  // edge to edge (resources/crazygames-app: "safe area padding"), where notches and rounded corners
+  // are real — so read and follow them exactly like the web build (`viewport-fit=cover` is in
+  // public/crazygames/index.html; without it every inset is zero).
+  getSafeAreaInsets(): SafeAreaInsets {
+    return readSafeAreaInsets();
+  }
+
+  onSafeAreaInsetsChanged(cb: (insets: SafeAreaInsets) => void): () => void {
+    return observeSafeAreaInsets(cb);
+  }
 
   /** The portal's language setting when the SDK is up (read after init: createAppCore runs after
    *  onLoadingComplete), else the browser's. */
@@ -215,13 +265,13 @@ export class CrazyGamesPlatform implements IPlatform {
       const done = (): void => {
         if (settled) return;
         settled = true;
-        setAudioSuspended(false);
+        this.setAdPlaying(false);
         resolve();
       };
       const timer = setTimeout(done, CrazyGamesPlatform.MIDGAME_AD_TIMEOUT_MS);
       try {
         this.sdk.ad.requestAd('midgame', {
-          adStarted: () => setAudioSuspended(true),
+          adStarted: () => this.setAdPlaying(true),
           adFinished: () => { clearTimeout(timer); done(); },
           adError: () => { clearTimeout(timer); done(); },
         });
@@ -247,7 +297,7 @@ export class CrazyGamesPlatform implements IPlatform {
       const done = (v: { adToken: string; platform: string } | null): void => {
         if (settled) return;
         settled = true;
-        setAudioSuspended(false);
+        this.setAdPlaying(false);
         resolve(v);
       };
       // Same reasoning as MIDGAME_AD_TIMEOUT_MS, and now load-bearing for a second reason: with the
@@ -257,7 +307,7 @@ export class CrazyGamesPlatform implements IPlatform {
       const timer = setTimeout(() => done(null), CrazyGamesPlatform.REWARDED_AD_TIMEOUT_MS);
       try {
         this.sdk.ad.requestAd('rewarded', {
-          adStarted: () => setAudioSuspended(true),
+          adStarted: () => this.setAdPlaying(true),
           adFinished: () => {
             clearTimeout(timer);
             done({ adToken: `cg-${Date.now()}-${Math.random().toString(36).slice(2)}`, platform: 'dev' });
@@ -324,8 +374,23 @@ export class CrazyGamesPlatform implements IPlatform {
     return new BrowserGameSocket(url, handlers);
   }
 
+  /**
+   * The link must point at the game's page ON the portal. `window.location` here is the iframe's
+   * own document (the portal's internal game-file host), so a link built from it opens the bare
+   * game outside CrazyGames — an off-portal link. `inviteLink` builds the portal page URL; the
+   * portal forwards its query string into the iframe, so {@link getLaunchShareCode} reads `r` back
+   * unchanged. Off-portal (no SDK: our own dev server) the page URL is the right answer.
+   */
+  private shareUrl(shareCode: string): string {
+    if (this.sdk) {
+      try { return this.sdk.game.inviteLink({ r: shareCode }); } catch { /* fall through */ }
+    }
+    return `${window.location.origin}${window.location.pathname}?r=${encodeURIComponent(shareCode)}`;
+  }
+
   async shareReplay(shareCode: string, title: string): Promise<ShareResult> {
-    const url = `${window.location.origin}${window.location.pathname}?r=${encodeURIComponent(shareCode)}`;
+    await this.initDone;
+    const url = this.shareUrl(shareCode);
     const nav = navigator as Navigator & { share?: (d: { title?: string; url?: string }) => Promise<void> };
     if (nav.share) {
       try {

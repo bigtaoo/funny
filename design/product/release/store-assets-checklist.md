@@ -531,9 +531,22 @@ Crash Data、Performance Data（分析/不关联）、**Purchase History**（App
 ### 4.1 素材规格
 | 素材 | 规格 | 状态 |
 |---|---|---|
-| 缩略图 | 按 CrazyGames 开发者要求（通常 16:9，建议 1280×720） | ✅ `art/store/icons/crazygames_thumb_1280x720.png`（横屏战斗实拍） |
+| 封面 · 横版 | **1920×1080**（16:9） | ❌ 待美术（现有 `art/store/icons/crazygames_thumb_1280x720.png` 尺寸不对、而且是战斗截图——官方明确不要截图） |
+| 封面 · 竖版 | **800×1200**（2:3） | ❌ 待美术 |
+| 封面 · 方形 | **800×800**（1:1） | ❌ 待美术 |
+| 预览视频 · 横版 | 1080p 16:9，**15–20 s**，≤ 50 MB | ❌ 待录制 |
+| 预览视频 · 竖版 | 1080p 2:3，15–20 s，≤ 50 MB | ❌ 待录制 |
 | 游戏标题/描述 | 英文（见 §0.1 EN） | — |
 | 操作说明 | 鼠标/触屏操作说明 | ✅ 见 §4.1b（2026-09-09 拟，逐条对着代码核过） |
+
+> **封面规则**（[docs.crazygames.com/requirements/game-covers](https://docs.crazygames.com/requirements/game-covers/)，2026-09-27 核）：
+> 画面上**只许有游戏名**（不写 New / Updated / Play now 之类）；不加边框；不放商店 logo/图标；
+> 不用没授权的素材；不糊、不像素化；**不要直接用游戏截图**，要做成风格化的主视觉，游戏名用贴合画风的字体。
+> 手机上要一眼看得清，别堆元素。
+>
+> **视频规则**：无音频；无黑屏、logo、转场、黑边；**看不到鼠标指针**；不写 Play Now、宣传语、App 图标；
+> **第一帧就是静态封面**；不要快进（门户自己调速）。内容挑最精彩的对战瞬间、卡牌/兵种、大地图。
+> 录制时注意：我们的游戏在桌面浏览器里有系统指针，录屏工具要关掉指针采集，或者用触屏模拟录。
 
 ### 4.1b 操作说明文案（2026-09-09）
 
@@ -601,7 +614,11 @@ cd client && NW_BUILD_VERSION=$(git rev-parse --short HEAD) npm run build:crazyg
 
 - **本地开发照旧**：`npm run start:crazygames` 是 webpack-dev-server，仍指 localhost 那套（`bakesRemoteBases` 只在生产模式对这个 target 生效）。
 - **CI 里没有这条流水线**：`.github/workflows/` 只有 `client-deploy.yml`（Cloudflare 的 web 包）。门户是手动上传，暂不建 job；真要建时照 §4.3 这条命令即可。
-- 体积参考（2026-09-04 实测）：`dist/` 约 25 MB，主包 2.1 MiB JS。门户对首屏加载时长有要求，上传前值得实测一次。
+- 体积参考（2026-09-04 实测）：`dist/` 约 25 MB，主包 2.1 MiB JS。
+- **首包实测（2026-09-27）**：生产构建 + 本地静态服务器 + 真 Chrome、全新访客，按 Resource Timing 的解压后字节数算——
+  **首帧（同意弹窗）前 5.4 MB，进到新手关 5.6 MB**。门户硬上限 50 MB、进手机首页要求 ≤ 20 MB、Basic 指南建议 20 MB 以内，
+  都远没到，不需要为 CG 调整预加载清单。测法注意：浏览器默认只记 250 条资源，要先 `performance.setResourceTimingBufferSize(10000)`，
+  否则数字会被截断在约 4 MB（本次第一遍就是这样）。
 
 ---
 
