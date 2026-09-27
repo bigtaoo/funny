@@ -76,4 +76,28 @@ describe('PeerJudgeService idle check', () => {
     expect(verdict).toEqual({ ok: false });
     expect(sent).toEqual([]);
   });
+
+  it('the drafted player disconnecting while the lookup is in flight → nothing sent, voided', async () => {
+    const sent: string[] = [];
+    const c = fakeConn('c', sent);
+    const svc = new PeerJudgeService({ conns: lookup([c]) });
+    svc.setActiveMatchStore({
+      mget: async (...ks: string[]) => {
+        (c.ws as { readyState: number }).readyState = 3; // CLOSED before the reply lands
+        return ks.map(() => null);
+      },
+    } as unknown as RedisLike);
+    const verdict = await svc.judge({ seed: 1, mode: 1, endFrame: 0, frames: [], exclude: [] });
+    expect(verdict).toEqual({ ok: false });
+    expect(sent).toEqual([]);
+  });
+
+  it('never drafts one of the players being judged, even when they are idle', async () => {
+    const sent: string[] = [];
+    const svc = new PeerJudgeService({ conns: lookup([fakeConn('p', sent)]) });
+    svc.setActiveMatchStore(fakeRedis([]));
+    const verdict = await svc.judge({ seed: 1, mode: 1, endFrame: 0, frames: [], exclude: ['p'] });
+    expect(verdict).toEqual({ ok: false });
+    expect(sent).toEqual([]);
+  });
 });

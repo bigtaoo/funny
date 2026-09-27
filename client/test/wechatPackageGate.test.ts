@@ -150,6 +150,20 @@ describe('checkWechatPackage gate', () => {
   // ── packOptions.ignore vs the url shape (rule 4) ───────────────────────────
   // Both halves shipped for months in a combination that cannot work, because no single file held
   // both: webpack decided the url shape, project.private.config.json decided the pack manifest.
+  it('fails when the Web Worker judge executor leaks into the bundle (WeChat has no Worker)', () => {
+    const bundle = `(()=>{const a="cdn/${HASH_A}",b="cdn/${HASH_B}";w.warn("judge worker crashed",{});})();`;
+    const { code, out } = run(writePkg({ bundle }));
+    expect(code).toBe(1);
+    expect(out).toContain('Web Worker judge executor');
+    expect(out).toContain('entries/wechat.ts');
+  });
+
+  it("does not mistake the engine's own workers for the judge one", () => {
+    // Pixi ships `new Worker(...)` for its own loaders; only workerJudge's strings count.
+    const bundle = `(()=>{const a="cdn/${HASH_A}",b="cdn/${HASH_B}";new Worker(ss);})();`;
+    expect(run(writePkg({ bundle })).code).toBe(0);
+  });
+
   it('fails when a whole-package build ignores cdn/ — the 2026-09-01 "boots, then nothing"', () => {
     const { code, out } = run(writePkg({ packIgnore: IGNORE_CDN }));
     expect(code).toBe(1);

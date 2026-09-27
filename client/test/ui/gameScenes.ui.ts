@@ -25,6 +25,7 @@ import { getLevel, type Replay, Side, UnitType, UnitState, BuildingType } from '
 import { stateRecorder } from '../../src/game/replay/StateRecorder';
 import { decodeStateReplay, type StateReplay } from '../../src/game/replay/StateReplay';
 import type { GameState } from '../../src/game';
+import { isBattleBusy } from '../../src/net/battleBusy';
 
 // In-memory storage so initI18n (which persists the locale) has somewhere to write.
 const memStore = (() => {
@@ -649,5 +650,43 @@ describe('ReplayScene — siege player names', () => {
         setLocale('en');
       }
     });
+  });
+});
+
+// Peer-judge idle rule (SERVER_API_INTERNAL §8.1): a GameScene on screen withdraws this client from
+// the judge pool. A scene that never released would keep the player out of it for the whole session.
+describe('GameScene holds the in-battle flag for exactly its lifetime', () => {
+  const newGame = (): GameScene =>
+    new GameScene(createLayout(...PORTRAIT), new InputManager(), { onGameEnd() {}, onExitToLobby() {} }, { seed: SEED });
+
+  it('busy from construction until destroy', () => {
+    expect(isBattleBusy()).toBe(false);
+    const scene = newGame();
+    expect(isBattleBusy()).toBe(true);
+    scene.update(1 / 30);
+    scene.destroy();
+    expect(isBattleBusy()).toBe(false);
+  });
+
+  it('"fight again": the next GameScene is built before the old one is destroyed — still busy, then idle', () => {
+    const first = newGame();
+    const second = newGame();
+    first.destroy();
+    expect(isBattleBusy()).toBe(true);
+    second.destroy();
+    expect(isBattleBusy()).toBe(false);
+  });
+
+  it("a campaign GameScene counts too (local battles never reach matchsvc's activeMatch record)", () => {
+    const scene = new GameScene(createLayout(...PORTRAIT), new InputManager(), { onGameEnd() {}, onExitToLobby() {} }, { level: getLevel('ch1_lv1')! });
+    expect(isBattleBusy()).toBe(true);
+    scene.destroy();
+    expect(isBattleBusy()).toBe(false);
+  });
+
+  it('watching a replay does not take the player out of the judge pool', () => {
+    const scene = new ReplayScene(createLayout(...PORTRAIT), new InputManager(), recordReplay(30), { onExit() {} });
+    expect(isBattleBusy()).toBe(false);
+    scene.destroy();
   });
 });

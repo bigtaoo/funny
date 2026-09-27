@@ -1,6 +1,8 @@
 // Web-family judge executor: one long-lived Web Worker (net/judge.worker.ts) runs every recompute
 // off the main thread. Installed from the web / CrazyGames / mobile entries only — the WeChat
 // bundle can't carry a worker chunk (webpack asyncChunks:false) and keeps the main-thread default.
+// scripts/checkWechatPackage.mjs (rule 5) spots this module in the WeChat bundle by its two log
+// strings below — keep them in step if they are reworded.
 
 import type { JudgeExecutor } from '../../net/judgeExecutor';
 import type { JudgeOutcome } from '../../net/judgeRunner';

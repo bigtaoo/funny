@@ -23,6 +23,12 @@
 //                                  `cdn/<hash>`, and packOptions.ignore had excluded `cdn/` from the
 //                                  package. Rule 2 says the byte is on disk; this says it is
 //                                  reachable. See ASSET_PACKAGING_LOG.md §21.
+//   5. no Web Worker judge       — the WeChat runtime has no `Worker`, and a worker chunk could not
+//                                  ship anyway (rule 3). If platform/web/workerJudge.ts is ever
+//                                  pulled into this bundle, peer-judge recomputes either crash or
+//                                  silently lose their main-thread "park while in battle" guarantee
+//                                  (SERVER_API_INTERNAL §8.1). Detected by its log strings, which
+//                                  survive minification.
 //
 // ⚠ What it deliberately cannot check: the mirror image of the failure above — a STALE bundle
 // against a fresh `cdn/`. The wechat output runs with `clean:false` (game.js/game.json/cdn live
@@ -117,6 +123,19 @@ if (strays.length) {
   fail(`${strays.length} stray chunk file(s) next to the bundle (${strays.join(', ')}) — a dynamic import escaped output.asyncChunks:false. See ASSET_PACKAGING §4.0.`);
 }
 
+// ── 5. no Web Worker judge executor ──────────────────────────────────────────
+// The WeChat entry keeps judgeExecutor's main-thread default on purpose; the web-family entries
+// install the worker one. These literals appear only in platform/web/workerJudge.ts.
+const WORKER_JUDGE_SENTINELS = ['judge worker crashed', 'judge worker unavailable'];
+const leaked = WORKER_JUDGE_SENTINELS.filter((s) => bundle.includes(s));
+if (leaked.length) {
+  fail(
+    `the bundle contains the Web Worker judge executor (found ${leaked.map((s) => `"${s}"`).join(', ')}) — ` +
+    'platform/web/workerJudge.ts is web-only: WeChat has no Worker and cannot ship its chunk. ' +
+    'Keep createWorkerJudgeExecutor out of entries/wechat.ts and anything it imports. See SERVER_API_INTERNAL §8.1.'
+  );
+}
+
 // ── 4. packOptions.ignore agrees with the url shape ──────────────────────────
 // Rules 1-3 all ask "is the byte on disk". This one asks the question after that: **is it in the
 // package**. `packOptions.ignore` is DevTools' pack manifest, and it governs the simulator too, not
@@ -193,7 +212,7 @@ if (problems.length) {
 const orphans = [...present].filter((n) => !referenced.has(n)).length;
 const mode = relativeRefs > 0 ? `whole-package (${ASSET_DIR}/ packed)` : `plan A CDN (${ASSET_DIR}/ excluded)`;
 console.log(
-  `✅ wechat package: shell intact, ${referenced.size} baked asset URLs all present in ${ASSET_DIR}/, single bundle, ` +
+  `✅ wechat package: shell intact, ${referenced.size} baked asset URLs all present in ${ASSET_DIR}/, single bundle, no worker judge, ` +
   `${mode}` +
   (orphans ? ` (${orphans} unreferenced file(s) left by earlier builds — expected under clean:false)` : '')
 );
