@@ -17,6 +17,8 @@ import type { EquipSlot } from '../../../game/meta/SaveData';
 import { toEngineCardInstances, FUSION_MATERIAL_COUNT } from '../../../game/meta/cardDefs';
 import { teamDisplayName } from '../../../game/meta/teamTroops';
 import { WorldApiClient, type CardSLGState } from '../../../net/WorldApiClient';
+import { ApiError } from '../../../net/ApiClient';
+import { showToastMessage } from '../../../net/log';
 import type { CardRosterView } from '../../../scenes/CardScene';
 import type { IconKind } from '../../../render/icons';
 import { matchBadgeTelemetry } from '../../../scenes/ResultScene';
@@ -151,8 +153,14 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
           // Update the local stamina mirror, then re-enter LevelPrep to refresh the UI.
           saveManager.update((s) => { s.stamina = res.stamina; });
           goLevelPrep(levelId);
-        }).catch(() => {
-          // Insufficient coins: fail silently → fall back to the shop route
+        }).catch((e: unknown) => {
+          // Insufficient coins: fall back to the shop route, where coins can be topped up. Without a
+          // payment channel the shop has nothing to top up with — say why instead of bouncing.
+          if (platform.iapKind() === null) {
+            const broke = e instanceof ApiError && e.code === 'INSUFFICIENT_FUNDS';
+            showToastMessage(t(broke ? 'shop.insufficient' : 'shop.error'), 'error');
+            return;
+          }
           nav.goShop(() => goLevelPrep(levelId), undefined, 'prep');
         });
       },

@@ -146,9 +146,10 @@ describe('WebAudioBus', () => {
   // ── gesture: the autoplay gate ──────────────────────────────────────────────────────────────
 
   describe('the autoplay gate', () => {
-    it('listens on window for all three gesture kinds, every one of them passive', () => {
+    it('listens on window for touch-start and touch-end gesture kinds, every one of them passive', () => {
       new WebAudioBus();
-      expect(win.events.map((e) => e.type)).toEqual(['pointerdown', 'keydown', 'touchstart']);
+      // The *-end kinds are the ones iOS Safari accepts as user activation (portal requirement).
+      expect(win.events.map((e) => e.type)).toEqual(['pointerdown', 'keydown', 'touchstart', 'pointerup', 'touchend', 'click']);
       // `passive` is load-bearing, not tidiness: a non-passive touchstart on window makes the
       // browser wait for this handler before it may scroll, on every touch for the whole session.
       expect(win.events.every((e) => e.opts?.passive === true)).toBe(true);
@@ -169,7 +170,7 @@ describe('WebAudioBus', () => {
       // the gate must still see. The observable form: the bus registers on the raw host surface
       // and nowhere else.
       new WebAudioBus();
-      expect(win.events).toHaveLength(3);
+      expect(win.events).toHaveLength(6);
       expect(doc.events.filter((e) => e.type !== 'visibilitychange')).toHaveLength(0);
     });
 

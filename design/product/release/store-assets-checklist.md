@@ -582,7 +582,7 @@ MENUS
 - [x] cookie/同意条（若用分析 cookie）+ EU/UK 同意弹层（Track 1 L1-1）：`ConsentDialog` 首启阻塞，**全区玩家都弹**（不按地区分叉），所以门户玩家一定见得到上面那两个链接。⚠️ 门户自己也有一套 GDPR 流程，是否重复需按开发者后台口径确认。
 - [x] **支付渠道合规**（2026-09-04 修）：`iapKind()` 早已返回 `null`（金币页/月卡年卡按钮不出现），但**构建产物**里还带着整套 Paddle 网页支付面（`pay/pricing/refunds/home/terms/privacy.html`）+ 编进 bundle 的 Paddle 结账模块——那是要整包上传给门户的东西。现按 iOS 同一套办法堵上：copy 规则与 `paddleCheckout` stub 替换都扩到 `crazygames`。虚拟道具条款见用户协议 §5/§6。
 - [x] **广告 SDK 接线**（2026-09-04 修）：①`adStarted` → 广告播放期间整机静音（门户 QA 明确检查这条），四条退出路径（finish/error/throw/超时）都恢复；②`sdkGameLoadingStart()` 此前从未调用（只调了 Stop），现与 `init()` 一起放进构造函数，与 `onLoadingComplete()` 的 Stop 配成一对；③激励视频补上与插屏同款的超时兜底（有了静音之后，卡住的 SDK 会让整个会话哑掉，不只是转圈）。
-- [ ] CrazyGames 内容政策逐条核对（外链限制、账号系统、加载时长要求）——需对着开发者后台逐条过。
+- [ ] CrazyGames 内容政策逐条核对（外链限制、账号系统、加载时长要求）——需对着开发者后台逐条过。**2026-09-27**：官方公开要求已逐条核过并按 Basic Launch 改完代码（访客直接进游戏、CG 包无账号密码登录、英文回退、SDK v3 加载事件、Basic 无广告自动识别、禁文字选中等），对照表见 [`CRAZYGAMES_LAUNCH.md`](../../game/CRAZYGAMES_LAUNCH.md)；剩下的是后台里的非公开条目。
 - [ ] 抽卡概率公示页可达（代码侧已有，`GachaScene/odds.ts`，待冒烟实测）。
 - [ ] **四平台冒烟的 CrazyGames 那一列**（[`acceptance-smoke.md §1`](../../game/release/acceptance-smoke.md)）——9 行全空，这条路从没在门户环境里真跑过。
 

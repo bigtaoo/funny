@@ -288,6 +288,9 @@ export function drawHelp(host: PanelHost): void {
 
 export function drawAccount(host: PanelHost): void {
   const { w, h, container, cb } = host;
+  // Online with nothing to offer (a silent-account platform: no logout, no deletion) — a bare
+  // "Account" heading over an empty band reads as a broken section.
+  if (!cb.offline && !cb.onLogout) return;
   const secY = Math.round(h * 0.73);
   const x = Math.round(w * 0.12);
   const btnW = Math.round(w * 0.4);

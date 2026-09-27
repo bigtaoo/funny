@@ -104,6 +104,8 @@ export function drawHeaderChrome(core: LobbySceneCore): void {
   // server-authoritative ladder badge with a small logout affordance.
   const chipX = w - Math.round(w * 0.04);
   if (core.cb.offline) {
+    // No entry at all when the platform has no login screen (IPlatform.silentAccountOnly).
+    if (!core.cb.onLogin) return;
     const login = txt(t('auth.loginEntry'), FS.heading, C.gold, true);
     login.anchor.set(1, 0.5); login.x = chipX; login.y = chipMidY;
     core.container.addChild(login);

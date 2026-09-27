@@ -330,7 +330,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     // safe: resolveEntry/doAuth still (re)apply the authoritative one for their own path.
     const storedToken = platform.storage.getItem(TOKEN_KEY);
     if (api && storedToken) api.setToken(storedToken);
-    if (saveManager.getFlag(SEEN_INTRO_FLAG)) {
+    if (saveManager.getFlag(SEEN_INTRO_FLAG) || platform.skipStoryIntro) {
       gateConsent(() => void nav.resolveEntry());
     } else {
       nav.goIntro();
