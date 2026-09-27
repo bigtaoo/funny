@@ -16,6 +16,7 @@ import { MapTemplateService } from '../src/mapTemplateService';
 import { nullWorldGatewayClient } from '../src/gatewayClient';
 import { nullWorldSocialsvcClient } from '../src/socialsvcClient';
 import { startHttpApi } from '../src/httpApi';
+import { getComputeBackend, shutdownComputeBackend } from '../src/compute';
 import { jsonBody } from './jsonBody';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
@@ -108,10 +109,15 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
     await new Promise<void>((res) => server.on('listening', res));
     base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     svcRef = svc;
+    // Spawn the compute pool and build this world's terrain index here, the way index.ts does at boot. The
+    // first march otherwise paid both inside its own 15s testTimeout (~4-8s measured, ~2.5s of it the
+    // full-map index build) and timed out once when the machine was busy with an unrelated npm install.
+    await getComputeBackend().warmWorld(W, SLG_MAP_W, SLG_MAP_H);
   });
 
   afterAll(async () => {
     server.close();
+    await shutdownComputeBackend();
     await m.db.dropDatabase();
     await m.close();
   });
