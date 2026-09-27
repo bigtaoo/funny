@@ -15,29 +15,16 @@
 // is exactly the condition that makes a real phone scroll. Whether real devices overflow is the
 // browser sweep's job (portrait-report screenshots), not this file's.
 import { describe, it, expect } from 'vitest';
-import { createLayout } from '../../src/layout/ScalingManager';
-import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n, t } from '../../src/i18n';
-import { SettingsScene, type SettingsSceneCallbacks } from '../../src/scenes/SettingsScene';
-import { createFakeTextInput } from '../harness/fakeTextInput';
-import { collectTexts, findText, internals, pageView, reveal, ONLINE } from '../harness/settingsScene';
+import type { SettingsScene, SettingsSceneCallbacks } from '../../src/scenes/SettingsScene';
+import type { InputManager } from '../../src/inputSystem/InputManager';
+import { collectTexts, findText, internals, mountSettings, pageView, reveal, ONLINE, SHORT } from '../harness/settingsScene';
 
 initI18n('en');
 
-/** A portrait design rect too short for the page. */
-const SHORT = [1080, 1200] as const;
-
 function scene(w: number, h: number, extra: Partial<SettingsSceneCallbacks> = {}): { s: SettingsScene; input: InputManager } {
-  const input = new InputManager();
-  const real = createLayout(w, h);
-  const layout = w === SHORT[0] && h === SHORT[1]
-    ? Object.assign(Object.create(Object.getPrototypeOf(real)), real, { designWidth: w, designHeight: h })
-    : real;
-  const s = new SettingsScene(layout, input, {
-    onBack() {}, playerName: 'Tester', openTextInput: createFakeTextInput().openTextInput,
-    ...ONLINE, ...extra,
-  } as SettingsSceneCallbacks);
-  return { s, input };
+  const short = w === SHORT[0] && h === SHORT[1];
+  return mountSettings(w, h, { ...ONLINE, ...extra }, short ? SHORT : undefined);
 }
 
 describe('SettingsScene — page scroll', () => {

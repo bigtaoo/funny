@@ -13,7 +13,13 @@ import type { Rect } from '../../src/layout/ILayout';
 import type { AudioSlider } from '../../src/scenes/SettingsScene/audioPanel';
 import { createFakeTextInput } from './fakeTextInput';
 
-export interface TextNode { text: string; top: number; bottom: number; left: number; right: number; size: number }
+export interface TextNode { text: string; top: number; bottom: number; left: number; right: number; size: number; fill: number | null }
+
+/** A text's fill as a 0xRRGGBB number (PIXI normalises it to "#rrggbb"), comparable with the `ui` tokens. */
+function fillColor(f: unknown): number | null {
+  if (typeof f === 'number') return f;
+  return typeof f === 'string' && /^#[0-9a-f]{6}$/i.test(f) ? parseInt(f.slice(1), 16) : null;
+}
 
 /** Every PIXI.Text under `root`, with its on-screen bounds and post-scale font size. */
 export function collectTexts(root: PIXI.Container): TextNode[] {
@@ -26,7 +32,7 @@ export function collectTexts(root: PIXI.Container): TextNode[] {
         const b = ch.getBounds();
         out.push({
           text: ch.text, top: b.y, bottom: b.y + b.height, left: b.x, right: b.x + b.width,
-          size: Number(ch.style.fontSize) * ch.scale.y,
+          size: Number(ch.style.fontSize) * ch.scale.y, fill: fillColor(ch.style.fill),
         });
         continue;
       }
@@ -56,12 +62,40 @@ export const ONLINE: Partial<SettingsSceneCallbacks> = {
 };
 
 export function buildSettings(w: number, h: number, cb: Partial<SettingsSceneCallbacks> = ONLINE): SettingsScene {
-  return new SettingsScene(createLayout(w, h), new InputManager(), {
+  return mountSettings(w, h, cb).s;
+}
+
+/**
+ * The scene plus the InputManager it listens to, for suites that drive it through real pointer
+ * events. `design` overrides the design rect the scene reads (only designWidth/designHeight are
+ * read): the headless text stub measures lines short, so a squashed rect is how a suite gets a page
+ * that overflows — see settingsPageScroll.ui.ts.
+ */
+export function mountSettings(
+  w: number, h: number, cb: Partial<SettingsSceneCallbacks> = ONLINE, design?: readonly [number, number],
+): { s: SettingsScene; input: InputManager } {
+  const input = new InputManager();
+  const real = createLayout(w, h);
+  const layout = design
+    ? Object.assign(Object.create(Object.getPrototypeOf(real)), real, { designWidth: design[0], designHeight: design[1] })
+    : real;
+  const s = new SettingsScene(layout, input, {
     onBack() {},
     playerName: 'Tester',
     openTextInput: createFakeTextInput().openTextInput,
     ...cb,
   } as SettingsSceneCallbacks);
+  return { s, input };
+}
+
+/** A portrait design rect too short for the page (1080 wide, 1200 tall). */
+export const SHORT = [1080, 1200] as const;
+
+/** Press and release at a text node's centre, through the InputManager. */
+export function tap(input: InputManager, n: TextNode): void {
+  const x = (n.left + n.right) / 2, y = (n.top + n.bottom) / 2;
+  input._emitDown(x, y);
+  input._emitUp(x, y);
 }
 
 /** The fields the suites read; reached through TS privacy, as every scene suite here does. */
