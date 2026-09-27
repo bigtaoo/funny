@@ -1,5 +1,8 @@
-import type { LevelDefinition } from '@nw/engine/campaign/LevelDefinition';
-import { parseLevelDefinition } from '@nw/engine/campaign/levelSchema';
+// Campaign level registry. Lives in the engine (moved from client/src/game/campaign on 2026-09-26)
+// so every runner of a campaign level — the client, the peer judge, botsvc's PvE bots — reads the
+// same JSON; before that botsvc had no way to play a level at all.
+import type { LevelDefinition } from './LevelDefinition';
+import { parseLevelDefinition } from './levelSchema';
 
 import ch0Tutorial from './levels/ch0_tutorial.json';
 import ch1Lv1  from './levels/ch1_lv1.json';

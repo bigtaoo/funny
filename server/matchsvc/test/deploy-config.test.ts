@@ -299,6 +299,10 @@ describe('deploy config — every service passes through what its source reads (
       NW_SLG_ARRIVAL_SCAN_LIMIT: 'tuning knob; code default 500 per scan is the production value',
       NW_SLG_ARRIVAL_SETTLE_SLICE_MS:
         'tuning knob; code default 150ms per settlement pass is the production value. 0 disables the slice (settle everything due, however long it takes) — an escape hatch, not a deployment.',
+      NW_SLG_SETTLE_CONCURRENCY:
+        'tuning knob; code default 8 concurrent disjoint settlements per pass is the production value. 1 is the kill switch that restores the fully serial pass (WORLDSVC_CONCURRENCY_AUDIT §12.11).',
+      NW_SLG_WORLD_LEASE:
+        'must stay off while worldsvc runs as ONE process, which is every deployment today: leases only divide scheduling between processes, and a lease left behind by a crashed predecessor would stall that world for up to one TTL after a restart. Promote it to a compose line (=1 on every replica) on the day a second worldsvc replica is added (§12.12).',
     },
     botsvc: {
       NW_BOT_BATTLE_CHANCE: 'tuning knob; code default 0.025 per tick is the production value',

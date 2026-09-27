@@ -109,6 +109,7 @@
 | [ADR-089](DECISIONS_ADR-086-onward.md#adr-089-会话改滑动续期响应头-x-nw-tokentoken-真失效时强制退回登录页--accepted--2026-09-10) | 会话改滑动续期（响应头 `x-nw-token`），token 真失效时强制退回登录页 | Accepted | 2026-09-10 |
 | [ADR-090](DECISIONS_ADR-086-onward.md#adr-090-金币库从约定隔离升级为凭据隔离每服务一个最小权限-mongo-用户--accepted--2026-09-12) | 金币库从「约定隔离」升级为「凭据隔离」：每服务一个最小权限 Mongo 用户 | Accepted | 2026-09-12 |
 | [ADR-091](DECISIONS_ADR-086-onward.md#adr-091-文档里的代码路径也进门禁一次扫掉-164-处指向不存在文件的引用--accepted--2026-09-15) | 文档里的代码路径也进门禁：一次扫掉 164 处指向不存在文件的引用 | Accepted | 2026-09-15 |
+| [ADR-092](DECISIONS_ADR-086-onward.md#adr-092-单大区容量目标改为-3000-人取代-adr-032-的-500代码常量等服务端扩容验证后再改--accepted--2026-09-26) | 单大区容量目标改为 3000 人（取代 ADR-032 的 500）；代码常量等服务端扩容验证后再改 | Accepted | 2026-09-26 |
 
 ---
 

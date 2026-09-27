@@ -1,8 +1,8 @@
 # 战役星级评分：复合评分轴（Composite Star Scoring）
 
 > 关联：`CAMPAIGN_DESIGN.md §星级评分`、`DIFFICULTY_SIM.md`、`PVE_INTEGRITY_PLAN.md §8`。
-> 代码单一来源：`client/src/game/meta/campaignRewards.ts`（`computeStars`），
-> 客户端结算 / 裁判复算 / 难度模拟器三处共用同一函数、同一 ctx 构造口径。
+> 代码单一来源：`server/engine/src/campaign/stars.ts`（`computeStars`，2026-09-26 从 `client/src/game/meta/campaignRewards.ts` 挪进 `@nw/engine`，botsvc 的 PvE 机器人也用它），
+> 客户端结算 / 裁判复算 / 难度模拟器 / botsvc 四处共用同一函数、同一 ctx 构造口径。
 
 ## 为什么要换轴
 

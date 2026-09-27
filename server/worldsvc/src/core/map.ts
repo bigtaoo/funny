@@ -8,7 +8,7 @@
 // sibling (`computeVisionSources`/`familyMemberIds`/`sectMateMemberIds`/`allySectMemberIds`), the yield
 // sibling (`settle`), and the kernel primitives (`coordX`/`coordY`), so this takes `core: WorldCore` +
 // narrow `yieldSvc: YieldService` + `vision: VisionService` sibling references.
-import { allCityNodes, proceduralTile, tileId, playerWorldId, isInVision, sliceRuns, tileAtX, type MapEditorCityNode, type ProceduralTile } from '@nw/shared';
+import { allCityNodes, cachedProceduralTile, tileId, playerWorldId, isInVision, sliceRuns, tileAtX, type MapEditorCityNode, type ProceduralTile } from '@nw/shared';
 import type { WorldCore } from '../core';
 import type { YieldService } from './yield';
 import type { VisionService } from './vision';
@@ -343,12 +343,15 @@ export class MapService {
    * moved cities; already decoded from its run-length-encoded row by the caller); falls back to proceduralTile()
    * when there is no baseline for this cell (no template was active at open time). Vision/fog gating is
    * unchanged: terrain is never fog-gated, so callers add `visible` exactly as before.
+   *
+   * The fallback goes through cachedProceduralTile: re-deriving every unoccupied viewport cell on every
+   * getMap was ~20% of the main thread's busy time in the phase-0 load profile (WORLDSVC_CONCURRENCY_AUDIT §12.8).
    */
   private terrainView(worldId: string, x: number, y: number, baseline?: ProceduralTile): WorldTileView {
     if (baseline) {
       return { x, y, type: baseline.type, level: baseline.level, ...(baseline.resType ? { resType: baseline.resType } : {}), ...(baseline.obstacleKind ? { obstacleKind: baseline.obstacleKind } : {}) };
     }
-    const d = proceduralTile(worldId, x, y);
+    const d = cachedProceduralTile(worldId, x, y);
     return { x, y, type: d.type, level: d.level, ...(d.resType ? { resType: d.resType } : {}), ...(d.obstacleKind ? { obstacleKind: d.obstacleKind } : {}) };
   }
 }

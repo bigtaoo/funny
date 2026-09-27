@@ -48,6 +48,7 @@ import { CitySiegeService, type CityState } from './core/citySiege';
 import { SpawnService } from './core/spawn';
 import { VisionService } from './core/vision';
 import { MapService } from './core/map';
+import { initialSeq } from './instance';
 
 export { emptyResources, deleteInBatches, lootSummary, liveGarrison, MARCHABLE_KINDS } from './core/helpers';
 
@@ -61,10 +62,11 @@ export class WorldCore {
   readonly meta: WorldMetaClient;
   readonly commercial: WorldCommercialClient;
   readonly mail: WorldMailClient;
-  /** In-process monotonic sequence number — ensures marchIds do not collide when multiple marches depart within the same millisecond. */
-  marchSeq = 0;
-  /** In-process monotonic sequence number — ensures siegeIds do not collide when multiple sieges resolve within the same millisecond. */
-  siegeSeq = 0;
+  /** In-process monotonic sequence number — ensures marchIds do not collide when multiple marches depart within the same millisecond.
+   *  Random start, not 0, so two processes (or a restart) do not mint the same ids — see instance.ts `initialSeq`. */
+  marchSeq = initialSeq();
+  /** In-process monotonic sequence number — ensures siegeIds do not collide when multiple sieges resolve within the same millisecond. Random start as above. */
+  siegeSeq = initialSeq();
   /** Cached province-capital coordinate list, keyed by worldId (ADR-034: capitals are now seed-derived, not fixed by map size alone). */
   private _capitalsByWorld = new Map<string, readonly [number, number][]>();
 

@@ -92,6 +92,24 @@ export async function handleMapRoutes(ctx: RouteCtx): Promise<boolean> {
     return true;
   }
 
+  // ── All four order slices in one round trip (2026-09-26) ──
+  // What the client actually needs whenever it re-reads "what are my teams doing": the team picker,
+  // every march_update push, the City screen. Four requests each time was the bulk of what queued
+  // behind the client's 5 req/s rate gate during a multi-team dispatch. The single-slice routes above
+  // stay for already-shipped clients.
+  if (method === 'GET' && path === '/world/orders') {
+    const worldId = q.get('worldId');
+    if (!worldId) { sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required'); return true; }
+    const [marches, occupations, stationed, siegeHolds] = await Promise.all([
+      svc.getMarches(worldId, accountId),
+      svc.getOccupations(worldId, accountId),
+      svc.getStationed(worldId, accountId),
+      svc.getSiegeHolds(worldId, accountId),
+    ]);
+    send(res, 200, ok({ marches, occupations, stationed, siegeHolds }));
+    return true;
+  }
+
   // ── Wild-city siege state (ADR-074 P1): the ~64 city nodes with live durability / owning sect ──
   // The same payload `POST /world/enter` already embeds. This route exists so the city info panel can
   // REFRESH while it is open (durability regenerates continuously and other sects are hitting the same

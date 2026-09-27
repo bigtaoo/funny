@@ -24,7 +24,7 @@ import {
   type Replay,
   type ReplayFrame,
 } from '../game';
-import { computeStars, buildStarContext } from '../game/meta/campaignRewards';
+import { computeStars, buildStarContext } from '@nw/engine/campaign/stars';
 import { toEngineCardInstances } from '../game/meta/cardDefs';
 import type { CardInstance, EquipmentInstance } from '../game/meta/SaveData';
 import { PlayerCommands, type PlayerCommand as ProtoPlayerCommand } from './proto/game';

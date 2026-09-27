@@ -16,7 +16,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { HttpWorldSocialsvcClient } from '../src/socialsvcClient';
+import { HttpWorldSocialsvcClient, SOCIAL_INVALIDATE_CHANNEL, type InvalidationBus } from '../src/socialsvcClient';
 
 const KEY = 'k-internal';
 
@@ -168,5 +168,59 @@ describe('invalidation on worldsvc-authoritative writes', () => {
 
     expect(await c.getFamiliesBySect('sect-a')).toEqual([]);
     expect(hits('/by-sect/')).toBe(2);
+  });
+});
+
+/** An in-memory stand-in for Redis pub/sub: every publish reaches every subscriber, including the sender. */
+function memBus(): InvalidationBus & { published: string[] } {
+  const subs: ((m: string) => void)[] = [];
+  const published: string[] = [];
+  return {
+    published,
+    async publish(channel, message) {
+      expect(channel).toBe(SOCIAL_INVALIDATE_CHANNEL);
+      published.push(message);
+      for (const s of subs) s(message);
+      return subs.length;
+    },
+    async subscribe(channel, onMessage) {
+      expect(channel).toBe(SOCIAL_INVALIDATE_CHANNEL);
+      subs.push(onMessage);
+    },
+  };
+}
+
+// §12.7 phase 1: with more than one worldsvc process, a write in one must not leave the others serving the
+// old membership for the whole TTL.
+describe('cross-process invalidation', () => {
+  it('a sect write in one process drops the cached view in another', async () => {
+    familiesBySect['sect-a'] = [{ familyId: 'fam-1', sectId: 'sect-a' }];
+    const bus = memBus();
+    const writer = new HttpWorldSocialsvcClient(base, KEY, 'proc-a');
+    const reader = new HttpWorldSocialsvcClient(base, KEY, 'proc-b');
+    await writer.attachInvalidationBus(bus);
+    await reader.attachInvalidationBus(bus);
+    await reader.getFamiliesBySect('sect-a');
+    expect(hits('/by-sect/')).toBe(1);
+
+    familiesBySect['sect-a'] = [{ familyId: 'fam-1', sectId: 'sect-a' }, { familyId: 'fam-2', sectId: 'sect-a' }];
+    await writer.setSect('fam-2', 'sect-a');
+    await new Promise((r) => setImmediate(r)); // the publish is fire-and-forget
+
+    expect((await reader.getFamiliesBySect('sect-a')).map((f) => f.familyId)).toEqual(['fam-1', 'fam-2']);
+    expect(hits('/by-sect/')).toBe(2);
+    expect(bus.published).toHaveLength(1);
+    expect(JSON.parse(bus.published[0]!)).toEqual({ familyId: 'fam-2', from: 'proc-a' });
+  });
+
+  it('resetSlgState broadcasts too, and a malformed message is ignored', async () => {
+    const bus = memBus();
+    const c = new HttpWorldSocialsvcClient(base, KEY, 'proc-a');
+    await c.attachInvalidationBus(bus);
+    await bus.publish(SOCIAL_INVALIDATE_CHANNEL, 'not json'); // must not throw out of the subscriber
+    await c.resetSlgState('fam-9');
+    await new Promise((r) => setImmediate(r));
+    expect(bus.published.map((m) => { try { return JSON.parse(m); } catch { return m; } }))
+      .toEqual(['not json', { familyId: 'fam-9', from: 'proc-a' }]);
   });
 });

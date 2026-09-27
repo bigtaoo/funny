@@ -118,7 +118,7 @@ export class ProgressionService implements ProgressionHandlers {
         me = { rank: higher + 1, elo: myPvp.elo, pvpRank: myPvp.rank };
       }
 
-      return ok({ seasonNo: season.seasonNo, entries, ...(me ? { me } : {}) });
+      return ok({ seasonNo: season.seasonNo, seasonEndAt: season.endAt, entries, ...(me ? { me } : {}) });
     }
 
     /** Purchase the current season's battle pass (600 coins, S11 §9). */

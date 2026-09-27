@@ -11,9 +11,34 @@ import type { WorldMapContext } from '../WorldMapContext';
 import { loadMapViewport, refreshMarches, refreshMe } from './loaders';
 import { formatDuration } from '../logic/formatDuration';
 
-export function applyMarchUpdate(ctx: WorldMapContext, _m: MarchUpdate): void {
+/**
+ * How long a `marching` push waits for the HTTP response of the order that caused it. worldsvc fires
+ * the push to the dispatcher before answering the request, and it travels an extra hop (gateway WS), so
+ * the two usually land within a few tens of ms of each other in either order.
+ */
+export const OWN_ORDER_GRACE_MS = 300;
+
+export function applyMarchUpdate(ctx: WorldMapContext, m: MarchUpdate): void {
   if (ctx.destroyed) return;
-  void refreshMarches(ctx);
+  // Arrivals, recalls-by-encounter, settlements: always news. Re-read.
+  if (m.status !== 'marching') {
+    void refreshMarches(ctx);
+    return;
+  }
+  // 2026-09-26: a `marching` push is usually the echo of the player's own dispatch/recall, and that
+  // order's HTTP response puts the exact same march into `ctx.marches` (doMarchTeam appends it; recall
+  // re-reads). Re-reading all four order slices for it was a quarter of every dispatch's request budget
+  // — see rateGate.ts. The response may land after the push, so decide once the grace has passed.
+  setTimeout(() => {
+    if (!ctx.destroyed && !describesCachedMarch(ctx, m)) void refreshMarches(ctx);
+  }, OWN_ORDER_GRACE_MS);
+}
+
+/** The push says nothing the cache doesn't already: same march, same leg, same state. */
+function describesCachedMarch(ctx: WorldMapContext, m: MarchUpdate): boolean {
+  return ctx.marches.some((c) =>
+    c.marchId === m.marchId && c.kind === m.kind && c.status === m.status
+    && c.toTile === m.toTile && c.arriveAt === m.arriveAt);
 }
 
 /**
@@ -31,22 +56,64 @@ export function applyNationMsg(ctx: WorldMapContext, n: NationMsg): void {
   if (!ctx.destroyed) ctx.panels.renderHud();
 }
 
+/**
+ * Per-scene state of the coalesced tile refetch (see applyTileUpdate). Keyed weakly by ctx so a torn-down
+ * scene takes its state with it, and a rebuilt scene starts clean.
+ */
+interface TileRefetch {
+  /** A viewport refetch is on the wire. */
+  running: boolean;
+  /** A push arrived that the refetch on the wire (if any) may predate — one more is owed. */
+  dirty: boolean;
+  /** Our own base's hp as cached when the first not-yet-refetched push for it arrived; null if none is pending. */
+  basePrevHp: { key: string; hp: number | undefined } | null;
+}
+const tileRefetches = new WeakMap<WorldMapContext, TileRefetch>();
+
+/**
+ * A tile changed somewhere — re-read the viewport. Coalesced (2026-09-26, WORLDSVC_CONCURRENCY_AUDIT §12.6):
+ * each push used to fire its own full-viewport `GET /world/map`, so a fight near the camera (one push per
+ * settled hit, per occupation tick, per neighbouring player) queued a read per push behind the client's
+ * 5 req/s gate — the same bucket drain that delayed dispatches before §12. Now at most one refetch is on the
+ * wire; pushes landing meanwhile mark it dirty and cost exactly one more refetch after it, which re-reads
+ * the viewport AFTER all of them. Any number of pushes → at most two reads, and the last one is fresh.
+ */
 export function applyTileUpdate(ctx: WorldMapContext, tu: TileUpdate): void {
   if (ctx.destroyed) return;
+  let st = tileRefetches.get(ctx);
+  if (!st) { st = { running: false, dirty: false, basePrevHp: null }; tileRefetches.set(ctx, st); }
   // D-CITY-8: flag whether this push is our own main base losing durability, so the full-screen
   // vignette flash (WorldMapRenderer/vignette.ts) can fire once the fresh hp value is in cache.
   // TileUpdate itself carries no hp field (see transport.proto), so we diff the cached view before/after.
-  const isOwnBase = !!ctx.me?.mainBaseTile && tu.tileId === ctx.me.mainBaseTile;
-  const [bx, by] = isOwnBase ? ctx.parseTileId(tu.tileId) : [0, 0];
-  const prevHp = isOwnBase ? ctx.tileCache.get(`${bx}:${by}`)?.hp : undefined;
-  void loadMapViewport(ctx).then(() => {
-    if (ctx.destroyed) return;
-    if (isOwnBase) {
-      const nowHp = ctx.tileCache.get(`${bx}:${by}`)?.hp;
-      if (prevHp != null && nowHp != null && nowHp < prevHp) ctx.view.flashDamageVignette();
+  // The "before" is captured HERE, at push time, not when the refetch starts: a refetch already on the
+  // wire may land this very hit in cache first, and a later snapshot would then diff it away.
+  if (!st.basePrevHp && ctx.me?.mainBaseTile && tu.tileId === ctx.me.mainBaseTile) {
+    const [bx, by] = ctx.parseTileId(tu.tileId);
+    const key = `${bx}:${by}`;
+    st.basePrevHp = { key, hp: ctx.tileCache.get(key)?.hp };
+  }
+  st.dirty = true;
+  if (!st.running) void drainTileRefetch(ctx, st);
+}
+
+async function drainTileRefetch(ctx: WorldMapContext, st: TileRefetch): Promise<void> {
+  st.running = true;
+  try {
+    while (st.dirty && !ctx.destroyed) {
+      st.dirty = false;
+      const base = st.basePrevHp;
+      st.basePrevHp = null;
+      await loadMapViewport(ctx);
+      if (ctx.destroyed) return;
+      if (base) {
+        const nowHp = ctx.tileCache.get(base.key)?.hp;
+        if (base.hp != null && nowHp != null && nowHp < base.hp) ctx.view.flashDamageVignette();
+      }
+      ctx.view.renderMap();
     }
-    ctx.view.renderMap();
-  });
+  } finally {
+    st.running = false;
+  }
 }
 
 export function applyUnderAttack(ctx: WorldMapContext, u: UnderAttack): void {

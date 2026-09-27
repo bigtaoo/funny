@@ -44,11 +44,11 @@ export class CombatService {
   processDueArrivals(nowMs?: number): Promise<number> {
     return this.march.processDueArrivals(nowMs);
   }
-  processDueArrivalSteps(nowMs?: number): Promise<number> {
-    return this.march.processDueArrivalSteps(nowMs);
+  processDueArrivalSteps(nowMs?: number, worldIds?: readonly string[]): Promise<number> {
+    return this.march.processDueArrivalSteps(nowMs, worldIds);
   }
-  processDueArrivalSettlements(nowMs?: number, sliceMs?: number): Promise<number> {
-    return this.march.processDueArrivalSettlements(nowMs, sliceMs);
+  processDueArrivalSettlements(nowMs?: number, sliceMs?: number, worldIds?: readonly string[]): Promise<number> {
+    return this.march.processDueArrivalSettlements(nowMs, sliceMs, worldIds);
   }
   // Field-stationing (2026-07-23): list / recall teams parked on tiles.
   getStationed(worldId: string, accountId: string): Promise<StationedView[]> {
@@ -59,12 +59,12 @@ export class CombatService {
   }
 
   // ── siege / sweep settlement (combatSiege.ts) ────────────────
-  processDueSiegeDamage(nowMs?: number): Promise<number> {
-    return this.siege.processDueSiegeDamage(nowMs);
+  processDueSiegeDamage(nowMs?: number, worldIds?: readonly string[]): Promise<number> {
+    return this.siege.processDueSiegeDamage(nowMs, worldIds);
   }
   // ADR-037 (§5.4): occupation-hold settlement (combatSiege/occupation.ts).
-  processDueOccupations(nowMs?: number): Promise<number> {
-    return this.siege.processDueOccupations(nowMs);
+  processDueOccupations(nowMs?: number, worldIds?: readonly string[]): Promise<number> {
+    return this.siege.processDueOccupations(nowMs, worldIds);
   }
   // Player-initiated occupation-hold cancel (2026-07-15, team management "取消指令").
   cancelOccupation(worldId: string, accountId: string, teamId: string): Promise<void> {

@@ -56,6 +56,19 @@ export interface BotsvcEnv {
   deviceOffset: number;
   /** Max sessions logged in/out per scheduler tick (Scheduler batchSize); raise it to ramp a load-gen fleet up faster. */
   spawnBatch: number;
+  /**
+   * Online rotation (BOTSVC_DESIGN §3.1): targetOnline becomes the European evening peak, scaled down
+   * through the day, and every session ends after 20–60 minutes. NW_BOT_ROTATION=0 keeps the old flat,
+   * never-rotating fleet — what a load test wants.
+   */
+  rotation: boolean;
+  /** PvE runs, 1–3 per bot per UTC day (BOTSVC_DESIGN §3.5). NW_BOT_PVE=0 turns them off. */
+  pve: boolean;
+}
+
+function flag(name: string, fallback: boolean): boolean {
+  const v = process.env[name];
+  return v === undefined || v === '' ? fallback : v !== '0' && v.toLowerCase() !== 'false';
 }
 
 function num(name: string, fallback: number): number {
@@ -86,5 +99,7 @@ export function loadBotsvcEnv(): BotsvcEnv {
     slgIntervalMs: num('NW_BOT_SLG_INTERVAL_MS', DEFAULT_SLG_INTERVAL_MS),
     deviceOffset: num('NW_BOT_DEVICE_OFFSET', 0),
     spawnBatch: num('NW_BOT_SPAWN_BATCH', 10),
+    rotation: flag('NW_BOT_ROTATION', true),
+    pve: flag('NW_BOT_PVE', true),
   };
 }

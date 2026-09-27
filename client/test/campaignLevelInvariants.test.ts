@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { ATTACK_LANES } from '@nw/engine/config';
-import { CAMPAIGN_LEVELS, CAMPAIGN_LEVEL_ORDER } from '../src/game/campaign/levels';
+import { CAMPAIGN_LEVELS, CAMPAIGN_LEVEL_ORDER } from '@nw/engine/campaign/levels';
 import type { LevelDefinition } from '@nw/engine/campaign/LevelDefinition';
 
 /**

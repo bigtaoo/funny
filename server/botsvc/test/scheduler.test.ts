@@ -53,9 +53,12 @@ function fakeSession(
       rec.slgCalls++;
       if (hooks.onSlg) await hooks.onSlg();
     }),
+    tickPve: vi.fn(async () => undefined),
     tickBattle: vi.fn(() => {
       rec.battleCalls++;
     }),
+    pveDueAt: vi.fn(() => Infinity),
+    pveCounters: { entered: 0, cleared: 0, lost: 0, spotChecked: 0, verified: 0 },
   };
   rec.session = obj as unknown as BotSession;
   return rec;
@@ -337,6 +340,144 @@ describe('Scheduler upkeep with nobody online', () => {
     // at all, and this keeps a still-starting fleet from spinning up workers every tick.
     const scheduler = new Scheduler([], fakeCapacity(async () => 0), OPTS);
     await expect(scheduler.tick()).resolves.toBeUndefined();
-    expect(scheduler.status()).toEqual({ total: 0, online: 0, targetOnline: 10, effectiveTarget: 10, paused: false, upkeepErrors: { family: 0, slg: 0 } });
+    expect(scheduler.status()).toEqual({ total: 0, online: 0, targetOnline: 10, effectiveTarget: 10, paused: false, upkeepErrors: { family: 0, slg: 0, pve: 0 }, pve: { entered: 0, cleared: 0, lost: 0, spotChecked: 0, verified: 0 } });
+  });
+});
+
+// ── Rotation (BOTSVC_DESIGN §3.1) and PvE (§3.5) ─────────────────────────────────────────────────
+
+/** 20:00 in Berlin (CEST): the curve's peak, so the target is exactly targetOnline. */
+const BERLIN_PEAK = Date.UTC(2026, 6, 1, 18);
+/** 04:00 in Berlin: the curve's floor, 12% of the peak. */
+const BERLIN_NIGHT = Date.UTC(2026, 6, 1, 2);
+const MIN = 60_000;
+
+function rotating(pool: FakeSession[], over: Partial<SchedulerOptions> & { at?: { now: number } } = {}): Scheduler {
+  const at = over.at ?? { now: BERLIN_PEAK };
+  return new Scheduler(pool.map((f) => f.session), fakeCapacity(async () => 0), {
+    ...OPTS,
+    rotation: true,
+    random: () => 0,
+    now: () => at.now,
+    ...over,
+  });
+}
+const sessionOf = (f: FakeSession): any => f.session;
+
+describe('Scheduler rotation — how many', () => {
+  it('targetOnline is the evening peak; at night the fleet runs at the curve\'s share of it', async () => {
+    const pool = Array.from({ length: 200 }, (_, i) => fakeSession(i));
+    const scheduler = rotating(pool, { targetOnline: 100, batchSize: 200, at: { now: BERLIN_NIGHT } });
+    await scheduler.tick();
+    expect(scheduler.status()).toMatchObject({ targetOnline: 100, effectiveTarget: 12, online: 12 });
+  });
+
+  it('without rotation the target stays flat, whatever the hour', async () => {
+    const pool = Array.from({ length: 20 }, (_, i) => fakeSession(i));
+    const scheduler = new Scheduler(pool.map((f) => f.session), fakeCapacity(async () => 0), { ...OPTS, now: () => BERLIN_NIGHT });
+    await scheduler.tick();
+    expect(scheduler.status()).toMatchObject({ effectiveTarget: 10, online: 10 });
+  });
+});
+
+describe('Scheduler rotation — who', () => {
+  it('logs in the bots whose PvE run is due first, earliest first, then picks at random', async () => {
+    const pool = Array.from({ length: 10 }, (_, i) => fakeSession(i));
+    sessionOf(pool[7]!).pveDueAt.mockReturnValue(BERLIN_PEAK - 1000);
+    sessionOf(pool[3]!).pveDueAt.mockReturnValue(BERLIN_PEAK - 5000);
+    sessionOf(pool[5]!).pveDueAt.mockReturnValue(BERLIN_PEAK + 1000); // not yet due
+    const scheduler = rotating(pool, { targetOnline: 3, random: () => 0.999 });
+    await scheduler.tick();
+    const loggedIn = pool.filter((f) => sessionOf(f).login.mock.calls.length > 0).map((f) => sessionOf(f).id);
+    expect(sessionOf(pool[3]!).login.mock.invocationCallOrder[0]).toBeLessThan(sessionOf(pool[7]!).login.mock.invocationCallOrder[0]);
+    // The third is the random pick: 0.999 takes the last offline bot, not the pool's first.
+    expect(loggedIn.sort()).toEqual([3, 7, 9]);
+  });
+
+  it('without rotation: the pool in order, the old behaviour', async () => {
+    const pool = Array.from({ length: 10 }, (_, i) => fakeSession(i));
+    sessionOf(pool[7]!).pveDueAt.mockReturnValue(0);
+    const scheduler = new Scheduler(pool.map((f) => f.session), fakeCapacity(async () => 0), { ...OPTS, targetOnline: 3 });
+    await scheduler.tick();
+    expect(pool.filter((f) => sessionOf(f).login.mock.calls.length > 0).map((f) => sessionOf(f).id)).toEqual([0, 1, 2]);
+  });
+});
+
+describe('Scheduler rotation — sessions end', () => {
+  it('after their length (20 minutes at the lowest draw), from lobby_idle only, and not with a PvE run due', async () => {
+    const at = { now: BERLIN_PEAK };
+    const pool = Array.from({ length: 4 }, (_, i) => fakeSession(i));
+    const scheduler = rotating(pool, { targetOnline: 3, at });
+    await scheduler.tick();
+    const [a, b, c] = pool.map(sessionOf);
+    expect([a.state, b.state, c.state]).toEqual(['lobby_idle', 'lobby_idle', 'lobby_idle']);
+
+    at.now = BERLIN_PEAK + 20 * MIN - 1;
+    await scheduler.tick();
+    expect(pool.map((f) => sessionOf(f).logout.mock.calls.length)).toEqual([0, 0, 0, 0]);
+
+    at.now = BERLIN_PEAK + 20 * MIN;
+    a.state = 'in_battle';
+    b.pveDueAt.mockReturnValue(at.now);
+    await scheduler.tick();
+    expect([a.logout.mock.calls.length, b.logout.mock.calls.length, c.logout.mock.calls.length]).toEqual([0, 0, 1]);
+    // And the slot it freed is refilled in the same pass.
+    expect(scheduler.status().online).toBe(3);
+  });
+
+  it('without rotation a session never ends on its own', async () => {
+    const at = { now: BERLIN_PEAK };
+    const pool = Array.from({ length: 3 }, (_, i) => fakeSession(i));
+    const scheduler = new Scheduler(pool.map((f) => f.session), fakeCapacity(async () => 0), { ...OPTS, targetOnline: 3, now: () => at.now });
+    await scheduler.tick();
+    at.now += 24 * 60 * MIN;
+    await scheduler.tick();
+    expect(pool.map((f) => sessionOf(f).logout.mock.calls.length)).toEqual([0, 0, 0]);
+  });
+
+  it('over target: idle sessions go first, soonest-ending first; a match is cut only if nothing else is left', async () => {
+    const pool = Array.from({ length: 3 }, (_, i) => fakeSession(i));
+    // No rotation: logins in pool order, one draw per session length — ends at 0.9 / 0.1 / 0.5 of the range.
+    const draws = [0.9, 0.1, 0.5];
+    const scheduler = new Scheduler(pool.map((f) => f.session), fakeCapacity(async () => 0), {
+      ...OPTS, targetOnline: 3, random: () => draws.shift() ?? 0,
+    });
+    await scheduler.tick();
+    const [a, b, c] = pool.map(sessionOf);
+    b.state = 'in_battle'; // soonest-ending, but mid-match
+    scheduler.setTargetOnline(2);
+    await scheduler.tick();
+    expect([a.logout.mock.calls.length, b.logout.mock.calls.length, c.logout.mock.calls.length]).toEqual([0, 0, 1]);
+    scheduler.setTargetOnline(0);
+    await scheduler.tick();
+    expect([a.logout.mock.calls.length, b.logout.mock.calls.length]).toEqual([1, 1]);
+  });
+});
+
+describe('Scheduler PvE upkeep', () => {
+  it('offers each session its PvE run before the ranked roll', async () => {
+    const pool = [fakeSession(0)];
+    const scheduler = new Scheduler(pool.map((f) => f.session), fakeCapacity(async () => 0), { ...OPTS, targetOnline: 1, now: () => 1234 });
+    await scheduler.tick();
+    const s = sessionOf(pool[0]!);
+    expect(s.tickPve).toHaveBeenCalledWith(1234);
+    expect(s.tickPve.mock.invocationCallOrder[0]).toBeLessThan(s.tickBattle.mock.invocationCallOrder[0]);
+  });
+
+  it('a failed run is counted as a pve upkeep error', async () => {
+    const pool = [fakeSession(0)];
+    sessionOf(pool[0]!).tickPve.mockRejectedValue(new Error('LEVEL_LOCKED'));
+    const scheduler = new Scheduler(pool.map((f) => f.session), fakeCapacity(async () => 0), { ...OPTS, targetOnline: 1 });
+    await scheduler.tick();
+    await new Promise((r) => setImmediate(r));
+    expect(scheduler.status().upkeepErrors).toEqual({ family: 0, slg: 0, pve: 1 });
+  });
+
+  it('status sums every bot\'s PvE outcomes, online or not', () => {
+    const pool = [fakeSession(0), fakeSession(1)];
+    sessionOf(pool[0]!).pveCounters = { entered: 3, cleared: 2, lost: 1, spotChecked: 1, verified: 1 };
+    sessionOf(pool[1]!).pveCounters = { entered: 1, cleared: 0, lost: 1, spotChecked: 0, verified: 0 };
+    const scheduler = new Scheduler(pool.map((f) => f.session), fakeCapacity(async () => 0), OPTS);
+    expect(scheduler.status().pve).toEqual({ entered: 4, cleared: 2, lost: 2, spotChecked: 1, verified: 1 });
   });
 });

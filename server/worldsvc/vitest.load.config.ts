@@ -22,7 +22,9 @@ export default defineConfig({
     environment: 'node',
     globals: false,
     fileParallelism: false,
-    testTimeout: 600_000,
+    // A 3000-bot ramp plus up to 10 minutes of waiting for the previous run's leftovers plus the window
+    // (ADR-092 ladder) does not fit in 10 minutes. Override with NW_LOAD_TIMEOUT_MS.
+    testTimeout: Number(process.env.NW_LOAD_TIMEOUT_MS ?? 3_600_000),
     hookTimeout: 600_000,
   },
 });

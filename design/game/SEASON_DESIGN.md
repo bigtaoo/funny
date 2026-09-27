@@ -78,7 +78,9 @@ interface LadderSeasonDoc {
 
 - **赛季时长** `SEASON_DURATION = 6 周`（常量，可调 → ECONOMY_NUMBERS）；**`endAt` 仅为展示用「预计结束」**，不是硬切换闸——实际开新季由运维手动决定（§3.1）。
 - **首次启动**：缺省则懒创建 `{seasonNo:1, startAt:now, endAt:now+6w, state:'active'}`。
-- 客户端读 `GET /leaderboard` / `GET /save` 时带回当前 `{seasonNo, endAt}` 供 UI 显示「赛季 N · 预计剩余 X 天」。
+- 客户端从 `GET /leaderboard` 的 `data.seasonEndAt` 读结束时间，`seasonNo` 仍取自 save 的 `pvp.seasonNo`，显示「赛季 N · 剩余 X 天」。
+  - **2026-09-26 订正**：此前 `/leaderboard` 从没下发过 `endAt`（本行原写的是设计意图，实现漏了），客户端写死 `endAt: 0`，于是**所有客户端从始至终都显示「赛季 N · 已结束」**。现在服务端下发 `seasonEndAt`（契约必填）；客户端拿不到（离线 / 请求失败 / 旧服务端）时只显示「赛季 N」——**「已结束」只在服务端给的时间确实已过时出现**。统计页的「我的排名」和横幅共用同一次 `/leaderboard` 请求。
+- **延期没有接口**：`endAt` 不驱动任何逻辑，延期就是直接 `$set` `ladderSeasons.current.endAt`。2026-09-26 线上做过一次：赛季 1 原定 2026-08-05 结束、超期 7 周未 roll（尚未上线，重置无意义），延到 **2027-03-26**，`seasonNo`/`startAt`/`state` 不动。
 
 ### 3.1 赛季切换触发（拍板：admin 手动开启新赛季）
 

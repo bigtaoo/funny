@@ -13,6 +13,7 @@ import { startSiegeReturnMarch, startNextSiegeRound, resolveOwnerEmblems } from 
 import { SlgError } from '@nw/shared';
 import type { SiegeHelpersService } from './helpers';
 import { settleCityDamage } from './cityDamage';
+import { worldScope } from '../worldLease';
 
 export class SiegeDamageService {
   constructor(
@@ -74,10 +75,10 @@ export class SiegeDamageService {
    * dueAt has passed deducts its attacking team's siege value from the target building's HP; at HP≤0 the building is captured
    * (main base → passiveRelocate; other buildings → hand over). Atomic claim-and-delete makes it single-consumer safe.
    */
-  async processDueSiegeDamage(nowMs?: number): Promise<number> {
+  async processDueSiegeDamage(nowMs?: number, worldIds?: readonly string[]): Promise<number> {
     const { cols } = this.core.deps;
     const t = nowMs ?? this.core.deps.now();
-    const due = await cols.siegeDamage.find({ dueAt: { $lte: t } }).limit(500).toArray();
+    const due = await cols.siegeDamage.find({ ...worldScope(worldIds), dueAt: { $lte: t } }).limit(500).toArray();
     let n = 0;
     for (const d of due) {
       const claimed = await cols.siegeDamage.findOneAndDelete({ _id: d._id });

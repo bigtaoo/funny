@@ -26,7 +26,7 @@
 //   · the damage vignette fires only on our own base and only when hp actually dropped — it is
 //     diffed around the refetch because TileUpdate carries no hp;
 //   · an attacker-controlled display name reaches the toast verbatim (the 2026-08-03 fix).
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Two stubs, and both are seams rather than conveniences. `render/sketchUi` is the only
 // pixi.js-legacy import in the module — it is used purely for two palette entries, so distinctive
@@ -49,7 +49,7 @@ vi.mock('../src/scenes/worldmap/net/loaders', () => ({
 }));
 
 import {
-  applyMarchUpdate, applyNationMsg, applyTileUpdate, applyUnderAttack, applySiegeResult,
+  applyMarchUpdate, applyNationMsg, applyTileUpdate, applyUnderAttack, applySiegeResult, OWN_ORDER_GRACE_MS,
 } from '../src/scenes/worldmap/net/push';
 import { setLocale, t } from '../src/i18n';
 import type { WorldMapContext } from '../src/scenes/worldmap/WorldMapContext';
@@ -93,6 +93,7 @@ function fake(over: Partial<{ destroyed: boolean; mainBaseTile: string; seenTs: 
     },
     tileCache: f.tiles,
     siegeHolds: f.siegeHolds,
+    marches: [] as unknown[],
     view: {
       renderMap: () => { f.mapRenders++; },
       flashDamageVignette: () => { f.vignettes++; },
@@ -167,11 +168,69 @@ describe('worldmap push — teardown', () => {
 });
 
 describe('worldmap push — applyMarchUpdate', () => {
-  it('refetches marches (authoritative) rather than merging the payload', () => {
+  const push = (over: Partial<MarchUpdate> = {}): MarchUpdate => ({
+    marchId: 'm1', kind: 'occupy', fromTile: 'w1:1:1', toTile: 'w1:2:1', arriveAt: 5000, status: 'marching', ...over,
+  });
+  const cached = (u: MarchUpdate) => ({ ...u, troops: 10, departAt: 0, mine: true });
+
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('refetches marches (authoritative) for a state change the cache has not seen', () => {
     const f = fake();
-    applyMarchUpdate(f.ctx, { marchId: 'm1' } as MarchUpdate);
+    f.ctx.marches = [cached(push())] as never;
+    applyMarchUpdate(f.ctx, push({ status: 'arrived' }));
     expect(refreshMarches).toHaveBeenCalledTimes(1);
     expect(refreshMarches).toHaveBeenCalledWith(f.ctx);
+  });
+
+  // 2026-09-26: the player's own dispatch echoes back as a push whose march doMarchTeam has already
+  // appended from the HTTP response. Re-reading all four order slices for it was a quarter of every
+  // dispatch's request budget, which queued the NEXT team's order behind it.
+  it('ignores the echo of a march the cache already holds exactly', () => {
+    vi.useFakeTimers();
+    const f = fake();
+    f.ctx.marches = [cached(push())] as never;
+    applyMarchUpdate(f.ctx, push());
+    vi.advanceTimersByTime(OWN_ORDER_GRACE_MS * 2);
+    expect(refreshMarches).not.toHaveBeenCalled();
+  });
+
+  it('a push that beats its own HTTP response is dropped once the response lands within the grace', () => {
+    vi.useFakeTimers();
+    const f = fake();
+    applyMarchUpdate(f.ctx, push());
+    expect(refreshMarches).not.toHaveBeenCalled();
+    f.ctx.marches = [cached(push())] as never; // doMarchTeam appends from the response
+    vi.advanceTimersByTime(OWN_ORDER_GRACE_MS);
+    expect(refreshMarches).not.toHaveBeenCalled();
+  });
+
+  it('a new march nobody put in the cache (e.g. enemy entering vision) still refetches after the grace', () => {
+    vi.useFakeTimers();
+    const f = fake();
+    applyMarchUpdate(f.ctx, push({ marchId: 'enemy' }));
+    vi.advanceTimersByTime(OWN_ORDER_GRACE_MS - 1);
+    expect(refreshMarches).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(refreshMarches).toHaveBeenCalledTimes(1);
+  });
+
+  it('the same march on a different leg is not an echo (recall flips kind to return)', () => {
+    vi.useFakeTimers();
+    const f = fake();
+    f.ctx.marches = [cached(push())] as never;
+    applyMarchUpdate(f.ctx, push({ kind: 'return', toTile: 'w1:1:1', arriveAt: 9000 }));
+    vi.advanceTimersByTime(OWN_ORDER_GRACE_MS);
+    expect(refreshMarches).toHaveBeenCalledTimes(1);
+  });
+
+  it('a scene torn down during the grace does not refetch', () => {
+    vi.useFakeTimers();
+    const f = fake();
+    applyMarchUpdate(f.ctx, push({ marchId: 'enemy' }));
+    (f.ctx as unknown as { destroyed: boolean }).destroyed = true;
+    vi.advanceTimersByTime(OWN_ORDER_GRACE_MS);
+    expect(refreshMarches).not.toHaveBeenCalled();
   });
 });
 
@@ -291,6 +350,88 @@ describe('worldmap push — applyTileUpdate', () => {
     await vi.waitFor(() => expect(loadMapViewport).toHaveBeenCalledTimes(1));
     expect(f.mapRenders).toBe(0);
     expect(f.vignettes).toBe(0);
+  });
+});
+
+describe('worldmap push — applyTileUpdate coalescing', () => {
+  // 2026-09-26 (WORLDSVC_CONCURRENCY_AUDIT §12.6): every push used to fire its own full-viewport read.
+  // A fight near the camera is a push per hit, and each read queued behind the 5 req/s gate — the same
+  // drain that held back dispatches. At most one refetch may be on the wire; pushes meanwhile owe one more.
+
+  /** Each refetch waits until the case releases it, so a case controls what is "on the wire". */
+  function gatedRefetch(onLand: (n: number) => void = () => {}): () => void {
+    const waiting: Array<() => void> = [];
+    let n = 0;
+    loadMapViewport.mockImplementation(() => new Promise<void>((r) => {
+      waiting.push(() => { onLand(++n); r(); });
+    }));
+    return () => waiting.shift()!();
+  }
+  const flush = () => new Promise<void>((r) => { setTimeout(r, 0); });
+
+  it('a burst of pushes costs one read on the wire plus one trailing read', async () => {
+    const f = fake();
+    const land = gatedRefetch();
+    for (let i = 0; i < 20; i++) applyTileUpdate(f.ctx, { tileId: `w1:${i}:0` } as TileUpdate);
+    expect(loadMapViewport).toHaveBeenCalledTimes(1);
+
+    land(); await flush();
+    // The first read may predate pushes 2-20, so exactly one more goes out after it.
+    expect(loadMapViewport).toHaveBeenCalledTimes(2);
+    land(); await flush();
+    expect(loadMapViewport).toHaveBeenCalledTimes(2);
+    expect(f.mapRenders).toBe(2);
+  });
+
+  it('a single push costs a single read — no speculative trailing one', async () => {
+    const f = fake();
+    const land = gatedRefetch();
+    applyTileUpdate(f.ctx, { tileId: 'w1:1:1' } as TileUpdate);
+    land(); await flush();
+    expect(loadMapViewport).toHaveBeenCalledTimes(1);
+    expect(f.mapRenders).toBe(1);
+  });
+
+  it('a push after the refetch settled starts a fresh one', async () => {
+    const f = fake();
+    const land = gatedRefetch();
+    applyTileUpdate(f.ctx, { tileId: 'w1:1:1' } as TileUpdate);
+    land(); await flush();
+    applyTileUpdate(f.ctx, { tileId: 'w1:2:2' } as TileUpdate);
+    expect(loadMapViewport).toHaveBeenCalledTimes(2);
+  });
+
+  it('scenes do not share a refetch: a rebuilt scene is not blocked by the old one', async () => {
+    const a = fake();
+    const b = fake();
+    gatedRefetch();
+    applyTileUpdate(a.ctx, { tileId: 'w1:1:1' } as TileUpdate);
+    applyTileUpdate(b.ctx, { tileId: 'w1:1:1' } as TileUpdate);
+    expect(loadMapViewport).toHaveBeenCalledTimes(2);
+  });
+
+  it('a base hit that the read on the wire already landed still flashes', async () => {
+    // The "before" hp must be the cache at push time. Snapshotting it when the trailing read starts
+    // would read the value the first read just landed and diff the hit away.
+    const f = fake({ mainBaseTile: 'w1:5:6' });
+    f.tiles.set('5:6', { hp: 900 });
+    const land = gatedRefetch((n) => { if (n === 1) f.tiles.set('5:6', { hp: 700 }); });
+    applyTileUpdate(f.ctx, { tileId: 'w1:9:9' } as TileUpdate); // someone else's tile: read 1 goes out
+    applyTileUpdate(f.ctx, { tileId: 'w1:5:6' } as TileUpdate); // our base is hit meanwhile
+    land(); await flush(); // read 1 happens to carry the hit
+    land(); await flush();
+    expect(f.vignettes).toBe(1);
+  });
+
+  it('stops owing a read once the scene is torn down', async () => {
+    const f = fake();
+    const land = gatedRefetch();
+    applyTileUpdate(f.ctx, { tileId: 'w1:1:1' } as TileUpdate);
+    applyTileUpdate(f.ctx, { tileId: 'w1:2:2' } as TileUpdate);
+    (f.ctx as unknown as { destroyed: boolean }).destroyed = true;
+    land(); await flush();
+    expect(loadMapViewport).toHaveBeenCalledTimes(1);
+    expect(f.mapRenders).toBe(0);
   });
 });
 

@@ -13,7 +13,7 @@
 // once into BASELINE_DIR below) rather than from the live levels/ directory.
 const fs = require('fs');
 const path = require('path');
-const dir = path.join(__dirname, '..', 'src', 'game', 'campaign', 'levels');
+const dir = path.join(__dirname, '..', '..', 'server', 'engine', 'src', 'campaign', 'levels');
 const BASELINE_DIR = 'C:\\Users\\TaoWang\\AppData\\Local\\Temp\\claude\\C--Users-TaoWang-Documents-funny\\b9309f27-93ca-4edd-9307-fdc146e4ed04\\scratchpad\\ch3_baseline';
 
 const FIRST_WAVE_TICK = 120; // shift all levels so the first wave lands at 4s

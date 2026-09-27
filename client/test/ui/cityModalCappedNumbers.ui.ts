@@ -71,10 +71,7 @@ async function openModal(
   const worldApi = {
     getMe: () => Promise.resolve(me),
     getTeams: () => Promise.resolve([]),
-    getMarches: () => Promise.resolve([]),
-    getOccupations: () => Promise.resolve([]),
-    getStationed: () => Promise.resolve([]),
-    getSiegeHolds: () => Promise.resolve([]),
+    getOrders: () => Promise.resolve({ marches: [], occupations: [], stationed: [], siegeHolds: [] }),
     upgradeBuilding: () => new Promise<PlayerWorldView>(() => {}),
   } as unknown as WorldApiClient;
   const cb: CitySceneCallbacks = {

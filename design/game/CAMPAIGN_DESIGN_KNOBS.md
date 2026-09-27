@@ -279,7 +279,7 @@ LevelDef.lanePunish?: {
 
 > 与现有类型对齐：`PlayerCommand`、`UnitType`、`col/row`、tick 计时。字段名最终以实现为准。
 >
-> **已实现（2026-06）**：所有关卡已迁为 **JSON 单一来源**（`game/campaign/levels/*.json`），由 `game/campaign/levelSchema.ts` 的 `parseLevelDefinition` 运行时校验后注册；`game/campaign/levels.ts` 改为 import JSON。配套可视化关卡编辑器见 `../tools/level-editor/DESIGN.md`。
+> **已实现（2026-06）**：所有关卡已迁为 **JSON 单一来源**（`server/engine/src/campaign/levels/*.json`；2026-09-26 前在 `client/src/game/campaign/levels/`），由 `game/campaign/levelSchema.ts` 的 `parseLevelDefinition` 运行时校验后注册；`game/campaign/levels.ts` 改为 import JSON。配套可视化关卡编辑器见 `../tools/level-editor/DESIGN.md`。
 
 ```ts
 // game/campaign/LevelDefinition.ts  （纯数据，无 PIXI）
@@ -487,7 +487,7 @@ const aiCmds = this.ai.decideTick(tick, this.state);   // ← owner 1 的指令�
 
 ### 12.3 数据模型（新增）
 
-章节地图与关卡数据**分离**：节点只引 `levelId`，关卡数值仍单一来源于 `game/campaign/levels/*.json`，互不重复。坐标归一化（`0..1`）以适配横竖屏 / 任意分辨率。
+章节地图与关卡数据**分离**：节点只引 `levelId`，关卡数值仍单一来源于 `server/engine/src/campaign/levels/*.json`，互不重复。坐标归一化（`0..1`）以适配横竖屏 / 任意分辨率。
 
 ```ts
 // game/campaign/maps/chN.json  （纯数据，手摄坐标）

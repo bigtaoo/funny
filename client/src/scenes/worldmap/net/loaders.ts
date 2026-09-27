@@ -116,21 +116,49 @@ export async function loadMapViewport(ctx: WorldMapContext): Promise<void> {
   } catch { /* offline */ }
 }
 
-export async function refreshMarches(ctx: WorldMapContext): Promise<void> {
+/**
+ * One in-flight order re-read per scene, with a trailing re-run (2026-09-26).
+ *
+ * Callers fire this freely — every `march_update` push, the team picker, stop-hold, recall — and each
+ * used to issue its own four requests. During a five-team dispatch those piled up behind the client's
+ * 5 req/s rate gate and held the player's next order back by seconds. Now a call that lands while a
+ * read is in flight only marks it dirty: the loop runs once more after the current read, and every
+ * caller's promise resolves after a read that STARTED after that caller asked. So "await this, then
+ * read ctx" still means "fresh as of my call", which the team picker depends on.
+ */
+const orderRefreshes = new WeakMap<WorldMapContext, { dirty: boolean; done: Promise<void> }>();
+
+export function refreshMarches(ctx: WorldMapContext): Promise<void> {
+  const running = orderRefreshes.get(ctx);
+  if (running) {
+    running.dirty = true;
+    return running.done;
+  }
+  const slot = { dirty: false, done: Promise.resolve() };
+  orderRefreshes.set(ctx, slot);
+  slot.done = (async () => {
+    try {
+      do {
+        slot.dirty = false;
+        await fetchOrders(ctx);
+      } while (slot.dirty && !ctx.destroyed);
+    } finally {
+      orderRefreshes.delete(ctx);
+    }
+  })();
+  return slot.done;
+}
+
+async function fetchOrders(ctx: WorldMapContext): Promise<void> {
   if (ctx.destroyed) return;
   try {
-    const [marches, occupations, stationed, siegeHolds] = await Promise.all([
-      ctx.cb.worldApi.getMarches(ctx.cb.worldId),
-      ctx.cb.worldApi.getOccupations(ctx.cb.worldId),
-      ctx.cb.worldApi.getStationed(ctx.cb.worldId),
-      // 围攻驻留 (2026-09-12): the fourth order slice — a team pinned to a won base/city assault for the
-      // five-minute damage delay is in none of the other three, so without this it read as idle at home.
-      ctx.cb.worldApi.getSiegeHolds(ctx.cb.worldId),
-    ]);
-    ctx.marches = marches;
-    ctx.occupations = occupations;
-    ctx.stationed = stationed;
-    ctx.siegeHolds = siegeHolds;
+    // All four slices in one request: marches, occupations, stationed, and 围攻驻留 siege holds (a team
+    // pinned to a won base/city assault is in none of the other three, so without it it read as idle).
+    const orders = await ctx.cb.worldApi.getOrders(ctx.cb.worldId);
+    ctx.marches = orders.marches;
+    ctx.occupations = orders.occupations;
+    ctx.stationed = orders.stationed;
+    ctx.siegeHolds = orders.siegeHolds;
     if (!ctx.destroyed) { ctx.panels.renderHud(); ctx.view.renderMap(); }
   } catch { /* offline */ }
 }

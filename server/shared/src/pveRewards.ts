@@ -1,6 +1,6 @@
 // Authoritative single source of truth for PvE economy (PVE_INTEGRITY_PLAN §8.1). Pure data + pure functions, no game logic
 // (M12: metaserver may import this; reverse imports from client/src/game are strictly forbidden).
-// The client retains a display mirror (campaign/levels JSON starThresholds for local star calculation;
+// The level JSON (@nw/engine campaign/levels, moved out of the client 2026-09-26) keeps starThresholds for star calculation;
 // balance/pveUpgrades effect multipliers for blueprint simulation), but **material grants / upgrade costs
 // are authoritative here** (server /pve/* endpoints recompute them).
 
@@ -31,8 +31,8 @@ export interface PveLevelConfig {
 }
 
 /**
- * Ordered campaign levels (sequential unlock). Values match the `rewards.materials` in the client
- * `campaign/levels/*.json`, but **this is the authoritative source for grants** (client JSON is demoted to reference only).
+ * Ordered campaign levels (sequential unlock). Values match the `rewards.materials` in the engine
+ * `campaign/levels/*.json`, but **this is the authoritative source for grants** (the JSON copy is demoted to reference only).
  * First clear additionally unlocks the next level + records stars; materials follow this table (granted on every clear).
  */
 export const PVE_LEVELS: PveLevelConfig[] = [

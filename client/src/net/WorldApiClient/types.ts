@@ -69,6 +69,11 @@ export type SectVoteResult = components['schemas']['SectVoteResult'];
 export type BuildingKey = components['schemas']['BuildingKey'];
 export type CardSLGState = components['schemas']['CardSLGState'];
 
+/** GET /world/orders (2026-09-26): the caller's four order slices — marches, occupations, stationed, siege holds. */
+export type OrdersView = NonNullable<
+  operations['getOrders']['responses']['200']['content']['application/json']['data']
+>;
+
 /** GET-alike aggregated response for POST /world/enter (P1-5, comm-audit-2026-07-27). */
 export type EnterWorldView = NonNullable<
   operations['enterWorld']['responses']['200']['content']['application/json']['data']

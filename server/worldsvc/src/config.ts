@@ -28,6 +28,11 @@ export interface WorldsvcEnv extends ServerEnv {
   adminInternalUrl: string | undefined;
   /** Auto-settle SLG seasons when their clock elapses (§17.14). Default on; set NW_SLG_AUTO_SETTLE=0 to keep settlement admin-only. */
   autoSettleSeasons: boolean;
+  /**
+   * Divide the worlds' scheduling between worldsvc processes with per-world leases (WORLDSVC_CONCURRENCY_AUDIT
+   * §12.12). Default off; set NW_SLG_WORLD_LEASE=1 on every process before running more than one.
+   */
+  worldLease: boolean;
 }
 
 export function loadWorldsvcEnv(): WorldsvcEnv {
@@ -45,5 +50,6 @@ export function loadWorldsvcEnv(): WorldsvcEnv {
     socialsvcInternalUrl: process.env.NW_SOCIALSVC_INTERNAL_URL || undefined,
     adminInternalUrl: process.env.NW_ADMIN_INTERNAL_URL || undefined,
     autoSettleSeasons: process.env.NW_SLG_AUTO_SETTLE !== '0',
+    worldLease: process.env.NW_SLG_WORLD_LEASE === '1',
   };
 }

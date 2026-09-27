@@ -36,7 +36,10 @@ function fakeSession(id: number): BotSession {
     logout: () => { obj.state = 'offline'; },
     tickFamily: async () => undefined,
     tickSlg: async () => undefined,
+    tickPve: async () => undefined,
     tickBattle: () => undefined,
+    pveDueAt: () => Infinity,
+    pveCounters: { entered: 1, cleared: 1, lost: 0, spotChecked: 0, verified: 0 },
   };
   return obj as unknown as BotSession;
 }
@@ -109,6 +112,9 @@ describe('botsvc internalHttp', () => {
       targetOnline: OPTS.targetOnline,
       effectiveTarget: OPTS.targetOnline,
       paused: false,
+      upkeepErrors: { family: 0, slg: 0, pve: 0 },
+      // Summed over all three sessions.
+      pve: { entered: 3, cleared: 3, lost: 0, spotChecked: 0, verified: 0 },
     });
   });
 

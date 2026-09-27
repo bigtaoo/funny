@@ -7,5 +7,5 @@ declare module '*.mp3' { const url: string; export default url; }
 declare module '*.tao' { const url: string; export default url; }
 
 // NOTE: no `declare module '*.json'` — let `resolveJsonModule` type JSON imports
-// as their parsed object shape. Campaign levels (campaign/levels/*.json) are
+// as their parsed object shape. Campaign levels (@nw/engine campaign/levels/*.json) are
 // imported as data and validated by parseLevelDefinition, not loaded as URLs.

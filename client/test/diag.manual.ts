@@ -1,6 +1,6 @@
 import { describe, it } from 'vitest';
 import { createGameEngine } from '@nw/engine/GameEngine';
-import { CAMPAIGN_LEVELS } from '../src/game/campaign/levels';
+import { CAMPAIGN_LEVELS } from '@nw/engine/campaign/levels';
 import type { GameConfig } from '@nw/engine/types';
 import { Side, GamePhase } from '@nw/engine/types';
 import { fromFp } from '@nw/engine/math/fixed';

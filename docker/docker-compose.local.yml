@@ -201,6 +201,9 @@ services:
       NW_WORLD_MONGO_URI: "mongodb://nw_world:localdev-nw_world@mongo:27017/?replicaSet=rs0&authSource=notebook_wars_world"
       NW_WORLD_MONGO_DB: ${NW_WORLD_MONGO_DB:-notebook_wars_world}
       NW_WORLD_REDIS_URL: redis://redis:6379
+      # Load-test knob (audit §12.7): prod's 2 vCPU gives ONE compute worker; set this to 1 to reproduce that
+      # locally. Empty = default (min(cpus-1, 8)).
+      NW_COMPUTE_POOL_SIZE: ${NW_COMPUTE_POOL_SIZE:-}
       NW_GATEWAY_INTERNAL_URL: http://gateway:8090
       NW_COMMERCIAL_INTERNAL_URL: http://commercial:8092
       NW_META_INTERNAL_URL: http://metaserver:8080

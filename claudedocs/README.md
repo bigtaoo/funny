@@ -9,7 +9,7 @@ client/          主游戏（TS + PixiJS，port 9090）
 tools/           animator(9091) / level-editor(9092) / ops(9093) / vfx-editor(9094) / map-editor(9095)
                  audio-pipeline/（Python，无端口：音频素材的抓取 → 审计 → 转换 → 峰值对齐）
                  desktop-shell/（Electron 工具壳，设计中 → design/tools/desktop-shell/DESIGN.md）
-                 gimp-export-layers/（GIMP 图层批导出脚本，无端口）
+                 gimp-export-layers/（GIMP 图层批导出插件 + despeckle.py 去杂点 CLI，无端口 → design/tools/gimp-export-layers/DESIGN.md）
                  scripts/（跨工具杂项脚本）
 server/          11 个 Node 服务 + engine/contracts/shared 包（npm workspaces）
   contracts/     openapi.yml（ADR-040 起由 openapi/ 分域片段生成，勿直接编辑）

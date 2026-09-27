@@ -22,7 +22,7 @@ import {
   toEngineCardInstances,
 } from '../src/game/meta/cardDefs';
 import { achievementClaimable, hasClaimable, reachedTierKeys, tierState } from '../src/game/meta/achievements';
-import { computeStarScore, computeStars } from '../src/game/meta/campaignRewards';
+import { computeStarScore, computeStars } from '@nw/engine/campaign/stars';
 import { carriedTroops, teamLeaderCard, teamTroopCap } from '../src/game/meta/teamTroops';
 import { formatLadderTitle, getTitleKeys, titleWeight } from '../src/game/meta/titles';
 import { migrate } from '../src/game/meta/migrate';
@@ -47,7 +47,7 @@ import type { CardInstance, SaveData } from '../src/game/meta/SaveData';
 import type { CardSLGState } from '../src/net/WorldApiClient';
 import type { IStorage } from '../src/platform/IPlatform';
 import type { Replay } from '@nw/engine/types';
-import type { StarContext } from '../src/game/meta/campaignRewards';
+import type { StarContext } from '@nw/engine/campaign/stars';
 
 function card(id: string, defId: string, level = 1, over: Partial<CardInstance> = {}): CardInstance {
   return { id, defId, level, gear: {}, locked: false, ...over };
@@ -140,7 +140,7 @@ describe('achievements with a partial save', () => {
   });
 });
 
-// ── campaignRewards' score denominators ─────────────────────────────────────────────────────
+// ── campaign/stars' score denominators ─────────────────────────────────────────────────────
 
 describe('star score with degenerate denominators', () => {
   function ctx(over: Partial<StarContext> = {}): StarContext {

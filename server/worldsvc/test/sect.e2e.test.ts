@@ -14,9 +14,10 @@ import {
   familyProsperity,
   EMBLEM_KEYS,
   EMBLEM_COLORS,
+  cityDocId,
   type FamilyRole,
 } from '@nw/shared';
-import { createWorldMongo, type WorldMongo, type NationDoc } from '../src/db';
+import { createWorldMongo, type WorldMongo } from '../src/db';
 import { SectService } from '../src/sectService';
 import { WorldService } from '../src/service';
 import type { WorldCommercialClient } from '../src/commercialClient';
@@ -166,6 +167,7 @@ describe.skipIf(!mongo)('SectService e2e', () => {
       cols.sectMessages.deleteMany({}),
       cols.playerWorld.deleteMany({}),
       cols.nations.deleteMany({}),
+      cols.cities.deleteMany({}),
     ]);
     spends.length = 0;
     grants.length = 0;
@@ -429,35 +431,29 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     expect(fAlice!.sectName).toBeUndefined();
   });
 
-  it('settleSeason: aggregate nation count by sect (sect > family > solo)', async () => {
+  it('settleSeason: ranks sects by the capital cities they hold (CityDoc.ownerSectId)', async () => {
     const cols = mongo!.collections;
-    // alice+bob in the same sect SKY; carol is an independent family; dave is a solo player.
-    const aa = await makeFamily('alice', 'A', 'AA');
-    const bb = await makeFamily('bob', 'B', 'BB');
-    const cc = await makeFamily('carol', 'C', 'CC');
-    const s = await sect.createSect(W, 'alice', 'Sky', 'SKY');
-    await sect.joinSect(W, 'bob', s.sectId);
+    // alice+bob share sect SKY; carol leads MOON. Ownership lives on the city, by sect (ADR-074).
+    await makeFamily('alice', 'A', 'AA');
+    await makeFamily('bob', 'B', 'BB');
+    await makeFamily('carol', 'C', 'CC');
+    const sky = await sect.createSect(W, 'alice', 'Sky', 'SKY');
+    await sect.joinSect(W, 'bob', sky.sectId);
+    const moon = await sect.createSect(W, 'carol', 'Moon', 'MOON');
 
-    const nation = (capitalIdx: number, ownerId: string, fid?: string): NationDoc => ({
-      _id: `nation:${W}:${capitalIdx}`,
-      worldId: W, capitalIdx, x: capitalIdx, y: capitalIdx,
-      ownerId, ...(fid ? { familyId: fid } : {}), rev: 1,
+    const capital = (provinceIdx: number, ownerSectId: string) => ({
+      _id: cityDocId(W, `capital-${provinceIdx}`), worldId: W, nodeId: `capital-${provinceIdx}`, kind: 'capital',
+      x: provinceIdx, y: provinceIdx, level: 10, footprint: 9, provinceIdx, ownerSectId,
+      durability: 1, durabilityMax: 1, durabilityRegenAt: 0, regenPerHour: 1, rev: 0,
     });
-    await cols.nations.insertMany([
-      nation(0, 'alice', aa), // SKY
-      nation(1, 'bob', bb),   // SKY
-      nation(2, 'carol', cc), // independent family CC
-      nation(3, 'dave'),      // solo
-    ]);
+    await cols.cities.insertMany([capital(0, sky.sectId), capital(1, sky.sectId), capital(2, moon.sectId)] as never);
 
     const svc = new WorldService({ cols, redis: null, socialsvc, mapW: SLG_MAP_W, mapH: SLG_MAP_H, now: () => Date.now() });
     const ranking = await svc.settleSeason(W);
-    // SKY holds 2 nations, ranks first
-    expect(ranking[0]).toMatchObject({ scope: 'sect', familyId: s.sectId, nationCount: 2 });
-    const carol = ranking.find((r) => r.scope === 'family');
-    expect(carol).toMatchObject({ familyId: cc, nationCount: 1 });
-    const dave = ranking.find((r) => r.scope === 'solo');
-    expect(dave).toMatchObject({ familyId: 'dave', nationCount: 1 });
+    expect(ranking).toEqual([
+      { rank: 1, scope: 'sect', familyId: sky.sectId, name: 'Sky', nationCount: 2, capitalIdxs: [0, 1] },
+      { rank: 2, scope: 'sect', familyId: moon.sectId, name: 'Moon', nationCount: 1, capitalIdxs: [2] },
+    ]);
   });
 
   it('channel: fromPublicId resolved from meta; falls back to empty string when meta unavailable', async () => {

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { parseChapterMap, ChapterMapParseError } from '../src/game/campaign/maps/mapSchema';
 import { CHAPTER_MAPS, CHAPTER_ORDER } from '../src/game/campaign/maps';
-import { CAMPAIGN_LEVELS } from '../src/game/campaign/levels';
+import { CAMPAIGN_LEVELS } from '@nw/engine/campaign/levels';
 
 /**
  * Chapter-map JSON validation guard (CAMPAIGN_DESIGN §12.3).

@@ -527,6 +527,8 @@ export class ApiClient {
 
   getLeaderboard(): Promise<{
     seasonNo: number;
+    /** Ladder season end (ms epoch), display-only. Absent from servers older than 2026-09-26. */
+    seasonEndAt?: number;
     entries: {
       rank: number;
       displayName: string;

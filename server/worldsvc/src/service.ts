@@ -141,19 +141,19 @@ export class WorldService {
     return this.combat.processDueArrivals(nowMs);
   }
   /** The walking half of the arrival tick (scheduler task `sched:arrivals`). */
-  processDueArrivalSteps(nowMs?: number): Promise<number> {
-    return this.combat.processDueArrivalSteps(nowMs);
+  processDueArrivalSteps(nowMs?: number, worldIds?: readonly string[]): Promise<number> {
+    return this.combat.processDueArrivalSteps(nowMs, worldIds);
   }
   /** The settling half (scheduler task `sched:arrivalSettle`), time-sliced by default. */
-  processDueArrivalSettlements(nowMs?: number, sliceMs?: number): Promise<number> {
-    return this.combat.processDueArrivalSettlements(nowMs, sliceMs);
+  processDueArrivalSettlements(nowMs?: number, sliceMs?: number, worldIds?: readonly string[]): Promise<number> {
+    return this.combat.processDueArrivalSettlements(nowMs, sliceMs, worldIds);
   }
-  processDueSiegeDamage(nowMs?: number): Promise<number> {
-    return this.combat.processDueSiegeDamage(nowMs);
+  processDueSiegeDamage(nowMs?: number, worldIds?: readonly string[]): Promise<number> {
+    return this.combat.processDueSiegeDamage(nowMs, worldIds);
   }
   // ADR-037 (§5.4): occupation-hold settlement.
-  processDueOccupations(nowMs?: number): Promise<number> {
-    return this.combat.processDueOccupations(nowMs);
+  processDueOccupations(nowMs?: number, worldIds?: readonly string[]): Promise<number> {
+    return this.combat.processDueOccupations(nowMs, worldIds);
   }
   setDefense(worldId: string, accountId: string, tileKey: string, defenseConfig: Record<string, unknown>): Promise<void> {
     return this.combat.setDefense(worldId, accountId, tileKey, defenseConfig);
@@ -175,8 +175,8 @@ export class WorldService {
   speedupTraining(worldId: string, accountId: string, coins: number, clientPlatform?: string): Promise<PlayerWorldView> {
     return this.city.speedupTraining(worldId, accountId, coins, clientPlatform);
   }
-  processCompletedTraining(nowMs?: number): Promise<number> {
-    return this.city.processCompletedTraining(nowMs);
+  processCompletedTraining(nowMs?: number, worldIds?: readonly string[]): Promise<number> {
+    return this.city.processCompletedTraining(nowMs, worldIds);
   }
   upgradeBuilding(worldId: string, accountId: string, key: BuildingKey): Promise<PlayerWorldView> {
     return this.city.upgradeBuilding(worldId, accountId, key);
@@ -184,8 +184,8 @@ export class WorldService {
   speedupBuild(worldId: string, accountId: string, coins: number, clientPlatform?: string): Promise<PlayerWorldView> {
     return this.city.speedupBuild(worldId, accountId, coins, clientPlatform);
   }
-  processCompletedBuilds(nowMs?: number): Promise<number> {
-    return this.city.processCompletedBuilds(nowMs);
+  processCompletedBuilds(nowMs?: number, worldIds?: readonly string[]): Promise<number> {
+    return this.city.processCompletedBuilds(nowMs, worldIds);
   }
   getTeams(worldId: string, accountId: string): Promise<TeamTemplate[]> {
     return this.city.getTeams(worldId, accountId);
@@ -213,8 +213,11 @@ export class WorldService {
   settleSeason(worldId: string): ReturnType<SeasonService['settleSeason']> {
     return this.season.settleSeason(worldId);
   }
-  processDueSeasonSettlement(): ReturnType<SeasonService['processDueSeasonSettlement']> {
-    return this.season.processDueSeasonSettlement();
+  backfillMissingCities(): Promise<string[]> {
+    return this.season.backfillMissingCities();
+  }
+  processDueSeasonSettlement(worldIds?: readonly string[]): ReturnType<SeasonService['processDueSeasonSettlement']> {
+    return this.season.processDueSeasonSettlement(worldIds);
   }
   resetSeason(worldId: string): Promise<{ deleted: Record<string, number> }> {
     return this.season.resetSeason(worldId);

@@ -25,14 +25,14 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { createGameEngine } from '@nw/engine/GameEngine';
-import { CAMPAIGN_LEVELS } from '../src/game/campaign/levels';
+import { CAMPAIGN_LEVELS } from '@nw/engine/campaign/levels';
 import type { GameConfig } from '@nw/engine/types';
 import { Side, UnitType, CardType, GamePhase } from '@nw/engine/types';
 import { ATTACK_LANES, UNIT_BLUEPRINTS } from '@nw/engine/config';
 import { PROGRESSABLE_UNITS } from '@nw/engine/balance/progression';
 import { fromFp } from '@nw/engine/math/fixed';
 import type { LevelDefinition } from '@nw/engine/campaign/LevelDefinition';
-import { computeStars, computeStarScore, buildStarContext } from '../src/game/meta/campaignRewards';
+import { computeStars, computeStarScore, buildStarContext } from '@nw/engine/campaign/stars';
 import { card } from './cardHelpers';
 import type { EngineCardInstance, EngineEquipInv, EngineSlotMap } from '@nw/engine/balance/equipment';
 

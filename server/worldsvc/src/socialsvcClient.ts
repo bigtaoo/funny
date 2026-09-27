@@ -97,6 +97,21 @@ export interface WorldSocialsvcClient {
  */
 const MEMBERSHIP_CACHE_TTL_MS = 10_000;
 
+/**
+ * Cross-process invalidation (WORLDSVC_CONCURRENCY_AUDIT §12.7 phase 1). "Writes worldsvc itself makes
+ * invalidate immediately" only holds inside the process that made the write; with more than one worldsvc,
+ * every OTHER process would keep serving the old membership for the full TTL. So a membership write is also
+ * published here, after it lands, and every process drops its own copy on receipt. Best-effort: no Redis (or
+ * a lost message) falls back to the TTL, which is exactly the single-process guarantee this started with.
+ */
+export const SOCIAL_INVALIDATE_CHANNEL = 'nw:worldsvc:social-invalidate';
+
+/** The slice of WorldRedis the invalidation bus needs (kept narrow so tests can fake it in a few lines). */
+export interface InvalidationBus {
+  publish(channel: string, message: string): Promise<unknown>;
+  subscribe?(channel: string, onMessage: (message: string) => void): Promise<void>;
+}
+
 interface CacheEntry<T> {
   at: number;
   value: T;
@@ -108,10 +123,39 @@ export class HttpWorldSocialsvcClient implements WorldSocialsvcClient {
   /** familyId → its summary. Only successful lookups are stored; a miss is never cached as "no family". */
   private readonly byIdCache = new Map<string, CacheEntry<FamilySummary>>();
 
+  private bus: InvalidationBus | null = null;
+
   constructor(
     private readonly baseUrl: string | null,
     private readonly internalKey: string,
+    /** Identifies this process's own broadcasts (instance.ts INSTANCE_ID); only compared, never parsed. */
+    private readonly instanceId: string = 'local',
   ) {}
+
+  /**
+   * Join the cross-process invalidation channel (see SOCIAL_INVALIDATE_CHANNEL). Idempotent per client; a
+   * bus without `subscribe` still publishes, so a process that cannot listen at least tells the others.
+   */
+  async attachInvalidationBus(bus: InvalidationBus): Promise<void> {
+    this.bus = bus;
+    await bus.subscribe?.(SOCIAL_INVALIDATE_CHANNEL, (message) => {
+      try {
+        const m = JSON.parse(message) as { familyId?: unknown; from?: unknown };
+        if (m.from === this.instanceId || typeof m.familyId !== 'string') return;
+        this.invalidateMembership(m.familyId);
+      } catch {
+        /* a malformed message must not take the subscriber down */
+      }
+    });
+  }
+
+  /** Tell the other processes. After the write, so none of them can re-cache the old value from socialsvc. */
+  private broadcastInvalidation(familyId: string): void {
+    if (!this.bus) return;
+    void this.bus
+      .publish(SOCIAL_INVALIDATE_CHANNEL, JSON.stringify({ familyId, from: this.instanceId }))
+      .catch(() => { /* best-effort — the TTL is the backstop */ });
+  }
 
   get available(): boolean {
     return this.baseUrl !== null;
@@ -214,6 +258,7 @@ export class HttpWorldSocialsvcClient implements WorldSocialsvcClient {
       // best-effort: worldsvc remains authoritative for sectId; a failed mirror write only stales the client-facing socialsvc copy.
       console.error('[worldsvc] socialsvc.setSect failed', { familyId, sectId, status: res.status, err: res.error });
     }
+    this.broadcastInvalidation(familyId);
   }
 
   async bumpActivity(familyId: string, delta: number): Promise<void> {
@@ -262,6 +307,7 @@ export class HttpWorldSocialsvcClient implements WorldSocialsvcClient {
       // best-effort: a failed reset only leaves stale season stats on socialsvc's mirror until the next refresh.
       console.error('[worldsvc] socialsvc.resetSlgState failed', { familyId, status: res.status, err: res.error });
     }
+    this.broadcastInvalidation(familyId);
   }
 
   async push(channel: SocialsvcChannel, event: string, payload: unknown, targets?: string[]): Promise<void> {

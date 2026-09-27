@@ -78,8 +78,8 @@ export function refreshOnQueueDue(host: QueuePollHost): void {
  * getOccupations had also answered, long after /world/teams itself had landed. Each slice now
  * paints the moment its own request resolves.
  *
- * Issue order matters: rateGate.ts hands out its 5-token bucket strictly FIFO, so when the bucket
- * is drained (world-map entry, a burst of taps) requests are served in the order they were made.
+ * Issue order matters: rateGate.ts serves all three GETs from its background lane in FIFO order, so
+ * when the bucket is drained (world-map entry, a burst of taps) they are served in the order made.
  * getTeams goes first because the team row is what the player is waiting on here.
  */
 export function load(host: DataHost): void {
@@ -122,52 +122,23 @@ export function load(host: DataHost): void {
       /* offline — resource bar / building grid keep their pre-load zeros */
     });
 
-  // marches + occupations + siege holds + stationed all feed teamOrder(), so `ordersLoaded` only flips
-  // once all four have settled — see the field's doc comment for why the status line waits on that.
-  let ordersPending = 4;
-  const orderSettled = (): void => {
-    if (--ordersPending === 0) host.ordersLoaded = true;
-    paint();
-  };
+  // marches + occupations + siege holds (围攻驻留) + field-stationed teams all feed teamOrder(), so they
+  // arrive together in one GET /world/orders and `ordersLoaded` flips once it settles — see the field's
+  // doc comment for why the status line waits on that. A team with only a stationed or siege-hold doc
+  // would otherwise read 驻军在家 while standing out on the map.
   void host.cb.worldApi
-    .getMarches(host.cb.worldId)
-    .then((marches) => {
-      host.marches = marches;
+    .getOrders(host.cb.worldId)
+    .then((orders) => {
+      host.marches = orders.marches;
+      host.occupations = orders.occupations;
+      host.siegeHolds = orders.siegeHolds;
+      host.stationed = orders.stationed;
     })
     .catch(() => {
-      /* offline — treated as no active march */
+      /* offline — treated as no active orders */
     })
-    .finally(orderSettled);
-  void host.cb.worldApi
-    .getOccupations(host.cb.worldId)
-    .then((occupations) => {
-      host.occupations = occupations;
-    })
-    .catch(() => {
-      /* offline — treated as no active hold */
-    })
-    .finally(orderSettled);
-  // 围攻驻留 (2026-09-12): a team that has beaten a main base's or a wild city's garrison stands on the
-  // target for the five-minute damage delay, with no march and no occupation doc — same blind spot the
-  // stationed slice below closes, same fix.
-  void host.cb.worldApi
-    .getSiegeHolds(host.cb.worldId)
-    .then((siegeHolds) => {
-      host.siegeHolds = siegeHolds;
-    })
-    .catch(() => {
-      /* offline — treated as no active siege hold */
-    })
-    .finally(orderSettled);
-  // Field-stationed teams (2026-07-23): parked on a tile with neither a march nor an occupation
-  // doc, so without this slice the row reports 驻军在家 for a squad standing out on the map.
-  void host.cb.worldApi
-    .getStationed(host.cb.worldId)
-    .then((stationed) => {
-      host.stationed = stationed;
-    })
-    .catch(() => {
-      /* offline — treated as no field station */
-    })
-    .finally(orderSettled);
+    .finally(() => {
+      host.ordersLoaded = true;
+      paint();
+    });
 }

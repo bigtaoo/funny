@@ -4,6 +4,10 @@
 // backend themselves, so moving this computation out to a separate service later is a config change —
 // see ./types.ts for the phase-4 note and ./remote.ts for the contract that service must satisfy.
 import { ComputeWorkerPool, defaultComputePoolSize } from './pool';
+import { createLogger } from '@nw/shared';
+import { routeTimings, bumpCounter } from '../metrics';
+
+const computeLog = createLogger('worldsvc');
 import { RemoteComputeBackend } from './remote';
 import type { ComputeBackend } from './types';
 
@@ -27,7 +31,18 @@ export function getComputeBackend(): ComputeBackend {
     } else {
       const size = Number(process.env.NW_COMPUTE_POOL_SIZE) || defaultComputePoolSize();
       const taskTimeoutMs = Number(process.env.NW_COMPUTE_TASK_TIMEOUT_MS) || undefined;
-      singleton = new ComputeWorkerPool(size, taskTimeoutMs);
+      const pool = new ComputeWorkerPool(size, taskTimeoutMs);
+      // `.n` counter beside each latency label: the reservoir's count disappears once the heartbeat drains an
+      // idle label, so a load test's before/after delta needs a counter that never resets.
+      pool.timingSink = (label, ms) => {
+        routeTimings.record(label, ms);
+        bumpCounter(`${label}.n`);
+      };
+      pool.eventSink = (event, detail) => {
+        bumpCounter(event);
+        computeLog.warn('compute pool event', { event, detail });
+      };
+      singleton = pool;
     }
   }
   return singleton;

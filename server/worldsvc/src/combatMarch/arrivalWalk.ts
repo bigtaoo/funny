@@ -37,14 +37,56 @@ export async function advanceMarch(core: WorldCore, siege: ArrivalSiegeCtx, m: M
   // a brand-new occ entry for a MarchDoc that no longer exists, permanently leaking it (nothing will
   // ever clear an occ id whose owning doc is gone). Re-verify against the latest doc before doing
   // any work, and use it in place of the stale snapshot for everything that follows.
-  const live = await cols.marches.findOne({ _id: m._id, status: 'marching' });
-  if (!live) return true; // already removed this batch by a concurrent encounter/recall — nothing to do
+  //
+  // 2026-09-26 (§12.7 phase 1): the re-read is also the CLAIM. It only matches when no other processor holds
+  // the march (see MarchDoc.stepLeaseUntil), so exactly one caller walks it — the same single round trip the
+  // plain findOne was, now a conditional write. A miss means removed OR held elsewhere; either way it is not
+  // ours this tick, and a held march is still due, so the holder (or, if it died, the next scan after the
+  // lease lapses) finishes it.
+  const leaseNow = core.deps.now();
+  const lease = leaseNow + MARCH_STEP_LEASE_MS;
+  const live = await cols.marches.findOneAndUpdate(
+    {
+      _id: m._id,
+      status: 'marching',
+      $or: [{ stepLeaseUntil: { $exists: false } }, { stepLeaseUntil: { $lte: leaseNow } }],
+    },
+    { $set: { stepLeaseUntil: lease } },
+    { returnDocument: 'after' },
+  );
+  if (!live) return true; // already removed this batch by a concurrent encounter/recall, or claimed elsewhere
   if (!live.path || live.stepIndex == null || live.nextStepAt == null) {
     // No longer a stepping march (e.g. a concurrent recall $unset the cursor and flipped it to a
     // 'return' leg) — let it be picked up as a legacy/return arrival once its arriveAt is due.
+    await releaseStepLease(core, m._id, lease);
     return true;
   }
   m = live;
+  try {
+    return await walkClaimed(core, siege, m, t, lease);
+  } catch (e) {
+    // Hand it straight back rather than leaving it parked for the whole lease: the next tick retries it,
+    // which is what happened before the claim existed.
+    await releaseStepLease(core, m._id, lease).catch(() => {});
+    throw e;
+  }
+}
+
+/**
+ * How long one advanceMarch call may hold a march. Far above a real walk (a handful of Mongo/Redis round trips
+ * per cell, plus a battle on a compute worker whose own hang guard is shorter), so a live holder never loses
+ * it; short enough that a march whose holder crashed resumes within a minute.
+ */
+export const MARCH_STEP_LEASE_MS = 60_000;
+
+/** Drop our claim without touching anything else. Matches our own lease value only, so it never frees a newer holder's. */
+async function releaseStepLease(core: WorldCore, marchId: string, lease: number): Promise<void> {
+  await core.deps.cols.marches.updateOne({ _id: marchId, stepLeaseUntil: lease }, { $unset: { stepLeaseUntil: '' } });
+}
+
+/** The walk proper, run only while holding the claim taken in advanceMarch. */
+async function walkClaimed(core: WorldCore, siege: ArrivalSiegeCtx, m: MarchDoc, t: number, lease: number): Promise<boolean> {
+  const { cols } = core.deps;
   const path = m.path!;
   const last = path.length - 1;
   let idx = m.stepIndex!;
@@ -201,10 +243,12 @@ export async function advanceMarch(core: WorldCore, siege: ArrivalSiegeCtx, m: M
   // Mid-route: persist the new cursor. Guard on status:'marching' AND kind≠return so a concurrent recall
   // (which flips to a return leg and $unsets the cursor) is never clobbered back. The next processDueArrivals
   // scan (Mongo nextStepAt) picks up the advance from here.
+  // 2026-09-26: the same write releases the claim, and it only lands while we still hold it — a holder that
+  // outlived its lease (and so may have been overtaken) must not rewind the new holder's cursor.
   const nextStepAt = marchStepArriveAt(m.departAt, idx + 1, m.speedMult);
   await cols.marches.updateOne(
-    { _id: m._id, status: 'marching', kind: { $ne: 'return' } },
-    { $set: { stepIndex: idx, nextStepAt }, $inc: { rev: 1 } },
+    { _id: m._id, status: 'marching', kind: { $ne: 'return' }, stepLeaseUntil: lease },
+    { $set: { stepIndex: idx, nextStepAt }, $unset: { stepLeaseUntil: '' }, $inc: { rev: 1 } },
   );
   return false;
 }

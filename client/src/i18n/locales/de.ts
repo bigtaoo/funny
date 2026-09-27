@@ -1391,6 +1391,7 @@ export const de: Record<TranslationKey, string> = {
   // ── Saison-Banner / Abrechnung (SE-6) ────────────────────────────────────────
   'season.banner': 'Saison {no} · noch {days} T.',
   'season.bannerEnded': 'Saison {no} · Beendet',
+  'season.bannerCurrent': 'Saison {no}',
   'season.settlement.title': 'Saison {no} Abrechnung',
   'season.settlement.peak': 'Höchste Wertung',
   'season.settlement.newSeason': 'Saison {no} hat begonnen',

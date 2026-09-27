@@ -197,6 +197,20 @@ describe.skipIf(!mongo)('worldsvc httpApi route-dispatch gaps: actionRoutes + si
       expect(Array.isArray((await jsonBody(ok)).data)).toBe(true);
     });
 
+    // 2026-09-26: the client's one read for "what are my teams doing" (team picker, march_update push,
+    // City screen). The contents are checked where there is something to see — the cancel-occupation and
+    // recall-stationed cases below read their held/parked team back through this route.
+    it('GET /world/orders: missing worldId → 400; success (all four order slices)', async () => {
+      const bad = await fetch(`${base}/world/orders`, { headers: auth });
+      expect(bad.status).toBe(400);
+      const ok = await fetch(`${base}/world/orders?worldId=${W}`, { headers: auth });
+      expect(ok.status).toBe(200);
+      const data = (await jsonBody(ok)).data as Record<string, unknown>;
+      for (const key of ['marches', 'occupations', 'stationed', 'siegeHolds']) {
+        expect(Array.isArray(data[key]), key).toBe(true);
+      }
+    });
+
     it('GET /world/territories: missing worldId → 400; success (list)', async () => {
       const bad = await fetch(`${base}/world/territories`, { headers: auth });
       expect(bad.status).toBe(400);
@@ -359,6 +373,8 @@ describe.skipIf(!mongo)('worldsvc httpApi route-dispatch gaps: actionRoutes + si
       t = mv.arriveAt;
       expect(await svcRef.processDueArrivals()).toBeGreaterThanOrEqual(1);
       expect(await svcRef.getOccupations(W, 'acct-1')).not.toHaveLength(0);
+      const orders = (await jsonBody(await fetch(`${base}/world/orders?worldId=${W}`, { headers: auth }))).data as { occupations: Array<{ teamId?: string }> };
+      expect(orders.occupations.some((o) => o.teamId === 'tcancel')).toBe(true);
 
       const noWorld = await fetch(`${base}/world/team/tcancel/cancel-occupation`, { method: 'POST', headers: auth, body: JSON.stringify({}) });
       expect(noWorld.status).toBe(400);
@@ -379,6 +395,8 @@ describe.skipIf(!mongo)('worldsvc httpApi route-dispatch gaps: actionRoutes + si
       t = mv.arriveAt;
       expect(await svcRef.processDueArrivals()).toBeGreaterThanOrEqual(1);
       expect((await svcRef.getStationed(W, 'acct-1')).some((s) => s.teamId === 'trecall')).toBe(true);
+      const orders = (await jsonBody(await fetch(`${base}/world/orders?worldId=${W}`, { headers: auth }))).data as { stationed: Array<{ teamId?: string }> };
+      expect(orders.stationed.some((s) => s.teamId === 'trecall')).toBe(true);
 
       const noWorld = await fetch(`${base}/world/team/trecall/recall-stationed`, { method: 'POST', headers: auth, body: JSON.stringify({}) });
       expect(noWorld.status).toBe(400);

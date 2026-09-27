@@ -72,6 +72,6 @@ export type { GameState } from '@nw/engine/GameState';
 
 // ── Campaign (PvE) ────────────────────────────────────────────────────────────
 export type { LevelDefinition } from '@nw/engine/campaign/LevelDefinition';
-export { CAMPAIGN_LEVELS, CAMPAIGN_LEVEL_ORDER, getLevel } from './campaign/levels';
+export { CAMPAIGN_LEVELS, CAMPAIGN_LEVEL_ORDER, getLevel } from '@nw/engine/campaign/levels';
 export type { ChapterMap, ChapterNode, ChapterDecor, NormPoint } from './campaign/maps';
 export { CHAPTER_MAPS, CHAPTER_ORDER, getChapterMap, parseChapterMap, ChapterMapParseError } from './campaign/maps';

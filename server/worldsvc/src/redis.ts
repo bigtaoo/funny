@@ -54,6 +54,12 @@ export interface WorldRedis {
    * the same tile (a plain batched HDEL would delete whoever took the cell in the meantime).
    */
   hdelJsonIdMatch?(key: string, fields: string[], ids: string[]): Promise<unknown>;
+  /**
+   * Listen on a pub/sub channel (2026-09-26, cross-process cache invalidation — socialsvcClient.ts
+   * SOCIAL_INVALIDATE_CHANNEL). Runs on a second connection opened on first use: a subscribed Redis
+   * connection cannot issue ordinary commands. Optional, like the batched ops above — test fakes omit it.
+   */
+  subscribe?(channel: string, onMessage: (message: string) => void): Promise<void>;
 }
 
 /** Bounded wait for the initial connection outcome (see doc comment on connectRedis below). */
@@ -143,12 +149,34 @@ export async function connectRedis(url: string | undefined): Promise<WorldRedis 
       return null;
     }
 
+    // Subscriber connection, opened lazily by the first subscribe() and closed by quit(). One connection
+    // serves every channel; `handlers` routes each message to its channel's callbacks.
+    let subscriber: ReturnType<typeof client.duplicate> | null = null;
+    const handlers = new Map<string, ((message: string) => void)[]>();
     const wrapped: WorldRedis = {
       publish: (channel, message) => client.publish(channel, message),
+      subscribe: async (channel, onMessage) => {
+        if (!subscriber) {
+          subscriber = client.duplicate();
+          subscriber.on('error', (err) => console.error(`[world-redis] subscriber error: ${err.message}`));
+          subscriber.on('message', (ch, message) => {
+            for (const h of handlers.get(ch) ?? []) h(message);
+          });
+        }
+        const list = handlers.get(channel);
+        if (list) list.push(onMessage);
+        else {
+          handlers.set(channel, [onMessage]);
+          await subscriber.subscribe(channel);
+        }
+      },
       hset: (key, field, value) => client.hset(key, field, value),
       hget: (key, field) => client.hget(key, field),
       hdel: (key, ...fields) => client.hdel(key, ...fields),
-      quit: () => client.quit(),
+      quit: async () => {
+        if (subscriber) await subscriber.quit().catch(() => {});
+        return client.quit();
+      },
       del: (key) => client.del(key),
       // See WorldRedis.hmergeJsonField doc comment — closes the addCover/removeCover read-modify-write
       // race by running the merge server-side in a single atomic Lua script.

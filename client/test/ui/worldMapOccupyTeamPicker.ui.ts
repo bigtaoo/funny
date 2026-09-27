@@ -48,14 +48,16 @@ function buildHarness(opts: {
   const getTeams = vi.fn().mockResolvedValue(opts.teams ?? [{ id: 't1', name: 'Alpha', army: [{ cardInstanceId: 'c1' }, { cardInstanceId: 'c2' }] }]);
   const startMarch = vi.fn().mockResolvedValue({ toTile: `${WORLD_ID}:${ANCHOR.x}:${ANCHOR.y}` });
   // showTeamPicker re-reads all four order slices before judging who is busy (2026-09-02; the siege-hold
-  // slice joined 2026-09-12, 围攻驻留), so the
-  // harness has to answer for them too. They echo whatever the test seeded on ctx — i.e. the server
-  // agrees with the client's cached view — which keeps the busy-team cases below meaningful instead of
-  // having the refresh silently wipe them. The stale-cache case gets its own harness override.
-  const getMarches = vi.fn(() => Promise.resolve(ctx.marches));
-  const getOccupations = vi.fn(() => Promise.resolve(ctx.occupations));
-  const getSiegeHolds = vi.fn(() => Promise.resolve(ctx.siegeHolds));
-  const getStationed = vi.fn(() => Promise.resolve(ctx.stationed));
+  // slice joined 2026-09-12, 围攻驻留; since 2026-09-26 all four come back in one GET /world/orders), so
+  // the harness has to answer for them too. The response echoes whatever the test seeded on ctx — i.e.
+  // the server agrees with the client's cached view — which keeps the busy-team cases below meaningful
+  // instead of having the refresh silently wipe them. The stale-cache case gets its own override.
+  const getOrders = vi.fn(() => Promise.resolve({
+    marches: ctx.marches,
+    occupations: ctx.occupations,
+    stationed: ctx.stationed,
+    siegeHolds: ctx.siegeHolds,
+  }));
   // Mirror the real getMe: it returns the FULL player view (with mainBaseTile + cardState), not a bare stub —
   // doMarchTeam reassigns ctx.me from it, and a later showTeamPicker needs mainBaseTile to not early-return.
   const getMe = vi.fn().mockResolvedValue({
@@ -78,14 +80,14 @@ function buildHarness(opts: {
     view: { renderMap: vi.fn() },
     cb: {
       worldId: WORLD_ID,
-      worldApi: { getTeams, startMarch, getMarches, getOccupations, getSiegeHolds, getStationed, getMe },
+      worldApi: { getTeams, startMarch, getOrders, getMe },
       getSave: opts.getSave,
     },
     panels: { showModal, showToast, closeModal, showDeployDialog, renderHud },
   } as unknown as WorldMapContext;
 
   const net = new WorldMapNet(ctx);
-  return { ctx, net, showModal, showToast, showDeployDialog, startMarch, getMarches, getOccupations, getSiegeHolds, getStationed, getMe };
+  return { ctx, net, showModal, showToast, showDeployDialog, startMarch, getOrders, getMe };
 }
 
 /**
@@ -512,11 +514,11 @@ describe('WorldMapNet.refreshMe() — a team fully re-armed elsewhere becomes us
 //   2. The head line collapsed all four "nothing to offer" causes into the one that was false here.
 describe('WorldMapNet.showTeamPicker — empty-picker causes are named, not collapsed', () => {
   it('a finished order still cached in ctx.occupations does not block the team — the picker re-reads first', async () => {
-    const { ctx, net, showModal, getOccupations } = buildHarness();
-    // The hold settled server-side (getOccupations answers empty) but no push ever arrived, so the
-    // client's cache still names t1. Pre-fix this was a permanent "no teams" for the rest of the session.
+    const { ctx, net, showModal, getOrders } = buildHarness();
+    // The hold settled server-side (getOrders answers with no occupations) but no push ever arrived, so
+    // the client's cache still names t1. Pre-fix this was a permanent "no teams" for the rest of the session.
     (ctx.occupations as { teamId: string }[]).push({ teamId: 't1' });
-    getOccupations.mockResolvedValueOnce([]);
+    getOrders.mockResolvedValueOnce({ marches: [], occupations: [], stationed: [], siegeHolds: [] });
     await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'occupy');
     const buttons = showModal.mock.calls[0][1] as { label: string }[];
     expect(buttons.some((b) => b.label.startsWith('Alpha'))).toBe(true);

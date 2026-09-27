@@ -18,6 +18,7 @@ const ENV_KEYS = [
   'NW_SOCIALSVC_INTERNAL_URL',
   'NW_ADMIN_INTERNAL_URL',
   'NW_SLG_AUTO_SETTLE',
+  'NW_SLG_WORLD_LEASE',
 ] as const;
 
 describe('loadWorldsvcEnv', () => {
@@ -83,6 +84,14 @@ describe('loadWorldsvcEnv', () => {
   it('NW_SLG_AUTO_SETTLE set to anything other than "0" -> still true (only "0" opts out)', () => {
     process.env.NW_SLG_AUTO_SETTLE = '1';
     expect(loadWorldsvcEnv().autoSettleSeasons).toBe(true);
+  });
+
+  it('NW_SLG_WORLD_LEASE is off unless exactly "1" (one process needs no leases, §12.12)', () => {
+    expect(loadWorldsvcEnv().worldLease).toBe(false);
+    process.env.NW_SLG_WORLD_LEASE = 'true';
+    expect(loadWorldsvcEnv().worldLease).toBe(false);
+    process.env.NW_SLG_WORLD_LEASE = '1';
+    expect(loadWorldsvcEnv().worldLease).toBe(true);
   });
 
   it("with its own Mongo URI unset, falls back to the local dev Mongo — never to metaserver's login (ADR-090)", () => {

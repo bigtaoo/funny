@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { parseLevelDefinition, LevelParseError } from '@nw/engine/campaign/levelSchema';
-import { CAMPAIGN_LEVELS, CAMPAIGN_LEVEL_ORDER } from '../src/game/campaign/levels';
+import { CAMPAIGN_LEVELS, CAMPAIGN_LEVEL_ORDER } from '@nw/engine/campaign/levels';
 import { UnitType } from '@nw/engine/types';
 
 /**

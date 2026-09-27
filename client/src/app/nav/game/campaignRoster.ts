@@ -9,7 +9,7 @@
 import * as analytics from '../../../analytics';
 import { getLevel, CAMPAIGN_LEVEL_ORDER, achievementStatDelta, type AIDifficulty } from '../../../game';
 import { TUTORIAL_LEVEL_ID } from '@nw/engine';
-import { computeStars, buildStarContext } from '../../../game/meta/campaignRewards';
+import { computeStars, buildStarContext } from '@nw/engine/campaign/stars';
 import { t, type TranslationKey } from '../../../i18n';
 import { allEquippedSkins, skinEquipKey } from '../../../game/meta/skinDefs';
 import { genUuid } from '../../../platform/uuid';

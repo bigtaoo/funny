@@ -109,10 +109,7 @@ function build(): Harness {
   const worldApi = {
     getMe: () => Promise.resolve(meFixture()),
     getTeams: () => Promise.resolve([]),
-    getMarches: () => Promise.resolve([]),
-    getOccupations: () => Promise.resolve([]),
-    getStationed: () => Promise.resolve([]),
-    getSiegeHolds: () => Promise.resolve([]),
+    getOrders: () => Promise.resolve({ marches: [], occupations: [], stationed: [], siegeHolds: [] }),
     upgradeBuilding: () =>
       new Promise<PlayerWorldView>((res) => {
         releaseUpgrade = (): void =>
@@ -154,10 +151,7 @@ function buildForAction(endpoint: string, extraMe: Record<string, unknown> = {})
     getTeams: () => Promise.resolve([
       { id: teamSlotId(0), name: '', army: [{ cardInstanceId: 'c1', col: 0, row: 0 }] },
     ]),
-    getMarches: () => Promise.resolve([]),
-    getOccupations: () => Promise.resolve([]),
-    getStationed: () => Promise.resolve([]),
-    getSiegeHolds: () => Promise.resolve([]),
+    getOrders: () => Promise.resolve({ marches: [], occupations: [], stationed: [], siegeHolds: [] }),
     upgradeBuilding: hang, speedupBuild: hang, trainTroops: hang,
     speedupTraining: hang, distributeTroops: hang,
   } as unknown as Record<string, unknown>;
@@ -193,10 +187,7 @@ function buildWithFlags(seen: Set<string>): Harness {
     worldApi: {
       getMe: () => Promise.resolve(me),
       getTeams: () => Promise.resolve([]),
-      getMarches: () => Promise.resolve([]),
-      getOccupations: () => Promise.resolve([]),
-      getStationed: () => Promise.resolve([]),
-      getSiegeHolds: () => Promise.resolve([]),
+      getOrders: () => Promise.resolve({ marches: [], occupations: [], stationed: [], siegeHolds: [] }),
       upgradeBuilding: () => new Promise<PlayerWorldView>(() => {}),
     } as unknown as WorldApiClient,
     worldId: 'world:1:0',

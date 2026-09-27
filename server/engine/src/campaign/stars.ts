@@ -10,12 +10,12 @@
 // wave-derived par) gives offensive objectives a real gradient even on a flawless defense; the leak
 // sub-score does the same for leak_limit. See STAR_SCORING.md for the full rationale.
 //
-// From PVE_INTEGRITY_PLAN §8 onward, clear settlement is server-authoritative: the client computes
+// From PVE_INTEGRITY_PLAN §8 onward, clear settlement is server-authoritative: the client (and botsvc) computes
 // stars from this file and reports them; the judge (judgeRunner.ts) recomputes with the same
 // function + the same ctx built from engine end state, so an honest clear reproduces the value.
 
-import { BASE_HP } from '@nw/engine/config';
-import type { LevelDefinition, ObjectiveSpec } from '@nw/engine';
+import { BASE_HP } from '../config';
+import type { LevelDefinition, ObjectiveSpec } from './LevelDefinition';
 
 /** Clear time ≤ lastSpawnTick × this → speedScore 1.0 (fastest realistic clear). */
 const SPEED_FLOOR_MULT = 1.05;

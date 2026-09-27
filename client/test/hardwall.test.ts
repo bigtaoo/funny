@@ -13,7 +13,7 @@ import {
 import { UNIT_MAX_LEVEL } from '@nw/engine/balance/progression';
 import { createGameEngine } from '@nw/engine/GameEngine';
 import { toFp, growFp } from '@nw/engine/math/fixed';
-import { CAMPAIGN_LEVELS, CAMPAIGN_LEVEL_ORDER } from '../src/game/campaign/levels';
+import { CAMPAIGN_LEVELS, CAMPAIGN_LEVEL_ORDER } from '@nw/engine/campaign/levels';
 import { pvpExpectedBlueprints as pvpExpected } from './pvpBlueprintExpected';
 import { cardsAtLevel } from './cardHelpers';
 

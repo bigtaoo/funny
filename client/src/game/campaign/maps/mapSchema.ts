@@ -1,4 +1,4 @@
-import { CAMPAIGN_LEVELS } from '../levels';
+import { CAMPAIGN_LEVELS } from '@nw/engine/campaign/levels';
 import type { ChapterDecor, ChapterMap, ChapterNode, NormPoint } from './ChapterMap';
 
 /**

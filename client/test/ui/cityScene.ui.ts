@@ -135,10 +135,7 @@ function stubWorldApi(): WorldApiClient {
   return {
     getMe: () => new Promise<PlayerWorldView>(() => {}),
     getTeams: () => Promise.resolve([]),
-    getMarches: () => Promise.resolve([]),
-    getOccupations: () => Promise.resolve([]),
-    getStationed: () => Promise.resolve([]),
-    getSiegeHolds: () => Promise.resolve([]),
+    getOrders: () => Promise.resolve({ marches: [], occupations: [], stationed: [], siegeHolds: [] }),
     upgradeBuilding: () => new Promise<PlayerWorldView>(() => {}),
     speedupBuild: () => new Promise<PlayerWorldView>(() => {}),
   } as unknown as WorldApiClient;
@@ -294,10 +291,7 @@ describe('CityScene header base-durability (D-CITY-8; moved into the header 2026
     return {
       getMe: () => Promise.resolve(me),
       getTeams: () => Promise.resolve([]),
-      getMarches: () => Promise.resolve([]),
-      getOccupations: () => Promise.resolve([]),
-      getStationed: () => Promise.resolve([]),
-      getSiegeHolds: () => Promise.resolve([]),
+      getOrders: () => Promise.resolve({ marches: [], occupations: [], stationed: [], siegeHolds: [] }),
       upgradeBuilding: () => new Promise<PlayerWorldView>(() => {}),
       speedupBuild: () => new Promise<PlayerWorldView>(() => {}),
     } as unknown as WorldApiClient;
@@ -353,8 +347,8 @@ describe('CityScene bottom team row (D-CITY-10; one row in landscape, two in por
     cardInv?: Record<string, CardInstance>;
   };
 
-  /** Unlike stubWorldApi(), resolves getMe/getTeams and all four order slices so the team row has
-   *  real data to render. */
+  /** Unlike stubWorldApi(), resolves getMe/getTeams and getOrders (all four order slices, from the
+   *  fixture) so the team row has real data to render. */
   function stubWorldApiWithTeams(fx: TeamsFixture): WorldApiClient {
     const me = {
       resources: {}, buildings: {}, buildQueue: [],
@@ -364,10 +358,13 @@ describe('CityScene bottom team row (D-CITY-10; one row in landscape, two in por
     return {
       getMe: () => Promise.resolve(me),
       getTeams: () => Promise.resolve(fx.teams ?? []),
-      getMarches: () => Promise.resolve(fx.marches ?? []),
-      getOccupations: () => Promise.resolve(fx.occupations ?? []),
-      getStationed: () => Promise.resolve(fx.stationed ?? []),
-      getSiegeHolds: () => Promise.resolve(fx.siegeHolds ?? []),
+      getOrders: () =>
+        Promise.resolve({
+          marches: fx.marches ?? [],
+          occupations: fx.occupations ?? [],
+          stationed: fx.stationed ?? [],
+          siegeHolds: fx.siegeHolds ?? [],
+        }),
       upgradeBuilding: () => new Promise<PlayerWorldView>(() => {}),
       speedupBuild: () => new Promise<PlayerWorldView>(() => {}),
     } as unknown as WorldApiClient;
@@ -672,46 +669,35 @@ describe('CityScene bottom team row (D-CITY-10; one row in landscape, two in por
 // load, and the load itself was one Promise.all barrier — so the row claimed "you own no teams"
 // until the SLOWEST of getMe/getTeams/getMarches/getOccupations answered, which against a remote
 // shard is most of a second. Now each slice paints on its own, and the row shows a loading
-// placeholder until /world/teams specifically has landed.
+// placeholder until /world/teams specifically has landed. Since 2026-09-26 the four order slices
+// arrive together in one GET /world/orders, so "orders" is a single deferred here.
 describe('CityScene team-row loading state (2026-08-02)', () => {
   /** Every endpoint independently controllable (resolve OR reject), so a test can land one slice
    *  and hold the others — which is the whole point of the barrier removal. */
   function deferredApi() {
+    type Orders = { marches: unknown[]; occupations: unknown[]; stationed: unknown[]; siegeHolds: unknown[] };
     let resolveTeams!: (teams: unknown[]) => void;
     let rejectTeams!: (e: Error) => void;
-    let resolveMarches!: (v: unknown[]) => void;
-    let resolveOccupations!: (v: unknown[]) => void;
-    let rejectOccupations!: (e: Error) => void;
-    let resolveStationed!: (v: unknown[]) => void;
-    let rejectStationed!: (e: Error) => void;
-    let resolveSiegeHolds!: (v: unknown[]) => void;
+    let resolveOrdersRaw!: (v: Orders) => void;
+    let rejectOrders!: (e: Error) => void;
     let resolveMeRaw!: (v: PlayerWorldView) => void;
     const teams = new Promise<unknown[]>((r, j) => { resolveTeams = r; rejectTeams = j; });
-    const marches = new Promise<unknown[]>((r) => { resolveMarches = r; });
-    const occupations = new Promise<unknown[]>((r, j) => { resolveOccupations = r; rejectOccupations = j; });
-    const stationed = new Promise<unknown[]>((r, j) => { resolveStationed = r; rejectStationed = j; });
-    const siegeHolds = new Promise<unknown[]>((r) => { resolveSiegeHolds = r; });
+    const orders = new Promise<Orders>((r, j) => { resolveOrdersRaw = r; rejectOrders = j; });
     const me = new Promise<PlayerWorldView>((r) => { resolveMeRaw = r; });
     return {
       api: {
         getMe: () => me,
         getTeams: () => teams,
-        getMarches: () => marches,
-        getOccupations: () => occupations,
-        getStationed: () => stationed,
-        getSiegeHolds: () => siegeHolds,
+        getOrders: () => orders,
         upgradeBuilding: () => new Promise<PlayerWorldView>(() => {}),
         speedupBuild: () => new Promise<PlayerWorldView>(() => {}),
       } as unknown as WorldApiClient,
       resolveTeams,
       rejectTeams,
-      resolveMarches,
-      resolveOccupations,
-      rejectOccupations,
-      resolveStationed,
-      rejectStationed,
-      resolveSiegeHolds,
-      resolveOrders: () => { resolveMarches([]); resolveOccupations([]); resolveStationed([]); resolveSiegeHolds([]); },
+      /** Lands GET /world/orders; slices not given come back empty. */
+      resolveOrders: (over: Partial<Orders> = {}) =>
+        resolveOrdersRaw({ marches: [], occupations: [], stationed: [], siegeHolds: [], ...over }),
+      rejectOrders,
       resolveMe: (over: Partial<PlayerWorldView> = {}) => resolveMeRaw({
         resources: {}, buildings: {}, buildQueue: [],
         cardState: { c1: { currentTroops: 400 } }, teamState: {},
@@ -793,7 +779,7 @@ describe('CityScene team-row loading state (2026-08-02)', () => {
     scene.destroy();
   });
 
-  it('holds a filled team\'s status on the loading label until marches, occupations AND stationed have all landed', async () => {
+  it('holds a filled team\'s status on the loading label until getOrders (all four order slices) has landed', async () => {
     const { api, resolveTeams, resolveOrders, resolveMe } = deferredApi();
     const { scene, texts } = build(api);
     resolveTeams([ALPHA]);
@@ -810,11 +796,12 @@ describe('CityScene team-row loading state (2026-08-02)', () => {
     scene.destroy();
   });
 
-  it('one of the three order endpoints landing is not enough to settle the status', async () => {
-    const { api, resolveTeams, resolveMarches } = deferredApi();
+  it('getTeams landing alone is not enough to settle the status while getOrders is in flight', async () => {
+    // Pre-2026-09-26 this held one of four per-slice order requests back; the slices now arrive in
+    // one GET /world/orders, so the equivalent partial state is "teams known, orders not yet".
+    const { api, resolveTeams } = deferredApi();
     const { scene, texts } = build(api);
-    resolveTeams([ALPHA]);
-    resolveMarches([]);       // occupations + stationed still pending
+    resolveTeams([ALPHA]);    // getOrders (and getMe) still pending
     await flush();
     expect(texts().some(isLoadingLabel)).toBe(true);
     expect(texts()).not.toContain(t('city.military.teamIdle'));
@@ -822,13 +809,11 @@ describe('CityScene team-row loading state (2026-08-02)', () => {
   });
 
   it('a march already known once orders land wins over both the loading and the idle label', async () => {
-    const { api, resolveTeams, resolveMarches, resolveOccupations, resolveStationed, resolveMe } = deferredApi();
+    const { api, resolveTeams, resolveOrders, resolveMe } = deferredApi();
     const { scene, texts } = build(api);
     resolveTeams([ALPHA]);
     resolveMe();
-    resolveMarches([{ marchId: 'm1', mine: true, teamId: 't1', arriveAt: Date.now() + 30_000 }]);
-    resolveOccupations([]);
-    resolveStationed([]);
+    resolveOrders({ marches: [{ marchId: 'm1', mine: true, teamId: 't1', arriveAt: Date.now() + 30_000 }] });
     await flush();
     expect(texts()).toContain(t('world.team.marching'));
     expect(texts().some(isLoadingLabel)).toBe(false);
@@ -849,49 +834,52 @@ describe('CityScene team-row loading state (2026-08-02)', () => {
     scene.destroy();
   });
 
-  it('a station landing alone is not enough to settle the status either', async () => {
-    const { api, resolveTeams, resolveStationed } = deferredApi();
+  it('an idle-mode station in the orders response settles the status as 野外停留', async () => {
+    // Pre-2026-09-26 this case held a station back until the separate marches request answered
+    // (a recall march outranks it). One GET /world/orders now carries both, so the station is
+    // simply the answer once that response has no march for the team.
+    const { api, resolveTeams, resolveOrders, resolveMe } = deferredApi();
     const { scene, texts } = build(api);
     resolveTeams([ALPHA]);
-    resolveStationed([{ tile: '3:4', x: 3, y: 4, teamId: 't1', troops: 400, sinceAt: Date.now() }]);
+    resolveMe();
     await flush();
-    // A station is the LOWEST-ranked of the three sources: a recall march (mid-recall both docs
-    // exist) would outrank it, and marches hasn't answered yet — so asserting 野外停留 here would
-    // be the same self-correcting flash the loading state exists to avoid.
     expect(texts().some(isLoadingLabel)).toBe(true);
     expect(texts()).not.toContain(t('world.team.stationedIdle'));
+
+    resolveOrders({ stationed: [{ tile: '3:4', x: 3, y: 4, teamId: 't1', troops: 400, sinceAt: Date.now() }] });
+    await flush();
+    expect(texts()).toContain(t('world.team.stationedIdle'));
+    expect(texts().some(isLoadingLabel)).toBe(false);
     expect(texts()).not.toContain(t('city.military.teamIdle'));
     scene.destroy();
   });
 
-  it('a station known first shows once the other two endpoints land, and loses to the march they carry', async () => {
-    const { api, resolveTeams, resolveStationed, resolveMarches, resolveOccupations, resolveMe } = deferredApi();
+  it('a station and a recall march in the same orders response: the march wins, the station never shows', async () => {
+    const { api, resolveTeams, resolveOrders, resolveMe } = deferredApi();
     const { scene, texts } = build(api);
     resolveTeams([ALPHA]);
     resolveMe();
-    resolveStationed([{ tile: '3:4', x: 3, y: 4, teamId: 't1', troops: 400, sinceAt: Date.now() }]);
     await flush();
     expect(texts().some(isLoadingLabel)).toBe(true);
 
-    // The recall march the gate was waiting for: it must win, and the station must never have
-    // been shown in between.
-    resolveMarches([{ marchId: 'm1', mine: true, teamId: 't1', arriveAt: Date.now() + 30_000 }]);
-    resolveOccupations([]);
+    // Mid-recall both docs exist; the march outranks the station, and since both arrive in one
+    // response the station must never have been shown in between.
+    resolveOrders({
+      marches: [{ marchId: 'm1', mine: true, teamId: 't1', arriveAt: Date.now() + 30_000 }],
+      stationed: [{ tile: '3:4', x: 3, y: 4, teamId: 't1', troops: 400, sinceAt: Date.now() }],
+    });
     await flush();
     expect(texts()).toContain(t('world.team.marching'));
     expect(texts()).not.toContain(t('world.team.stationedIdle'));
     scene.destroy();
   });
 
-  it('a station shows as soon as the other order endpoints come back empty', async () => {
-    const { api, resolveTeams, resolveStationed, resolveMarches, resolveOccupations, resolveSiegeHolds, resolveMe } = deferredApi();
+  it('a garrison station shows as soon as the orders response lands with no other order for the team', async () => {
+    const { api, resolveTeams, resolveOrders, resolveMe } = deferredApi();
     const { scene, texts } = build(api);
     resolveTeams([ALPHA]);
     resolveMe();
-    resolveStationed([{ tile: '3:4', x: 3, y: 4, teamId: 't1', troops: 400, sinceAt: Date.now(), mode: 'garrison' }]);
-    resolveMarches([]);
-    resolveOccupations([]);
-    resolveSiegeHolds([]);
+    resolveOrders({ stationed: [{ tile: '3:4', x: 3, y: 4, teamId: 't1', troops: 400, sinceAt: Date.now(), mode: 'garrison' }] });
     await flush();
     expect(texts()).toContain(t('world.team.garrisoned'));
     expect(texts().some(isLoadingLabel)).toBe(false);
@@ -913,33 +901,29 @@ describe('CityScene team-row loading state (2026-08-02)', () => {
     scene.destroy();
   });
 
-  it('an order endpoint rejecting still settles the status (treated as no active order)', async () => {
-    const { api, resolveTeams, resolveMarches, rejectOccupations, resolveStationed, resolveSiegeHolds, resolveMe } = deferredApi();
+  it('getOrders rejecting still settles the status (treated as no active order)', async () => {
+    const { api, resolveTeams, rejectOrders, resolveMe } = deferredApi();
     const { scene, texts } = build(api);
     resolveTeams([ALPHA]);
     resolveMe();
-    resolveMarches([]);
-    rejectOccupations(new Error('offline'));
-    resolveStationed([]);
-    resolveSiegeHolds([]);
+    rejectOrders(new Error('offline'));
     await flush();
     expect(texts().some(isLoadingLabel)).toBe(false);
     expect(texts()).toContain(t('city.military.teamIdle'));
     scene.destroy();
   });
 
-  it('getStationed rejecting still settles the status (treated as no field station)', async () => {
-    // ordersLoaded rides on `.finally()` for all four slices — an easy regression into `.then()`,
-    // and this one is the newest but one (2026-08-25; siege holds joined 2026-09-12), so it gets its
-    // own case.
-    const { api, resolveTeams, resolveMarches, resolveOccupations, resolveSiegeHolds, rejectStationed, resolveMe } = deferredApi();
+  it('getOrders rejecting after the team row already painted its loading label clears that label', async () => {
+    // ordersLoaded rides on `.finally()` of the single getOrders call (2026-09-26; it used to be
+    // four per-slice calls) — an easy regression into `.then()`. Here the row is visibly waiting on
+    // orders first, so a missed flip would leave the loading dots spinning forever.
+    const { api, resolveTeams, rejectOrders, resolveMe } = deferredApi();
     const { scene, texts } = build(api);
     resolveTeams([ALPHA]);
     resolveMe();
-    resolveMarches([]);
-    resolveOccupations([]);
-    resolveSiegeHolds([]);
-    rejectStationed(new Error('offline'));
+    await flush();
+    expect(texts().some(isLoadingLabel)).toBe(true);
+    rejectOrders(new Error('offline'));
     await flush();
     expect(texts().some(isLoadingLabel)).toBe(false);
     expect(texts()).toContain(t('city.military.teamIdle'));
@@ -1025,10 +1009,7 @@ describe('CityScene queue-completion refresh (P0-9, comm-audit-2026-07-27 findin
     const api = {
       getMe: () => { calls.push(++call); return Promise.resolve(call === 1 ? before : after); },
       getTeams: () => Promise.resolve([]),
-      getMarches: () => Promise.resolve([]),
-      getOccupations: () => Promise.resolve([]),
-      getStationed: () => Promise.resolve([]),
-      getSiegeHolds: () => Promise.resolve([]),
+      getOrders: () => Promise.resolve({ marches: [], occupations: [], stationed: [], siegeHolds: [] }),
     } as unknown as WorldApiClient;
     return { api, getMeCalls: calls };
   }

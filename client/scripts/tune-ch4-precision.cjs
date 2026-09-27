@@ -6,12 +6,12 @@
 //   per-wave count (scaled to the target total, boss waves keep their original count).
 // Usage: node scripts/tune-ch4-precision.cjs   (overwrites levels/ch4_lvN.json in place)
 // IMPORTANT: transforms are relative to CURRENT file contents (proportional rescale + relative
-// tick shift) — to retune from scratch, `git checkout -- src/game/campaign/levels/ch4_lv*.json`
+// tick shift) — to retune from scratch, `git checkout -- ../server/engine/src/campaign/levels/ch4_lv*.json`
 // first to restore the tune-ch2-6.cjs baseline, then rerun with new POLICY values.
 // Coefficients are in POLICY; iterate and calibrate with the throwaway _tune_ch4.test.ts.
 const fs = require('fs');
 const path = require('path');
-const dir = path.join(__dirname, '..', 'src', 'game', 'campaign', 'levels');
+const dir = path.join(__dirname, '..', '..', 'server', 'engine', 'src', 'campaign', 'levels');
 
 const FIRST_WAVE_TICK = 120; // shift all levels so the first wave lands at 4s, giving a placement window
 

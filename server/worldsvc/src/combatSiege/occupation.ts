@@ -28,6 +28,7 @@ import { refundTroops, startReturnMarch, parkMarchInPlace, resolveOwnerEmblems }
 import type { SiegeHelpersService } from './helpers';
 import { writeOccupyCardState, resolveOccupationBattle } from './occupationBattle';
 import { settleOccupation } from './occupationSettle';
+import { worldScope } from '../worldLease';
 
 /** Minimal "what does this tile look like right now" shape `writeContestedHold`/`startOccupationHold`
  * need — satisfied by a `ProceduralTile` (neutral/stronghold/crossing PvE captures) or a plain literal
@@ -329,10 +330,10 @@ export class OccupationService {
    * claim-and-delete by (_id, ownerId, dueAt) makes this single-consumer safe against a concurrent expulsion
    * that may have already replaced/deleted the same doc.
    */
-  async processDueOccupations(nowMs?: number): Promise<number> {
+  async processDueOccupations(nowMs?: number, worldIds?: readonly string[]): Promise<number> {
     const { cols } = this.core.deps;
     const t = nowMs ?? this.core.deps.now();
-    const due = await cols.occupations.find({ dueAt: { $lte: t } }).limit(500).toArray();
+    const due = await cols.occupations.find({ ...worldScope(worldIds), dueAt: { $lte: t } }).limit(500).toArray();
     let n = 0;
     for (const d of due) {
       const claimed = await cols.occupations.findOneAndDelete({ _id: d._id, ownerId: d.ownerId, dueAt: d.dueAt });

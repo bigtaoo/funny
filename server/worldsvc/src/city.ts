@@ -34,8 +34,8 @@ export class CityService {
   speedupTraining(worldId: string, accountId: string, coins: number, clientPlatform?: string): Promise<PlayerWorldView> {
     return this.training.speedupTraining(worldId, accountId, coins, clientPlatform);
   }
-  processCompletedTraining(nowMs?: number): Promise<number> {
-    return this.training.processCompletedTraining(nowMs);
+  processCompletedTraining(nowMs?: number, worldIds?: readonly string[]): Promise<number> {
+    return this.training.processCompletedTraining(nowMs, worldIds);
   }
 
   // --- SLG home-city buildings, SLG_CITY_DESIGN P1 (city/buildings.ts) ---
@@ -45,8 +45,8 @@ export class CityService {
   speedupBuild(worldId: string, accountId: string, coins: number, clientPlatform?: string): Promise<PlayerWorldView> {
     return this.buildings.speedupBuild(worldId, accountId, coins, clientPlatform);
   }
-  processCompletedBuilds(nowMs?: number): Promise<number> {
-    return this.buildings.processCompletedBuilds(nowMs);
+  processCompletedBuilds(nowMs?: number, worldIds?: readonly string[]): Promise<number> {
+    return this.buildings.processCompletedBuilds(nowMs, worldIds);
   }
 
   // --- G3-2c: attack formation templates (teams) + CC-3 card troop pool (city/teams.ts) ---

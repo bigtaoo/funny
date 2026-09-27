@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createGameEngine } from '@nw/engine/GameEngine';
-import { CAMPAIGN_LEVELS, CAMPAIGN_LEVEL_ORDER } from '../src/game/campaign/levels';
+import { CAMPAIGN_LEVELS, CAMPAIGN_LEVEL_ORDER } from '@nw/engine/campaign/levels';
 import type { GameConfig } from '@nw/engine/types';
 import { Side } from '@nw/engine/types';
 import { toFp } from '@nw/engine/math/fixed';

@@ -279,8 +279,7 @@ export async function doJoin(ctx: WorldMapContext): Promise<void> {
 export async function doRecall(ctx: WorldMapContext, marchId: string, worldId: string): Promise<void> {
   try {
     await ctx.cb.worldApi.recallMarch(marchId, worldId);
-    ctx.marches = await ctx.cb.worldApi.getMarches(ctx.cb.worldId);
-    ctx.panels.renderHud();
+    await refreshMarches(ctx);
   } catch (e) {
     ctx.panels.showToast(errorMsg(e), C.red);
   }
@@ -290,9 +289,8 @@ export async function doRecall(ctx: WorldMapContext, marchId: string, worldId: s
 export async function doInstantReturn(ctx: WorldMapContext, marchId: string, worldId: string): Promise<void> {
   try {
     ctx.me = await ctx.cb.worldApi.instantReturnMarch(marchId, worldId);
-    ctx.marches = await ctx.cb.worldApi.getMarches(ctx.cb.worldId);
+    await refreshMarches(ctx);
     ctx.panels.showToast(t('world.instantReturnDone'));
-    ctx.panels.renderHud();
   } catch (e) {
     ctx.panels.showToast(errorMsg(e), C.red);
   }
@@ -325,14 +323,8 @@ export async function doRecallStationed(ctx: WorldMapContext, teamId: string): P
   ctx.panels.closeModal();
   try {
     await ctx.cb.worldApi.recallStationed(teamId, ctx.cb.worldId);
-    const [marches, stationed] = await Promise.all([
-      ctx.cb.worldApi.getMarches(ctx.cb.worldId),
-      ctx.cb.worldApi.getStationed(ctx.cb.worldId),
-    ]);
-    ctx.marches = marches;
-    ctx.stationed = stationed;
+    await refreshMarches(ctx);
     ctx.panels.showToast(t('world.stationRecalled'));
-    ctx.view.renderMap(); ctx.panels.renderHud();
   } catch (e) {
     ctx.panels.showToast(errorMsg(e), C.red);
   }

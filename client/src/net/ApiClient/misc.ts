@@ -27,6 +27,8 @@ export interface MiscApi {
   ): Promise<{ pointsLeft: number; reward: { kind: string; id?: string; count?: number } }>;
   getLeaderboard(): Promise<{
     seasonNo: number;
+    /** Ladder season end (ms epoch), display-only. Absent from servers older than 2026-09-26. */
+    seasonEndAt?: number;
     entries: {
       rank: number;
       displayName: string;
@@ -120,6 +122,8 @@ export class MiscService implements MiscApi {
   /** Top-100 ladder leaderboard (current season ELO descending). */
   async getLeaderboard(): Promise<{
     seasonNo: number;
+    /** Ladder season end (ms epoch), display-only. Absent from servers older than 2026-09-26. */
+    seasonEndAt?: number;
     entries: {
       rank: number;
       displayName: string;
@@ -131,6 +135,7 @@ export class MiscService implements MiscApi {
   }> {
     return this.core.request<{
       seasonNo: number;
+      seasonEndAt?: number;
       entries: {
         rank: number;
         displayName: string;

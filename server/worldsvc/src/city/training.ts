@@ -15,6 +15,7 @@ import {
 import { WorldCore } from '../core';
 import { trainingQueueOps, applyTrainingSpeedupCatchup, type TrainingEntry } from '../db';
 import type { PlayerWorldView } from '../worldTypes';
+import { worldScope } from '../worldLease';
 
 export class CityTrainingService {
   constructor(private readonly core: WorldCore) {}
@@ -191,12 +192,12 @@ export class CityTrainingService {
    * still needs the queue to speed up on the clock). Cheap: only docs that have ever bought a speedup
    * carry `speedupUntil` (partial index), so this is a small extra scan, not a full collection walk.
    */
-  async processCompletedTraining(nowMs?: number): Promise<number> {
+  async processCompletedTraining(nowMs?: number, worldIds?: readonly string[]): Promise<number> {
     const { cols } = this.core.deps;
     const t = nowMs ?? this.core.deps.now();
 
     const buffed = await cols.playerWorld
-      .find({ speedupUntil: { $exists: true }, nextTrainingCompleteAt: { $exists: true } })
+      .find({ ...worldScope(worldIds), speedupUntil: { $exists: true }, nextTrainingCompleteAt: { $exists: true } })
       .project<{ _id: string; trainingQueue: TrainingEntry[]; speedupUntil?: number; speedupSettledAt?: number }>({
         _id: 1, trainingQueue: 1, speedupUntil: 1, speedupSettledAt: 1,
       })
@@ -227,7 +228,7 @@ export class CityTrainingService {
     // earliest) — via the indexed `nextTrainingCompleteAt` mirror, not the array itself (see trainingQueueOps).
     // Re-read after the catch-up writes above so a buff-compressed completion is found in the same tick.
     const docs = await cols.playerWorld
-      .find({ nextTrainingCompleteAt: { $lte: t } })
+      .find({ ...worldScope(worldIds), nextTrainingCompleteAt: { $lte: t } })
       .project<{ _id: string; troops: number; troopCap: number; trainingQueue: TrainingEntry[] }>({
         _id: 1, troops: 1, troopCap: 1, trainingQueue: 1,
       })
