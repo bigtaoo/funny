@@ -172,3 +172,18 @@ export function pickLevel(
   }
   return frontier ?? null;
 }
+
+/** 32-bit FNV-1a of a string: a stable per-bot number for skill and seeds. */
+export function hash32(s: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193);
+  return h >>> 0;
+}
+
+/**
+ * AISystem difficulty a bot plays PvE at, fixed per bot from its deviceId: 6..10. Players differ in
+ * skill, and at 5 (the ranked setting) the AI clears only 7 of the 60 levels with no cards at all.
+ */
+export function pveDifficulty(deviceId: string): AIDifficulty {
+  return (6 + (hash32(deviceId) % 5)) as AIDifficulty;
+}

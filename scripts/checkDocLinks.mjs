@@ -138,6 +138,8 @@ const PATH_ALLOW_HISTORICAL = new Map([
   ['art/ui/panelframe/panelframe_base.png', 'art never committed'],
   ['art/units/manifest.json', 'workspace-sync experiment, taken down 2026-08-02'],
   ['tools/animator/scripts/anim-sync.mjs', 'workspace-sync experiment, taken down 2026-08-02'],
+  ['client/src/game/meta/campaignRewards.ts', 'moved to server/engine/src/campaign/stars.ts, 2026-09-26 (5aa4134b3), passage names both paths'],
+  ['server/botsvc/test/bot.scanRadius.test.ts', 'deleted with the scan-radius rework, 2026-09-26 (7894b3106), passage explains the deletion'],
 ]);
 
 const allowReason = (p) => {

@@ -2,19 +2,19 @@
 // bootstrap, SLG city actions, connected expansion and troop training (§3.2 slg_action, §3.4), and ranked
 // matchmaking + battle over a real gateway+gameserver WS connection driven by @nw/engine's
 // AISystem (§1 B3, §8).
-import { BUILD_QUEUE_SLOTS, RESOURCE_TYPES, SECT_CREATE_COST, buildCost, buildGateReason } from '@nw/shared';
+import { SECT_CREATE_COST } from '@nw/shared';
 import { MetaClient } from './metaClient';
 import { SocialClient, type FamilyView } from './socialClient';
 import { CommercialClient } from './commercialClient';
-import { WorldClient, type BuildingKey, type PlayerWorldView } from './worldClient';
+import { WorldClient, type PlayerWorldView } from './worldClient';
 import { playRankedMatch } from './battleSession';
 import type { BotIdentity } from './pool';
 import { hasCode } from './apiError';
 import { BOT_FAMILY_ROSTER, BOT_SECT_ROSTER, BotOrgRegistry, PENDING_SEAT_TTL_MS, botFamilySlot } from './orgs';
-import { EXPAND_MARCH_MIN_POOL, planExpansion } from './expansion';
-import { planTraining, troopsFirst } from './training';
-import { getLevel, type AIDifficulty } from '@nw/engine';
-import { pickLevel, playLevel, toEngineCards } from './pve';
+import { troopsFirst } from './training';
+import { tryExpand, tryTrain, tryUpgrade } from './slgActions';
+import { getLevel } from '@nw/engine';
+import { hash32, pickLevel, playLevel, pveDifficulty, toEngineCards } from './pve';
 import { planPveDay, utcDayStart } from './rotation';
 
 /** Family upkeep pacing per role (BOTSVC_DESIGN §3.3): officers approve applications, members just idle. */
@@ -29,30 +29,6 @@ const FAMILY_MEMBER_INTERVAL_MS = 10 * 60_000;
 const PENDING_JOIN_RECHECK_MS = PENDING_SEAT_TTL_MS;
 /** A leader keeps this many elders so applications still get approved while it is offline. */
 const FAMILY_ELDER_TARGET = 2;
-
-/** P1-buildable keys only (BuildingKey's wall/academy are P2, not yet buildable — see contracts/openapi-world.yml). */
-const P1_BUILDING_KEYS: BuildingKey[] = [
-  'desk',
-  'inkPot',
-  'paperTray',
-  'graphiteMill',
-  'metalForge',
-  'stickerShop',
-  'cabinet',
-  'drillYard',
-];
-
-/**
- * Radius of the full map view the expansion planner reads, around the bot's base.
- *
- * Small on purpose: ADR-039 connectivity means every legal target borders land the sect already holds,
- * and a bot that can afford ~6 occupations (EXPAND_TROOP_FLOOR) never grows far past its own 3x3. Until
- * 2026-09-26 this scanned the server's full 40-tile cap for targets that were then all rejected as
- * TERRITORY_NOT_CONNECTED — the full view is per-cell, so a 17x17 window is also the cheap one.
- */
-const EXPAND_VIEW_RADIUS = 8;
-/** Pause before the next march when the server's answer carried no arrival time. */
-const MARCH_BUSY_FALLBACK_MS = 10 * 60_000;
 
 /**
  * Wall-clock floor between two SLG turns *for one bot*, independent of how the scheduler is tuned.
@@ -118,20 +94,8 @@ export interface PveCounters {
   verified: number;
 }
 
-/** 32-bit FNV-1a of a string: a stable per-bot number for skill and seeds. */
-function hash32(s: string): number {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193);
-  return h >>> 0;
-}
-
-/**
- * AISystem difficulty a bot plays PvE at, fixed per bot from its deviceId: 6..10. Players differ in
- * skill, and at 5 (the ranked setting) the AI clears only 7 of the 60 levels with no cards at all.
- */
-export function pveDifficulty(deviceId: string): AIDifficulty {
-  return (6 + (hash32(deviceId) % 5)) as AIDifficulty;
-}
+/** Re-exported for callers that used to find it here (moved to pve.ts alongside hash32, 2026-09-27). */
+export { pveDifficulty };
 
 export interface BattleOptions {
   gatewayWsUrl: string;
@@ -511,12 +475,13 @@ export class BotSession {
     } else {
       me = await this.world.getWorldMe(this.token, this.worldId);
     }
-    const sent = await this.tryExpand(me, now);
+    const expanded = await tryExpand(this.world, this.token, this.worldId, me, now, this.marchBusyUntil);
+    this.marchBusyUntil = expanded.marchBusyUntil;
     // The march took its troops out of the pool; resources are untouched, so no second read is needed.
-    if (sent) me = { ...me, troops: (me.troops ?? 0) - sent };
+    if (expanded.sent) me = { ...me, troops: (me.troops ?? 0) - expanded.sent };
     const steps = troopsFirst(me)
-      ? [(v: PlayerWorldView) => this.tryTrain(v), (v: PlayerWorldView) => this.tryUpgrade(v)]
-      : [(v: PlayerWorldView) => this.tryUpgrade(v), (v: PlayerWorldView) => this.tryTrain(v)];
+      ? [(v: PlayerWorldView) => tryTrain(this.world, this.token, this.worldId, v), (v: PlayerWorldView) => this.stepUpgrade(v)]
+      : [(v: PlayerWorldView) => this.stepUpgrade(v), (v: PlayerWorldView) => tryTrain(this.world, this.token, this.worldId, v)];
     for (const step of steps) {
       const next = await step(me);
       if (!next) return;
@@ -524,89 +489,10 @@ export class BotSession {
     }
   }
 
-  /**
-   * Upgrade one building — but only one this bot can actually pay for.
-   *
-   * Until 2026-09-17 this fired the next key in a blind round-robin every single tick and let the
-   * server reject it, which on live s2-0 meant **629,382 consecutive failures in 29 hours**
-   * (`POST /world/build/upgrade` at 6/s, 64% of worldsvc's entire request volume, none of it ever
-   * succeeding). A bot's base footprint covers exactly one resource tile, so it produces exactly one
-   * of the five resources, while every entry in BUILD_COST_BASE costs paper and/or graphite plus, at
-   * the higher keys, sticker/metal — so the overwhelming majority of bots can never afford anything,
-   * forever. Nobody saw it because Scheduler.runUpkeep swallowed the rejection whole (fixed there too).
-   *
-   * This mirrors worldsvc's own validation (CityBuildingsService.upgradeBuilding) from the shared
-   * constants rather than guessing, exactly as a real client greys out an unaffordable row instead of
-   * posting it. The server stays authoritative: the mirror can only ever make the bot ask for LESS
-   * than it is entitled to, because the view's settled `resources` only grow with time.
-   */
-  private async tryUpgrade(me: PlayerWorldView): Promise<PlayerWorldView | undefined> {
-    const key = this.affordableBuilding(me);
-    if (!key) return me;
-    if (!this.token || !this.worldId) return undefined;
-    // The spend has happened either way, so a response we can't read must not let the pre-spend view
-    // go on to the training step — that would have the bot spend the same money twice.
-    return (await this.world.upgradeBuilding(this.token, this.worldId, key)) || undefined;
-  }
-
-  /**
-   * Queue one training batch this bot can pay for (training.ts), returning the post-spend view to go
-   * on with, or undefined when a spend happened but its result is unknown.
-   */
-  private async tryTrain(me: PlayerWorldView): Promise<PlayerWorldView | undefined> {
-    const qty = planTraining(me, Date.now());
-    if (!qty) return me;
-    if (!this.token || !this.worldId) return undefined;
-    return (await this.world.trainTroops(this.token, this.worldId, qty)) || undefined;
-  }
-
-  /**
-   * First key in the rotation this bot can pay for right now, or null. Scanning from the rotation
-   * cursor (rather than always from `desk`) keeps the round-robin's spread-out feel for a bot rich
-   * enough to have a choice, while a bot with exactly one affordable key still finds it every time.
-   *
-   * Except the first stickerShop, which jumps the rotation: training costs sticker, and a bot gets none
-   * from the land it takes — copper only appears on L6+ tiles (SLG_GEN.copperMinLevel), past the L2
-   * ceiling of expansion.ts — so until the shop stands, no troop can ever be trained.
-   */
-  private affordableBuilding(me: PlayerWorldView): BuildingKey | null {
-    const queue = me.buildQueue ?? [];
-    if (queue.length >= BUILD_QUEUE_SLOTS) return null; // 'Build queue is full'
-    const buildings = me.buildings ?? { desk: 1 };
-    const resources = me.resources ?? {};
-    const nextLevel = (key: BuildingKey) => (buildings[key] ?? 0) + queue.filter((e) => e.key === key).length + 1;
-    const affordable = (key: BuildingKey) => {
-      const toLevel = nextLevel(key);
-      if (buildGateReason(buildings, key, toLevel)) return false; // desk gate / max level
-      const cost = buildCost(key, toLevel);
-      return !RESOURCE_TYPES.some((rt) => (resources[rt] ?? 0) < (cost[rt] ?? 0));
-    };
-    if (nextLevel('stickerShop') === 1 && affordable('stickerShop')) return 'stickerShop';
-    for (let i = 0; i < P1_BUILDING_KEYS.length; i++) {
-      const key = P1_BUILDING_KEYS[(this.buildRotation + i) % P1_BUILDING_KEYS.length]!;
-      if (!affordable(key)) continue;
-      this.buildRotation = this.buildRotation + i + 1;
-      return key;
-    }
-    return null;
-  }
-
-  /**
-   * March on the next tile bordering the sect's land (BOTSVC_DESIGN §3.4), returning how many troops
-   * left the pool (0 = no march). One march in flight at a time: the next is held until the
-   * server-reported arrival, after which the tile shows up as mid occupation-hold (`contestedUntil`) and
-   * is not picked again.
-   */
-  private async tryExpand(me: PlayerWorldView, now: number): Promise<number> {
-    if (now < this.marchBusyUntil) return 0;
-    const base = this.world.baseCoords(me);
-    // Below this pool nothing can be sent without breaking the floor, so the map read would be wasted.
-    if (!base || !me.troops || me.troops < EXPAND_MARCH_MIN_POOL || !this.token || !this.worldId) return 0;
-    const { tiles } = await this.world.getWorldMap(this.token, this.worldId, base.x, base.y, EXPAND_VIEW_RADIUS);
-    const plan = planExpansion(tiles, base, me.troops, Date.now(), me.yieldRate);
-    if (!plan || !this.token || !this.worldId) return 0;
-    const started = await this.world.startMarch(this.token, this.worldId, base, plan, plan.kind, plan.troops);
-    this.marchBusyUntil = started?.arriveAt ?? Date.now() + MARCH_BUSY_FALLBACK_MS;
-    return plan.troops;
+  /** Thin wrapper so tickSlg's step list can read/write buildRotation without slgActions.ts knowing the session. */
+  private async stepUpgrade(me: PlayerWorldView): Promise<PlayerWorldView | undefined> {
+    const { view, buildRotation } = await tryUpgrade(this.world, this.token, this.worldId, me, this.buildRotation);
+    this.buildRotation = buildRotation;
+    return view;
   }
 }
