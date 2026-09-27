@@ -118,9 +118,22 @@
 | `BUILD_SPEEDUP_SECS_PER_COIN` | 60 | coin 加速率（对齐 `TROOP_SPEEDUP_SECS_PER_COIN`）|
 | `BUILD_COST_BASE[key]` | 见 slg.ts | 每建筑 5 资源基底，`buildCost(toLevel)=base×toLevel` 线性曲线 |
 | `RESOURCE_CAP` / `RESOURCE_YIELD_BASE` | 200,000 / 100 | 单资源仓储上限 / 每格每级每小时基底产 |
+| `BASE_FLOOR_YIELD` | 50 | 本城纸 / 石墨 / 金属各自的每小时保底（2026-09-27 新增，见下方常量已改 ⑤）|
 | `TROOP_TRAIN_INK_COST` / `_TIME_SEC` | 10 / 5 | 每兵 ink 成本 / 训练秒 |
 
 > **常量已改 ④（2026-08-01 改动，2026-08-02 已重新核验 ✅）**：练兵不再只吃 `ink`——新增 `TROOP_TRAIN_PAPER_COST`=5 / `TROOP_TRAIN_GRAPHITE_COST`=5 / `TROOP_TRAIN_METAL_COST`=5 / `TROOP_TRAIN_STICKER_COST`=1（每兵；`ink` 每兵 10 不变），汇总见 `troopTrainCost(qty)`（`server/shared/src/slg/city.ts`）。`cityRun.ts` 新增 §6「combined days-to-max」——把满城建筑总成本（§1）与填满一次 drillYard-max troopCap 的练兵成本（§5）叠加到同一份 income 上重算 days-to-max：**casual 档 paper 28.1→29.8 天、graphite 16.1→19.5 天、metal 5.1→8.5 天、sticker 12.4→13.4 天，ink 首次出现门控（0→6.8 天，此前建筑零消耗 ink 恒为 0）**；active/hardcore 档同步小幅上移，全部**仍落在 60 天赛季窗口内**（casual 最慢的 combined paper 29.8 天，不到半季）。**结论不变**：五资源化练兵没有打破节奏窗口，只是让 paper/graphite 这两个承重肝点更紧一点（+1.7d / +3.4d），量级合理。详见 [`SLG_CITY_DESIGN.md`](SLG_CITY_DESIGN.md) §8.3、`server/tools/econ-sim/src/cityRun.ts` §6。
+
+> **常量已改 ⑤（2026-09-27，[ADR-093](../DECISIONS_ADR-086-onward.md#adr-093-本城基础产量纸--石墨--金属各保底-50小时--accepted--2026-09-27)，已重新核验 ✅）**：本城锚点除了墨 100/h，还产纸 / 石墨 / 金属各 `BASE_FLOOR_YIELD` = 50/h，吃同样的建筑、战令加成。
+> 目的是打破「前线没有金属地 → 造不出兵 → 占不了地」的死锁。
+>
+> - **量级**：50/h ≈ 每小时 10 个兵、每天约 240 个。一块 L1 地就是 100/h，所以保底只救急，不替代地图主产。
+> - **收入模型补漏**：`city.ts` `hourlyIncome` 以前**连本城的墨都没算**，这次把本城产出（墨 + 保底，× 建筑乘数，不吃国民加成）一起补进去。
+> - **重跑 `cityRun.ts`**：
+>   - casual 档：纸 2,464 → 2,534/h，石墨和金属 1,232 → 1,302/h。
+>   - 建筑单项 days-to-max：纸 28.1 → 27.3 天，石墨 16.1 → 15.2 天，金属 5.1 → 4.8 天。
+>   - 建筑 + 练兵合算（§6）：纸 29.8 → **29.0** 天，石墨 19.5 → 18.4 天，金属 8.5 → 8.0 天，墨 6.8 → 6.1 天。
+>   - active / hardcore 两档变化都在 0.1 天以内。
+> - **结论不变**：三档全部仍在 60 天赛季窗口内。对新手和低活跃玩家，保底的意义是「保证能造兵」，而不是「节奏变快」。
 
 ### 13-SLG-CITY.2 演算（econ-sim B 轨，2026-06-30）
 

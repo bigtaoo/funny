@@ -10,6 +10,9 @@
 ## 0. TL;DR
 
 - **资源结构（对齐三战的「4 地块 + 1 铜币」，SLG §3.4 五种）**：`ink/paper/graphite/metal` = 三战的**粮/木/石/铁，四种地块资源**（`biomeAt` 地图产）；`sticker`（贴纸）= 三战的**铜币位**，通用流通资源，**由主城产**（民居模型），非地块。
+  - **本城保底（2026-09-27，[ADR-093](../DECISIONS_ADR-086-onward.md#adr-093-本城基础产量纸--石墨--金属各保底-50小时--accepted--2026-09-27)）**：本城锚点除了墨 100/h，还给纸 / 石墨 / 金属各 `BASE_FLOOR_YIELD` = 50/h，贴纸不给。
+    保底和本城的墨一样吃资源建筑、战令、城池加成。
+    原因是练兵五种资源缺一不可，而金属只有金属地块产：前线没有金属地的玩家以前一个兵都造不出来。
 - **要解决的两个真问题**（SLG §15 盘点遗留）：
   1. **`graphite`（石墨=石料）空转的真因 = `biomeAt` 漏了它**——现行 biome 只三分（`ink<t0<paper<t1<metal`，`slg.ts:587`，注释明说「only the three land-mined resources」），graphite 本该是**第 4 种地块资源**却没进 biome → **补成四分即给它地图 faucet**（不是「让主城自产」，我早先方案此处搞反）。`sticker`（铜币位）空转的真因 = 没有「民居」式主城产出 → 由主城 `stickerShop` 自产补 faucet。两者的 sink 都来自**高级建筑升级消耗**。
   2. **`troopCap`（兵力上限）曾是死值**——原本恒为 `TROOP_CAP_BASE`，没有成长曲线；练兵（`trainTroops`）已落地但训练速度/队列/上限都没有可升级的来源。**（此为待解问题的原始陈述；P1 后 `troopCapFor(buildings)=TROOP_CAP_BASE+drillYard·step` 已给出成长曲线，见 §5/§6。）**

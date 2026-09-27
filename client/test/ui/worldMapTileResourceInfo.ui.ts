@@ -113,7 +113,7 @@ describe('WorldMapInput resource-type info line (2026-08-09) — shown for owned
 
 describe('WorldMapInput base tiles (2026-09-02) — the resource line is suppressed, the BASE level replaces it', () => {
   // A capital's buried resource is inert: @nw/shared slg/march.ts tileYield() short-circuits on
-  // `type === 'base'` and pays a flat ink rate, ignoring resType and level. The line the client used
+  // `type === 'base'` and pays a fixed home-city rate (ink plus the ADR-093 floor), ignoring resType and level. The line the client used
   // to print there ("Metal Lv.3", from the 2026-08-09 fix above) therefore advertised production
   // that does not exist, and its level belonged to the buried resource tile — not to the base, and
   // not to the durability line printed right above it, which comes from the owner's WALL level.

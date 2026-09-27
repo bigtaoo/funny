@@ -7,7 +7,7 @@ import {
   moraleCombatMultiplier,
   type PathCell,
 } from '../src/slg';
-import { MARCH_SPEED_SEC_PER_TILE, RESOURCE_YIELD_BASE } from '../src/slg/core';
+import { MARCH_SPEED_SEC_PER_TILE, RESOURCE_YIELD_BASE, BASE_FLOOR_YIELD } from '../src/slg/core';
 
 // ── Controlled tile fixture for findMarchPath (2026-08-15 coverage pass) ────────────────────────
 // findMarchPath calls proceduralTile(world, x, y) internally (real procedural generation is
@@ -92,9 +92,11 @@ describe('moraleCombatMultiplier', () => {
 // ── tileYield (S8-1 §14.3) ───────────────────────────────────────────────────────────────────
 
 describe('tileYield', () => {
-  it('base (home city) always yields a starting ink trickle, regardless of level/resType', () => {
-    expect(tileYield('base', 1)).toEqual({ ink: RESOURCE_YIELD_BASE });
-    expect(tileYield('base', 5, 'paper')).toEqual({ ink: RESOURCE_YIELD_BASE }); // resType ignored for base
+  it('base (home city) yields an ink trickle plus a paper/graphite/metal floor, regardless of level/resType (ADR-093)', () => {
+    const home = { ink: RESOURCE_YIELD_BASE, paper: BASE_FLOOR_YIELD, graphite: BASE_FLOOR_YIELD, metal: BASE_FLOOR_YIELD };
+    expect(tileYield('base', 1)).toEqual(home);
+    expect(tileYield('base', 5, 'paper')).toEqual(home); // resType and level ignored for base
+    expect(tileYield('base', 1).sticker).toBeUndefined(); // sticker comes from the stickerShop, not the floor
   });
 
   it('a tile with a resType yields RESOURCE_YIELD_BASE × level of that resource', () => {

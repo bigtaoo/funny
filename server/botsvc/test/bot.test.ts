@@ -147,10 +147,11 @@ describe('BotSession.tickSlg', () => {
     expect(world.upgradeBuilding).toHaveBeenCalledTimes(1);
   });
 
-  it('occupies a resource it does not produce yet before one it already has', async () => {
+  it('occupies a resource it has no tile for yet before one it already has', async () => {
+    // Home city only pays the ADR-093 floor in metal; paper also has one L1 tile on top of it.
     const metalNextDoor = { ...paperNextDoor, x: 3, resType: 'metal' };
     const world = expandWorld({
-      getWorldMe: vi.fn().mockImplementation(async () => armedMe({ yieldRate: { ink: 100, paper: 100 } })),
+      getWorldMe: vi.fn().mockImplementation(async () => armedMe({ yieldRate: { ink: 100, paper: 150, graphite: 50, metal: 50 } })),
       getWorldMap: vi.fn().mockResolvedValue({ tiles: [paperNextDoor, metalNextDoor] }),
     });
     const session = await loggedInSession(world);

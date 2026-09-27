@@ -24,6 +24,7 @@ import {
   allCityNodes,
   isCityGroundTile,
   cityYieldBonus,
+  tileYield,
   citySiegeBonus,
   cityMarchMult,
   CITY_YIELD_FLAT_CAP,
@@ -369,10 +370,11 @@ describe.skipIf(!mongo)('worldsvc wild-city occupation payoff e2e (ADR-074 P3)',
     await giveCities(SECT_A, held);
     const bonus = cityYieldBonus([nodeById.get(held[0]!)!]);
     const [ra, ra2] = [await rateOf(A), await rateOf(A2)];
-    // Both are identical fresh capitals, which produce only ink — so `paper` is the bonus and nothing else,
-    // and each member must see the WHOLE figure rather than a share of it.
-    expect(ra.paper).toBe(bonus.paper);
-    expect(ra2.paper).toBe(bonus.paper);
+    // Both are identical fresh capitals, whose only paper is the ADR-093 home floor — so `paper` above that
+    // floor is the bonus and nothing else, and each member must see the WHOLE figure rather than a share of it.
+    const floor = tileYield('base', 1).paper ?? 0;
+    expect(ra.paper - floor).toBe(bonus.paper);
+    expect(ra2.paper - floor).toBe(bonus.paper);
   });
 
   it('tileId/proceduralTile fixtures actually resolved (canary: an empty world would pass everything above)', () => {

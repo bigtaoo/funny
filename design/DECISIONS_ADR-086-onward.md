@@ -260,3 +260,40 @@ docker compose -f docker-compose.cloud.yml --env-file .env config | grep MONGO_U
 - **影响**：本次只改文档——`SLG_DESIGN.md` §1、`SLG_DESIGN_CONTRACTS.md` U4/U11/U12、`DEPLOY_TOPOLOGY.md`、`SLG_LOG_SPEC_SEASON.md` §17.8、
   `SLG_ECONOMY_CHECK.md` §7/§8、`ECONOMY_NUMBERS_LIVEOPS.md` `WORLD_CAPACITY` 行、`ECONOMY_VERIFICATION_LOG_CAPACITY.md` 头注、
   ADR-032 加被取代说明、`WORLDSVC_CONCURRENCY_AUDIT_2026-09-05.md` §12.5。
+
+## ADR-093 本城基础产量：纸 / 石墨 / 金属各保底 50/小时 — Accepted — 2026-09-27
+
+- **问题**：练兵一个兵要 墨 10 + 纸 5 + 石墨 5 + 金属 5 + 贴纸 1，五种缺一不可。本城以前**只产墨**（`tileYield('base')` = `{ ink: 100 }`），其余四种全靠地块。
+  金属只来自金属地块，约占 L1–2 资源格的 1/5；开局资源全是 0。前线恰好一块金属地都没有的玩家**一个兵也造不出来**。
+  兵力耗完就占不了新地，也就永远拿不到金属，形成死锁。
+  - 机器人：线上 s2-0 已有机器人卡在这里（BOTSVC_DESIGN §3.4），它们从不放弃地块。
+  - 真人：可以放弃地块退回驻军来自救，但那是「软卡死」——新手根本想不到这一步。
+- **决策（用户 2026-09-27 拍板）**：本城在墨 100/h 之外，再给**纸、石墨、金属各 `BASE_FLOOR_YIELD` = 50/h**。
+  - **贴纸不给**：`stickerShop` 本来就在主城自产贴纸。
+  - **保底吃加成**：它就是本城产量的一部分，和本城的墨走同一条路径，同样乘资源建筑、战令、城池收益。实现上就是 `tileYield('base')` 多返回三项，`recomputeYieldAndCount` 一行没改。
+  - 量级：50/h 约等于每小时 10 个兵、每天约 240 个。只够把人从死锁里拉出来，不替代地图作为主产——一块 L1 地就是 100/h。
+- **否决的方案：每天白送 1 万兵**。
+  - 它绕过了「资源 → 练兵 → 战损 → 再练」这条 sink 闭环（SLG_LOG_SPEC_SYSTEMS 兵力章）。
+  - 1 万兵等于满兵力池，相当于每天免费回满一次，会直接改变 SLG 的战损经济。
+  - 保底产量只补上缺的那一环：资源仍然要自己攒、兵仍然要自己造。
+- **存量修复**：`yieldRate` 是存下来的值，只在占地、弃地、建筑完成、围攻这几条路径重算。
+  老玩家要等下一次触发才能拿到保底，而卡死的玩家恰好永远不会触发。
+  - 办法：worldsvc 启动时跑 `backfillBaseFloorYield()`，对每个 open/active 世界重算一次全部玩家，与 `backfillMissingCities` 并列。
+  - 写入前先按**旧速率**结算（`settleExpr`），所以保底**不追溯**到修复之前。
+  - 速率没变的玩家不写。
+  - 跑完在世界文档上打 `baseFloorYieldAt`，重启不再扫描；中途崩了没打标记，下次启动接着做。
+- **连带改动：机器人占地排序**。BOTSVC_DESIGN §3.4 规则 3 ① 原来用「`yieldRate` 为 0」判断「还不产这种资源」，有了保底后这一条永远不成立。
+  改为：产量 ≥ 本城产量 + 一块 L1 地（加成前）才算「已经有地在产」（`producesFromTiles`）。
+  - 本城单独最多是 50 × 2（资源建筑满级）× 1.1（战令）= 110，低于 150。
+  - 有一块地至少 150。
+  - 两者不重叠。
+- **修订 ADR-025**：该条写的是「只有锚点贡献本城的**墨**」。锚点仍然是唯一贡献者（8 个环格照旧跳过），只是贡献的从墨扩成了四种。
+- **经济核验**：econ-sim 收入模型原先完全没算本城产出，现已补上（`city.ts` `hourlyIncome`）。
+  casual 档建筑 + 练兵合算最慢的纸 29.8 → 29.0 天，仍在 60 天赛季窗口内，节奏结论不变。
+  详见 [`ECONOMY_VERIFICATION_LOG.md`](game/ECONOMY_VERIFICATION_LOG.md) §13-SLG-CITY 常量已改 ⑤。
+- **影响**：
+  - `@nw/shared`：`slg/core.ts` 新增 `BASE_FLOOR_YIELD`；`slg/march.ts` 改 `tileYield`。
+  - `worldsvc`：`season/management.ts` 新增 `backfillBaseFloorYield`，由 `index.ts` 启动时调用；`WorldDoc.baseFloorYieldAt`；e2e `base-floor-backfill.e2e.test.ts`。
+  - `botsvc`：`expansion.ts` 新增 `producesFromTiles`。
+  - `tools/econ-sim`：`city.ts` 的收入模型。
+  - 客户端不用改：资源栏读的是服务端下发的 `yieldRate`。

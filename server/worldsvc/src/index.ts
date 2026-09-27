@@ -143,6 +143,10 @@ async function main(): Promise<void> {
   // Worlds opened before ADR-074 city sieges have no city docs (nothing to besiege, nothing to settle on).
   const citiesFilled = await svc.backfillMissingCities();
   if (citiesFilled.length > 0) console.log('[worldsvc] backfilled city documents', { worldIds: citiesFilled });
+  // ADR-093: players who joined before the home-city floor keep their stored yieldRate until something
+  // recomputes it; repair each such world once.
+  const floorRepaired = await svc.backfillBaseFloorYield();
+  if (floorRepaired.length > 0) console.log('[worldsvc] backfilled base floor yield', { worlds: floorRepaired });
 
   // Phase 3 (worldLease.ts): with leases on, this process schedules only the worlds it holds; HTTP stays open
   // for every world regardless, because every write path is already safe across processes (§12.10).
