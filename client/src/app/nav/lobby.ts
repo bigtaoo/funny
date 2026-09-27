@@ -144,9 +144,13 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
     // resize redraws), not just at buy/claim time — covers restore-after-reinstall / login-on-a-new-
     // device, where the expiry is already set but this session never scheduled anything for it yet.
     if (loggedIn && !opts?.fromResize) {
-      const expiry = saveManager.get().monetization?.subscriptionExpiry ?? 0;
-      void scheduleSubscriptionReminder(expiry);
-      checkInAppSubscriptionReminder(platform.storage, expiry);
+      // "Renew your card" is only worth saying where it can be renewed (CrazyGames/WeChat have no
+      // payment channel — a card bought on the web is still claimed there, just not renewed).
+      if (platform.iapKind() !== null) {
+        const expiry = saveManager.get().monetization?.subscriptionExpiry ?? 0;
+        void scheduleSubscriptionReminder(expiry);
+        checkInAppSubscriptionReminder(platform.storage, expiry);
+      }
       // Apple auto-renewable subscriptions renew inside Apple's systems, so a renewal reaches us only
       // by re-reading the app receipt (platform/appleSubscriptionSync.ts). Hooked here rather than at
       // boot because this is where "logged in, save loaded, real lobby entry" is already established —
@@ -203,7 +207,8 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
       onOpenSocial() { analytics.click('lobby.social'); withGuide('social', 'guide.social.title', 'guide.social.body', () => nav.goFriends()); },
       ...(online ? { onOpenMail: () => nav.goMail() } : {}),
       onOpenShop() { analytics.click('lobby.shop'); withGuide('shop', 'guide.shop.title', 'guide.shop.body', () => nav.goGacha({ shopBack: () => goLobby() })); },
-      ...(online ? { onOpenRecharge: () => nav.goShop(goLobby, 'coins', 'lobby_recharge') } : {}),
+      // The coin chip is a recharge shortcut; without a payment channel it stays a plain readout.
+      ...(online && platform.iapKind() !== null ? { onOpenRecharge: () => nav.goShop(goLobby, 'coins', 'lobby_recharge') } : {}),
       ...(online ? { onOpenLeaderboard: () => nav.goLeaderboard(goLobby) } : {}),
       // Lobby "cards" slot → Hero Roster (CHARACTER_CARDS_DESIGN §10). Feed/lock/gear are
       // server-authoritative, but the roster itself now works read-only offline (skins tab included,
@@ -224,8 +229,9 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
       getCoins: () => saveManager.get().wallet.coins,
       onSaveChanged: (listener: () => void) => saveManager.subscribe(listener),
       offline: state.offlineMode,
-      onLogin: () => nav.goLogin(),
-      onLogout: loggedIn ? () => nav.doLogout() : undefined,
+      // IPlatform.silentAccountOnly: no login screen, so no account chip to reach it from.
+      ...(platform.silentAccountOnly ? {} : { onLogin: () => nav.goLogin() }),
+      onLogout: loggedIn && !platform.silentAccountOnly ? () => nav.doLogout() : undefined,
     }, { fade: opts?.fade });
 
     // Season settlement popup (SE-6): detect first lobby entry after a season transition.

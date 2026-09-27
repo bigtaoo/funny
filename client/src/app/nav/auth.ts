@@ -82,6 +82,8 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
     const pvp = saveManager.get().pvp;
     const loggedIn = !state.offlineMode && !!platform.storage.getItem(TOKEN_KEY);
     const canRename = !state.offlineMode && !!api && loggedIn;
+    // No login screen to log into or to land on afterwards (IPlatform.silentAccountOnly).
+    const accountSwitchable = !platform.silentAccountOnly;
     views.showSettings({
       openTextInput: (opts) => platform.openTextInput(opts),
       onBack() { nav.goLobby(); },
@@ -107,8 +109,8 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
         : {}),
       pvp: { rank: pvp.rank, elo: pvp.elo },
       offline: state.offlineMode,
-      onLogin: () => goLogin(),
-      onLogout: loggedIn ? () => doLogout() : undefined,
+      ...(accountSwitchable ? { onLogin: () => goLogin() } : {}),
+      onLogout: loggedIn && accountSwitchable ? () => doLogout() : undefined,
       ...(canRename
         ? {
             renameCost: RENAME_COST,
@@ -119,7 +121,9 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
           }
         : {}),
       // Account deletion (C5-b): only available when logged in online (no account to delete when offline).
-      ...(loggedIn && !!api ? { onDeleteAccount: doDeleteAccount } : {}),
+      // Not on a silent-account platform: the next launch would silently re-authenticate the same
+      // device / portal identity, which restores the account inside its 7-day grace period.
+      ...(loggedIn && !!api && accountSwitchable ? { onDeleteAccount: doDeleteAccount } : {}),
       // Replay tutorial (ONBOARDING_DESIGN §3.4): directly re-runs the dedicated tutorial level (never fails, can be skipped again).
       onReplayTutorial: () => nav.goTutorial(),
       // Analytics consent, withdrawable and re-grantable (COMPLIANCE_GLOBAL §3.3). Same three
@@ -183,6 +187,9 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
   }
 
   function goLogin(opts?: { notice?: TranslationKey }): void {
+    // Every "needs an account" bounce (world map, auction, forced logout after a dead token) lands
+    // here. Without a login screen the only way to get an account is the silent one, so retry it.
+    if (platform.silentAccountOnly) { void resolveEntry(); return; }
     state.inLobby = false;
     analytics.track('screen_view', { scene: 'LoginScene' });
     views.showLogin({
@@ -326,6 +333,16 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
     if (state.offlineMode) return;
     if (!platform.storage.getItem(TOKEN_KEY)) return;
     sessionExpiredHandled = true;
+    // Nothing to ask the player: silent re-entry mints a fresh token for the same device / portal
+    // identity, so "please log in again" would be untrue. Not via doLogout: its save wipe is for a
+    // change of account, and its deferred api.setToken(null) would race the new token.
+    if (platform.silentAccountOnly) {
+      platform.storage.removeItem(TOKEN_KEY);
+      state.netSession?.close();
+      state.netSession = null;
+      void resolveEntry();
+      return;
+    }
     showToastMessage(t('common.err.unauthorized'), 'error');
     // Let the toast be read before the scene swap; the login screen then repeats the reason in its
     // own notice line, so the message survives even if the toast was missed.
@@ -342,12 +359,13 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
     // completely unchanged — this branch adds a zero-friction bootstrap on top of the existing
     // flow, it does not replace the login gate for anyone (RETENTION_LAUNCH_PLAN.md §0 decision 2:
     // moving the gate itself is gated on Phase 2 data, not done here).
+    if (platform.silentAccountOnly) {
+      if (!api) { nav.goLobby({ offline: true }); return; }
+      enterSilently(true);
+      return;
+    }
     if (cred?.kind === 'wx' || cred?.kind === 'crazygames') {
-      // Lobby shows immediately (no network wait); if the bootstrap pull later turns up an
-      // activeMatch, the resume prompt pops in over the lobby (same "arrives late" pattern as
-      // onProfile's `if (state.inLobby) nav.goLobby()` refresh).
-      void saveManager.bootstrap().then(() => offerResume(() => nav.goLobby({ offline: false })));
-      nav.goLobby({ offline: false });
+      enterSilently(false);
       return;
     }
     if (!api) { nav.goLobby({ offline: true }); return; }
@@ -361,6 +379,34 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
       return;
     }
     goLogin();
+  }
+
+  /**
+   * Silent entry: the lobby shows immediately (no network wait); if the bootstrap pull later turns
+   * up an activeMatch, the resume prompt pops in over the lobby (same "arrives late" pattern as
+   * onProfile's `if (state.inLobby) nav.goLobby()` refresh).
+   *
+   * `persist` (silentAccountOnly platforms): the bootstrap token is stored as the account session.
+   * Every "logged in" gate in the app reads TOKEN_KEY, so without this a CrazyGames player got an
+   * online account and a lobby that treated them as offline — no mail, daily, leaderboard or
+   * ranked, and a bounce to the login screen from the world map. WeChat keeps its token in memory
+   * only (the NetSession.freshToken self-heal path depends on that), so it passes false.
+   */
+  function enterSilently(persist: boolean): void {
+    void (async () => {
+      let ok = await saveManager.bootstrap();
+      // A portal identity the server refuses must not leave the player with no account at all
+      // (SSO never configured on this deployment, a bad token): retry once as an anonymous guest.
+      if (!ok && persist && platform.declinePortalIdentity?.()) ok = await saveManager.bootstrap();
+      const token = persist && ok ? api?.getToken() : null;
+      if (token) {
+        platform.storage.setItem(TOKEN_KEY, token);
+        sessionExpiredHandled = false;
+        if (state.inLobby) nav.goLobby({ offline: false });
+      }
+      offerResume(() => nav.goLobby({ offline: false }));
+    })();
+    nav.goLobby({ offline: false });
   }
 
   return { goIntro, goLogin, doLogout, forceLogout, resolveEntry, goSettings };

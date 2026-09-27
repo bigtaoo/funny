@@ -66,7 +66,9 @@ export class WebAudioBus extends ContextAudioBus {
       // 的手势集合，而且完全不必往输入管线里塞一个与它无关的关注点。
       onGesture: (cb) => {
         if (typeof window === 'undefined') return;
-        for (const ev of ['pointerdown', 'keydown', 'touchstart'] as const) {
+        // iOS Safari only counts the *end* of a touch (touchend / click) as a user activation, so
+        // a first tap heard only through touchstart / pointerdown never unlocks the context.
+        for (const ev of ['pointerdown', 'keydown', 'touchstart', 'pointerup', 'touchend', 'click'] as const) {
           window.addEventListener(ev, cb, { passive: true });
         }
       },

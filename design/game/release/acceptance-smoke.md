@@ -27,7 +27,7 @@
 
 > 平台差异提示：
 > - **微信**：受版号/实名/防沉迷约束（Track 2 L2-4），冒烟时若实名门已接入需走实名；充值走微信支付。
-> - **CrazyGames**：Web 环境，关注广告 SDK 兼容、外链限制；支付走 Web 渠道。
+> - **CrazyGames**：Web 环境，关注广告 SDK 兼容、外链限制；**没有任何支付渠道**（「充值」一行填 N/A），Basic Launch 期间也没有广告。登录一行验的是「不点任何登录就进了在线大厅」（[`CRAZYGAMES_LAUNCH.md §2`](../CRAZYGAMES_LAUNCH.md)）。
 > - **iOS/Android**：充值理想用真 IAP/Billing；未接真 SDK 时用 dev 桩，但需标注「桩」并在上线前补真 SDK 复测。
 
 ---

@@ -36,20 +36,25 @@ declare global {
         game: {
           gameplayStart(): void;
           gameplayStop(): void;
-          sdkGameLoadingStart?(): void; // optional — may not exist in all versions
-          sdkGameLoadingStop?(): void;  // ditto
+          // v3 names. The v2 SDK called these `sdkGameLoadingStart/Stop`; v3 only uses those
+          // strings internally as postMessage types, so calling them on v3 was a silent no-op.
+          loadingStart(): void;
+          loadingStop(): void;
         };
         ad: {
           requestAd(
             type: 'midgame' | 'rewarded',
             callbacks: { adStarted?(): void; adFinished?(): void; adError?(e: unknown): void },
           ): void;
+          /** Throws an AdError with `code: 'adsDisabledBasicLaunch'` while the game is in Basic Launch. */
+          prefetchAd(type: 'midgame' | 'rewarded'): void;
+          hasAdblock(): Promise<boolean>;
         };
         // User account module (RETENTION_LAUNCH_PLAN.md §1.1/§3.1 — CrazyGames SSO). Portal-held
         // identity: getUserToken() returns a signed JWT the server verifies against CrazyGames' own
         // public key (never our own JWT_SECRET — see server/metaserver/src/crazygamesAuth.ts), so a
         // player's account survives losing local storage entirely, which plain device_id cannot.
-        // Docs: https://docs.crazygames.com/sdk/html5-v2/user/
+        // Docs: https://docs.crazygames.com/sdk/html5-v3/user/
         user: {
           isUserAccountAvailable(): Promise<boolean>;
           getUser(): Promise<{ username: string; profilePictureUrl: string } | null>;
@@ -58,6 +63,8 @@ declare global {
           getUserToken(): Promise<string>;
           /** Throws { error: 'userCancelled' | 'userAlreadySignedIn' | 'showAuthPromptInProgress' }. */
           showAuthPrompt(): Promise<{ username: string; profilePictureUrl: string }>;
+          /** Populated by init(); `locale` is the player's portal language, e.g. "de-DE". */
+          readonly systemInfo?: { locale?: string };
         };
       };
     };
@@ -70,11 +77,24 @@ export class CrazyGamesPlatform implements IPlatform {
   private canvas: HTMLCanvasElement;
   readonly storage: IStorage = localStorage;
   readonly devicePixelRatio: number = window.devicePixelRatio || 1;
-  readonly supportedLocales: readonly Locale[] = ['zh', 'en', 'de'];
+  // English first: i18n falls back to the first entry, and the portal requires English as the
+  // fallback for any language we do not ship.
+  readonly supportedLocales: readonly Locale[] = ['en', 'de', 'zh'];
+  readonly silentAccountOnly = true;
+  readonly skipStoryIntro = true;
 
   private sdk: NonNullable<typeof window.CrazyGames>['SDK'] | null = null;
   /** Resolves once `SDK.init()` has settled (either way). See {@link ready}. */
   private readonly initDone: Promise<void>;
+  /**
+   * The portal serves no ads at all during Basic Launch, and for an ad-blocked player. Either way
+   * the rewarded-ad tab must disappear rather than offer a button that always fails (portal ad
+   * rules), so both are probed once at init — see {@link probeAds}.
+   */
+  private adsDisabled = false;
+  /** Set by {@link declinePortalIdentity}; getAuthCredential then skips the portal session. */
+  private portalIdentityDeclined = false;
+  private adblocked = false;
 
   constructor(canvasId = 'game-canvas') {
     let canvas = document.getElementById(canvasId) as HTMLCanvasElement | null;
@@ -91,8 +111,8 @@ export class CrazyGamesPlatform implements IPlatform {
    * Initialise the SDK and open the loading window.
    *
    * Runs from the constructor, not from `onLoadingComplete()`, because the two loading calls are a
-   * pair: `sdkGameLoadingStart()` has to be made while the game is *still loading* for
-   * `sdkGameLoadingStop()` to close anything. Initialising only at the end of the preload — which
+   * pair: `loadingStart()` has to be made while the game is *still loading* for
+   * `loadingStop()` to close anything. Initialising only at the end of the preload — which
    * is what this class did until 2026-09-04 — left the portal never told that loading had begun.
    *
    * Never rejects: on a portal-less host (our own dev server) `window.CrazyGames` is simply absent
@@ -103,11 +123,27 @@ export class CrazyGamesPlatform implements IPlatform {
       this.sdk = window.CrazyGames?.SDK ?? null;
       if (!this.sdk) return;
       await this.sdk.init();
-      this.sdk.game.sdkGameLoadingStart?.();
+      this.sdk.game.loadingStart();
+      this.probeAds(this.sdk);
     } catch (e) {
       console.warn('[CrazyGames] init failed:', e);
       this.sdk = null;
     }
+  }
+
+  /**
+   * `prefetchAd` is the one ad call that reports Basic Launch synchronously and has no side effect
+   * a player can see (it only warms the next midgame ad). The adblock answer arrives later (the SDK
+   * waits up to 5s for its detection event); until then the ad tab stays offered, and a blocked
+   * request still ends in adError, which DailyScene already handles as "no ad right now".
+   */
+  private probeAds(sdk: NonNullable<typeof window.CrazyGames>['SDK']): void {
+    try {
+      sdk.ad.prefetchAd('midgame');
+    } catch (e) {
+      if ((e as { code?: string } | undefined)?.code === 'adsDisabledBasicLaunch') this.adsDisabled = true;
+    }
+    void sdk.ad.hasAdblock().then((b) => { this.adblocked = b; }, () => { /* unknown: leave offered */ });
   }
 
   getCanvas(): HTMLCanvasElement { return this.canvas; }
@@ -120,8 +156,10 @@ export class CrazyGamesPlatform implements IPlatform {
   // whose box is already inside whatever chrome the host page has, so `env(safe-area-inset-*)` is
   // zero there by construction and there is nothing to subscribe to. Absent = all-zero insets.
 
+  /** The portal's language setting when the SDK is up (read after init: createAppCore runs after
+   *  onLoadingComplete), else the browser's. */
   getLanguage(): string {
-    return navigator.language || 'en';
+    return this.sdk?.user.systemInfo?.locale || navigator.language || 'en';
   }
 
   setupInput(
@@ -149,9 +187,9 @@ export class CrazyGamesPlatform implements IPlatform {
   async onLoadingComplete(): Promise<void> {
     await this.initDone;
     try {
-      this.sdk?.game.sdkGameLoadingStop?.();
+      this.sdk?.game.loadingStop();
     } catch (e) {
-      console.warn('[CrazyGames] sdkGameLoadingStop failed:', e);
+      console.warn('[CrazyGames] loadingStop failed:', e);
     }
   }
 
@@ -172,7 +210,7 @@ export class CrazyGamesPlatform implements IPlatform {
 
   showMidgameAd(): Promise<void> {
     return new Promise((resolve) => {
-      if (!this.sdk) { resolve(); return; }
+      if (!this.sdk || this.adsDisabled) { resolve(); return; }
       let settled = false;
       const done = (): void => {
         if (settled) return;
@@ -191,9 +229,9 @@ export class CrazyGamesPlatform implements IPlatform {
     });
   }
 
-  /** CrazyGames always ships its own rewarded-ad SDK — the DailyScene "Ads" tab is always shown here. */
+  /** False in Basic Launch, for ad-blocked players, and off the portal (no SDK) — see {@link probeAds}. */
   hasRewardedAd(): boolean {
-    return true;
+    return !!this.sdk && !this.adsDisabled && !this.adblocked;
   }
 
   /**
@@ -241,7 +279,7 @@ export class CrazyGamesPlatform implements IPlatform {
    */
   async getAuthCredential(): Promise<AuthCredential> {
     await this.initDone;
-    if (this.sdk) {
+    if (this.sdk && !this.portalIdentityDeclined) {
       try {
         const token = await this.sdk.user.getUserToken();
         return { kind: 'crazygames', token };
@@ -251,6 +289,12 @@ export class CrazyGamesPlatform implements IPlatform {
       }
     }
     return { kind: 'device', deviceId: await getOrCreateDeviceId(this.storage) };
+  }
+
+  declinePortalIdentity(): boolean {
+    if (!this.sdk || this.portalIdentityDeclined) return false;
+    this.portalIdentityDeclined = true;
+    return true;
   }
 
   /**

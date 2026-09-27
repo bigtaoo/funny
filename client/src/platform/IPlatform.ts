@@ -244,6 +244,32 @@ export interface IPlatform {
   signInWithCrazyGames?(): Promise<AuthCredential | null>;
 
   /**
+   * True when the build has no in-game login screen at all: identity is always resolved silently
+   * from {@link getAuthCredential} (portal session when there is one, else an anonymous device
+   * account), and the resulting token is persisted as the account session, so every "logged in"
+   * gate treats the guest as a real account. Login, logout and account deletion are never offered.
+   * Only `CrazyGamesPlatform` sets it — the portal requires guests to land in gameplay by default
+   * and forbids every login option other than its own (design/game/CRAZYGAMES_LAUNCH.md §2).
+   */
+  readonly silentAccountOnly?: boolean;
+
+  /**
+   * The server refused the portal credential {@link getAuthCredential} handed out (SSO not
+   * configured, a key rotation, a bad token): hand out the anonymous device credential for the rest
+   * of the session instead. Returns true when there was a portal credential to give up — i.e. a
+   * retry is worth making. Only `CrazyGamesPlatform` implements it; on a silentAccountOnly platform
+   * a player the portal vouches for must not end up with no account at all.
+   */
+  declinePortalIdentity?(): boolean;
+
+  /**
+   * True when the story intro must not stand between launch and the first match. CrazyGames only:
+   * the portal allows at most one click before gameplay, and that click is the entry gate
+   * (age + consent) — the intro's skip button would be a second (CRAZYGAMES_LAUNCH.md §2).
+   */
+  readonly skipStoryIntro?: boolean;
+
+  /**
    * Open a binary WebSocket to the gameserver (S1-6). Platform abstracts the
    * underlying transport (browser `WebSocket` vs `wx.connectSocket`); reconnect
    * and protocol live in `NetClient`. Returns immediately; events arrive via

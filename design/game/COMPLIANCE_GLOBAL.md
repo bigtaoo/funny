@@ -171,7 +171,7 @@
 
 ### Web 专属
 - [x] cookie/同意条（若用分析 cookie）——`ConsentDialog` 首启阻塞式同意，全区都弹（§3.3）
-- [ ] 聚合平台（CrazyGames 等）的隐私/内容要求逐条核对 —— **2026-09-04 修掉了其中四条硬伤**（后端地址没烘死导致整包离线、隐私政策链接在门户域名下 404、Paddle 网页支付面随包上传、广告播放期间不静音 + `sdkGameLoadingStart` 从未调用）；详见 [`store-assets-checklist.md §4.2/§4.3`](../product/release/store-assets-checklist.md)。**剩余**：门户内容政策逐条核对（外链/账号系统/加载时长）+ 该平台冒烟从未跑过
+- [ ] 聚合平台（CrazyGames 等）的隐私/内容要求逐条核对 —— **2026-09-04 修掉了其中四条硬伤**（后端地址没烘死导致整包离线、隐私政策链接在门户域名下 404、Paddle 网页支付面随包上传、广告播放期间不静音 + `sdkGameLoadingStart` 从未调用）；详见 [`store-assets-checklist.md §4.2/§4.3`](../product/release/store-assets-checklist.md)。**剩余**：门户内容政策逐条核对（外链/账号系统/加载时长）+ 该平台冒烟从未跑过。2026-09-27 按官方公开要求改完 Basic Launch 一档，见 [`CRAZYGAMES_LAUNCH.md`](CRAZYGAMES_LAUNCH.md)
 - [x] 支付渠道合规 + 虚拟道具条款 —— CrazyGames 上没有任何支付入口（`iapKind()` 返回 null，且 2026-09-04 起支付页与 Paddle 模块都不进该构建），变现只走门户激励视频
 
 ---
