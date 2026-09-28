@@ -66,10 +66,15 @@ export class WorldMapScene implements Scene {
   /** Home Desk (CityScene) opens as an overlay on top of this scene instead of replacing it
    * (SceneManager.pushOverlay) — suspend pointer input so a tap meant for the overlay doesn't
    * also dispatch into the hidden map underneath (InputManager broadcasts to every subscriber). */
-  pause(): void { this.unsubscribeInput(); }
+  pause(): void { this.unsubscribeInput(); this.ctx.covered = true; }
 
-  /** Reverse of {@link pause}, called once the overlay above is popped and the map is visible again. */
-  resume(): void { this.subscribeInput(); }
+  /** Reverse of {@link pause}, called once the overlay above is popped and the map is visible again.
+   * The HUD countdown was held while covered (lifecycle.ts), so it is due on the very next frame. */
+  resume(): void {
+    this.subscribeInput();
+    this.ctx.covered = false;
+    this.ctx.hudTickTimer = 1;
+  }
 
   private subscribeInput(): void {
     const { ctx, input } = this;

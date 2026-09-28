@@ -356,3 +356,18 @@ docker compose -f docker-compose.cloud.yml --env-file .env config | grep MONGO_U
 - **放大审计**：各 `STOPS` × {桌面 1366 dpr1、retina 1920 dpr2、手机 390 dpr3}，缩略图的最大显示倍率 0.76（retina 卡组），没有任何地方被放大。审计没覆盖到的抽卡揭示走原图（上面第 2 条）。
 - **不改的**（首帧成本还在，面太广，另立项）：PIXI.Text 创建 / `measureText` / `getContext`；`buildPaperBackground` 里 `SketchPen` 逐段圆头线（每个新 bake key 约 27 ms）；世界地图程序化地块；`world_atlas.png` 1960×1827 上传（29–42 ms）；卡组（`cardRoster`）JS 构建（`renderCardCell`、`txtFit`、字形图集）。
 - **影响**：`art/scripts/exportUnitCardArt.mjs`、`client/src/assets/units/thumb/*`、`render/{bake,cardArt,renderPolicy}.ts`、`scenes/CardCodexScene{,/tile}.ts`、`scenes/GachaScene/odds.ts`、`scenes/FamilyScene/data.ts`；测试 `test/cardArt.test.ts`、`test/ui/renderPolicy.ui.ts`、`test/ui/cardCodexScene.ui.ts`、`test/familyLoadDecouple.test.ts`；文档 `claudedocs/client-render-budget.md` §16、`claudedocs/file-formats.md`。
+
+## ADR-097 世界地图 / 主城空闲不再满帧重绘：行军小人 12 fps 步进、被全屏覆盖层盖住的地图停摆、战役图与每日页的脉动相位量化 — Accepted — 2026-09-28
+
+- **问题**：2026-09-28 帧率普查里，世界地图、主城（及其上的弹窗）、战役图、每日页、`friends+world`、布防编辑空闲时一直 58–59 次/秒重绘，`IDLE_FPS` 降频永远触发不了。逐节点对比相邻两帧的签名字段（有头 Chrome、1366×768、seed 过的世界）定位到四个来源：
+  - 世界地图：行军 / 占领 / 驻扎小人每帧推进骨骼姿势（7 个小人 × 10 根骨头），行军位置每帧按实时时钟插值——一格路程走几十秒，每帧不到 1 px，却让整张地图 60 次/秒重画。ADR-085 当时特意把「行军在途时每帧都画」钉成测试。
+  - 主城（以及好友、聊天、家族、门派、拍卖、布防这些 SLG 覆盖层）是 `pushOverlay` 压在地图上的，下面的地图照样每帧动，覆盖层虽然是 reactive、铺满了不透明纸张，也跟着 60 次/秒重画看不见的动画；地图 HUD 还在下面每秒整片重建一次。
+  - 战役图「下一关」脉动圈、每日页可领格子的呼吸：直接用 sin 每帧改 `scale` / `alpha`。
+  - 引导圈早已按 10 fps 量化相位（`GuideOverlay` RING_PULSE_FPS），是这次的现成做法。
+- **决策**：
+  1. **地图小人 12 fps 步进**（`MAP_TOKEN_ANIM_FPS = MENU_POSE_FPS`，`WorldMapRenderer/lifecycle.ts`）：一个共用时钟同时驱动骨骼姿势（`update(tokenDt)`，非步进帧传 0）和行军插值用的时间（`ctx.tokenNowMs`，只在步进帧取 `Date.now()`），两者在同一帧变。**只量化时间输入**，`syncTokens` 仍每帧执行，所以拖动 / 缩放时小人与地图同帧移动，不会落后一个步长。ADR-085 的「行军在途每帧都画」改为「每秒约 12 次、绝不冻住」。
+  2. **被覆盖的地图停摆**：`WorldMapScene.pause()` 置 `ctx.covered = true`，`resume()` 复位并把 HUD 倒计时设为立即到期。covered 时 `lifecycle.update` 在伤害闪红之后直接返回（引导圈、护盾、L3 / 覆盖墨迹刷新、小人全跳过），HUD 每秒重建也暂停；脏标记和小人位置在第一帧未遮挡时补上。地图容器**不隐藏**、照常随覆盖层的重绘一起画——隐藏会让 `world_atlas` 这些大纹理在城里待满 3600 帧后被 TextureGC 逐出，回地图又是 29–42 ms 的重新上传（ADR-096 同一机制）。
+  3. **脉动相位量化**：新增 `render/steppedTime.ts`（`PULSE_STEP_FPS = 10`、`steppedTime(t, fps)`），战役图圈、每日页格子、引导圈共用。量化的是相位不是调用方，所以同一步长内调多少次都落在同一个值上。
+- **不改的**：护盾 `SHIELD_ANIM_FPS = 30`（2026-09-22 因「护盾动画不连贯」特意从 10 调上来），所以视野里有护盾时地图仍约 35 次/秒（护盾 30 + 小人 12 两个时钟不同相）；30 s 无操作后护盾停（`decorationsQuiet`），小人不停（位置是信息，不是装饰）。地图 HUD 每秒整片重建本身（护盾倒计时精确到秒，每秒确实要变）未改成增量。
+- **实测**（空闲 4 s 后采 4 s，`painted / ticks`）：世界地图 240/240 → 138/240（无护盾时约 12/s），主城 241/241 → 40/240（剩下的是城内引导圈 10/s），战役图 241 → 40，每日页 240 → 41。明细见 `claudedocs/client-render-budget.md` §17。
+- **影响**：`client/src/render/{steppedTime,GuideOverlay}.ts`、`scenes/{WorldMapScene,CampaignMapScene,DailyScene}.ts`、`scenes/worldmap/WorldMapContext.ts`、`scenes/worldmap/WorldMapRenderer/{lifecycle,tokens}.ts`；测试 `test/ui/worldMapOverlayCoalescing.ui.ts`、`test/ui/ambientPulseRate.ui.ts`、`test/ui/dailySceneCheckinFocus.ui.ts`；文档 `claudedocs/client-render-budget.md` §17。

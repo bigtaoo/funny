@@ -18,6 +18,7 @@ import { renderCheckin, renderDailyTasks, renderWeekly, renderAds, CHECKIN_PULSE
 import { preloadRewardIconArt } from '../render/rewardIcon';
 import type { IconKind } from '../render/icons';
 import { dispatchHit } from '../ui/hits';
+import { steppedTime } from '../render/steppedTime';
 
 export type { DailyCallbacks } from './DailyScene/types';
 
@@ -124,10 +125,11 @@ export class DailyScene implements Scene {
     if (this.bt.tick(dt)) this.render();
     // Claimable-cell breathe. Mutates one node's scale — deliberately NOT a re-render, which would
     // re-mint 30 cells' worth of Text textures every frame (the iPad WebGL exhaustion documented on
-    // tearDownChildren).
+    // tearDownChildren). Phase-stepped (render/steppedTime.ts): a smooth sine rewrote `scale` every
+    // tick and kept this demand-painted screen at 60 paints/s for as long as a cell was claimable.
     if (this.pulseTarget) {
       this.pulseT = (this.pulseT + dt) % CHECKIN_PULSE.periodSec;
-      const phase = (1 - Math.cos((this.pulseT / CHECKIN_PULSE.periodSec) * Math.PI * 2)) / 2;   // 0→1→0
+      const phase = (1 - Math.cos((steppedTime(this.pulseT) / CHECKIN_PULSE.periodSec) * Math.PI * 2)) / 2;   // 0→1→0
       this.pulseTarget.scale.set(CHECKIN_PULSE.min + (CHECKIN_PULSE.max - CHECKIN_PULSE.min) * phase);
     }
     if (this.activeTab === 'ads' && (this.retention?.ads.nextAvailableAt ?? 0) > 0) {

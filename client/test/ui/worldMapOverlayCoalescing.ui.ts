@@ -218,7 +218,8 @@ describe('world-map overlay: ink on demand, tokens every frame', () => {
 // stutter instead of preventing it.
 //
 // So this pins the load-bearing direction against the real policy: while a march is in the air,
-// `RenderPolicy` in 'reactive' mode must paint EVERY frame. The policy clock is frozen so neither
+// `RenderPolicy` in 'reactive' mode must keep painting it — at the token step rate since ADR-097,
+// every frame before that. The policy clock is frozen so neither
 // valve can paint on the test's behalf, and `Date.now` is driven by hand because the token's
 // position is interpolated from it — a synchronous 60-frame loop otherwise takes place at a single
 // instant, the token never moves, and the test would pass for the wrong reason.
@@ -319,12 +320,51 @@ describe("world map under a 'reactive' paint policy", () => {
     return host.paints;
   }
 
-  it('paints every single frame while a march is in flight', () => {
+  it('paints a march in flight at its step rate — 12 a second, never frozen (ADR-097)', () => {
     const scene = buildScene();
     revealMap(scene);
     scene.ctx.marches = [march('m1')];
     seedToken(scene, 'm1');
-    expect(paintsOver(scene, 60)).toBe(60);
+    // Was 60 (ADR-085 pinned "every frame"): the token rode the live wall clock, so a figure moving
+    // well under a pixel per frame held the whole map at the full frame rate. It now steps at
+    // MAP_TOKEN_ANIM_FPS (lifecycle.ts). The lower bound is the half of this that matters: a march
+    // that stops painting is the frozen-in-mid-air failure this block exists to catch.
+    const paints = paintsOver(scene, 60);
+    expect(paints).toBeGreaterThanOrEqual(11);
+    expect(paints).toBeLessThanOrEqual(13);
+    scene.destroy();
+  });
+
+  it('...but a pan still moves the token on the same frame, not at the next step', () => {
+    const scene = buildScene();
+    revealMap(scene);
+    scene.ctx.marches = [march('m1')];
+    seedToken(scene, 'm1');
+    const sprite = (scene.ctx as unknown as { marchTokenRuntimes: Map<string, { sprite: PIXI.Container }> })
+      .marchTokenRuntimes.get('m1')!.sprite;
+    frame(scene);
+    const x0 = sprite.x;
+    scene.ctx.panX += 40;
+    scene.update(0);            // zero scene time: no token step can have happened
+    expect(sprite.x).toBeCloseTo(x0 + 40, 6);
+    scene.destroy();
+  });
+
+  it('holds the map still under a full-screen overlay, and catches up on resume', () => {
+    const scene = buildScene();
+    revealMap(scene);
+    scene.ctx.marches = [march('m1')];
+    seedToken(scene, 'm1');
+    seedShield(scene, '12:14');
+    const map = scene as unknown as { pause(): void; resume(): void; ctx: { hudTickTimer: number } };
+    // What SceneManager.pushOverlay does for CityScene / the social panels over the map. Nothing
+    // under the overlay is visible, so none of it may repaint the (reactive) overlay on top — not the
+    // march, not the shield, not the once-a-second HUD rebuild.
+    map.pause();
+    expect(paintsOver(scene, 120)).toBe(0);
+    map.resume();
+    expect(map.ctx.hudTickTimer).toBeGreaterThanOrEqual(1);   // the held countdown is due at once
+    expect(paintsOver(scene, 60)).toBeGreaterThan(20);        // march + shield running again
     scene.destroy();
   });
 

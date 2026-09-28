@@ -311,6 +311,16 @@ export class WorldMapContext {
    *  visibly frozen in between. Runs independently of push arrivals: this only repaints existing
    *  state, it never fetches (the poll itself was removed in P1-2 — see WorldMapNet.start()). */
   hudTickTimer = 0;
+  /** Seconds of scene time feeding the march/occupy/stationed token clock (lifecycle.ts
+   *  MAP_TOKEN_ANIM_FPS), and the last whole step of it the tokens were advanced to. */
+  tokenAnimT = 0;
+  tokenAnimStepT = 0;
+  /** Wall clock (ms) sampled on the last token step — what a march's position along its route is
+   *  interpolated from, so position and walk-cycle pose change on the same frames. */
+  tokenNowMs = Date.now();
+  /** True while a full-screen overlay (CityScene, the social panels…) sits on top of this map; set
+   *  by WorldMapScene.pause/resume. The map's time-driven work is held meanwhile — see lifecycle.ts. */
+  covered = false;
   destroyed = false;
   readonly unsubs: (() => void)[] = [];
   /** Team-info badge (top-right stack) toggles between the collapsed badge and the full expanded list. */

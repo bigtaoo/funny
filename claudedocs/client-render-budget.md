@@ -545,3 +545,28 @@ ADR-086 收尾后回头找「客户端还有什么能在本机量的」，量到
 - 卡组 JS 构建：`renderCardCell`、`txtFit`、字形图集。
 
 **门禁**：`test/cardArt.test.ts`（缩略图 640、小框不换、780 换原图、按设备 px 算、无缩略图的 url 原样返回）、`test/ui/renderPolicy.ui.ts`（`live` 不读 stage；live → reactive 画一次后照常跳帧）、`test/ui/cardCodexScene.ui.ts`（贴图后到不调 `render`、不换背景、没有残留隐藏 sprite）、`test/familyLoadDecouple.test.ts`（approver 只画两次、申请不等频道）。
+
+## 17. 空闲满帧重绘（ADR-097，2026-09-28）
+
+- **方法**：有头 Chrome 1366×768，seed 过账号和世界（有行军、驻扎、护盾），每屏空闲 4 s 后挂一个 priority -200 的 ticker 回调，每帧对整棵舞台树按 `stageSignature` 读的字段（visible / renderable / alpha / tint / `transform._localID` / zIndex / 纹理 uid+frame+dirtyId / `geometry.dirty` / text / 子节点数）逐节点做快照，跟上一帧比，按「字段 + 节点路径」计数。探针在会话 scratchpad，不进仓库。
+- **找到的来源**（修前，4 s = 240 帧）：
+
+  | 屏 | 每帧都变的 | 其它 |
+  |---|---|---|
+  | 世界地图 | 行军 / 驻扎小人骨骼（7 × 10 根）+ 容器位置 | 护盾 30/s、HUD 每秒整片重建、引导圈 10/s |
+  | 主城 | 同上（地图在下面照样动） | 城内引导圈 10/s |
+  | 战役图 | 下一关脉动圈 scale + alpha | — |
+  | 每日页 | 可领格子 scale | — |
+
+- **修法**：行军小人姿势与行军插值时间共用 12 fps 时钟（只量化时间，`syncTokens` 仍每帧跑，拖图同帧跟手）；覆盖层压着时地图 `covered`，时间驱动的活全停（地图不隐藏，避免 TextureGC 逐出 `world_atlas`）；脉动走 `render/steppedTime.ts` 10 fps 相位量化。
+- **结果**（`painted / ticks`，空闲 4 s 后采 4 s）：
+
+  | 屏 | 修前 | 修后 |
+  |---|---|---|
+  | 世界地图（有护盾在视野内） | 240 / 240 | 138 / 240（护盾 30/s + 小人 12/s） |
+  | 主城 | 241 / 241 | 40 / 240（城内引导圈） |
+  | 战役图 | 241 / 241 | 40 / 240 |
+  | 每日页 | 240 / 240 | 41 / 241 |
+
+- **剩下的**：视野里有护盾就是 30/s（设计决定，见 ADR-097「不改的」）；两个时钟不同相，并集约 35/s。地图 HUD 每秒整片重建（`tearDownChildren` + 重新创建所有 Text / sketchPanel）仍在，每秒一次、只在地图可见时。
+- **门禁**：`test/ui/worldMapOverlayCoalescing.ui.ts`（行军 11–13 次/秒且不冻、拖图同帧跟手、covered 时 120 帧 0 次重绘并在 resume 后恢复）、`test/ui/ambientPulseRate.ui.ts`（战役圈）、`test/ui/dailySceneCheckinFocus.ui.ts`（每日格子），均做过变异检查。

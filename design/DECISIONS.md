@@ -114,6 +114,7 @@
 | [ADR-094](DECISIONS_ADR-086-onward.md#adr-094-帧率上限改由-vsync-整数分频实现两个-ticker-共用一个节拍取代-pixi-maxfps--accepted--2026-09-28) | 帧率上限改由 vsync 整数分频实现，两个 ticker 共用一个节拍（取代 PIXI `maxFPS`） | Accepted | 2026-09-28 |
 | [ADR-095](DECISIONS_ADR-086-onward.md#adr-095-帧率只统计满速段静止降频的时段不计入-fps另报-idlepct--accepted--2026-09-28) | 帧率只统计「满速段」：静止降频的时段不计入 fps，另报 `idlePct` | Accepted | 2026-09-28 |
 | [ADR-096](DECISIONS_ADR-086-onward.md#adr-096-切屏卡顿兵种立绘分两档640-px-缩略图--抽卡揭示用原图图鉴贴图到齐不再整屏重建live-帧不再走签名--accepted--2026-09-28) | 切屏卡顿：兵种立绘分两档（640 px 缩略图 + 抽卡揭示用原图）、图鉴贴图到齐不再整屏重建、`live` 帧不再走签名 | Accepted | 2026-09-28 |
+| [ADR-097](DECISIONS_ADR-086-onward.md#adr-097-世界地图--主城空闲不再满帧重绘行军小人-12-fps-步进被全屏覆盖层盖住的地图停摆战役图与每日页的脉动相位量化--accepted--2026-09-28) | 世界地图 / 主城空闲不再满帧重绘：行军小人 12 fps 步进、被覆盖的地图停摆、脉动相位量化 | Accepted | 2026-09-28 |
 
 ---
 
