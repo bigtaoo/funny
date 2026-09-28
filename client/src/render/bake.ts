@@ -104,6 +104,15 @@ export function pageBakeResolution(): number {
   return Math.min(base, Math.max(MIN_PAGE_RES, quantized));
 }
 
+/**
+ * Device pixels one design unit covers on screen right now: `renderer.resolution x designScale`,
+ * unquantized and uncapped. For sizing a texture SOURCE to its box (render/cardArt.ts
+ * `artUrlForBox`); 1 when no renderer is wired.
+ */
+export function devicePxPerDesignUnit(): number {
+  return (renderer?.resolution ?? 1) * designScale;
+}
+
 /** Options shared by {@link bake} and {@link bakeLazy}. */
 export interface BakeOpts {
   /**

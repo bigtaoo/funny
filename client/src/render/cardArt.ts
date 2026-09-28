@@ -11,6 +11,7 @@ import { CardDefinition, CardType, UnitType, BuildingType, SpellType } from '@nw
 import { CARD_DEFS } from '../game/meta/cardDefs';
 import { skinEquipKey } from '../game/meta/skinDefs';
 import { preloadTextureList, ART_TEX_OPTIONS } from '../assets/preloadTextures';
+import { devicePxPerDesignUnit } from './bake';
 import infantryArtUrl from '../assets/units/infantry.png';
 import archerArtUrl from '../assets/units/archer.png';
 import shieldBearerArtUrl from '../assets/units/shieldbearer.png';
@@ -23,6 +24,15 @@ import harpyArtUrl from '../assets/units/harpy.png';
 import medicArtUrl from '../assets/units/medic.png';
 import berserkerArtUrl from '../assets/units/berserker.png';
 import splitterArtUrl from '../assets/units/splitter.png';
+import maxThumbUrl from '../assets/units/thumb/max.png';
+import lenaThumbUrl from '../assets/units/thumb/lena.png';
+import maraThumbUrl from '../assets/units/thumb/mara.png';
+import ironcladThumbUrl from '../assets/units/thumb/ironclad.png';
+import runnerThumbUrl from '../assets/units/thumb/runner.png';
+import harpyThumbUrl from '../assets/units/thumb/harpy.png';
+import medicThumbUrl from '../assets/units/thumb/medic.png';
+import berserkerThumbUrl from '../assets/units/thumb/berserker.png';
+import splitterThumbUrl from '../assets/units/thumb/splitter.png';
 import barracksArtUrl from '../assets/buildings/game_infantry_barracks.png';
 import towerArtUrl from '../assets/buildings/game_arrow_tower.png';
 import spellHasteArtUrl from '../assets/spells/spell_haste.png';
@@ -41,15 +51,15 @@ export const CARD_ART_URLS: Record<string, string> = {
   [`unit_${UnitType.Infantry}`]:           infantryArtUrl as string,
   [`unit_${UnitType.Archer}`]:             archerArtUrl as string,
   [`unit_${UnitType.ShieldBearer}`]:       shieldBearerArtUrl as string,
-  [`unit_${UnitType.Max}`]:               maxArtUrl as string,
-  [`unit_${UnitType.Lena}`]:              lenaArtUrl as string,
-  [`unit_${UnitType.Mara}`]:              maraArtUrl as string,
-  [`unit_${UnitType.Ironclad}`]:           ironcladArtUrl as string,
-  [`unit_${UnitType.Runner}`]:             runnerArtUrl as string,
-  [`unit_${UnitType.Harpy}`]:              harpyArtUrl as string,
-  [`unit_${UnitType.Medic}`]:              medicArtUrl as string,
-  [`unit_${UnitType.Berserker}`]:          berserkerArtUrl as string,
-  [`unit_${UnitType.Splitter}`]:           splitterArtUrl as string,
+  [`unit_${UnitType.Max}`]:               maxThumbUrl as string,
+  [`unit_${UnitType.Lena}`]:              lenaThumbUrl as string,
+  [`unit_${UnitType.Mara}`]:              maraThumbUrl as string,
+  [`unit_${UnitType.Ironclad}`]:           ironcladThumbUrl as string,
+  [`unit_${UnitType.Runner}`]:             runnerThumbUrl as string,
+  [`unit_${UnitType.Harpy}`]:              harpyThumbUrl as string,
+  [`unit_${UnitType.Medic}`]:              medicThumbUrl as string,
+  [`unit_${UnitType.Berserker}`]:          berserkerThumbUrl as string,
+  [`unit_${UnitType.Splitter}`]:           splitterThumbUrl as string,
   [`building_${BuildingType.Barracks}`]:   barracksArtUrl as string,
   [`building_${BuildingType.ArrowTower}`]: towerArtUrl as string,
   [`spell_${SpellType.Haste}`]:            spellHasteArtUrl as string,
@@ -85,10 +95,46 @@ export const UNIT_ART_URLS: Record<string, string> = {
   infantry:     infantryArtUrl as string,
   archer:       archerArtUrl as string,
   shieldbearer: shieldBearerArtUrl as string,
-  max:          maxArtUrl as string,
-  lena:         lenaArtUrl as string,
-  mara:         maraArtUrl as string,
+  max:          maxThumbUrl as string,
+  lena:         lenaThumbUrl as string,
+  mara:         maraThumbUrl as string,
 };
+
+/**
+ * Long edge of the `assets/units/thumb/` exports; must match `THUMB_MAX_LONG_EDGE` in
+ * art/scripts/exportUnitCardArt.mjs. 320 logical px (the largest box any site but the gacha reveal
+ * draws unit art into) at the renderer's 2 device px per logical px ceiling.
+ */
+export const THUMB_LONG_EDGE = 640;
+
+/**
+ * The full-size export behind each thumbnail (ADR-096). Every map above hands out the thumbnail:
+ * the full exports run up to 2181x1514, and uploading them for 100px codex tiles cost 113ms of
+ * `texImage2D` in one frame — then again on every return a minute later, because textures that big
+ * are what PIXI's texture GC evicts first. archer/infantry/shieldbearer have no entry: their export
+ * is already thumbnail-sized, so they are their own full size.
+ */
+const FULL_ART_BY_THUMB: Record<string, string> = {
+  [maxThumbUrl as string]:       maxArtUrl as string,
+  [lenaThumbUrl as string]:      lenaArtUrl as string,
+  [maraThumbUrl as string]:      maraArtUrl as string,
+  [ironcladThumbUrl as string]:  ironcladArtUrl as string,
+  [runnerThumbUrl as string]:    runnerArtUrl as string,
+  [harpyThumbUrl as string]:     harpyArtUrl as string,
+  [medicThumbUrl as string]:     medicArtUrl as string,
+  [berserkerThumbUrl as string]: berserkerArtUrl as string,
+  [splitterThumbUrl as string]:  splitterArtUrl as string,
+};
+
+/**
+ * `url`, or the full-size export behind it when a box whose long edge is `boxLongEdge` design px
+ * would magnify the thumbnail on this screen. Only the gacha reveal's single card gets that big
+ * (~780 design px on a landscape window); a url that is not a thumbnail comes back unchanged.
+ */
+export function artUrlForBox(url: string, boxLongEdge: number): string {
+  const full = FULL_ART_BY_THUMB[url];
+  return full && boxLongEdge * devicePxPerDesignUnit() > THUMB_LONG_EDGE ? full : url;
+}
 
 /**
  * Portrait override by skin id, for skins with dedicated illustration art (skinDefs.ts SKIN_TARGET_UNIT).
@@ -198,9 +244,9 @@ export function getArtTexture(url: string): PIXI.Texture {
 // L1 card art: heroes + spells (L0 trio infantry/archer/shieldbearer is already
 // preloaded by bootManifest and excluded here).
 const L1_CARD_ART_URLS = [
-  maxArtUrl            as string,
-  lenaArtUrl           as string,
-  maraArtUrl           as string,
+  maxThumbUrl          as string,
+  lenaThumbUrl         as string,
+  maraThumbUrl         as string,
   spellHasteArtUrl         as string,
   spellMeteorArtUrl        as string,
   spellRockslideArtUrl     as string,

@@ -415,7 +415,12 @@ export class RenderPolicy {
       // Re-read AFTER painting: render itself mutates fields the signature reads (Text rasterises
       // into its texture and clears its dirty flag, containers sort their children), so a
       // pre-paint baseline would report a change on every following tick and never settle.
-      this.lastSignature = stageSignature(this.host.stage);
+      //
+      // Not for a `live` paint: nothing compares against it while the scene stays live, and the walk
+      // is not "microseconds" on a live scene — it was a quarter of the city screen's main-thread
+      // time (ADR-096). -1 is never a signature (they are unsigned), so the first tick after a
+      // switch to a reactive scene reads as 'changed' and paints, as a scene switch does anyway.
+      this.lastSignature = result.reason === 'live' ? -1 : stageSignature(this.host.stage);
       this.stats.painted++;
     } else {
       this.stats.skipped++;

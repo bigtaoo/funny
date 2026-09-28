@@ -511,3 +511,37 @@ ADR-086 收尾后回头找「客户端还有什么能在本机量的」，量到
 - `fpsMin 45` 来自这条 span 开头的启动 / 大厅→设置切屏窗口（切屏卡顿，另一个开放项），不是降频。
 
 **门禁**：`test/PerfMonitor.test.ts`（降频段不报、醒来那一段不进样本、满速段真慢仍然报）、`test/renderProfile.test.ts`（`idlePct`、全降频时 fps 缺省、`maxFps` 取满速上限）、`test/ui/renderPolicy.ui.ts`（`idle` 与上限同步，含输入同步唤醒）。
+
+## 16. 切屏卡顿（ADR-096，2026-09-28）
+
+**方法**：有头 Chrome（`channel: chrome`）、1366×768、dev 构建、docker 栈 + 种子账号。每屏记 LoAF（带脚本归因）、包一层 `gl.texImage2D` 计时、CDP `Profiler` 按 LoAF 窗口聚合（`Profiler.start` 之后第一条 LoAF 是探针自身开销，丢掉）。**只跑一个 spec、`--workers=1`**——并行种子会撞 `cardInstances` 的 `_id`。
+
+**找到的**：
+- 图鉴首帧大头是 GL 上传：12 张立绘都是 ~2200 px 原图，在 ~110 px 的格子里显示。上传成本 ∝ 像素数。
+- 离开一分钟再回来又卡：PIXI `TextureGC`（AUTO，3600 帧没用过就逐出显存）→ 回来重新上传 120 ms。所以修法是**把贴图做小**，不是预热。
+- 图鉴每张图解码完都整屏 `render()`。
+- `live` 场景每帧画完还做一次 `stageSignature` 遍历，占主城屏主线程约四分之一，结果从来不用。
+- 家族屏三次 `render()`，入会申请串在频道后面。
+
+**改了什么**：兵种立绘 640 px 缩略图档（`assets/units/thumb/`），只有 `artUrlForBox` 判定显示框 > 640 设备 px（抽卡单抽揭示）才用原图；图鉴走 `buildFittedSprite`；`live` 帧不算签名；家族屏并行加载、画两次。详见 ADR-096。
+
+**放大审计**：各 `STOPS` × {桌面 1366 dpr1、retina 1920 dpr2、手机 390 dpr3}，缩略图最大显示倍率 0.76（retina 卡组）——没有任何地方被放大。
+
+**实测**（首访 = 进入后第一次；回访在 1 分钟内，LoAF 只列 ≥ 50 ms 的）：
+
+| 屏 | 改前 | 改后 |
+|---|---|---|
+| 图鉴首访 | 52 / 81 / 183 ms，GL 113 ms | 62 / 77 ms，GL 18 ms |
+| 图鉴回访（先在世界地图停 70 s，贴图已被 GC） | 162 ms（120 ms 重新上传） | 无 LoAF（33 ms 上传分散到多帧） |
+| 家族首访 | 159 ms（一帧） | 97 / 57 ms |
+| 卡组首访 | 59–148 ms | 86 ms（没动，噪声大） |
+| 主城（经世界地图） | 145 ms | 77 / 74 / 93 / 83 ms（没动） |
+| 所有屏 1 分钟内回访 | — | 无 LoAF |
+
+**还没修的首帧成本**（面太广，另立项；下次直接从这里开始，不用重测）：
+- PIXI.Text 创建 / `measureText` / `getContext`。
+- `buildPaperBackground` 里 `SketchPen` 逐段圆头线：每个新 bake key 约 27 ms。
+- 世界地图程序化地块 + `world_atlas.png`（1960×1827）上传 29–42 ms——主城经世界地图进入时首帧的大头。
+- 卡组 JS 构建：`renderCardCell`、`txtFit`、字形图集。
+
+**门禁**：`test/cardArt.test.ts`（缩略图 640、小框不换、780 换原图、按设备 px 算、无缩略图的 url 原样返回）、`test/ui/renderPolicy.ui.ts`（`live` 不读 stage；live → reactive 画一次后照常跳帧）、`test/ui/cardCodexScene.ui.ts`（贴图后到不调 `render`、不换背景、没有残留隐藏 sprite）、`test/familyLoadDecouple.test.ts`（approver 只画两次、申请不等频道）。

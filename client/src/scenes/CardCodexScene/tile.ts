@@ -3,7 +3,7 @@ import { t, TranslationKey } from '../../i18n';
 import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../../render/sketchUi';
 import { snapFont, fitFont } from '../../render/fontScale';
 import { buildIcon, type IconKind } from '../../render/icons';
-import { cardArtUrl, getArtTexture } from '../../render/cardArt';
+import { buildFittedSprite, cardArtUrl } from '../../render/cardArt';
 import { UNIT_BLUEPRINTS, BUILDING_BLUEPRINTS } from '@nw/engine/config';
 import { fromFp } from '@nw/engine/math/fixed';
 import { CardType, type CardDefinition } from '@nw/engine/types';
@@ -11,10 +11,9 @@ import { CardType, type CardDefinition } from '@nw/engine/types';
 // ── Pure codex-tile drawing helpers for CardCodexScene ────────────────────────
 //
 // Extracted from the scene class (form① partial split, client-modules.md's split-priority
-// convention, same idiom as BattlePassScene/cell.ts): fully parameterized — art-load dedup
-// (`artHooked`) and the re-render trigger (`onArtLoaded`) are passed in rather than read off
-// `this`, and flip state (`flipped`) is a plain readonly Set rather than a scene field, so
-// nothing here needs a scene instance. Only the flip *animation* (PIXI.Ticker registration/
+// convention, same idiom as BattlePassScene/cell.ts): fully parameterized — flip state
+// (`flipped`) is a plain readonly Set rather than a scene field, so nothing here needs a scene
+// instance. Only the flip *animation* (PIXI.Ticker registration/
 // cleanup) and the row-virtualization scaffolding stay on the class.
 
 export interface CodexEntry { card: CardDefinition; locked: boolean; }
@@ -55,36 +54,26 @@ export function cardStats(card: CardDefinition): { icon: IconKind | null; label:
   return null;
 }
 
-/** Fit-scaled art sprite; `artHooked` dedups the one-shot 'loaded' listener per URL across
- *  repeated calls, `onArtLoaded` is the caller's re-render trigger once the texture is ready. */
-export function drawArtFit(
-  url: string, x: number, y: number, box: number, target: PIXI.Container,
-  artHooked: Set<string>, onArtLoaded: () => void,
-): void {
-  const tex = getArtTexture(url);
-  if (!tex.baseTexture.valid) {
-    if (!artHooked.has(url)) {
-      artHooked.add(url);
-      tex.baseTexture.once('loaded', onArtLoaded);
-    }
-    return;
-  }
-  const scale = Math.min(box / tex.width, box / tex.height);
-  const sp = new PIXI.Sprite(tex);
-  sp.anchor.set(0.5);
-  sp.scale.set(scale);
-  sp.position.set(x + box / 2, y + box / 2);
-  target.addChild(sp);
+/**
+ * Fit-scaled art in a `box` square at (x, y). A not-yet-decoded texture fits and shows itself when
+ * it lands (`buildFittedSprite`) instead of re-rendering the scene: the codex used to rebuild every
+ * tile once per decoded url, a dozen full rebuilds on a cold first visit (ADR-096).
+ */
+export function drawArtFit(url: string, x: number, y: number, box: number, target: PIXI.Container): void {
+  // Wrapped, not offset: the sprite rewrites its own x/y when it fits on decode.
+  const slot = new PIXI.Container();
+  slot.position.set(x, y);
+  slot.addChild(buildFittedSprite(url, box, box));
+  target.addChild(slot);
 }
 
 /** Draw the illustration face: art (front) or word-wrapped story text (back), centred on the container origin. */
 export function drawTileFace(
   container: PIXI.Container, box: number, card: CardDefinition, art: string | null, story: string, showStory: boolean,
-  artHooked: Set<string>, onArtLoaded: () => void,
 ): void {
   tearDownChildren(container);
   if (!showStory) {
-    if (art) { drawArtFit(art, -box / 2, -box / 2, box, container, artHooked, onArtLoaded); return; }
+    if (art) { drawArtFit(art, -box / 2, -box / 2, box, container); return; }
     // No illustration for this card yet — a faded monogram keeps the frame from reading as broken.
     const initial = t(card.nameKey as TranslationKey).charAt(0).toUpperCase();
     const mono = txt(initial, snapFont(Math.round(box * 0.5)), C.mid, true);
@@ -237,7 +226,7 @@ export function drawStatChips(
  */
 export function drawCardTile(
   entry: CodexEntry, x: number, y: number, w: number, h: number, target: PIXI.Container,
-  flipped: ReadonlySet<string>, artHooked: Set<string>, onArtLoaded: () => void,
+  flipped: ReadonlySet<string>,
 ): PIXI.Container | null {
   const { card, locked } = entry;
   const accent = locked ? C.mid
@@ -259,7 +248,7 @@ export function drawCardTile(
   const face = new PIXI.Container();
   face.position.set(x + imgBox / 2, y + h / 2);
   target.addChild(face);
-  drawTileFace(face, faceBox, card, art, story, !locked && flipped.has(key), artHooked, onArtLoaded);
+  drawTileFace(face, faceBox, card, art, story, !locked && flipped.has(key));
 
   if (locked) {
     const dim = new PIXI.Graphics();

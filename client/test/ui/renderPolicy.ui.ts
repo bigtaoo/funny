@@ -133,6 +133,29 @@ describe('paint modes', () => {
     expect(policy.tick().reason).toBe('live');
   });
 
+  it("'live' never walks the stage: nothing reads a signature while the scene stays live (ADR-096)", () => {
+    // The walk was a quarter of the city screen's main-thread time, spent after every paint on a
+    // number no live tick compares against. Counted through the one field every visit reads first.
+    const { host, policy } = policyFor(() => 'live');
+    const child = new PIXI.Container();
+    let reads = 0;
+    Object.defineProperty(child, 'visible', { get: () => { reads += 1; return true; }, configurable: true });
+    host.stage.addChild(child);
+    for (let i = 0; i < 5; i++) policy.tick();
+    expect(host.paints).toBe(5);
+    expect(reads).toBe(0);
+  });
+
+  it('a switch from live to reactive paints once, then settles', () => {
+    let mode: PaintMode = 'live';
+    const { host, policy } = policyFor(() => mode);
+    for (let i = 0; i < 3; i++) policy.tick();
+    mode = 'reactive';
+    expect(policy.tick()).toEqual({ painted: true, reason: 'changed' });
+    for (let i = 0; i < 10; i++) expect(policy.tick().painted).toBe(false);
+    expect(host.paints).toBe(4);
+  });
+
   it("'reactive' paints the first tick and then stops while nothing changes", () => {
     const { host, policy } = policyFor(() => 'reactive');
     expect(policy.tick().painted).toBe(true);
