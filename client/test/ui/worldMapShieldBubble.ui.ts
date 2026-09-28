@@ -261,7 +261,7 @@ describe('WorldMap shield glow layer + break-flash pop (2026-08-08 follow-up, bo
 // only (so the rate is a paint-budget call, not a rebuild-cost one), and the clock is held while
 // decorations are quiet instead of drifting behind a frozen picture.
 describe('WorldMap shield bubble animates by transform, not by redraw (2026-09-22)', () => {
-  const STEP = 1 / 30; // SHIELD_ANIM_FPS
+  const STEP = 1 / 30; // MAP_ANIM_FPS
 
   function shieldedAt(key: string): WorldMapContext {
     const [x, y] = key.split(':').map(Number);
@@ -292,7 +292,7 @@ describe('WorldMap shield bubble animates by transform, not by redraw (2026-09-2
     expect(dome.alpha).not.toBe(before.alpha);
   });
 
-  it('steps at SHIELD_ANIM_FPS, keeping the leftover time rather than dropping it', () => {
+  it('steps at MAP_ANIM_FPS, keeping the leftover time rather than dropping it', () => {
     const ctx = shieldedAt('610:610');
     const { ring } = glowParts(ctx, '610:610');
     const start = ring.rotation;
@@ -303,7 +303,7 @@ describe('WorldMap shield bubble animates by transform, not by redraw (2026-09-2
     expect(ring.rotation).toBe(start);
     ctx.view.update(STEP * 0.6);
     expect(ring.rotation).toBeGreaterThan(start);
-    expect(ctx.shieldAnimAcc).toBeCloseTo(STEP * 0.2, 6);
+    expect(ctx.mapAnimAcc).toBeCloseTo(STEP * 0.2, 6);
   });
 
   it('holds the clock while decorations are quiet, so resuming does not snap the ring', () => {
@@ -339,7 +339,7 @@ describe('WorldMap shield bubble animates by transform, not by redraw (2026-09-2
 // points through the real transform chain (`cityC.toLocal(pt, ring)` — PIXI's own matrices, not a
 // re-derivation of ry/rx here).
 describe('WorldMap shield bubble — measured where it lands on screen (2026-09-22)', () => {
-  const STEP = 1 / 30 + 1e-4; // one SHIELD_ANIM_FPS step, plus a hair so the accumulator crosses
+  const STEP = 1 / 30 + 1e-4; // one MAP_ANIM_FPS step, plus a hair so the accumulator crosses
 
   interface Captured {
     ctx: WorldMapContext;
@@ -435,7 +435,7 @@ describe('WorldMap shield bubble — measured where it lands on screen (2026-09-
 
     // The user-visible criterion, in the unit the user sees. Measured on this 1280x800 design frame
     // (rx 155.9, ry 230.1): ring 4.85 px and sparkle 5.98 px per step now, against 14.50 px and
-    // 17.83 px at the old SHIELD_ANIM_FPS = 10, where the bubble read as a strobe rather than a
+    // 17.83 px at the old MAP_ANIM_FPS = 10, where the bubble read as a strobe rather than a
     // spin ("这个护盾的动画，看起来不连贯啊"). 8 px sits between the two, so the upper bound goes red
     // if the rate drops back or the spin speeds up; the lower bound goes red if the animation
     // freezes, which no upper bound can catch.

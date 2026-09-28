@@ -122,7 +122,7 @@ export function syncMarchTokens(core: WorldMapRendererCore, dt: number, budget: 
   const ctx = core.ctx;
   const live = new Set<string>();
   if (ctx.zoom < 3) {
-    // The token clock's last step (lifecycle.ts MAP_TOKEN_ANIM_FPS), not the live wall clock — so
+    // The token clock's last step (lifecycle.ts MAP_TOKEN_BEATS), not the live wall clock — so
     // an untouched map moves the token 12 times a second, in step with its walk cycle.
     const now = ctx.tokenNowMs;
     const tp = ctx.tp;

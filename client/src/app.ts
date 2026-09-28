@@ -10,6 +10,7 @@ import { IPlatform } from './platform/IPlatform';
 import { MemoryMonitor } from './cache/MemoryMonitor';
 import { PerfMonitor } from './cache/PerfMonitor';
 import { initCrashSentinel, installAnomalyWatchers, previousSessionCrash, setAnomalyStorage, recordRenderSample } from './net/anomaly';
+import { installRenderCostProbe, beginRenderCost, readRenderCost } from './render/renderCostProbe';
 import * as analytics from './analytics';
 import { markBoot } from './analytics/bootTimeline';
 import { startIdleWatch } from './analytics/idleWatch';
@@ -28,6 +29,7 @@ import { setSubscriptionDisclosureSink } from './ui/dialogs/subscriptionDisclosu
 import { t } from './i18n';
 import { ui as C } from './render/sketchUi';
 import { setBakeRenderer } from './render/bake';
+import { prewarmPanelFrame } from './render/panelFrame';
 import { msSinceActivity, POWER_PREFERENCE, RenderPolicy, rendererResolution } from './render/renderPolicy';
 import { setDebugFlagStorage } from './debugFlags';
 import { installTextPaddingFloor } from './render/pixiText';
@@ -102,11 +104,15 @@ export async function startApp(
   // UPDATE_PRIORITY.LOW) runs strictly after SceneManager's onTick, so a stall inside render()
   // itself (draw-call submission, or Text canvas rasterization it triggers) is invisible to
   // recordFrameSample/recordConstructSample. See recordRenderSample in net/anomaly.ts.
+  // The render-cost probe splits that time into uploads / shader compile / Text rasterization, so a
+  // multi-second first-launch frame says which of the three it was. See render/renderCostProbe.ts.
+  installRenderCostProbe((app.renderer as { gl?: unknown }).gl);
   const origRender = app.renderer.render.bind(app.renderer);
   app.renderer.render = ((...args: Parameters<typeof origRender>) => {
+    beginRenderCost();
     const t0 = performance.now();
     origRender(...args);
-    recordRenderSample(performance.now() - t0);
+    recordRenderSample(performance.now() - t0, readRenderCost());
     // Boot timeline, phase ③: the first completed render is the moment the page stops being blank.
     // markBoot ignores every call after the first, so the steady-state cost here is one Map lookup
     // per frame.
@@ -205,10 +211,14 @@ export async function startApp(
   // player's connection rather than their CPU, so it is reported separately from everything else.
   markBoot('preload_start');
   let preloadAssets = 0;
-  await preloadBoot((done, total) => {
+  const bootAssets = preloadBoot((done, total) => {
     preloadAssets = total;
     loading.setProgress(total ? done / total : 1);
   });
+  // The requests are in flight: spend the wait on the one-off panel-frame atlas bake, which would
+  // otherwise land on the first frame that shows a panel (see prewarmPanelFrame).
+  prewarmPanelFrame();
+  await bootAssets;
   markBoot('preload_done', { preload_assets: preloadAssets });
   loading.destroy();
 

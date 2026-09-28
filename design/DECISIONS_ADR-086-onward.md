@@ -371,3 +371,21 @@ docker compose -f docker-compose.cloud.yml --env-file .env config | grep MONGO_U
 - **不改的**：护盾 `SHIELD_ANIM_FPS = 30`（2026-09-22 因「护盾动画不连贯」特意从 10 调上来），所以视野里有护盾时地图仍约 35 次/秒（护盾 30 + 小人 12 两个时钟不同相）；30 s 无操作后护盾停（`decorationsQuiet`），小人不停（位置是信息，不是装饰）。地图 HUD 每秒整片重建本身（护盾倒计时精确到秒，每秒确实要变）未改成增量。
 - **实测**（空闲 4 s 后采 4 s，`painted / ticks`）：世界地图 240/240 → 138/240（无护盾时约 12/s），主城 241/241 → 40/240（剩下的是城内引导圈 10/s），战役图 241 → 40，每日页 240 → 41。明细见 `claudedocs/client-render-budget.md` §17。
 - **影响**：`client/src/render/{steppedTime,GuideOverlay}.ts`、`scenes/{WorldMapScene,CampaignMapScene,DailyScene}.ts`、`scenes/worldmap/WorldMapContext.ts`、`scenes/worldmap/WorldMapRenderer/{lifecycle,tokens}.ts`；测试 `test/ui/worldMapOverlayCoalescing.ui.ts`、`test/ui/ambientPulseRate.ui.ts`、`test/ui/dailySceneCheckinFocus.ui.ts`；文档 `claudedocs/client-render-budget.md` §17。
+
+## ADR-098 手机首启卡顿：`render_profile` 拆开最长那一帧、边框图集挪到启动加载阶段；地图小人改为跟护盾共用 30 Hz 节拍 — Accepted — 2026-09-28
+
+- **问题**：
+  1. 线上 `render_profile` 里 iPhone 原生壳的 IntroScene `rndMax` 是 735–2006 ms，是全表最差的一项。四行全来自同一个测试号 09-23/24 重装后的首次启动，都在第一个 30 s 窗口里，而 `fpsP50` 同时还有 54–58——PIXI ticker 把单帧 `deltaMS` 截到 100 ms，一次 2 s 的卡顿在帧率里只占 100 ms，所以只有 `rndMax` 看得见它。桌面 Chrome 同一段最慢一帧 19 ms。`rndMax` 只有一个数，分不出是冷 Metal 着色器缓存、首次使用的字体、还是 `texImage2D` 触发的图片解码。
+  2. 本机探针（390×844、dpr 3、CPU 降速 6 倍）在同一段里找到一处能复现的：进入年龄 / 同意门那一帧 256 ms，其中 216 ms 是**一个** Graphics 的三角化——`panelFrame` 边框图集（约 6200 个 SketchPen 图形、41 万顶点），整局第一次调 `sketchPanel` 时在烘焙渲染里现建。新玩家撞在打断开场故事的年龄门上，老玩家撞在大厅第一帧。这一帧线上记在 IntroScene 名下（门是盖在 Intro 上的弹窗，`activeScene` 没变）。
+  3. ADR-097 之后，视野里有护盾时地图仍约 35 次/秒重绘：护盾 30 fps 累加器和小人 12 fps floor 两个时钟不同相，小人的步进大多落在护盾不动的帧上。
+- **决策**：
+  1. **`render/renderCostProbe.ts`**：包住 GL 上下文实例的 `texImage2D` / `texSubImage2D` / `compressedTexImage2D`（上传）、`compileShader` / `linkProgram` / `getShaderParameter` / `getProgramParameter`（着色器；有 `KHR_parallel_shader_compile` 时等待落在状态查询上），以及 `PIXI.Text#updateText`、`PIXI.GraphicsGeometry#updateBatches`（只计脏对象，干净的在读时钟之前就返回）。`app.ts` 的 render 包装每帧清零、结束后把分项交给 `recordRenderSample`；只有刷新最大值的那次才留下分项。`rndMax ≥ 50 ms` 的 `render_profile` 行带 `rndMaxTex` / `rndMaxSh` / `rndMaxTxt` / `rndMaxGeo`（ms）、`rndMaxScene`、`rndMaxAt`（启动后秒数）。
+  2. **`prewarmPanelFrame()`**：`app.ts` 在发出 `preloadBoot` 的请求之后、`await` 之前调用，在加载画面后面、等网络的空档里建好图集。放在请求之前会拖慢请求，放在 `await` 之后就回到关键路径上。
+  3. **地图共用节拍**：`MAP_ANIM_FPS = 30` 一个累加器（`ctx.mapAnimAcc` / `mapAnimBeats`），护盾每拍一步（`decorationsQuiet` 时只是不用这一拍，节拍本身照走），小人每 `MAP_TOKEN_BEATS = 3` 拍一步，即 **10 fps**。每个小人步进帧都是护盾帧：有护盾 30 次/秒，没护盾 10 次/秒。选 10 不选 ADR-097 的 12，是因为 12 除不尽 30；选 10 不选 15，是因为 15 会让没护盾时从 12 次/秒涨到 15 次。
+- **不改的**：
+  - IntroScene 那 2 秒的根因没有定论，桌面复现不出来。本次只加仪器，等一份新报告：`rndMaxSh` 占大头就是冷着色器缓存（预热着色器到启动阶段），`rndMaxTxt` 就是字体，`rndMaxTex` 就是图片解码。
+  - 边框图集本身的顶点数（圆头笔画逐段三角化）没动，改它就要改画风。
+- **实测**：
+  - 进年龄门那一帧，CPU 降速 6 倍时 256 ms → 边框图集移出之后桌面 24.7 ms（剩下的是 12 个文字纹理上传）；探针端到端读到 `rndMaxGeo 215.7`、`rndMaxScene IntroScene`、`rndMaxAt 12.1`。
+  - 世界地图（seed 世界、视野里有护盾和行军，空闲 4 s 后采 4 s）：138 / 240 → 123 / 240（约 31 次/秒 = 护盾 30 + HUD 每秒 1 次）。
+- **影响**：`client/src/render/{renderCostProbe,panelFrame}.ts`、`src/app.ts`、`src/net/anomaly{.ts,/anrContext.ts}`、`src/cache/PerfMonitor.ts`、`src/scenes/worldmap/WorldMapContext.ts`、`src/scenes/worldmap/WorldMapRenderer/{lifecycle,shieldFx,tokens}.ts`；测试 `test/renderCostProbe.test.ts`、`test/ui/renderCostProbe.ui.ts`、`test/renderProfile.test.ts`、`test/appAssetGateWiring.test.ts`、`test/ui/panelFrameAssembly.ui.ts`、`test/ui/worldMapOverlayCoalescing.ui.ts`、`test/ui/worldMapShieldBubble.ui.ts`；文档 `claudedocs/client-render-budget.md` §18。

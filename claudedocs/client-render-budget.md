@@ -304,6 +304,8 @@ fpsP50 59   maxFps 60   skipPct 8   updP50 0.4   rndP50 0.8   updMax 9.9   rndMa
 
 那台 dpr 2 / 30 Hz 的设备**还没有一份带新字段的报告**。拿到之后它就是一行读数的事：`updP50 + rndP50` 贴着 33 ms 就查我们的代码，远低于 33 ms 就别再查客户端 JS 了。
 
+2026-09-28 查明它是一台 **iPad**（iPadOS 16.6.2 Safari「请求桌面网站」：UA 带 `Macintosh`，`screen 768×1024`、dpr 2，横屏 1024×654 CSS → 2048×1308）。大厅那行 `skipPct 66`、`paintPerSec 9` 也只到 `fpsMax 30`，所以 30 是 Safari 给 rAF 的上限（最可能是低电量模式），不是我们的负载。09-11 之后它没再来过。
+
 
 ## 10. 还没做的
 
@@ -568,5 +570,25 @@ ADR-086 收尾后回头找「客户端还有什么能在本机量的」，量到
   | 战役图 | 241 / 241 | 40 / 240 |
   | 每日页 | 240 / 240 | 41 / 241 |
 
-- **剩下的**：视野里有护盾就是 30/s（设计决定，见 ADR-097「不改的」）；两个时钟不同相，并集约 35/s。地图 HUD 每秒整片重建（`tearDownChildren` + 重新创建所有 Text / sketchPanel）仍在，每秒一次、只在地图可见时。
-- **门禁**：`test/ui/worldMapOverlayCoalescing.ui.ts`（行军 11–13 次/秒且不冻、拖图同帧跟手、covered 时 120 帧 0 次重绘并在 resume 后恢复）、`test/ui/ambientPulseRate.ui.ts`（战役圈）、`test/ui/dailySceneCheckinFocus.ui.ts`（每日格子），均做过变异检查。
+- **剩下的**：视野里有护盾就是 30/s（设计决定，见 ADR-097「不改的」）；两个时钟不同相，并集约 35/s——**已由 ADR-098 对齐到 30/s，见 §18**。地图 HUD 每秒整片重建（`tearDownChildren` + 重新创建所有 Text / sketchPanel）仍在，每秒一次、只在地图可见时。
+- **门禁**：`test/ui/worldMapOverlayCoalescing.ui.ts`（行军 11–13 次/秒——ADR-098 起 9–11——且不冻、拖图同帧跟手、covered 时 120 帧 0 次重绘并在 resume 后恢复）、`test/ui/ambientPulseRate.ui.ts`（战役圈）、`test/ui/dailySceneCheckinFocus.ui.ts`（每日格子），均做过变异检查。
+
+## 18. 手机首启卡顿与地图节拍（ADR-098，2026-09-28）
+
+- **`render_profile` 新字段**（`rndMax ≥ 50 ms` 时才带）：
+
+  | 字段 | 含义 |
+  |---|---|
+  | `rndMaxTex` | 最长那次 render 里纹理上传（`texImage2D` / `texSubImage2D` / `compressedTexImage2D`）的毫秒数 |
+  | `rndMaxSh` | 着色器编译 / 链接 / 状态查询 |
+  | `rndMaxTxt` | 脏 `PIXI.Text` 的光栅化（`updateText`，含字体首次使用） |
+  | `rndMaxGeo` | 脏 `PIXI.Graphics` 的三角化（`GraphicsGeometry.updateBatches`） |
+  | `rndMaxScene` / `rndMaxAt` | 那一帧所在的场景（弹窗算在它下面的场景头上）、启动后第几秒 |
+
+  读法：四项加起来接近 `rndMax` 就看哪项最大；远小于 `rndMax` 说明时间在这四类之外（绘制调用提交、GPU 同步）。
+- **为什么 fps 看不见**：PIXI ticker 把单帧 `deltaMS` 截到 100 ms（`maxElapsedMS`），PerfMonitor 的窗口按 `deltaMS` 累加，一次 2 s 的卡顿只算 100 ms。首启这类一次性卡顿只能靠 `rndMax` / `updMax` 看。
+- **本机复现配方**：Playwright 有头 Chrome，`viewport 390×844`、`deviceScaleFactor 3`、`isMobile`，CDP `Emulation.setCPUThrottlingRate 6`；开场故事不需要后端。init script 里包住 GL 原型方法和 `renderer.render` 逐帧记录，超过 10 ms 的 render 记 `new Error().stack`——烘焙渲染也走 `renderer.render`，栈能直接指到是谁在烘焙。
+- **边框图集**：`prewarmPanelFrame()` 在启动加载阶段建图集（发请求之后、`await` 之前）。进年龄门那一帧：CPU×6 下 256 ms（其中 `rndMaxGeo` 216）→ 桌面 24.7 ms（剩下 12 个文字纹理上传）。
+- **地图节拍**：`MAP_ANIM_FPS = 30` 一个累加器，护盾每拍、小人每 3 拍（10 fps）。有护盾和行军时空闲 4 s：138 / 240 → 123 / 240（护盾 30 + HUD 1）；没护盾时约 10 次/秒。
+- **门禁**：`test/renderProfile.test.ts`（分项属于最长那次、50 ms 以下不带）、`test/renderCostProbe.test.ts` + `test/ui/renderCostProbe.ui.ts`（分桶、干净 Text 不读时钟）、`test/appAssetGateWiring.test.ts`（预热在发请求和 `await` 之间）、`test/ui/panelFrameAssembly.ui.ts`（预热后第一个面板不再烘焙）、`test/ui/worldMapOverlayCoalescing.ui.ts`（行军 9–11 次/秒；行军 + 护盾 ≤ 32，旧时钟是 36），均做过变异检查。
+- **还开着**：IntroScene 首启 735–2006 ms 的根因——等一份带新字段的 iPhone 首启报告（重装后打开一次）。

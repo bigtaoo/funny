@@ -60,7 +60,8 @@ function makeDoc() {
 /** The live accumulator instance PerfMonitor drains — re-imported per case (see beforeEach), and at
  *  module scope because `feedWindow` below records through it. */
 let recordFrameSample: (ms: number) => void;
-let recordRenderSample: (ms: number) => void;
+let recordRenderSample: (ms: number, split?: { texMs: number; shMs: number; txtMs: number; geoMs: number }) => void;
+let setActiveScene: (name: string) => void;
 
 /**
  * Feed `windows` complete sampling windows at `fps`.
@@ -123,7 +124,7 @@ describe('render_profile', () => {
     // through a module-scope import taken before this line would feed the previous case's copy, and
     // every cost field would come back 0 — a green test asserting nothing.
     const anr = await import('../src/net/anomaly/anrContext');
-    ({ recordFrameSample, recordRenderSample } = anr);
+    ({ recordFrameSample, recordRenderSample, setActiveScene } = anr);
     takeFrameCostImpl = anr.takeFrameCost;
     anr.takeFrameCost(); // drain anything the import chain itself recorded
     const { PerfMonitor } = await import('../src/cache/PerfMonitor');
@@ -395,6 +396,40 @@ describe('render_profile', () => {
     const props = track.mock.calls[0]![1] as Record<string, unknown>;
     expect(props.updP50).toBe(3);
     expect(props.updMax).toBe(40);
+  });
+
+  it('explains the worst render: its split, its scene and when it happened', () => {
+    // The 2026-09-28 question this answers: an iPhone first launch showed a 2s IntroScene render and
+    // nothing else. The split must belong to THAT call — a later, cheaper render with a bigger
+    // upload must not overwrite it, or the row would explain a frame nobody complained about.
+    monitor.install(ticker, RENDER_INFO);
+    setActiveScene('IntroScene');
+    feedWindow(ticker, 50, 1, { rnd: 1 });
+    recordRenderSample(900, { texMs: 12, shMs: 850, txtMs: 30, geoMs: 4 });
+    setActiveScene('LobbyScene');
+    recordRenderSample(80, { texMs: 70, shMs: 0, txtMs: 5, geoMs: 0 });
+    feedWindow(ticker, 50, FIRST_PROFILE_WINDOWS - 1, { rnd: 1 });
+
+    const props = track.mock.calls[0]![1] as Record<string, unknown>;
+    expect(props.rndMax).toBe(900);
+    expect(props.rndMaxSh).toBe(850);
+    expect(props.rndMaxTex).toBe(12);
+    expect(props.rndMaxTxt).toBe(30);
+    expect(props.rndMaxGeo).toBe(4);
+    expect(props.rndMaxScene).toBe('IntroScene');
+    expect(typeof props.rndMaxAt).toBe('number');
+  });
+
+  it('leaves the split off an unremarkable span', () => {
+    // Below RND_MAX_DETAIL_MS the split is noise: five more fields on every healthy row.
+    monitor.install(ticker, RENDER_INFO);
+    recordRenderSample(20, { texMs: 15, shMs: 0, txtMs: 0, geoMs: 0 });
+    feedWindow(ticker, 50, FIRST_PROFILE_WINDOWS, { rnd: 1 });
+
+    const props = track.mock.calls[0]![1] as Record<string, unknown>;
+    expect(props.rndMax).toBe(20);
+    expect(props).not.toHaveProperty('rndMaxSh');
+    expect(props).not.toHaveProperty('rndMaxScene');
   });
 
   it('drops the cost of a hidden window instead of letting it leak into the next one', () => {

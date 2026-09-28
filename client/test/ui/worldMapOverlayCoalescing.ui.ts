@@ -320,18 +320,34 @@ describe("world map under a 'reactive' paint policy", () => {
     return host.paints;
   }
 
-  it('paints a march in flight at its step rate — 12 a second, never frozen (ADR-097)', () => {
+  it('paints a march in flight at its step rate — 10 a second, never frozen (ADR-097/098)', () => {
     const scene = buildScene();
     revealMap(scene);
     scene.ctx.marches = [march('m1')];
     seedToken(scene, 'm1');
     // Was 60 (ADR-085 pinned "every frame"): the token rode the live wall clock, so a figure moving
-    // well under a pixel per frame held the whole map at the full frame rate. It now steps at
-    // MAP_TOKEN_ANIM_FPS (lifecycle.ts). The lower bound is the half of this that matters: a march
-    // that stops painting is the frozen-in-mid-air failure this block exists to catch.
+    // well under a pixel per frame held the whole map at the full frame rate. It now steps every
+    // MAP_TOKEN_BEATS-th beat of the 30 Hz map clock (lifecycle.ts). The lower bound is the half of
+    // this that matters: a march that stops painting is the frozen-in-mid-air failure this block
+    // exists to catch.
     const paints = paintsOver(scene, 60);
-    expect(paints).toBeGreaterThanOrEqual(11);
-    expect(paints).toBeLessThanOrEqual(13);
+    expect(paints).toBeGreaterThanOrEqual(9);
+    expect(paints).toBeLessThanOrEqual(11);
+    scene.destroy();
+  });
+
+  it('steps a march only on shield frames, so the two together cost what the shield costs alone', () => {
+    const scene = buildScene();
+    revealMap(scene);
+    scene.ctx.marches = [march('m1')];
+    seedToken(scene, 'm1');
+    seedShield(scene, '12:14');
+    // ADR-098. With a 12 fps token clock of its own next to the 30 fps shield, the token changed on
+    // frames the shield did not, and one second painted ~36 times (the prod-seeded map measured ~35).
+    // On a shared beat every token step IS a shield step: 30, plus at most the HUD countdown tick.
+    const paints = paintsOver(scene, 60);
+    expect(paints).toBeGreaterThanOrEqual(26);
+    expect(paints).toBeLessThanOrEqual(32);
     scene.destroy();
   });
 
@@ -421,7 +437,7 @@ describe("world map under a 'reactive' paint policy", () => {
     const scene = buildScene();
     revealMap(scene);
     seedShield(scene, '12:14');
-    // SHIELD_ANIM_FPS is 30 (lifecycle.ts), so one second of frames is ~30 animation steps — half
+    // MAP_ANIM_FPS is 30 (lifecycle.ts), so one second of frames is ~30 animation steps — half
     // frame rate, and the deliberate price of the 2026-09-22 smoothness fix: a step is now free in
     // CPU terms (transforms, not redraws), so this count IS the whole cost of the bubble. It was 10
     // before; anything that pushes it back toward 60 is re-opening ADR-085's idle-paint bill.
