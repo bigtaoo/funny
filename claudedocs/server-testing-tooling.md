@@ -82,6 +82,17 @@
 2. **不许"写完立刻读" fire-and-forget**。正确姿势是 `vi.waitFor` 轮询（先例：`metaserver/test/pvp-card-stats.e2e.test.ts`、`gameserver/test/lifecycle.test.ts`）。
 3. **并发用例不许断言具体的交错**。断言要对所有合法交错都成立（先例：`worldsvc/test/review-fixes-2026-08-03.e2e.test.ts` 的 coin conservation 写法）；确实要覆盖某条竞态分支时，注入钩子把那个交错**制造出来**（同文件的 `onSpend`），别指望调度器碰巧给你。
 4. **fixture 播种不许是 O(N) 次往返**（2026-09-07 新增，见下）。用例的墙钟时间必须是常数，不能是 `N × 环境延迟`——那样它是过是挂取决于机器有多忙，而不是代码干了什么。批量播种一律一次 `bulkWrite`。
+5. **超时不许拿真实时间去和真实工作量比**（2026-09-27 新增，见下）。要测「X 在 T 之内/之后超时」，就用 `vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })` 把被测对象的计时器钉住、只在测试里显式推进；一次性的冷启动成本（worker 拉起、整图地形索引）挪进 `beforeAll`（`hookTimeout` 120s），别让它落在某一例的 15s `testTimeout` 里。
+
+> **规则 1 被违反过一次（2026-09-27 抓到）**：`worldsvc/test/city-siege.e2e.test.ts` 的两例（「首府经真实攻城被打下后结算能读到」「世界中心被打下后发世界频道 + 邮件」）在没改过的 main 上大约四跑一挂，报 `expected 'sect-b' to be 'sect-a'`。
+>
+> - **随机源藏得很深**：每场攻城战的种子是 `waveSeed(marchId, 波次)`，`marchId` 里带 `marchSeq`，而 `marchSeq` 由 `instance.ts` 的 `initialSeq()` **随机起步**。这是有意的：两个进程或一次重启不能铸出同一个 id。所以业务代码没有 `Math.random()` 字样，规则 1 的字面检查看不出来。
+> - **为什么只有这两例挂**：每卡 300 兵对 L10 首府 / 世界中心的波次梯队本来就是险胜，每波存活兵又带进下一波，种子差一点就在某一波输掉。输了就没有伤害排队，城池还归 sect-b。打普通城池的其它用例余量够，所以种子不影响结果。
+> - **`retry: 1` 把失败率压低了一半**：关掉重试（`--retry=0`）后 8 跑挂 4。
+> - **修法**：在 `beforeEach` 里把 `core.marchSeq` 钉成 0，整份文件的战斗都能复现。加上修复后 `--retry=0` 连跑 12 次 41/41。没有去加兵：单位血量有上限，加兵加不出余量，只会把问题藏得更深。
+> - **可复用的判据**：任何带「战斗 / 攻城结果」的 e2e，先查种子从哪来。只要链上有 `initialSeq` 这类随机起步的序号，就要在测试里钉住。
+> - **同日第二个会话独立复核**：另一个会话在不含上述修复的树上也看到了同样的症状，`--retry=0` 5 跑挂 3，错误里还多一种 `expected undefined to be 'sect-a'`，也就是城没被打下来、没有主人，同样是输了一波。复核时把 worldsvc 里所有种子来源翻了一遍：`waveSeed` 只在 `baseSiege.ts`、`cityDefenders.ts`、`citySiege.ts` 三处被调用，种子全都取自 `marchId`；`siegeSeq` 虽然也是随机起步，但只用来铸 `siegeId`，不喂任何种子；`deps.rng`（`core/spawn.ts`）只管自动落点，而本文件的 `joinWorld` 给的是显式坐标，用不到它。所以钉住 `marchSeq` 一处就够了。在合进当日分支的树上 `--retry=0` 单独再连跑 12 次，全部 41/41。
+> - **顺带一条教训**：跑多次循环时别用 `grep "Tests  41 passed"` 判断通过。vitest 的输出里有 ANSI 颜色码，这个字面串永远匹配不上，12 次全过也会被判成 12 次全挂。要么设 `NO_COLOR=1`，要么只 grep `41 passed`。
 
 > **规则 3 又被违反过一次（2026-08-27 抓到）**：`auctionsvc/test/journal-atomicity.e2e.test.ts` 的「同一竞拍者同一金额两次出价」那例写的是 `Promise.allSettled([placeBid, placeBid])` + `expect(fulfilled).toHaveLength(1)`——**这个文件自己的头注释就写着「并发一律在读写窗口内注入，绝不用顺序调两次代替」，而这一例恰好是被禁的那种写法**。
 >
@@ -90,6 +101,12 @@
 > 修法：拆成两例，两个交错**各自注入**。①第二次出价注入进第一次的「领账本行 → topBid CAS」窗口（`svcWithHook`），必然被 `begin` 拦下——这才是修复前真会出钱的那条分支。②另一例钉 replay 那个顺序，而它**写不成顺序调用**：第一笔落完 `topBid` 就是 10，同额重提会死在**最小加价检查**（`BID_TOO_LOW`）、永远到不了 `begin`；replay 分支只对「取快照时 `topBid` 还是 null」的调用方可达，所以注入点是输家**自己的快照读**——`svcWithHook` 表达不了（它的 hook 永远跑在真调用**之前**，而这里要读先发生），用了一个局部 proxy。两例都做了变异验证（拆掉 `begin` 的 in-flight 守卫 / 把 `done` 当成可重开的 `aborted`），全量套件 `--retry=0` 连跑 5 次 255/255。
 >
 > **两条可复用的判据**：①**一份把规则写在头注释里的文件，不等于它每一例都遵守**——审查并发用例要看代码，不要看文件声称的纪律。②看到 flakyReporter 报「重试才过」时，先问的不是「哪里有竞态」，而是「**这条断言对所有合法交错都成立吗**」；本例里产品代码一点问题都没有，红的是断言。
+
+> **规则 2 的变体：固定 sleep 等一个带退避的重试链（2026-09-27 抓到）**：`matchsvc/test/gatewayClient.test.ts` 的「match_found still gives up at error」等 400ms 看 `internal POST failed`。但 `postInternal` 的 `retries=2` 两次退避是 `150·2^attempt + jitter(0..149)`，合计 **450–748ms**——400ms **永远等不到**，`--retry=0` 下是 100% 红，不是偶发。它能「重试才过」是因为**第一次尝试留下的那条 push 还在跑**，在重试那次重新装好的 `console.error` spy 里写进了错误。所以 flakyReporter 连着几晚报它（2026-09-24 ~ 27 四次 flake-hunt 里三次），CI 却一直绿。
+>
+> 修法：`vi.useFakeTimers()` + `advanceTimersByTimeAsync`。并且把退避窗口的两端都钉住：推进 449ms（最短合计退避之下）时应当只有 2 次 fetch、没有 ERROR；再推进到 749ms 时 3 次 fetch + 一条 ERROR。`--retry=0` 连跑 12 次 9/9，全包 260/260。
+>
+> **可复用的判据**：①一条「重试才过」的用例，先用 `--retry=0` 跑三遍——**次次红的不是 flaky，是等待时长算错了**，而通过全靠上一次尝试泄漏过来的异步尾巴。②等一条已知时长的定时器链，用假时钟推进，不要用真 sleep 去猜一个「够长」的数：带 jitter 的退避，只有把上下界都算出来才知道「够长」是多少。
 ---
 
 ## 规则 4 的来源：`economy.e2e.test.ts` 的三个 equipment 用例卡在 15s 线上（2026-09-07，worktree `cranky-bhaskara-50e749`）
@@ -120,6 +137,27 @@
 **两条可复用的判据**：①**"越往后越慢"要先用逐例耗时证伪**——本例里 61 个前置用例的耗时是一条水平线，把注意力引向"共享状态累积"会完全走错方向；耗时与**用例自己的输入规模**对齐才是真信号。②**改一个容量常量，等于改了每一个把该常量当循环上界的测试的运行时长**。`EQUIPMENT_INV_CAP` 那次 300→1000 的 PR 在测试侧是零 diff，代价却全落在这里——播种成本写成 O(1) 往返，这类改动就再也波及不到时间维度。
 
 **顺带**：该文件每个 `beforeEach` 都 `dropDatabase()` + `ensureIndexes()`（约 40 个 `createIndex`），这就是那条 ~510ms 的底噪，70 例合计 ~35s，是文件时长的大头。它是常数、不制造不确定性，本轮没动。
+
+---
+
+## 规则 5 的来源：worldsvc 两个只在机器忙时挂的用例（2026-09-27，worktree `nifty-chebyshev-0f8e6b`）
+
+**现象**：2026-09-27 worldsvc 全量 `--retry=0` 连跑 6 次，第 5 次挂了两例，另外 5 次都没挂。第 5 次跑的时候，另一个 worktree 正在 `npm install` 和构建：
+
+- `computePool.test.ts` 的 dispatch-time arming regression：前 5 个本该 resolve 的任务里有一个 `timed out after 400ms`。
+- `httpApi.e2e.test.ts` 的 `POST /world/march → occupy march`：`Test timed out in 15000ms`。
+
+**复现**：机器没法真正空下来（同时有其它会话在跑，采样 CPU 占用 9–85%，33 个 node 进程），就在这种常态负载下逐文件各跑 12 次 `--retry=0`：`computePool` **1/12 挂**，错误与第 5 次完全一样；`httpApi.e2e` 12/12 过，但 march 那一例的耗时是 **4.0–7.8s**，离 15s 线只有约 2 倍余量，第 5 次那种负载足够把它推过线。两例的问题都在测试本身，不是偶发。
+
+**根因 1（computePool）**：fixture 每个消息回复前固定等 150ms，超时设成 400ms，看起来留了 250ms 余量。但第一个任务的 400ms 是从 `dispatch()`（也就是 `postMessage`）开始算的，而这时 worker 线程可能还没起来：拉起线程、用 tsx loader 转译 fixture 都算在这 400ms 里。于是余量不再是一个常数，而是减去了机器此刻有多忙。
+**修法**：只把主线程的 `setTimeout`/`clearTimeout` 换成假的（worker 线程和它的消息仍然是真的），fixture 改成立即回复，并改名为 `answerThenHangWorker.ts`。测试对前 5 个任务各推进 0.9T 的假时间，第 6 个任务因此排队 4.5T；它被派发后，推进 T−1 不应超时，再推进 1 就必须超时。**推进必须用同步版 `advanceTimersByTime`**：第一版用了 `advanceTimersByTimeAsync`，它在推进途中会让出事件循环，worker 的真实回复就会插进来，下一个任务提前被派发，吃到两段推进，结果 3 跑挂 1。同步推进期间不会处理任何消息，所以每次推进时在飞的都是确定的那一个任务。**变异验证**：把计时器改回在 `submit()` 时武装，这例立刻失败（第 2 个任务在飞行中超时），不是空转通过的假回归。
+
+**根因 2（httpApi march）**：这是整份文件里第一次寻路。它在自己的 15s 里先懒加载整个 compute 池（N 个 worker 冷启动），再构建 1500×1500 地形索引（约 2.5s 纯 CPU）。生产环境这笔钱由 `index.ts` 在启动时的 `warmWorld` 付掉；`march-dispatch-concurrency.e2e` 早就在 `beforeAll` 里这么做了，这份文件漏了。
+**修法**：`beforeAll` 里调一次 `getComputeBackend().warmWorld(W, …)`（`hookTimeout` 120s），`afterAll` 里 `shutdownComputeBackend()`。改完后 march 这一例低于 300ms 的慢用例阈值（原来 4–8s）。
+
+**改后验证**（仍是同样的常态负载）：`computePool` 12/12、`httpApi.e2e` 12/12，其中一次 `httpApi.e2e` 因为其它会话的负载整份跑了 44s（平常约 9s），依然全绿。
+
+**可复用的判据**：一个超时断言的余量如果是「超时 − 真实工作耗时」，那它其实测的是机器有多忙。审查时先看超时从哪一刻开始计时，再看这段时间里包不包含冷启动。
 
 ---
 

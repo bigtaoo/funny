@@ -128,7 +128,9 @@ export function createShopNav(ctx: AppCtx): ShopNav {
       // threading shopBack lets all three pages navigate to each other and return to the same origin (lobby / level-prep).
       openGacha() { goGacha({ shopBack: onBack }); },
       ...(shopLoggedIn ? { openBattlePass: () => goBattlePass({ shopBack: onBack }), getBattlePassBadge: () => battlePassBadgeClaimable(saveManager.get().battlePass) } : {}),
-      ...(shopLoggedIn ? { openRecharge: () => goRecharge({ shopBack: onBack }), getRechargeBadge: () => rechargeBadgeClaimable(saveManager.get()) } : {}),
+      // Recharge milestones count real-money top-ups — with no payment channel every tier would read
+      // "$0.00 / locked" forever, so the tab only exists where coins can actually be bought.
+      ...(shopLoggedIn && platform.iapKind() !== null ? { openRecharge: () => goRecharge({ shopBack: onBack }), getRechargeBadge: () => rechargeBadgeClaimable(saveManager.get()) } : {}),
     });
   }
 
@@ -152,7 +154,7 @@ export function createShopNav(ctx: AppCtx): ShopNav {
       ...(inGroup ? { openShop: () => goShop(shopBack, undefined, 'shop_group'), getShopBadge: () => shopCardBadgeClaimable(saveManager.get().monetization) } : {}),
       ...(inGroup && coinsAvail ? { openCoins: () => goShop(shopBack, 'coins', 'shop_group') } : {}),
       ...(inGroup && bpAvail ? { openBattlePass: () => goBattlePass({ shopBack }), getBattlePassBadge: () => battlePassBadgeClaimable(saveManager.get().battlePass) } : {}),
-      ...(inGroup && bpAvail ? { openRecharge: () => goRecharge({ shopBack }), getRechargeBadge: () => rechargeBadgeClaimable(saveManager.get()) } : {}),
+      ...(inGroup && coinsAvail ? { openRecharge: () => goRecharge({ shopBack }), getRechargeBadge: () => rechargeBadgeClaimable(saveManager.get()) } : {}),
       getCoins: () => saveManager.get().wallet.coins,
       onSaveChanged: (listener: () => void) => saveManager.subscribe(listener),
       getPity: (poolId) => saveManager.get().gacha.pity[poolId] ?? 0,
@@ -288,7 +290,7 @@ export function createShopNav(ctx: AppCtx): ShopNav {
       onSaveChanged: (listener: () => void) => saveManager.subscribe(listener),
       ...(inGroup ? { openShop: () => goShop(shopBack, undefined, 'shop_group'), getShopBadge: () => shopCardBadgeClaimable(saveManager.get().monetization), openGacha: () => goGacha({ shopBack }) } : {}),
       ...(inGroup && coinsAvail ? { openCoins: () => goShop(shopBack, 'coins', 'shop_group') } : {}),
-      ...(inGroup && loggedIn ? { openRecharge: () => goRecharge({ shopBack }), getRechargeBadge: () => rechargeBadgeClaimable(saveManager.get()) } : {}),
+      ...(inGroup && coinsAvail ? { openRecharge: () => goRecharge({ shopBack }), getRechargeBadge: () => rechargeBadgeClaimable(saveManager.get()) } : {}),
       ...(loggedIn
         ? {
             getBattlePass: () => saveManager.get().battlePass,

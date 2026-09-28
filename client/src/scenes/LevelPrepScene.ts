@@ -41,6 +41,11 @@ export interface LevelPrepCallbacks {
   getStamina(): { current: number; regenAt: number };
   /** Navigate to shop/commercial to purchase stamina (A4). */
   onBuyStamina(): void;
+  /**
+   * Rewarded-ad refill, shown beside the coin refill when present. Only the CrazyGames build passes
+   * it (`IPlatform.staminaRewardedAd`), and only while today's ad refills are not used up.
+   */
+  onWatchAdStamina?(): void;
 }
 
 
@@ -149,11 +154,20 @@ export class LevelPrepScene implements Scene {
       y = this.drawRewards(this.cb.rewards, y);
     }
 
-    // The stamina line and the Start button are bottom-anchored, so the brief above them has a
-    // hard ceiling on how much room it may take. Its height is computed from these, hence both
-    // are resolved BEFORE the top-down content is drawn.
+    // The Start button, the refill row (only when stamina is short) and the stamina line are
+    // stacked up from the bottom, so the brief above them has a hard ceiling on how much room it
+    // may take. All of it is resolved BEFORE the top-down content is drawn.
+    const stamina = this.cb.getStamina();
+    const stCost = this.cb.staminaCost;
+    const stInsufficient = stamina.current < stCost;
+    const sbW = Math.round(w * 0.6);
+    const sbH = Math.round(h * 0.08);
+    const sbX = (w - sbW) / 2;
+    const sbY = h - sbH - Math.round(h * 0.03);
+    const buyH = Math.round(h * 0.065);
+    const buyY = sbY - Math.round(h * 0.015) - buyH;
     const stBarH = Math.round(h * 0.055);
-    const stBarY = h - stBarH - Math.round(h * 0.14);
+    const stBarY = (stInsufficient ? buyY - Math.round(h * 0.005) : h - Math.round(h * 0.14)) - stBarH;
 
     if (this.cb.brief) {
       y = this.drawBrief(y, stBarY - Math.round(h * 0.02));
@@ -161,9 +175,6 @@ export class LevelPrepScene implements Scene {
     void y; // objective/rewards/brief flow top-down; stamina + Start are bottom-anchored below.
 
     // —— Stamina bar (A4): cost + current balance, turns red when insufficient + refill button ——
-    const stamina = this.cb.getStamina();
-    const stCost = this.cb.staminaCost;
-    const stInsufficient = stamina.current < stCost;
     const stColor = stInsufficient ? C.red : C.accent;
     const stTxt = txt(
       t('stamina.cost', { cost: stCost, current: stamina.current }),
@@ -174,23 +185,29 @@ export class LevelPrepScene implements Scene {
     stTxt.anchor.set(0.5, 0.5); stTxt.x = w / 2; stTxt.y = stBarY + stBarH / 2;
     this.container.addChild(stTxt);
     if (stInsufficient) {
-      const buyW = Math.round(w * 0.45);
-      const buyH = Math.round(h * 0.065);
-      const buyX = (w - buyW) / 2;
-      const buyY = stBarY + stBarH + Math.round(h * 0.008);
+      // The row spans the Start button's width; with the ad refill two buttons share it, coin left.
+      const onAd = this.cb.onWatchAdStamina;
+      const gap = Math.round(w * 0.02);
+      const buyW = onAd ? Math.floor((sbW - gap) / 2) : sbW;
+      const buyX = sbX;
       const buyBg = sketchPanel(buyW, buyH, { fill: C.red, border: C.dark, width: 1.6, seed: seedFor(buyX, buyY, buyW) });
       buyBg.x = buyX; buyBg.y = buyY;
       this.container.addChild(buyBg);
       drawButtonLabel(this.container, buyX, buyY, buyW, buyH, t('stamina.buy'), 'coin', 0xffffff,
         snapFont(Math.round(buyH * 0.4)));
       this.hits.push({ rect: { x: buyX, y: buyY, w: buyW, h: buyH }, fn: () => this.cb.onBuyStamina() });
+      if (onAd) {
+        const adX = sbX + sbW - buyW;
+        const adBg = sketchPanel(buyW, buyH, { fill: C.accent, border: C.dark, width: 1.6, seed: seedFor(adX, buyY, buyW) });
+        adBg.x = adX; adBg.y = buyY;
+        this.container.addChild(adBg);
+        drawButtonLabel(this.container, adX, buyY, buyW, buyH, t('stamina.watchAd'), 'adsTabIcon', 0xffffff,
+          snapFont(Math.round(buyH * 0.4)));
+        this.hits.push({ rect: { x: adX, y: buyY, w: buyW, h: buyH }, fn: () => onAd() });
+      }
     }
 
-    // Start button
-    const sbW = Math.round(w * 0.6);
-    const sbH = Math.round(h * 0.08);
-    const sbX = (w - sbW) / 2;
-    const sbY = h - sbH - Math.round(h * 0.03);
+    // Start button (geometry resolved above)
     // When stamina is insufficient, grey out the Start button to block entry.
     const sbFill = stInsufficient ? C.btnOff : C.dark;
     const sbBorder = stInsufficient ? C.mid : C.green;

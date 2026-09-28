@@ -5,14 +5,14 @@
 // still pass unchanged now that `runSiegeBattle` is async — see siegeEngine.ts).
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ComputeWorkerPool, defaultComputePoolSize } from '../src/compute/pool';
 import { routeTimings } from '../src/metrics';
 import { runSiegeBattleSync, synthesizeArmy, SIEGE_SYNTH_ARMY_MAX_TROOPS, type SiegeBattleInput } from '../src/siegeEngine';
 
 const CRASH_WORKER = path.join(__dirname, 'fixtures', 'crashWorker.ts');
 const HANG_WORKER = path.join(__dirname, 'fixtures', 'hangWorker.ts');
-const SLOW_THEN_HANG_WORKER = path.join(__dirname, 'fixtures', 'slowThenHangWorker.ts');
+const ANSWER_THEN_HANG_WORKER = path.join(__dirname, 'fixtures', 'answerThenHangWorker.ts');
 
 /** A real, non-trivial siege battle input (full-board armies) — deterministic, CPU-heavy enough (tens of ms)
  * to make wall-clock parallelism comparisons meaningful without making the test suite slow. */
@@ -148,25 +148,46 @@ describe('ComputeWorkerPool task timeout', () => {
 });
 
 describe('ComputeWorkerPool task timeout (dispatch-time arming regression)', () => {
-  it('a task queued behind several quick-but-non-instant tasks past taskTimeoutMs still gets full hang protection once it is actually dispatched', async () => {
-    // Single worker so tasks run strictly one at a time. The fixture answers each of the first 5 messages
-    // after ~150ms and hangs on the 6th. That 6th task sits in `queue` for ~750ms (5 × 150ms) before a
-    // worker is ever free for it — well past the 400ms per-task timeout — then hangs once actually
-    // dispatched. Both the per-message delay and the timeout are generous relative to each other so that
-    // worker-thread cold-start jitter on the very first message can't by itself trip the timeout.
+  it('a task queued past taskTimeoutMs behind several others still gets full hang protection once it is actually dispatched', async () => {
+    // Single worker so tasks run strictly one at a time. The fixture answers the first 5 messages and hangs on
+    // the 6th. Only the pool's hang-guard clock (setTimeout/clearTimeout on this thread) is faked: the worker
+    // thread and its messages stay real, but no timeout can fire unless the test advances the clock. That
+    // makes the test independent of wall-clock load — a cold worker start or a busy machine used to eat the
+    // first task's real 400ms budget (seen twice as a flake under a concurrent `npm install`, 2026-09-27).
     //
-    // Before the fix, the 6th task's hang-guard timer was armed at submit() time (t≈0) and fired at t≈400ms
-    // while the task was still queued — a documented no-op (queued tasks aren't in `pending` yet) — leaving
-    // nothing to ever re-arm it once the task was later dispatched onto a worker that then hangs on it
-    // forever (test would time out rather than reject). The fix arms the timer only in `dispatch()`, so the
-    // 6th task gets its own full 400ms of hang protection starting from when it actually begins running.
-    const pool = makePool(1, 400, SLOW_THEN_HANG_WORKER);
-    const inputs = Array.from({ length: 6 }, (_, i) => bigEvenBattle(i));
-    const submissions = inputs.map((inp) => pool.runSiege(inp));
+    // Each of the first 5 tasks is left in flight for 0.9 × taskTimeoutMs of fake time, so none of them times
+    // out, but the 6th sits in `queue` for 4.5 × taskTimeoutMs before a worker is free for it. Before the fix,
+    // its hang-guard timer was armed at submit() time (t=0) and fired at t=T while it was still queued — a
+    // documented no-op (queued tasks aren't in `pending` yet) — leaving nothing to re-arm it once it was
+    // dispatched onto a worker that then hangs forever. The fix arms the timer in `dispatch()`, so the 6th
+    // task gets its own full T of hang protection starting from when it actually begins running.
+    const T = 400;
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const pool = makePool(1, T, ANSWER_THEN_HANG_WORKER);
+      const submissions = Array.from({ length: 6 }, (_, i) => pool.runSiege(bigEvenBattle(i)));
+      let lastError: unknown = null;
+      submissions[5]!.catch((e: unknown) => (lastError = e));
 
-    await expect(Promise.all(submissions.slice(0, 5))).resolves.toBeDefined();
-    await expect(submissions[5]).rejects.toThrow(/timed out/);
-    expect(pool.size).toBe(1); // hung worker detected + replaced
+      // Synchronous advances only: no worker message can be handled mid-advance, so exactly one known task is
+      // in flight each time. (After task i-1's answer, task i is dispatched in the same handler, and the
+      // await continuation below runs as a microtask before task i's own answer can arrive.)
+      const flush = () => new Promise((r) => setImmediate(r));
+      for (let i = 0; i < 5; i++) {
+        vi.advanceTimersByTime(T * 0.9); // task i is in flight: just short of its own timeout
+        await expect(submissions[i]).resolves.toBeDefined(); // waits (real time) for the worker's answer
+      }
+      // The 6th is now dispatched onto the worker that will hang on it; fake time is already 4.5 × T.
+      vi.advanceTimersByTime(T - 1);
+      await flush();
+      expect(lastError).toBeNull(); // full window from dispatch, not from submit
+      vi.advanceTimersByTime(1);
+      await flush();
+      expect(String(lastError)).toMatch(/timed out/);
+      expect(pool.size).toBe(1); // hung worker detected + replaced
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

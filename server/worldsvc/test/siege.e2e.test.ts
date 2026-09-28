@@ -33,6 +33,7 @@ import {
   MARCH_MORALE_MAX,
   MARCH_MORALE_FLOOR_TILES,
   moraleCombatMultiplier,
+  tileYield,
   type ResourceType,
 } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
@@ -334,7 +335,9 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
 
   it('sweep NPC win: capture resources + survivors return and troops refunded (no tile occupation)', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
-    // Find a low-level resource tile with resType≠ink to isolate loot assertions (avoid contamination from a's main base ink yield).
+    const joinedAt = nowMs;
+    // Find a low-level resource tile with resType≠ink to isolate loot assertions from a's main base ink yield.
+    // ADR-093: the capital also pays a paper/graphite/metal floor, so that accrual is subtracted out below.
     const tgt = findCoord((t) => t.type === 'resource' && t.level <= 3 && t.resType !== 'ink', 30, 30);
     const proc = proceduralTile(W, tgt.x, tgt.y);
     const npc = npcGarrison(proc.level);
@@ -359,7 +362,8 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
     expect(me.troops).toBe(TROOP_CAP_BASE - troops);
     // Loot = SWEEP_LOOT_PER_LEVEL × level (resType≠ink, no yield contamination).
     const rt = proc.resType as ResourceType;
-    expect(me.resources?.[rt]).toBe(SWEEP_LOOT_PER_LEVEL * Math.max(1, proc.level));
+    const floorAccrued = Math.floor((tileYield('base', 1)[rt] ?? 0) * (nowMs - joinedAt) / 3_600_000);
+    expect(me.resources?.[rt]).toBe(SWEEP_LOOT_PER_LEVEL * Math.max(1, proc.level) + floorAccrued);
     // No tile occupation: tile remains neutral.
     expect((await svc.getTile(W, 'a', tgt.x, tgt.y)).mine).toBeUndefined();
     const siege = await m.collections.sieges.findOne({ worldId: W, attackerId: 'a' });
@@ -394,6 +398,7 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
 
   it('sweep NPC loss: troop attrition, no loot, no tile occupation', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
+    const joinedAt = nowMs;
     const tgt = findCoord((t) => t.type === 'resource' && t.resType !== 'ink', 30, 30);
     const proc = proceduralTile(W, tgt.x, tgt.y);
     const troops = 10; // < npcGarrison, attacker loses
@@ -405,7 +410,9 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
     // Committed fully destroyed: 2000 - 10.
     expect((await svc.getMe(W, 'a')).troops).toBe(TROOP_CAP_BASE - troops);
     const rt = proc.resType as ResourceType;
-    expect((await svc.getMe(W, 'a')).resources?.[rt] ?? 0).toBe(0);
+    // No loot: only the capital's own ADR-093 floor accrual over the march.
+    const floorAccrued = Math.floor((tileYield('base', 1)[rt] ?? 0) * (nowMs - joinedAt) / 3_600_000);
+    expect((await svc.getMe(W, 'a')).resources?.[rt] ?? 0).toBe(floorAccrued);
     const siege = await m.collections.sieges.findOne({ worldId: W, attackerId: 'a' });
     expect(siege?.outcome).toBe('defender_win');
     // A losing sweep is replayable too (same follow-up as the win case above) — including end-to-end through

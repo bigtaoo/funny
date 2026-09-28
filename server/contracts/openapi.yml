@@ -1123,6 +1123,8 @@ paths:
                 token:
                   type: string
                   minLength: 8
+                guestToken:
+                  type: string
       responses:
         '200':
           description: Success
@@ -1703,6 +1705,10 @@ paths:
                         type: string
                       freeRename:
                         type: boolean
+                      nameLocked:
+                        type: boolean
+                      platformAvatarId:
+                        type: string
                       serverNow:
                         type: integer
                       activeMatch:
@@ -2278,6 +2284,72 @@ paths:
         '401':
           $ref: '#/components/responses/ErrorResp'
         '402':
+          $ref: '#/components/responses/ErrorResp'
+  /pve/stamina/ad:
+    post:
+      operationId: adStamina
+      tags:
+        - save
+      summary: Rewarded-ad stamina refill (CrazyGames build only; +30 per ad, 3 per UTC day)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - adToken
+              properties:
+                adToken:
+                  type: string
+                platform:
+                  type: string
+                  enum:
+                    - dev
+                  description: Ad platform (the portal SDK has no server callback, so the token is client-issued)
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                  - data
+                properties:
+                  ok:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: object
+                    required:
+                      - stamina
+                      - adsLeft
+                    properties:
+                      stamina:
+                        type: object
+                        required:
+                          - current
+                          - regenAt
+                        properties:
+                          current:
+                            type: integer
+                          regenAt:
+                            type: integer
+                      adsLeft:
+                        type: integer
+                        description: Stamina ads still available today
+        '400':
+          $ref: '#/components/responses/ErrorResp'
+        '401':
+          $ref: '#/components/responses/ErrorResp'
+        '403':
+          $ref: '#/components/responses/ErrorResp'
+        '429':
           $ref: '#/components/responses/ErrorResp'
   /shop/items:
     get:

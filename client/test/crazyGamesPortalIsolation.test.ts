@@ -389,31 +389,4 @@ describe('CrazyGamesPlatform ads mute the game while they play', () => {
   });
 });
 
-describe('CrazyGamesPlatform opens and closes the portal loading window as a pair', () => {
-  beforeEach(() => { vi.resetModules(); stubMinimalDom(); });
-  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
-
-  it('REGRESSION: calls sdkGameLoadingStart while still loading, not only Stop at the end', async () => {
-    const calls: string[] = [];
-    const sdk = {
-      init: () => { calls.push('init'); return Promise.resolve(); },
-      game: {
-        gameplayStart: () => {}, gameplayStop: () => {},
-        sdkGameLoadingStart: () => calls.push('start'),
-        sdkGameLoadingStop: () => calls.push('stop'),
-      },
-      ad: { requestAd: () => {} },
-    };
-    vi.stubGlobal('window', { devicePixelRatio: 1, innerWidth: 1280, innerHeight: 720, CrazyGames: { SDK: sdk } });
-
-    const { CrazyGamesPlatform } = await import('../src/platform/crazygames/CrazyGamesPlatform');
-    const platform = new CrazyGamesPlatform();
-    await platform.onLoadingComplete();
-    expect(calls).toEqual(['init', 'start', 'stop']);
-  });
-
-  it('a host without the SDK (our own dev server) is a no-op, not a throw', async () => {
-    const { CrazyGamesPlatform } = await import('../src/platform/crazygames/CrazyGamesPlatform');
-    await expect(new CrazyGamesPlatform().onLoadingComplete()).resolves.toBeUndefined();
-  });
-});
+// The loading-window pair moved to crazyGamesBasicLaunch.test.ts with the v3 SDK method names.

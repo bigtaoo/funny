@@ -5,7 +5,7 @@
 // authority on every rule mirrored here — the point of mirroring is that a bot stops sending marches
 // worldsvc is certain to reject (until 2026-09-26 every one of them was: targets were picked up to 40
 // tiles away and all failed TERRITORY_NOT_CONNECTED at departure).
-import { OCCUPY_MIN_TROOPS, baseFootprintCells } from '@nw/shared';
+import { OCCUPY_MIN_TROOPS, RESOURCE_YIELD_BASE, baseFootprintCells, tileYield } from '@nw/shared';
 import type { WorldTileView } from './worldClient';
 
 /** Highest tile level a bot tries to occupy: an L1-L2 NPC garrison falls to the minimum occupy force. */
@@ -29,6 +29,20 @@ export interface ExpansionPlan {
   troops: number;
 }
 
+/**
+ * Whether the bot already has a TILE producing `resType`, read off the hourly `yieldRate`.
+ *
+ * The home city pays a floor in ink/paper/graphite/metal (ADR-093), so "rate > 0" no longer means
+ * anything. The threshold is the rate of the home city plus one L1 tile, before multipliers: the home
+ * city alone tops out at its figure × the largest multiplier (resource building 2× × battle pass 1.1 =
+ * 110 for a 50 floor), which stays under this; any owned tile puts the rate at or above it. A sect city
+ * payoff can push a rate over without a tile — that resource then really is being produced.
+ */
+export function producesFromTiles(yieldRate: Readonly<Partial<Record<string, number>>>, resType: string): boolean {
+  const home = (tileYield('base', 1) as Partial<Record<string, number>>)[resType] ?? 0;
+  return (yieldRate[resType] ?? 0) >= home + RESOURCE_YIELD_BASE;
+}
+
 const key = (x: number, y: number) => `${x}:${y}`;
 const NEIGHBOURS = [[1, 0], [-1, 0], [0, 1], [0, -1]] as const;
 
@@ -42,8 +56,8 @@ function isFriendly(t: WorldTileView): boolean {
  * sending (no adjacent target, or too few troops to send one without dropping below the floor).
  *
  * Occupying an adjacent L1-L2 resource tile always wins over attacking. Among those: first a resource the
- * bot does not produce at all yet (`yieldRate` from `/world/me`) — training costs all five, so one missing
- * input stops it outright — then paper/graphite, then the lower level, then the tile closest to the base,
+ * bot has no tile for yet (`yieldRate` from `/world/me`, see producesFromTiles) — training costs all five,
+ * and the home city's floor alone trains only about ten troops an hour — then paper/graphite, then the lower level, then the tile closest to the base,
  * then coordinates so the choice is deterministic.
  * Only with no such tile left does a bot attack an adjacent enemy territory tile — never a base, a
  * stronghold, a crossing or a city.
@@ -59,7 +73,7 @@ export function planExpansion(
   for (const t of tiles) if (isFriendly(t)) friendly.add(key(t.x, t.y));
   const bordersFriendly = (t: WorldTileView) => NEIGHBOURS.some(([dx, dy]) => friendly.has(key(t.x + dx, t.y + dy)));
   const dist = (t: WorldTileView) => Math.abs(t.x - base.x) + Math.abs(t.y - base.y);
-  const produced = (t: WorldTileView) => (yieldRate[t.resType ?? ''] ?? 0) > 0;
+  const produced = (t: WorldTileView) => producesFromTiles(yieldRate, t.resType ?? '');
 
   const occupyTargets = tiles
     .filter((t) =>

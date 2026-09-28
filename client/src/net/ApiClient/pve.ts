@@ -35,6 +35,7 @@ export interface PveApi {
     grantedEquipment?: EquipmentInstance;
   }>;
   purchaseStamina(): Promise<{ stamina: { current: number; regenAt: number } }>;
+  adStamina(adToken: string, platform: string): Promise<{ stamina: { current: number; regenAt: number }; adsLeft: number }>;
   pveEnter(levelId: string): Promise<{ stamina: { current: number; regenAt: number } }>;
   getMatchHistory(limit?: number): Promise<MatchHistoryEntry[]>;
   getMatchReplay(roomId: string): Promise<ServerReplay>;
@@ -141,6 +142,13 @@ export class PveService implements PveApi {
       {
         amount: 60,
       }
+    );
+  }
+
+  /** Rewarded-ad stamina refill (CrazyGames build only): +30, 3 per UTC day. Cap used up → 429 DAILY_CAP_REACHED. */
+  async adStamina(adToken: string, platform: string): Promise<{ stamina: { current: number; regenAt: number }; adsLeft: number }> {
+    return this.core.post<{ stamina: { current: number; regenAt: number }; adsLeft: number }>(
+      '/pve/stamina/ad', { adToken, platform },
     );
   }
 

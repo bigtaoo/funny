@@ -206,6 +206,13 @@ export interface IPlatform {
   hasRewardedAd(): boolean;
 
   /**
+   * Whether a rewarded ad may also refill PvE stamina (level prep, `POST /pve/stamina/ad`). Only
+   * `CrazyGamesPlatform` sets it (CRAZYGAMES_LAUNCH §4) — elsewhere, including the iOS shell's
+   * AdMob, stamina stays coin-only, and the server refuses every other `x-nw-platform` too.
+   */
+  readonly staminaRewardedAd?: boolean;
+
+  /**
    * Show a rewarded video ad for the DailyScene "Ads" tab (ECONOMY_NUMBERS §6.2). Only ever called
    * when {@link hasRewardedAd} is true. `accountId` is forwarded to platforms whose SSV callback
    * needs it explicitly (AdMob's `customRewardText` — WeChat's SSV already identifies the account
@@ -242,6 +249,59 @@ export interface IPlatform {
    * offers the button when this method is present (RETENTION_LAUNCH_PLAN.md §3.1).
    */
   signInWithCrazyGames?(): Promise<AuthCredential | null>;
+
+  /**
+   * True when the build has no in-game login screen at all: identity is always resolved silently
+   * from {@link getAuthCredential} (portal session when there is one, else an anonymous device
+   * account), and the resulting token is persisted as the account session, so every "logged in"
+   * gate treats the guest as a real account. Login, logout and account deletion are never offered.
+   * Only `CrazyGamesPlatform` sets it — the portal requires guests to land in gameplay by default
+   * and forbids every login option other than its own (design/game/CRAZYGAMES_LAUNCH.md §2).
+   */
+  readonly silentAccountOnly?: boolean;
+
+  /**
+   * The server refused the portal credential {@link getAuthCredential} handed out (SSO not
+   * configured, a key rotation, a bad token): hand out the anonymous device credential for the rest
+   * of the session instead. Returns true when there was a portal credential to give up — i.e. a
+   * retry is worth making. Only `CrazyGamesPlatform` implements it; on a silentAccountOnly platform
+   * a player the portal vouches for must not end up with no account at all.
+   */
+  declinePortalIdentity?(): boolean;
+
+  /**
+   * True when the story intro must not stand between launch and the first match. CrazyGames only:
+   * the portal allows at most one click before gameplay, and that click is the entry gate
+   * (age + consent) — the intro's skip button would be a second (CRAZYGAMES_LAUNCH.md §2).
+   */
+  readonly skipStoryIntro?: boolean;
+
+  /**
+   * Subscribe to the player signing into the portal account mid-session (CrazyGames: the SDK auth
+   * listener). The caller re-resolves identity, which binds the portal account to the current guest
+   * (progress kept). Signing out needs no hook: the portal reloads the page. Only `CrazyGamesPlatform`.
+   */
+  onPortalSignIn?(cb: () => void): void;
+
+  /**
+   * Whether this build draws portal profile pictures (`url:` avatar ids, render/avatar.ts). True only
+   * where the platform's rules require them (CrazyGames); elsewhere such an avatar shows the letter
+   * initial, so every other platform renders exactly as before.
+   */
+  readonly remoteAvatars?: boolean;
+
+  /**
+   * Friend rooms hosted by the platform's own multiplayer UI (invite links, "join" buttons, room
+   * presence). Only `CrazyGamesPlatform` has one; elsewhere a room is shared by its code alone.
+   */
+  readonly rooms?: PlatformRooms;
+
+  /**
+   * Follow the platform's "chat off" setting: called once with the current value, then on every
+   * change. While true every player-to-player chat surface is hidden (world, family, sect, DMs).
+   * Only `CrazyGamesPlatform` (`game.settings.disableChat`); without it chat is always on.
+   */
+  watchChatDisabled?(cb: (disabled: boolean) => void): void;
 
   /**
    * Open a binary WebSocket to the gameserver (S1-6). Platform abstracts the
@@ -313,6 +373,23 @@ export interface IPlatform {
 }
 
 /** gameserver WS event callbacks (provided by NetClient, triggered by the platform socket). */
+/** What a launch asked the friend-room flow to do: join the room an invite named, or open a new one. */
+export type RoomIntent = { kind: 'join'; code: string } | { kind: 'create' };
+
+/** See {@link IPlatform.rooms}. Every method is a best-effort notification; none of them throws. */
+export interface PlatformRooms {
+  /** A platform link that opens the game and joins room `code`; null when there is none. */
+  inviteLink(code: string): string | null;
+  /** The player sits in room `code`; `joinable` while it has a free seat and has not started. */
+  update(code: string, joinable: boolean): void;
+  /** The player is in no room any more. */
+  left(): void;
+  /** The launch's own request (an invite link, or the platform's "play with friends"). Read once. */
+  launchIntent(): RoomIntent | null;
+  /** The player accepted an invite while the game was already running. */
+  onJoinRequest(cb: (code: string) => void): void;
+}
+
 export interface SocketHandlers {
   onOpen(): void;
   onMessage(data: Uint8Array): void;

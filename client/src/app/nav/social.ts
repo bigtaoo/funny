@@ -4,6 +4,7 @@ import { WorldApiClient, type FamilyDetailView, type SectDetailView } from '../.
 import type { FriendsView, ChatView } from '../AppViews';
 import type { AppCtx, Nav } from '../appCtx';
 import { FALLBACK_SEASON, PLAYER_PUBLIC_ID_KEY } from '../appConstants';
+import { isChatDisabled } from '../../ui/chatPolicy';
 
 export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' | 'goChat'> {
   const { api, saveManager, platform, state, views, nav, getNetSession, playerName, resolvePvpDeck } = ctx;
@@ -61,7 +62,8 @@ export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' |
       openTextInput: (opts) => platform.openTextInput(opts),
       myPublicId: platform.storage.getItem(PLAYER_PUBLIC_ID_KEY) ?? '',
       getProfileExtra: (publicId) => worldApi.getProfileExtra(publicId),
-      ...(opts?.defaultTab ? { defaultTab: opts.defaultTab } : {}),
+      // Platform "chat off": the world tab does not exist, so its entries (world-map bar) land on friends.
+      ...(opts?.defaultTab ? { defaultTab: opts.defaultTab === 'world' && isChatDisabled() ? 'friends' : opts.defaultTab } : {}),
       loadFriends: () => client.getFriends(),
       loadRequests: () => client.getFriendRequests(),
       search: (publicId) => client.searchFriend(publicId),
@@ -197,6 +199,7 @@ export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' |
 
   function goChat(peerPublicId: string, peerName: string, opts?: { overlay?: boolean; onBack?: () => void }): void {
     if (!api) { nav.goLogin(); return; }
+    if (isChatDisabled()) return; // platform "chat off": every entry is hidden; this is the backstop
     const client = api;
     state.inLobby = false;
     const session = getNetSession();

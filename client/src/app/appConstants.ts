@@ -34,6 +34,10 @@ export const PLAYER_AVATAR_KEY = 'nw_player_avatar';
 export const RENAME_COST = 500;
 /** Persisted '1'/'0' flag: the player still holds their one-time free rename (name is a system default). Server-authoritative, refreshed from GET /save. */
 export const FREE_RENAME_KEY = 'nw_free_rename';
+/** Portal-imposed profile (CrazyGames account; CRAZYGAMES_LAUNCH.md §4.1), refreshed from GET /save:
+ *  the portal picture as a `url:` avatar id, and '1' when the name is portal-owned (no rename). */
+export const PLATFORM_AVATAR_KEY = 'nw_platform_avatar';
+export const NAME_LOCKED_KEY = 'nw_name_locked';
 /** Fallback season number used when worldsvc is unreachable (dev/offline). */
 export const FALLBACK_SEASON = 1;
 

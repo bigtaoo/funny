@@ -422,7 +422,7 @@ scene 取值：`IntroScene / LobbyScene / LoginScene / CampaignMapScene / LevelP
 | `starter_buy` | `product_id, platform` | — | 新手礼包购买成功 |
 | `battlepass_buy` / `battlepass_claim` | — | — | 战令购买 / 领取 |
 | `recharge_milestone_claim` / `promo_redeem` / `fate_redeem` | — | — | 充值里程碑 / 兑换码 / 命运点兑换 |
-| `ads_reward` | `coins, platform` | — | 激励视频发奖成功 |
+| `ads_reward` | `coins, platform`；体力广告为 `kind:'stamina', stamina_after, ads_left, platform` | — | 激励视频发奖成功（体力那种只在 CrazyGames 包，2026-09-27） |
 | `daily_checkin` / `daily_reward_claim` / `weekly_chest_claim` / `event_claim` | — | — | 留存四件套的领取（RETENTION_DESIGN） |
 | `equip_craft` / `equip_enhance` / `equip_reforge` / `equip_salvage` / `equip_equip` / `card_fuse` / `card_lock` | — | — | 养成动作（"这系统有没有人用"） |
 
@@ -437,11 +437,11 @@ scene 取值：`IntroScene / LobbyScene / LoginScene / CampaignMapScene / LevelP
 | 事件 | 必填属性 | 说明 |
 |---|---|---|
 | `friend_add` | — | 加好友成功 |
-| `pvp_room_create` | `mode` | mode: friendly/ranked |
+| `pvp_room_create` | `mode`, `via?` | mode: friendly/ranked；`via:'invite'` = 平台邀请启动自动建房（CG「和朋友玩」） |
 | `pvp_match_start` | `mode` | 成功匹配开局 |
 | `pvp_queue_cancel` | `wait_sec` | 排位队列里主动退出（2026-09-20 补）。`wait_sec` = 从进队到退出的墙钟秒数——**"等多久就放弃"是定匹配超时的那个数**，此前没有任何测量 |
 | `pvp_match_bot` | `wait_sec, difficulty` | 排不到真人、服务端下发 `match_bot` 兜底成机器人局（feature flag `match_bot_fallback`）。对玩家静默，此前在数据里也静默 |
-| `pvp_room_join` | — | 用好友房邀请码发起加入 |
+| `pvp_room_join` | `via?` | 用好友房邀请码发起加入；`via:'invite'` = 从平台邀请链接/加入按钮进来（CG），不带即手输房间码 |
 | `pvp_room_error` | `error` | 房间侧错误码（邀请码失效、`PREMATCH_LOST` 等）——加入失败是玩家分不清"码错了"还是"游戏坏了"的死胡同 |
 
 ### 5.6 流失信号（Churn Signals）

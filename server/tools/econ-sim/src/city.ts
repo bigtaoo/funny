@@ -35,6 +35,7 @@ import {
   BUILD_SPEEDUP_SECS_PER_COIN,
   RESOURCE_CAP,
   RESOURCE_YIELD_BASE,
+  tileYield,
   NATION_BONUS_PRODUCTION,
   SEASON_LENGTH_DAYS,
   TROOP_CAP_BASE,
@@ -129,7 +130,9 @@ export function maxLevelEffects() {
 /**
  * Income profile = a transparent (unpinned) assumption set, like A-track population.
  * tiles[rt] = number of resource tiles of that type a player works; avgTileLevel = mean tile level.
- * Hourly income(rt) = tiles × RESOURCE_YIELD_BASE × avgTileLevel × buildingMult × (1 + nationBonus).
+ * Hourly income(rt) = tiles × RESOURCE_YIELD_BASE × avgTileLevel × buildingMult × (1 + nationBonus)
+ *                    + the home city's own yield × buildingMult (ink trickle + ADR-093 paper/graphite/metal floor;
+ *                      no nation bonus — it never applied to the base).
  * buildingMult uses a mid-grind average (city is half-built while you grind toward max).
  */
 export interface IncomeProfile {
@@ -158,7 +161,8 @@ export function hourlyIncome(p: IncomeProfile): Partial<Record<ResourceType, num
       const copper = (p.copperTiles ?? 0) * RESOURCE_YIELD_BASE * COPPER_AVG_LEVEL * nation;
       out[rt] = Math.round(stickerShopSelf + copper);
     } else {
-      out[rt] = Math.round(tiles * RESOURCE_YIELD_BASE * p.avgTileLevel * midMult * nation);
+      const home = tileYield('base', 1)[rt] ?? 0;
+      out[rt] = Math.round(tiles * RESOURCE_YIELD_BASE * p.avgTileLevel * midMult * nation + home * midMult);
     }
   }
   return out;

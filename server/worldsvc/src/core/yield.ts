@@ -133,7 +133,7 @@ export class YieldService {
     const acc = emptyResources();
     for (const tl of owned) {
       // ADR-025: only the base anchor contributes yield; the 8 ring cells are type:'base' too and would
-      // otherwise each add the base ink trickle (9× inflation), so skip them.
+      // otherwise each add the home-city yield (9× inflation), so skip them.
       if (tl.baseRing) continue;
       const y = tileYield(tl.type, tl.level, tl.resType);
       for (const rt of RESOURCE_TYPES) acc[rt] += y[rt] ?? 0;

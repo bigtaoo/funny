@@ -13,6 +13,7 @@ import { recordMaterialGrants } from '../../material.js';
 import { insertSystemMail } from '../../mail.js';
 import { accrueEventTask } from '../../events.js';
 import { nullMetaSocialsvcClient } from '../../socialsvcClient.js';
+import type { JudgeRes } from '../../gatewayClient.js';
 import { accountIdOf, type MetaCore } from '../base.js';
 import { applyMaterialAndEquipmentGrant, prepareClearReward } from './helpers.js';
 
@@ -137,8 +138,12 @@ export async function pveVerifyHandler(core: MetaCore, req: FastifyRequest, repl
   const level = findPveLevel(doc.levelId);
   if (!level) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'unknown level'));
 
+  // Bot clears (botsvc) are not dispatched: the only candidate judges are human clients, and a bot
+  // re-simulated by a player gains nothing — it lands as 'unverified', same as "no judge online".
+  const fromBotsvc = core.deps.isBotsvcRequest?.(req.headers) ?? false;
+  if (fromBotsvc) req.log.info({ verifyId, levelId: doc.levelId }, 'pve verify: botsvc clear, judge skipped');
   // Dispatch third-party headless re-simulation (seed derived locally by the judge from the level JSON; mode is audit-only, PvE uses levelId).
-  const verdict = await gateway.judge({
+  const verdict: JudgeRes = fromBotsvc ? { ok: false } : await gateway.judge({
     seed: 0,
     mode: 0,
     endFrame: Math.floor(endFrame) || 0,

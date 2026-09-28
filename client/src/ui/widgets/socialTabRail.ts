@@ -17,6 +17,7 @@ import { t, TranslationKey } from '../../i18n/index';
 import { drawSidebarTabs, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTab } from './HubTabs';
 import type { IconKind } from '../../render/icons';
 import type { Hit } from '../hits';
+import { isChatDisabled } from '../chatPolicy';
 
 export type SocialTab = 'friends' | 'family' | 'sect' | 'world' | 'mail';
 
@@ -62,7 +63,8 @@ export function drawSocialTabRail(
   // no hit rect at all, so it defaults off here.
   activeTappable = false,
 ): SocialTabRailHit[] {
-  const defs = TAB_DEFS.filter((tabDef) => !hidden.includes(tabDef.id));
+  // The world tab is nothing but chat, so the platform's "chat off" setting removes it (ui/chatPolicy.ts).
+  const defs = TAB_DEFS.filter((tabDef) => !hidden.includes(tabDef.id) && !(tabDef.id === 'world' && isChatDisabled()));
   const tabs: HubTab[] = defs.map((tabDef) => ({
     label: t(tabDef.key),
     active: active === tabDef.id,

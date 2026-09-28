@@ -10,6 +10,11 @@
  *                  skin's own color/prop identity — NOT the hero's battle art (used to fall back to
  *                  UNIT_ART_URLS via SKIN_TARGET_UNIT, see design/product/avatar-art-prompts.md §三
  *                  "接线时要修的 bug"; fixed 2026-08-17).
+ *   url:<https> — a portal profile picture (CRAZYGAMES_LAUNCH.md §4.1; server
+ *                  shared/src/platformAvatar.ts) that outranks the in-game pick. Not an
+ *                  AvatarCategory: nothing can equip it, the portal account imposes it. Drawn only
+ *                  where the platform opts in ({@link setRemoteAvatarsEnabled}); everywhere else it
+ *                  gets the letter initial, same as any id this build does not know.
  * Bare digit strings ('0'-'7', the pre-2026-08 localStorage format) are treated as "preset:<n>"
  * and positionally migrated onto the new 20-key list (see resolvePresetArtUrl) so old accounts
  * still land on a real portrait instead of the letter-initial fallback.
@@ -46,6 +51,33 @@ function initial(name: string): string {
 }
 
 export type AvatarCategory = 'preset' | 'title' | 'hero' | 'skin';
+
+const PLATFORM_AVATAR_PREFIX = 'url:';
+/** Same allowlist the server enforces before storing or relaying one (shared/src/platformAvatar.ts);
+ *  checked again here because the value arrives from another player's account. */
+const PLATFORM_AVATAR_HOSTS: readonly string[] = ['images.crazygames.com'];
+
+let remoteAvatars = false;
+
+/**
+ * Whether this build draws portal profile pictures (`url:` avatar ids). Set once at boot from the
+ * platform (`IPlatform.remoteAvatars`) — today only CrazyGames, whose rules require showing them.
+ */
+export function setRemoteAvatarsEnabled(on: boolean): void {
+  remoteAvatars = on;
+}
+
+/** The image URL behind a `url:` avatar id, if it is one this build may load; else null. */
+export function platformAvatarUrl(avatarId: string | undefined): string | null {
+  if (!avatarId?.startsWith(PLATFORM_AVATAR_PREFIX)) return null;
+  const raw = avatarId.slice(PLATFORM_AVATAR_PREFIX.length);
+  try {
+    const u = new URL(raw);
+    return u.protocol === 'https:' && PLATFORM_AVATAR_HOSTS.includes(u.hostname) && !u.username && !u.port ? raw : null;
+  } catch {
+    return null;
+  }
+}
 
 /** Composite avatarId "<category>:<key>", or a bare preset digit for backward compat. */
 export function makeAvatarId(category: AvatarCategory, key: string): string {
@@ -182,6 +214,37 @@ function buildPortraitIcon(url: string, size: number, head: HeadBox | null): PIX
   return c;
 }
 
+/**
+ * A remote profile picture, cover-fitted into a circle of diameter `d`. Hidden until the image has
+ * actually loaded, so a slow or failed load leaves the letter initial underneath showing rather
+ * than a blank disc; nothing is ever shown for an image that errors.
+ */
+function buildRemotePortrait(url: string, d: number): PIXI.Container {
+  const c = new PIXI.Container();
+  const tex = PIXI.Texture.from(url); // cross-origin load (ImageResource's crossorigin defaults on)
+  const sprite = new PIXI.Sprite(tex);
+  sprite.anchor.set(0.5, 0.5);
+  sprite.x = d / 2; sprite.y = d / 2;
+  const fit = (): void => {
+    const w = tex.width || 1, h = tex.height || 1;
+    sprite.scale.set(Math.max(d / w, d / h));
+    c.visible = true;
+  };
+  const mask = new PIXI.Graphics();
+  mask.beginFill(0xffffff);
+  mask.drawCircle(d / 2, d / 2, d / 2);
+  mask.endFill();
+  c.addChild(sprite);
+  c.addChild(mask);
+  sprite.mask = mask;
+  if (tex.baseTexture.valid) fit();
+  else {
+    c.visible = false;
+    tex.baseTexture.once('loaded', () => { if (!sprite.destroyed) fit(); });
+  }
+  return c;
+}
+
 /** Art side length for a category, given the tile side and the disc's radius. */
 function categoryIconSize(category: AvatarCategory, size: number, r: number): number {
   return Math.round(category === 'title' ? size * ICON_FILL : r * 2 * PORTRAIT_FILL_OF_DISC);
@@ -222,6 +285,7 @@ export function buildAvatar(size: number, name: string, seed = 7, avatarId?: str
   const cx = size / 2, cy = size / 2;
 
   const parsed = avatarId ? parseAvatarId(avatarId) : null;
+  const remote = remoteAvatars ? platformAvatarUrl(avatarId) : null;
 
   let iconS = Math.round(size * ICON_FILL);
   let icon: PIXI.DisplayObject | null = null;
@@ -252,6 +316,15 @@ export function buildAvatar(size: number, name: string, seed = 7, avatarId?: str
     letter.anchor.set(0.5, 0.5);
     letter.x = cx; letter.y = cy + 1;
     c.addChild(letter);
+    // A portal picture covers the whole disc once it arrives; the letter stays underneath as the
+    // loading / failed-load state.
+    if (remote) {
+      const d = Math.round(r * 2);
+      const pic = buildRemotePortrait(remote, d);
+      pic.x = Math.round(cx - d / 2);
+      pic.y = Math.round(cy - d / 2);
+      c.addChild(pic);
+    }
   }
 
   // Pencil rim drawn LAST: a portrait now reaches within a few px of the disc's edge, and at small

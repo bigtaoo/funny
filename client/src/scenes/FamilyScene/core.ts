@@ -34,6 +34,7 @@ import * as PIXI from 'pixi.js-legacy';
 import type { ILayout } from '../../layout/ILayout';
 import type { InputManager } from '../../inputSystem/InputManager';
 import { t } from '../../i18n';
+import { isChatDisabled } from '../../ui/chatPolicy';
 import { ui as C, buildPaperBackground, tearDownChildren } from '../../render/sketchUi';
 import { drawConfirmDialog } from '../../ui/dialogs/confirmDialog';
 import { ProfilePopup, type ProfileAction } from '../../ui/dialogs/ProfilePopup';
@@ -398,11 +399,8 @@ export class FamilySceneCore {
     const actions: ProfileAction[] = [];
     if (!isMe && mem.publicId) {
       const publicId = mem.publicId;
-      actions.push(
-        alreadyFriend
-          ? { labelKey: 'friends.message', fn: () => this.cb.openChat(publicId, mem.displayName ?? publicId) }
-          : { labelKey: 'friends.add', fn: () => void this.doAddFriend(publicId) },
-      );
+      if (!alreadyFriend) actions.push({ labelKey: 'friends.add', fn: () => void this.doAddFriend(publicId) });
+      else if (!isChatDisabled()) actions.push({ labelKey: 'friends.message', fn: () => this.cb.openChat(publicId, mem.displayName ?? publicId) });
     }
     this.profilePopup.show({
       name: mem.displayName ?? mem.publicId ?? t('family.unknownMember'),

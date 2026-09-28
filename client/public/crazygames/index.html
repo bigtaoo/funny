@@ -2,14 +2,17 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <!-- viewport-fit=cover: the CrazyGames App runs the game edge to edge, and env(safe-area-inset-*)
+         only reports the notch / rounded corners with it (CrazyGamesPlatform.getSafeAreaInsets).
+         Inside the website's iframe the insets stay zero either way. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <title>Nivara — Notebook Wars</title>
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
-    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
-    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
-    <link rel="manifest" href="/site.webmanifest" />
+    <!-- Relative paths only: the portal serves the bundle from its own sub-path. No web manifest /
+         touch icon — the game runs inside the portal's iframe, never as an installable page. -->
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png" />
     <meta name="theme-color" content="#1b3a6b" />
     <!-- CrazyGames SDK — must be loaded before game bundle -->
     <script src="https://sdk.crazygames.com/crazygames-sdk-v3.js"></script>
@@ -17,6 +20,12 @@
       * { margin: 0; padding: 0; box-sizing: border-box; }
       html, body { width: 100%; height: 100%; overflow: hidden; background: #f5f0e8; }
       canvas { display: block; touch-action: none; }
+      /* Portal mobile requirement: no text selection / callout on long-press. Editable elements keep
+         their own selection (user-select auto resolves to contain on them). */
+      html, body, canvas {
+        -webkit-user-select: none; user-select: none;
+        -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
+      }
     </style>
   </head>
   <body>

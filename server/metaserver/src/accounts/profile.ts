@@ -3,7 +3,7 @@
 // surface consumed by GET /save, match reports, and room player lists.
 import type { Collections, ChatRegion } from '@nw/shared';
 import { randomInt } from 'node:crypto';
-import { randomPlayerName } from '@nw/shared';
+import { randomPlayerName, effectiveAvatarId } from '@nw/shared';
 
 /** Read the account's compliance region (used for private-chat profanity-filter word list selection). Missing field on old accounts defaults to `'global'`. */
 export async function getRegion(cols: Collections, accountId: string): Promise<ChatRegion> {
@@ -40,16 +40,25 @@ export async function ensureDisplayName(cols: Collections, accountId: string): P
 }
 
 /**
- * CONTENT_MODERATION_DESIGN.md CM7.1: mute status, piggybacked on the profile fetch worldsvc's
+ * CONTENT_MODERATION_DESIGN.md CM7.1: mute status (plus the portal avatar, same row), piggybacked on the profile fetch worldsvc's
  * sendMessage() already makes on every post — no extra cross-service round trip for the mute check.
  * A dedicated async function (not an inline `cols.accounts.findOne(...)` expression in a Promise.all
  * array) so a missing/misconfigured `cols.accounts` in a caller's test double rejects like the other
  * Promise.all members instead of throwing synchronously while the array literal is still being built
  * (which would happen before Promise.all ever runs, orphaning the other members' promises).
  */
-async function getMutedUntil(cols: Collections, accountId: string): Promise<number | undefined> {
-  const doc = await cols.accounts.findOne({ _id: accountId }, { projection: { 'flags.mutedUntil': 1 } });
-  return doc?.flags?.mutedUntil;
+async function getModerationAndAvatar(
+  cols: Collections,
+  accountId: string,
+): Promise<{ mutedUntil?: number; platformAvatarUrl?: string }> {
+  const doc = await cols.accounts.findOne(
+    { _id: accountId },
+    { projection: { 'flags.mutedUntil': 1, platformAvatarUrl: 1 } },
+  );
+  return {
+    ...(doc?.flags?.mutedUntil ? { mutedUntil: doc.flags.mutedUntil } : {}),
+    ...(doc?.platformAvatarUrl ? { platformAvatarUrl: doc.platformAvatarUrl } : {}),
+  };
 }
 
 /**
@@ -60,15 +69,17 @@ export async function getProfile(
   cols: Collections,
   accountId: string,
 ): Promise<{ displayName?: string; publicId: string; equippedTitle?: string; avatarId?: string; equippedSkins?: string[]; mutedUntil?: number }> {
-  const [displayName, saveDoc, publicId, mutedUntil] = await Promise.all([
+  const [displayName, saveDoc, publicId, { mutedUntil, platformAvatarUrl }] = await Promise.all([
     ensureDisplayName(cols, accountId),
     cols.saves.findOne({ _id: accountId }, { projection: { 'save.equipped': 1 } }),
     ensurePublicId(cols, accountId),
-    getMutedUntil(cols, accountId),
+    getModerationAndAvatar(cols, accountId),
   ]);
   const equipped = saveDoc?.save.equipped as Record<string, string> | undefined;
   const equippedTitle = equipped?.['title'];
-  const avatarId = equipped?.['avatar'];
+  // A portal avatar outranks the in-game pick (platformAvatar.ts) — this is the path the gateway uses
+  // for the PvP opponent's avatar and room players.
+  const avatarId = effectiveAvatarId(platformAvatarUrl, equipped?.['avatar']);
   // Character skin slots are keyed 'skin:<unitType>' (client/src/game/meta/skinDefs.ts
   // skinEquipKey/allEquippedSkins) — one slot per character, unlike title/avatar's single slot.
   const equippedSkins = equipped
@@ -153,4 +164,22 @@ export async function setDisplayName(
 export async function hasFreeRename(cols: Collections, accountId: string): Promise<boolean> {
   const doc = await cols.accounts.findOne({ _id: accountId }, { projection: { nameChosen: 1 } });
   return !doc?.nameChosen;
+}
+
+/**
+ * What a portal account imposes on the player's own profile (CRAZYGAMES_LAUNCH.md §4.1): whether the
+ * name is portal-owned (no rename), and the portal picture as an avatar id (`url:…`) that outranks
+ * the in-game pick. Returned with GET /save so the client draws its own avatar the way everyone else
+ * sees it. Both absent for every account without a portal identity.
+ */
+export async function getPortalProfile(
+  cols: Collections,
+  accountId: string,
+): Promise<{ nameLocked?: true; platformAvatarId?: string }> {
+  const doc = await cols.accounts.findOne({ _id: accountId }, { projection: { nameLockedBy: 1, platformAvatarUrl: 1 } });
+  const platformAvatarId = effectiveAvatarId(doc?.platformAvatarUrl, undefined);
+  return {
+    ...(doc?.nameLockedBy ? { nameLocked: true as const } : {}),
+    ...(platformAvatarId ? { platformAvatarId } : {}),
+  };
 }

@@ -218,7 +218,7 @@ commercial 此前完全没有 Redis 依赖，本次新增：`config.ts` 补 `NW_
 
 - **装备复制竞态**（本轮表格 #1 的修复本身不完整）：`equipEquipment` 补的占用检查是读后写，并发装到两张卡的竞态没堵上。`CardInstanceDoc` 新增 `gearInstanceIds`（`gear` 非空值镜像）+ 唯一多键索引，Mongo 层保证同一 instanceId 不会同时出现在两个文档里；写入捕获 E11000 转译为 `EQUIP_IN_USE`。稀疏索引 + 空数组不占索引项，历史文档自愈无需迁移。
 - **commercial 资金双发竞态**（本轮表格 #2 的修复本身不完整）：`isStaleClaim` 宽限窗口只防"仍在飞的正常请求"，过了窗口的两个并发治愈请求仍能都读到"未入账"再都 credit。`RechargeDoc`/`OrderDoc`/`PromoRedemptionDoc` 各补 CAS 标记字段（`healedAt`/`healClaimedAt`），治愈前先原子声明，只有赢家才继续 credit/续做；`subscriptionCardBuy`/`starterBuy` growth 共享新增的 `CommercialServiceBase.claimOrderResume()`。
-- **siegeWorkerPool 任务超时计时器原来在 `submit()` 入队时就武装**，而非任务真正派发给 worker 时——高负载下排队超过 `taskTimeoutMs` 的任务一旦真正开始跑就永久失去挂死检测（一次性 `setTimeout` 早已在排队期间空耗掉，且从不重新武装），卡死的 worker 再也不会被替换。改为在 `dispatch()`（任务真正分配给空闲 worker 那一刻）才武装计时器；`PendingTask.timer` 相应改为可空。新增回归测试 + fixture `test/fixtures/slowThenHangWorker.ts`（对修复前代码回退验证过确实会失败，不是空转通过的假回归）。
+- **siegeWorkerPool 任务超时计时器原来在 `submit()` 入队时就武装**，而非任务真正派发给 worker 时——高负载下排队超过 `taskTimeoutMs` 的任务一旦真正开始跑就永久失去挂死检测（一次性 `setTimeout` 早已在排队期间空耗掉，且从不重新武装），卡死的 worker 再也不会被替换。改为在 `dispatch()`（任务真正分配给空闲 worker 那一刻）才武装计时器；`PendingTask.timer` 相应改为可空。新增回归测试 + fixture `test/fixtures/answerThenHangWorker.ts`（对修复前代码回退验证过确实会失败，不是空转通过的假回归）。
 - **gateway `rate_limited` 缺 i18n 分支**：`FriendsScene` 落进默认档位显示"找不到该玩家"（比通用兜底更误导）；补分支 + 三语言文案。
 
 验证同上（13 包 tsc -b 全绿；commercial/metaserver/worldsvc/client 全量 vitest 全绿）。四处 CAS 修复均补了并发复现回归测试（`Promise.all` 并发调用足以触发"读后写"竞态，无需额外调度器 hack），且逐条对修复前代码回退验证过确实会失败，详见 [`SERVER_LOGIC_AUDIT_2026-07-29.md`](../design/game/SERVER_LOGIC_AUDIT_2026-07-29.md) 末尾"并发回归测试补齐"节。

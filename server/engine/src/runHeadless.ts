@@ -58,3 +58,28 @@ export function runHeadless(config: GameConfig, input: InputSource, maxTicks: nu
   }
   return { ok: engine.state.phase === GamePhase.GameOver, ticks, engine };
 }
+
+/**
+ * Same loop as {@link runHeadless}, but awaits `pause()` after every `sliceTicks` frames so the
+ * recompute can run at background priority (client peer judge: in a Web Worker it leaves the CPU to
+ * the player's own match; on the main thread it keeps each slice short enough not to drop a frame).
+ * Determinism is unaffected — pausing only changes *when* the next step runs, never its inputs.
+ */
+export async function runHeadlessSliced(
+  config: GameConfig,
+  input: InputSource,
+  maxTicks: number,
+  pause: () => Promise<void>,
+  sliceTicks: number,
+): Promise<HeadlessOutcome> {
+  const engine = createGameEngine(config, input);
+  let ticks = 0;
+  while (engine.state.phase !== GamePhase.GameOver && ticks < maxTicks) {
+    const cmds = input.take(ticks);
+    if (cmds === null) break;
+    engine.step(ticks, cmds);
+    ticks++;
+    if (ticks % sliceTicks === 0) await pause();
+  }
+  return { ok: engine.state.phase === GamePhase.GameOver, ticks, engine };
+}

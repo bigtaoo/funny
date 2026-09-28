@@ -3,6 +3,7 @@
 // ~5s march poll, so each renderer tears its layer down first.
 import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../../i18n';
+import { isChatDisabled } from '../../../ui/chatPolicy';
 import {
   ui as C,
   txt,
@@ -44,9 +45,11 @@ export class HudPanel implements HudHandlers {
     });
     chatPanel.y = h - HUD_H;
     hud.addChild(chatPanel);
-    const latest = this.core.ctx.worldChatLatest;
+    // Platform "chat off" (ui/chatPolicy.ts): the bar still opens the social hub, but shows no chat.
+    const chatOff = isChatDisabled();
+    const latest = chatOff ? null : this.core.ctx.worldChatLatest;
     const chatLbl = txt(
-      latest ? `${latest.senderName}: ${latest.body.slice(0, 28)}` : t('world.chat'),
+      latest ? `${latest.senderName}: ${latest.body.slice(0, 28)}` : t(chatOff ? 'world.social' : 'world.chat'),
       FS.tiny,
       latest ? C.dark : C.mid
     );
@@ -54,7 +57,7 @@ export class HudPanel implements HudHandlers {
     chatLbl.x = 14;
     chatLbl.y = h - HUD_H / 2;
     hud.addChild(chatLbl);
-    if (this.core.ctx.worldChatUnread > 0) {
+    if (!chatOff && this.core.ctx.worldChatUnread > 0) {
       const badgeLabel =
         this.core.ctx.worldChatUnread > 9 ? '9+' : String(this.core.ctx.worldChatUnread);
       const badge = sketchPanel(22, 18, {

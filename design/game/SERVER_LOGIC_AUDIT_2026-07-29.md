@@ -68,7 +68,7 @@
 
 另外两处独立发现：
 
-- **siegeWorkerPool 排队任务的超时保护在 `submit()` 时就武装**（而非任务真正被派发给 worker 时），单一次 `setTimeout` 用掉后不会重新武装——高负载下排队超过 `taskTimeoutMs` 的任务一旦真正开始跑就永久失去挂死检测，卡死的 worker 再也不会被替换（这正是这个池设计上要处理的高负载场景）。修复：把计时器的武装从 `submit()` 移到 `dispatch()`（任务真正分配给空闲 worker 的那一刻），`PendingTask.timer` 相应改为可空。新增回归测试 `worldsvc/test/siegeWorkerPool.test.ts`（"dispatch-time arming regression"）+ 专用 fixture `test/fixtures/slowThenHangWorker.ts`：让若干正常任务先在单 worker 上排队耗掉超过 `taskTimeoutMs` 的时间，验证目标任务在真正派发后仍能获得完整的挂死保护窗口（对修复前代码回退验证过：该用例确实会失败/挂起，不是空转通过的假回归测试）。
+- **siegeWorkerPool 排队任务的超时保护在 `submit()` 时就武装**（而非任务真正被派发给 worker 时），单一次 `setTimeout` 用掉后不会重新武装——高负载下排队超过 `taskTimeoutMs` 的任务一旦真正开始跑就永久失去挂死检测，卡死的 worker 再也不会被替换（这正是这个池设计上要处理的高负载场景）。修复：把计时器的武装从 `submit()` 移到 `dispatch()`（任务真正分配给空闲 worker 的那一刻），`PendingTask.timer` 相应改为可空。新增回归测试 `worldsvc/test/siegeWorkerPool.test.ts`（"dispatch-time arming regression"）+ 专用 fixture `test/fixtures/answerThenHangWorker.ts`：让若干正常任务先在单 worker 上排队耗掉超过 `taskTimeoutMs` 的时间，验证目标任务在真正派发后仍能获得完整的挂死保护窗口（对修复前代码回退验证过：该用例确实会失败/挂起，不是空转通过的假回归测试）。
 - **gateway 限流的 `rate_limited` 拒绝原因没有对应 i18n 分支**：`friends.duel.rateLimited` 缺失时，`FriendsScene.applyDuelCancelled` 落进默认档位显示"找不到该玩家"——比通用兜底文案更糟，是主动误导。修复：补 `rate_limited` 分支 + 三语言 `friends.duel.rateLimited` 文案。
 
 **验证**：13 个 server 包 `tsc -b` 全绿；client `tsc --noEmit -p tsconfig.test.json` + `webpack --mode production` 全绿。commercial 149/149（含新增 5 例）、metaserver 728/728（含新增 1 例）、worldsvc 370/370（含新增 1 例）全量 vitest 全绿；client 843/843（118 文件）全量 vitest 全绿。

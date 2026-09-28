@@ -27,6 +27,10 @@
                     gatewayUrl: { type: string }
                     # True when the player still holds their one-time free rename (current display name is a system-assigned default). Client shows a free rename button.
                     freeRename: { type: boolean }
+                    # Present (true) when the display name is owned by a portal account (CrazyGames) — renames are refused.
+                    nameLocked: { type: boolean }
+                    # Portal profile picture as an avatar id (`url:<https url>`); outranks the equipped in-game avatar.
+                    platformAvatarId: { type: string }
                     # Server epoch ms at response time (P1-1 clock-offset sample) — client corrects its local
                     # clock against this for any countdown computed from a server-issued epoch timestamp.
                     serverNow: { type: integer }

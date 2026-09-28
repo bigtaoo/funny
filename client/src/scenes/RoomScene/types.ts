@@ -31,6 +31,16 @@ export interface RoomSceneCallbacks {
    * connects; this only sets the initial view.
    */
   autoRanked?: boolean;
+  /**
+   * Open already creating / joining a friend room (a platform invite — app/nav/room.ts sends the
+   * request once the gateway connects); this only sets the initial view and seat, like autoRanked.
+   */
+  startIn?: 'create' | 'join';
+  /**
+   * A platform link that joins this room (CrazyGames invite link). When present, Copy puts the link
+   * on the clipboard instead of the bare code: a friend opening it lands in the room.
+   */
+  inviteLink?(code: string): string | null;
   /** Unified profile-popup extras (rank/ELO + family/sect) — see ProfilePopup's `fetchExtra`. Omitted offline. */
   getProfileExtra?(publicId: string): Promise<ProfileExtra>;
 }

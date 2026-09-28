@@ -15,6 +15,7 @@
 > - `cardArt.ts CARD_ART_URLS` 补入三人（`unit_max/unit_lena/unit_mara`）——手牌立绘正常显示。
 > - `CollectionScene.ts UNIT_NAME_KEY` 补入三人名称翻译映射——大厅养成页名称正常显示。
 > - 翻译 key（`card.max/lena/mara.name/desc`）zh/en/de 均已存在，无需新增。
+> - **Lena 骨骼无左前臂**（2026-09-27）：她的左臂连盾是一整张 `arm-l.png`，只绑 `l_upper_arm`，`l_lower_arm` 不绑图（同 `skin_lena`）。此前 `lena.taoeditor` 里除头以外 9 张部件图都是 max 的原图（从 max 项目复制起步留下的），发货的 `lena.tao` 左前臂也混着 max 的蓝色护臂；已全部换回她自己的部件并重新导出（M 档，其余绑定/动画与原发货版逐项一致）。
 >
 > **出图工具首选**：**ChatGPT（GPT-4o / DALL·E 3 出图）**——本项目"单段长自然语言 prompt、不分正负段、storybook 水彩"的需求由它支持最好，三角色定稿均出自 ChatGPT（Max/Lena/Mara）。免费备用：**Bing Image Creator**（同引擎）、**Mistral Le Chat**（FLUX，默认偏卡通，需 prompt 拉回写实）。Leonardo 免费档是每日刷新 token、单次生成贵模型/高清会一次吃上百 token，不是"低于 100 被锁"。⚠️ 上线前需核对所选工具的**商用授权**。
 

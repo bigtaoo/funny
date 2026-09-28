@@ -13,6 +13,7 @@ import type { WorldApiClient, FamilyDetailView, SectDetailView } from '../net/Wo
 import type { Replay, OwnerId, PlayerStats, MatchStartInfo, AIDifficulty } from '../game';
 import type { EloResult } from '../scenes/ResultScene';
 import type { ProfileData } from '../ui/dialogs/ProfilePopup';
+import type { RoomIntent } from '../platform/IPlatform';
 
 /** Mutable session-lifetime state, shared by reference across all nav modules. */
 export interface AppState {
@@ -32,6 +33,12 @@ export interface AppState {
   shopCardClaimable: boolean;
   /** Baseline set of reached achievement tiers (`achId#tier`) from the last refresh (S9-5b); null until first fetch. */
   achievementReached: Set<string> | null;
+  /**
+   * A friend room the platform asked for (an invite link at launch, an invite accepted mid-session,
+   * CrazyGames' "play with friends"), not yet opened. The next lobby entry that has a server
+   * connection opens it instead of the lobby (nav/lobby.ts). Null on every platform without rooms.
+   */
+  pendingRoomIntent: RoomIntent | null;
 }
 
 /**
@@ -59,7 +66,8 @@ export interface Nav {
   forceLogout(): void;
   resolveEntry(): Promise<void>;
   goDeckBuilder(onSave: (deck: string[]) => void): void;
-  goRoom(opts?: { autoRanked?: boolean }): void;
+  /** `intent`: open straight into creating / joining a friend room (platform invites, see AppState). */
+  goRoom(opts?: { autoRanked?: boolean; intent?: RoomIntent }): void;
   // `overlay`: mount the social hub over the still-live SLG world map (see AppViews.MountOpts) — set
   // only when entered from the world map, so backing out never rebuilds the map.
   goFriends(opts?: { defaultTab?: 'friends' | 'family' | 'sect' | 'world' | 'mail'; onBack?: () => void; overlay?: boolean }): void;

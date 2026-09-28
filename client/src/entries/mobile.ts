@@ -3,6 +3,8 @@ import { WebPlatform } from '../platform/web/WebPlatform';
 import { checkOtaUpdate } from '../platform/ota';
 import { setAudioBus } from '../audio/audioBus';
 import { WebAudioBus } from '../platform/web/WebAudioBus';
+import { setJudgeExecutor } from '../net/judgeExecutor';
+import { createWorkerJudgeExecutor } from '../platform/web/workerJudge';
 
 // Native (Capacitor iOS/Android) entry. The same WebPlatform runs inside the WKWebView:
 // it detects the native StoreKit bridge injected on `window.NWBilling` by the shell
@@ -17,6 +19,10 @@ import { WebAudioBus } from '../platform/web/WebAudioBus';
 // strictest of the autoplay gates (AUDIO_DESIGN.md §5) — WebAudioBus resumes on the first
 // window-level gesture, which covers it.
 setAudioBus(new WebAudioBus());
+
+// Peer-judge recomputes run in a background Web Worker (net/judgeExecutor.ts); WeChat keeps main-thread slices.
+const workerJudge = createWorkerJudgeExecutor();
+if (workerJudge) setJudgeExecutor(workerJudge);
 
 startApp(new WebPlatform('game-canvas')).catch(console.error);
 

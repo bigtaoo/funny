@@ -14,6 +14,7 @@ import {
   TROOP_CAP_BASE,
   RELOCATE_COST,
   BP_YIELD_MULT,
+  tileYield,
   type ResourceType,
 } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
@@ -130,7 +131,9 @@ describe.skipIf(!mongo)('worldsvc WorldService e2e', () => {
       mainBaseTile: tileId(W, neutral.x, neutral.y),
       territoryCount: 9, // ADR-025: capital is a 3×3 footprint (anchor + 8 ring), all owned by the player
     });
-    expect(me.yieldRate?.ink).toBe(RESOURCE_YIELD_BASE); // ADR-025: only the anchor contributes the base ink trickle
+    // ADR-025: only the anchor contributes the home-city yield (not ×9 for the ring cells); ADR-093: that yield
+    // is the ink trickle plus the paper/graphite/metal floor.
+    expect(me.yieldRate).toMatchObject(tileYield('base', 1));
 
     const tile = await svc.getTile(W, 'a', neutral.x, neutral.y);
     expect(tile).toMatchObject({ type: 'base', mine: true, occupied: true });
@@ -154,7 +157,7 @@ describe.skipIf(!mongo)('worldsvc WorldService e2e', () => {
     const me = await svc.getMe(W, 'a');
     expect(me.troops).toBe(TROOP_CAP_BASE - GARRISON_PER_TILE);
     expect(me.territoryCount).toBe(10); // 9 base footprint cells + 1 occupied resource tile
-    expect(me.yieldRate?.[rt]).toBe(RESOURCE_YIELD_BASE * procRes.level + (rt === 'ink' ? RESOURCE_YIELD_BASE : 0));
+    expect(me.yieldRate?.[rt]).toBe(RESOURCE_YIELD_BASE * procRes.level + (tileYield('base', 1)[rt] ?? 0));
 
     // Occupy is idempotent: re-occupying the same tile does not deduct additional troops.
     await svc.occupyTile(W, 'a', res.x, res.y);
@@ -352,7 +355,7 @@ describe.skipIf(!mongo)('worldsvc WorldService e2e', () => {
     const res = findCoord((t) => t.type === 'resource', 50, 50);
     const procRes = proceduralTile(W, res.x, res.y);
     const rt = procRes.resType as ResourceType;
-    const baseYield = RESOURCE_YIELD_BASE * procRes.level + (rt === 'ink' ? RESOURCE_YIELD_BASE : 0);
+    const baseYield = RESOURCE_YIELD_BASE * procRes.level + (tileYield('base', 1)[rt] ?? 0);
 
     // Without battle pass: yield is baseline.
     await svc.occupyTile(W, 'a', res.x, res.y);

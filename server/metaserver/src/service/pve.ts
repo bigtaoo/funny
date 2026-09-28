@@ -16,16 +16,16 @@
 // ever touch `deps` fields, not a bound method — those are plain deps-parameterized functions with no
 // ctx needed at all (pve/helpers.ts).
 // - pve/helpers.ts:  shared pure transforms + deps-only helpers (stamina/clear/verify all import from here)
-// - pve/stamina.ts:  pveEnter + purchaseStamina (A4)
+// - pve/stamina.ts:  pveEnter + purchaseStamina (A4) + adStamina (CrazyGames rewarded-ad refill)
 // - pve/clear.ts:    pveClear + the L1 spot-check decision (§8.6)
 // - pve/verify.ts:   pveVerify — L1 replay re-simulation settlement (§8.6)
 import type { MetaHandlers } from '../generated/routes.gen.js';
 import { type MetaCore } from './base.js';
-import { pveEnterHandler, purchaseStaminaHandler } from './pve/stamina.js';
+import { pveEnterHandler, purchaseStaminaHandler, adStaminaHandler } from './pve/stamina.js';
 import { pveClearHandler } from './pve/clear.js';
 import { pveVerifyHandler } from './pve/verify.js';
 
-type PveHandlers = Pick<MetaHandlers, 'purchaseStamina' | 'pveEnter' | 'pveClear' | 'pveVerify'>;
+type PveHandlers = Pick<MetaHandlers, 'purchaseStamina' | 'adStamina' | 'pveEnter' | 'pveClear' | 'pveVerify'>;
 
 export class PveService {
   constructor(private readonly core: MetaCore) {}
@@ -36,6 +36,10 @@ export class PveService {
 
     async purchaseStamina(...args: Parameters<PveHandlers['purchaseStamina']>) {
       return purchaseStaminaHandler(this.core.deps, ...args);
+    }
+
+    async adStamina(...args: Parameters<PveHandlers['adStamina']>) {
+      return adStaminaHandler(this.core, ...args);
     }
 
     async pveClear(...args: Parameters<PveHandlers['pveClear']>) {

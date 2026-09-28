@@ -118,13 +118,16 @@ export class ShopPanel {
     const mon = core.cb.getMonetization?.() ?? { subscriptionExpiry: 0, starterUsed: [] };
     const { active, claimedToday, expiringSoon } = core.monthlyCardStatus();
 
-    // Monthly card: Buy (locked while a card is active) + daily Claim.
-    if (core.cb.buyMonthlyCard) {
-      const buttons: BtnSpec[] = [
-        active
+    // Monthly card: Buy (locked while a card is active) + daily Claim. Without a payment channel
+    // (no buyMonthlyCard) the tile still appears while a card bought elsewhere is active — the daily
+    // Claim is what the player paid for, and the lobby's shop red dot already points at it.
+    if (core.cb.buyMonthlyCard || (core.cb.claimMonthlyCard && active)) {
+      const buttons: BtnSpec[] = [];
+      if (core.cb.buyMonthlyCard) {
+        buttons.push(active
           ? { label: t('shop.monthlyActive'), enabled: false, primary: true, icon: 'check' }
-          : { label: t('shop.buy'), enabled: !busy, primary: true, icon: 'coin', fn: () => void this.actions.runUnboundedDeal(() => core.cb.buyMonthlyCard!(), 'shop.bought', t('shop.monthlyCard')) },
-      ];
+          : { label: t('shop.buy'), enabled: !busy, primary: true, icon: 'coin', fn: () => void this.actions.runUnboundedDeal(() => core.cb.buyMonthlyCard!(), 'shop.bought', t('shop.monthlyCard')) });
+      }
       if (core.cb.claimMonthlyCard) {
         // Claim greys out both when the card is inactive (not purchased) and once today's reward is taken.
         // The label itself is the clear status — no ambiguous "claimed-or-inactive" toast on tap.
@@ -137,7 +140,7 @@ export class ShopPanel {
       }
       specs.push({
         icon: 'coinChest', iconColor: C.gold, artUrl: monthlyCardArtUrl as string, title: t('shop.monthlyCard'), highlight: true,
-        usdCents: MONTHLY_CARD_USD_CENTS,
+        ...(core.cb.buyMonthlyCard ? { usdCents: MONTHLY_CARD_USD_CENTS } : {}),
         lines: [{ text: active ? t('shop.monthlyActive') : t('shop.monthlyInactive'), color: active ? C.green : C.mid }],
         expiringSoonStamp: expiringSoon,
         buttons,

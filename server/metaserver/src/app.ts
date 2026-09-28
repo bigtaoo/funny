@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import type { Collections, JwtConfig, FeatureFlagCache, RedisLike, SaveData, WordlistCache } from '@nw/shared';
-import { createLogger, internalKeysFromEnv, RENEWED_TOKEN_HEADER } from '@nw/shared';
+import { createInternalAuth, createLogger, internalKeysFromEnv, RENEWED_TOKEN_HEADER } from '@nw/shared';
 import { MetaService } from './service.js';
 import { assembleEquipmentInv } from './equipment.js';
 import { assembleCardInv } from './cards.js';
@@ -63,6 +63,8 @@ export interface BuildAppOpts {
   jwt: JwtConfig;
   /** Internal service auth key (used by gateway to fetch ELO / gameserver to report match results / commercial calls). */
   internalKey: string;
+  /** Per-caller internal key registry (strict mode); defaults to NW_INTERNAL_KEYS. Injectable for tests. */
+  internalKeys?: Record<string, string>;
   /** commercial internal base URL (null = economy endpoints return 503); or inject a client directly (for tests). */
   commercialUrl?: string | null;
   commercial?: CommercialClient;
@@ -224,6 +226,14 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
   // Shared with registerInternalRoutes below so an admin ban/unban (internal API) invalidates the same
   // cache rejectIfBanned (public API) reads — one instance per buildApp call, see accountCache.ts.
   const accountCache = new AccountCache();
+  // botsvc presents its internal key on /pve/verify (see ServiceDeps.isBotsvcRequest). Strict mode names
+  // the caller; the shared-key fallback can't, but any holder of that key is a trusted service anyway.
+  const internalKeys = opts.internalKeys ?? internalKeysFromEnv();
+  const internalAuth = createInternalAuth({ keys: internalKeys, legacyKey: opts.internalKey });
+  const isBotsvcRequest = (headers: Record<string, string | string[] | undefined>): boolean => {
+    const r = internalAuth.verify(headers);
+    return r.ok && (!internalAuth.strict || r.caller === 'botsvc');
+  };
   const service = new MetaService({
     cols: opts.cols,
     jwt: opts.jwt,
@@ -239,6 +249,7 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
     socialsvc,
     redis,
     accountCache,
+    isBotsvcRequest,
   });
 
   // Ad platform SSV callbacks (platform-initiated; no player authentication).
@@ -268,7 +279,7 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
   registerInternalRoutes(app, {
     cols: opts.cols,
     internalKey: opts.internalKey,
-    internalKeys: internalKeysFromEnv(),
+    internalKeys,
     accountCache,
     now,
     gateway,

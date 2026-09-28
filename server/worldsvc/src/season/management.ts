@@ -12,6 +12,7 @@ import {
   SLG_SEASON_DURATION_MS,
   slgTitleId,
   runBounded,
+  RESOURCE_TYPES,
 } from '@nw/shared';
 
 /** Fan-out concurrency cap for per-account settlement side effects (mail/title grants). See boundedConcurrency.ts. */
@@ -325,6 +326,43 @@ export class SeasonManagementService {
       filled.push(w._id);
     }
     return filled;
+  }
+
+  /**
+   * Startup repair (ADR-093): re-derive the stored `yieldRate` of every player in an open/active world that
+   * predates the home-city floor, so the paper/graphite/metal floor reaches them now rather than on their
+   * next occupy/abandon/build completion — the only paths that recompute it, and a player stuck with no
+   * metal tile and no troops never triggers any of them.
+   *
+   * Each write banks the accrual at the OLD rate before installing the new one (settleExpr, same invariant
+   * as every other yieldRate write), so the floor is not paid retroactively for the time before the repair.
+   * Players whose recomputed rate is unchanged are not written. The world is stamped `baseFloorYieldAt`
+   * afterwards so a restart does not rescan it; a crash mid-pass leaves it unstamped and the next start
+   * finishes the job (already-repaired players then compare equal and are skipped).
+   * Returns the worlds scanned and how many players each had rewritten.
+   */
+  async backfillBaseFloorYield(): Promise<{ worldId: string; updated: number }[]> {
+    const { cols, now } = this.core.deps;
+    const worlds = await cols.worlds
+      .find({ status: { $in: ['open', 'active'] }, baseFloorYieldAt: { $exists: false } }, { projection: { _id: 1 } })
+      .toArray();
+    const out: { worldId: string; updated: number }[] = [];
+    for (const w of worlds) {
+      let updated = 0;
+      const players = cols.playerWorld.find({ worldId: w._id }, { projection: { _id: 1, accountId: 1, buildings: 1, yieldRate: 1 } });
+      for await (const pw of players) {
+        const { rate: yieldRate, count: territoryCount } = await this.core.recomputeYieldAndCount(w._id, pw.accountId);
+        if (RESOURCE_TYPES.every((rt) => (pw.yieldRate?.[rt] ?? 0) === yieldRate[rt])) continue;
+        const t = now();
+        await cols.playerWorld.updateOne({ _id: pw._id }, [
+          { $set: { resources: this.core.settleExpr(pw.buildings, t), yieldRate, territoryCount, lastTickAt: t, rev: { $add: ['$rev', 1] } } },
+        ]);
+        updated++;
+      }
+      await cols.worlds.updateOne({ _id: w._id }, { $set: { baseFloorYieldAt: now() } });
+      out.push({ worldId: w._id, updated });
+    }
+    return out;
   }
 
   /**

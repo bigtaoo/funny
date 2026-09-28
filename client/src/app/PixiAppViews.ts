@@ -76,6 +76,22 @@ import { markFeatureUsed } from '../assets/prefetchPolicy';
 import type { AppViews, LobbyView, RoomView, FriendsView, ChatView, NetGameView, ResultViewProps, FadeOpts, MountOpts } from './AppViews';
 
 /**
+ * The surrender dialog freezes the match, so the platform hears gameplay stop/start around it
+ * (CrazyGames asks for gameplayStop on every in-game pause; a no-op elsewhere). Confirming exits
+ * through onExitToLobby, whose destination reports the stop itself.
+ */
+function withGameplayPause(platform: IPlatform, cb: GameSceneCallbacks): GameSceneCallbacks {
+  return {
+    ...cb,
+    onPauseChange: (paused) => {
+      if (paused) platform.onGameplayStop();
+      else platform.onGameplayStart();
+      cb.onPauseChange?.(paused);
+    },
+  };
+}
+
+/**
  * The PIXI implementation of AppViews: each show*() runs the same
  * `manager.goto(new XxxScene(...))` the old startApp() did. Owns the layout; hands every mount to
  * `SceneMounts`, which decides what a viewport change does to it.
@@ -319,7 +335,7 @@ export class PixiAppViews implements AppViews {
     void enterBattle(
       { app: this.app, manager: this.manager, input: this.input },
       opts,
-      () => this.mounts.timedBuild('GameScene', () => new GameScene(this.layout, this.input, cb, opts)),
+      () => this.mounts.timedBuild('GameScene', () => new GameScene(this.layout, this.input, withGameplayPause(this.platform, cb), opts)),
     );
   }
 
@@ -452,7 +468,7 @@ export class PixiAppViews implements AppViews {
     void enterBattle(
       { app: this.app, manager: this.manager, input: this.input },
       opts,
-      () => this.mounts.timedBuild('GameScene', () => new GameScene(netLayout, this.input, cb, opts)),
+      () => this.mounts.timedBuild('GameScene', () => new GameScene(netLayout, this.input, withGameplayPause(this.platform, cb), opts)),
     ).then((s) => deferred.resolve(s));
     return {
       applyNetState:  (s) => deferred.call((sc) => sc.applyNetState(s)),

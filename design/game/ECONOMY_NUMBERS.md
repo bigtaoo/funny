@@ -44,7 +44,7 @@
 | `STAMINA_MAX` | 120 | 自然恢复上限（溢出停涨；可随账号等级提升，后置） |
 | `STAMINA_REGEN` | 1 / 6 min | = 10/h = **240/天**（满状态下日产出闸门） |
 | `STAMINA_REFILL_COIN` | **30 coins → +60 体力**（固定，走 commercial.spend） | 当前实装为定额、无递增、无每日次数上限（`purchaseStamina` 仅校验 amount=60） |
-| `STAMINA_REFILL_AD` | 1 广告 → +30 `[可调]` | 每日 ≤3 次 `[可调]`（设计项，未实装则忽略） |
+| `STAMINA_REFILL_AD` | 1 广告 → +30（`STAMINA_AD_AMOUNT`） | 每 UTC 日 3 次（`STAMINA_AD_DAILY_CAP`，独立计数 `adsStamina`，不占金币广告的 5 次）。**只在 CrazyGames 包实装**（2026-09-27，`POST /pve/stamina/ad`，服务端只认 `x-nw-platform: crazygames`）；网页 / iOS 壳 / 微信仍只有金币补充 |
 
 **每日有效体力** = 240（自然）+ 金币补充（30 金币/60 体力，按需购买）≈ **240 不氪起步 / 氪金按 30 金币/60 体力线性叠加**。
 

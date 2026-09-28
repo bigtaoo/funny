@@ -13,10 +13,14 @@ import {
   achievementStatDelta,
   getLevel,
   runHeadless,
+  runHeadlessSliced,
   ReplayInputSource,
   ENGINE_VERSION,
   Side,
+  type GameConfig,
   type GameMode,
+  type HeadlessOutcome,
+  type InputSource,
   type LevelDefinition,
   type OwnerId,
   type PlayerCommand,
@@ -47,46 +51,83 @@ export interface JudgeOutcome {
 
 const FAIL: JudgeOutcome = { ok: false, stateHash: '', winnerSide: 0, stars: 0, statsJson: '' };
 
+/** One recompute, split into setup and verdict so the sync and sliced drivers share everything but the loop. */
+interface JudgePlan {
+  config: GameConfig;
+  input: InputSource;
+  maxTicks: number;
+  finish(out: HeadlessOutcome): JudgeOutcome;
+}
+
 /**
  * Recompute one match and return the final result. If end-of-game cannot be reached (incomplete frame stream / error) → {ok:false}.
  * Non-empty `level_id` → PvE spot-check recomputation (campaign mode, returns star count); otherwise PvP (returns final state hash + winner).
  * Step limit = endFrame + buffer, to prevent corrupted replays from causing an infinite loop.
+ * Runs synchronously to the end — the live client uses {@link runJudgeSliced} instead (it must never block a frame).
  */
 export function runJudge(req: JudgeRequest): JudgeOutcome {
-  if (req.defenseJson) return runSiegeJudge(req);
-  if (req.levelId) return runPveJudge(req);
   try {
-    const replay = buildReplay(req, 'netplay', req.seed);
-    // endFrame + buffer: leaves slack after end-of-game to prevent corrupted replays from looping; a normal game will GameOver earlier.
-    const { ok, engine } = runHeadless(
-      {
-        seed: req.seed,
-        players: [{ id: 0 }, { id: 1 }],
-        mode: 'netplay',
-        ...(replay.decks ? { decks: replay.decks } : {}),
-      },
-      new ReplayInputSource(replay),
-      req.endFrame + 600,
-    );
-    if (!ok) return FAIL;
-
-    const winner = stateWinner(engine.state.winner);
-    const stats = engine.state.snapshotStats();
-    // S9-7 L2 offline spot-check: PvP recomputation reports **both sides'** per-side achievement stats (side index → achievementStatDelta for that side);
-    // meta compares each side against the archived reportedStats to detect over-reporting. owner↔side are always equal (0=Bottom/1=Top).
-    return {
-      ok: true,
-      stateHash: matchStateHash(winner, stats),
-      winnerSide: winner ?? 0,
-      stars: 0,
-      statsJson: JSON.stringify({
-        '0': achievementStatDelta(stats[0]),
-        '1': achievementStatDelta(stats[1]),
-      }),
-    };
+    const plan = planJudge(req);
+    return plan ? plan.finish(runHeadless(plan.config, plan.input, plan.maxTicks)) : FAIL;
   } catch {
     return FAIL;
   }
+}
+
+/**
+ * Same recompute as {@link runJudge}, awaiting `pause()` every `sliceTicks` frames (background
+ * priority: judge.worker in a Web Worker, or short main-thread slices where workers aren't available).
+ */
+export async function runJudgeSliced(
+  req: JudgeRequest,
+  pause: () => Promise<void>,
+  sliceTicks: number,
+): Promise<JudgeOutcome> {
+  try {
+    const plan = planJudge(req);
+    if (!plan) return FAIL;
+    return plan.finish(await runHeadlessSliced(plan.config, plan.input, plan.maxTicks, pause, sliceTicks));
+  } catch {
+    return FAIL;
+  }
+}
+
+function planJudge(req: JudgeRequest): JudgePlan | null {
+  if (req.defenseJson) return planSiegeJudge(req);
+  if (req.levelId) return planPveJudge(req);
+  return planPvpJudge(req);
+}
+
+function planPvpJudge(req: JudgeRequest): JudgePlan {
+  const replay = buildReplay(req, 'netplay', req.seed);
+  return {
+    config: {
+      seed: req.seed,
+      players: [{ id: 0 }, { id: 1 }],
+      mode: 'netplay',
+      ...(replay.decks ? { decks: replay.decks } : {}),
+    },
+    input: new ReplayInputSource(replay),
+    // endFrame + buffer: leaves slack after end-of-game to prevent corrupted replays from looping; a normal game will GameOver earlier.
+    maxTicks: req.endFrame + 600,
+    finish({ ok, engine }) {
+      if (!ok) return FAIL;
+      const winner = stateWinner(engine.state.winner);
+      const stats = engine.state.snapshotStats();
+      // S9-7 L2 offline spot-check: PvP recomputation reports **both sides'** per-side achievement stats (side index → achievementStatDelta for that side);
+      // meta compares each side against the archived reportedStats to detect over-reporting. owner↔side are always equal (0=Bottom/1=Top).
+      return {
+        ok: true,
+        stateHash: matchStateHash(winner, stats),
+        winnerSide: winner ?? 0,
+        stars: 0,
+        statsJson: JSON.stringify({
+          '0': achievementStatDelta(stats[0]),
+          '1': achievementStatDelta(stats[1]),
+        }),
+      };
+    },
+  };
 }
 
 /**
@@ -96,48 +137,45 @@ export function runJudge(req: JudgeRequest): JudgeOutcome {
  * a cheater can tamper with local state but cannot change "whether these commands can actually clear the game under this blueprint",
  * so the recomputed result matches an honest clear. Clear = player (owner 0) wins; otherwise → 0 stars.
  */
-function runPveJudge(req: JudgeRequest): JudgeOutcome {
-  try {
-    const level = getLevel(req.levelId);
-    if (!level) return FAIL; // judge does not have a local definition for this level → cannot recompute (version mismatch)
-    const replay = buildReplay(req, 'campaign', level.seed, req.levelId);
-    const { ok, engine } = runHeadless(
-      {
-        seed: level.seed,
-        players: [{ id: 0 }, { id: 1 }],
-        mode: 'campaign',
-        level,
-        // CC-1 Hero Roster snapshot (2026-07-26 fix, PVE_INTEGRITY §9): server-authoritative cardInv/equipmentInv,
-        // same conversion the live match uses (app/nav/game.ts) — ensures the recompute uses the player's real card
-        // levels/gear instead of the (removed) pveUpgrades/unitLevels params, which GameConfig no longer accepts.
-        cardInstances: toEngineCardInstances(parseJsonRecord<CardInstance>(req.cardInstancesJson)),
-        equipmentInv: parseJsonRecord<EquipmentInstance>(req.equipmentInvJson),
-      },
-      new ReplayInputSource(replay),
-      req.endFrame + 600,
-    );
-    if (!ok) return FAIL;
-
-    const winner = stateWinner(engine.state.winner);
-    if (winner !== 0) {
-      return { ok: true, stateHash: '', winnerSide: winner ?? 0, stars: 0, statsJson: '' };
-    }
-    const stats = engine.state.snapshotStats();
-    const summary = engine.state.snapshotSummary();
-    const ctx = buildStarContext(level, {
-      damageTakenByBase: stats[0].damageTakenByBase,
-      elapsedTicks: summary.elapsedTicks,
-      enemyLeaks: summary.enemyLeaks,
-      escortMinHpPct: summary.escortMinHpPct,
-      unitsKilled: stats[0].unitsKilled,
-    });
-    const stars = computeStars(level.rewards?.starThresholds, ctx);
-    // PvE feed (S9-3b): cleared (player owner 0 wins) → report the player's achievement stats for this match. Judge is authoritative; meta accumulates after L1 verification.
-    const statsJson = JSON.stringify(achievementStatDelta(stats[0]));
-    return { ok: true, stateHash: '', winnerSide: 0, stars, statsJson };
-  } catch {
-    return FAIL;
-  }
+function planPveJudge(req: JudgeRequest): JudgePlan | null {
+  const level = getLevel(req.levelId);
+  if (!level) return null; // judge does not have a local definition for this level → cannot recompute (version mismatch)
+  const replay = buildReplay(req, 'campaign', level.seed, req.levelId);
+  return {
+    config: {
+      seed: level.seed,
+      players: [{ id: 0 }, { id: 1 }],
+      mode: 'campaign',
+      level,
+      // CC-1 Hero Roster snapshot (2026-07-26 fix, PVE_INTEGRITY §9): server-authoritative cardInv/equipmentInv,
+      // same conversion the live match uses (app/nav/game.ts) — ensures the recompute uses the player's real card
+      // levels/gear instead of the (removed) pveUpgrades/unitLevels params, which GameConfig no longer accepts.
+      cardInstances: toEngineCardInstances(parseJsonRecord<CardInstance>(req.cardInstancesJson)),
+      equipmentInv: parseJsonRecord<EquipmentInstance>(req.equipmentInvJson),
+    },
+    input: new ReplayInputSource(replay),
+    maxTicks: req.endFrame + 600,
+    finish({ ok, engine }) {
+      if (!ok) return FAIL;
+      const winner = stateWinner(engine.state.winner);
+      if (winner !== 0) {
+        return { ok: true, stateHash: '', winnerSide: winner ?? 0, stars: 0, statsJson: '' };
+      }
+      const stats = engine.state.snapshotStats();
+      const summary = engine.state.snapshotSummary();
+      const ctx = buildStarContext(level, {
+        damageTakenByBase: stats[0].damageTakenByBase,
+        elapsedTicks: summary.elapsedTicks,
+        enemyLeaks: summary.enemyLeaks,
+        escortMinHpPct: summary.escortMinHpPct,
+        unitsKilled: stats[0].unitsKilled,
+      });
+      const stars = computeStars(level.rewards?.starThresholds, ctx);
+      // PvE feed (S9-3b): cleared (player owner 0 wins) → report the player's achievement stats for this match. Judge is authoritative; meta accumulates after L1 verification.
+      const statsJson = JSON.stringify(achievementStatDelta(stats[0]));
+      return { ok: true, stateHash: '', winnerSide: 0, stars, statsJson };
+    },
+  };
 }
 
 /**
@@ -149,35 +187,32 @@ function runPveJudge(req: JudgeRequest): JudgeOutcome {
  * The attacker cannot change "whether these troops can break through under this defense config" by tampering with local state,
  * so the recomputed result is the authoritative outcome. stateHash/stars are meaningless for siege and are always empty/0.
  */
-function runSiegeJudge(req: JudgeRequest): JudgeOutcome {
+function planSiegeJudge(req: JudgeRequest): JudgePlan | null {
+  let level: LevelDefinition;
   try {
-    let level: LevelDefinition;
-    try {
-      level = JSON.parse(req.defenseJson) as LevelDefinition;
-    } catch {
-      return FAIL; // defense config is not valid JSON → cannot recompute
-    }
-    const replay = buildReplay(req, 'siege', req.seed);
-    const { ok, engine } = runHeadless(
-      {
-        seed: req.seed,
-        players: [{ id: 0 }, { id: 1 }],
-        mode: 'siege',
-        level,
-        // CC-1 Hero Roster snapshot (2026-07-26 fix, PVE_INTEGRITY §9): see runPveJudge above for rationale.
-        cardInstances: toEngineCardInstances(parseJsonRecord<CardInstance>(req.cardInstancesJson)),
-        equipmentInv: parseJsonRecord<EquipmentInstance>(req.equipmentInvJson),
-      },
-      new ReplayInputSource(replay),
-      req.endFrame + 600,
-    );
-    if (!ok) return FAIL;
-
-    const winner = stateWinner(engine.state.winner);
-    return { ok: true, stateHash: '', winnerSide: winner ?? 1, stars: 0, statsJson: '' };
+    level = JSON.parse(req.defenseJson) as LevelDefinition;
   } catch {
-    return FAIL;
+    return null; // defense config is not valid JSON → cannot recompute
   }
+  const replay = buildReplay(req, 'siege', req.seed);
+  return {
+    config: {
+      seed: req.seed,
+      players: [{ id: 0 }, { id: 1 }],
+      mode: 'siege',
+      level,
+      // CC-1 Hero Roster snapshot (2026-07-26 fix, PVE_INTEGRITY §9): see planPveJudge above for rationale.
+      cardInstances: toEngineCardInstances(parseJsonRecord<CardInstance>(req.cardInstancesJson)),
+      equipmentInv: parseJsonRecord<EquipmentInstance>(req.equipmentInvJson),
+    },
+    input: new ReplayInputSource(replay),
+    maxTicks: req.endFrame + 600,
+    finish({ ok, engine }) {
+      if (!ok) return FAIL;
+      const winner = stateWinner(engine.state.winner);
+      return { ok: true, stateHash: '', winnerSide: winner ?? 1, stars: 0, statsJson: '' };
+    },
+  };
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────────

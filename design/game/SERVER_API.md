@@ -173,13 +173,15 @@ POST /pve/clear    { levelId, stars, pveSnapshot?, replayRef? }
    → { save: SaveData, capped?: boolean, needsReplay?: boolean, verifyId?: string }
 POST /pve/verify   { verifyId, frames }        → { save: SaveData, status: 'verified'|'rejected'|'unverified' }
 POST /pve/stamina/purchase                     → { save: SaveData }   // A4 付费补体力：30 金币 → +60 体力
+POST /pve/stamina/ad   { adToken, platform? }  → { stamina, adsLeft }  // CrazyGames 看广告补体力：+30，每日 3 次
 ```
 
 - **`/pve/clear`**：校验 level 存在 + **已解锁**（前置关在 `progress.cleared` 内）+ `stars≤3` → 按 `grantForClear(levelId,isFirst)` 在**每日上限**（`PVE_DAILY_CLEAR_REWARD_CAP`，按 `dayKey` 原子计数，Redis 存储，类比 `victoryDaily`，均见 §5 的 `dailyCounter.ts` 说明）内发材料；首通额外发首通奖励 + 解锁下一关 + 记星（取 max）→ 原子写 `progress/stars/materials`（rev 守卫）→ 回推权威 save。超上限：仍写 progress/stars，材料不发（`capped:true`）。
 - **抽检复算（L1，复用 S1-J 对等裁判）**：`shouldSpotCheck` 命中（首通恒查 / 开局 `pveSnapshot` 与服务器权威 `pveUpgrades` 不符「开局战力不符→必作弊」/ 按 `PVE_VERIFY_SAMPLE_RATE` 随机）→ 暂扣材料、记 `pveVerifications{status:pending}`、回 `{needsReplay:true, verifyId}`；客户端补传录像帧调 `/pve/verify` → meta 经 `gateway.judge` 派第三方无头复算 → 复算星数 ≥ 声称则发材料(`verified`)，< 声称则不发(`rejected`)，无裁判可裁则 benefit-of-doubt 照发(`unverified`)。
 - **`/pve/stamina/purchase`**（补记 2026-09-03，此前 spec 里有、`design/` 里全库无一处提及）：走 `commercial.spend` 扣 30 金币后给 +60 体力，数值见 [`BALANCE.md`](BALANCE.md) §10 / [`ECONOMY_NUMBERS.md`](ECONOMY_NUMBERS.md) §3；余额不足 `INSUFFICIENT_FUNDS`，体力已满仍按满值封顶。客户端入口 `LevelPrepScene` 的「补充体力」按钮（失败则路由到商店）。
+- **`/pve/stamina/ad`**（2026-09-27）：CrazyGames 包的激励视频补体力。`x-nw-platform` 不是 `crazygames` 一律 400（网页包和 iOS 壳同源，iOS 体力只走金币）；先按广告 token 去重（重放 400，不占次数），再占当日 `adsStamina` 计数（满 3 次 429 `DAILY_CAP_REACHED`）；加体力前先补算自然恢复，封顶 120，到顶停计时。门户没有服务端回调，token 由客户端给，所以兜底只有次数上限 + token 去重（与金币广告同一取舍）。返回 `adsLeft` 供客户端当天用完后隐藏按钮。
 - **`/pve/enter`**（补记 2026-09-03，此前只在 `ECONOMY_NUMBERS.md` §3 出现过，本「契约单一来源」漏列）：体力**在进入关卡时**扣、不在结算时扣（2026-07-06 拍板）；中途撤退/打输不退还。离线时客户端本地镜像先扣，联网后用本端点与 `pveStamina` 集合对账。也是 `rejectIfBanned()` 的两个生效点之一（另一个是 `/pve/clear`）。
-- 四端点均返回完整权威 SaveData（客户端 adopt 镜像，同经济回执）。
+- 除 `/pve/stamina/ad`（只回体力快照 + `adsLeft`）外，四端点均返回完整权威 SaveData（客户端 adopt 镜像，同经济回执）。
 - ~~`/pve/upgrade`~~ **已删除（2026-07-30）**：曾经"服务器按 `PVE_UPGRADE_COSTS` 校验材料足够 → 扣材料 + `pveUpgrades[id]+1` → 回推 save"，CC-1 起单位养成改走 Hero Roster（`cardInv`）后彻底死代码——客户端唯一调用点 `SaveManager.upgrade()` 早已零调用方且标 `@deprecated`。删除范围：契约片段（`openapi/paths/pve.yml`）+ 两处生成产物（`openapi.yml`/`routes.gen.ts`，重跑 `gen:api:contracts`/`gen:api:server`）+ `MetaHandlers`/`PveHandlers` 类型 + 服务端 handler（`pve.ts`）+ `@nw/shared` 里同样孤儿的 `PVE_UPGRADE_COSTS`/`findPveUpgrade`/`pveUpgradeCost` + client `ApiClient`/`SaveManager` + 两侧既有测试。详见 `SLG_DESIGN_LOG.md` §43 / comm-audit-p2-remaining。
 
 ### 2.8 装备养成（服务器权威，ADR-010 / ADR-012 / `EQUIPMENT_DESIGN.md §18`）

@@ -220,7 +220,7 @@ bump（字段不变）。客户端 `extractSyncPatch` 去掉这三段；服务�
 
 ## 9. 已知未修 gap（2026-07-22 体检登记）
 
-- **裁判选取缺 idle 校验（`gateway/src/Gateway.ts:428 pickJudge`）**：`pickJudge` 只筛 `canJudge` + ws OPEN + 不在 exclude，**没有校验候选人是否正在对局**（函数注释 §doc line 388 写的是「picks an eligible **idle** online player」，与实现不符）。当前只靠客户端自报的 `canJudge` 兜底——若客户端在对局中未及时把 `canJudge` 置 false，一个正在打 PvP 的玩家可能被抽去做 L1 无头复算，抢占其 CPU/内存、影响手感。**尚未修复**：应在 `pickJudge` 服务端加「不在活跃对局」判据（如查 Redis `activeMatch` 或连接态），不能只信客户端标志。
+- **裁判选取缺 idle 校验（`gateway/src/Gateway.ts:428 pickJudge`）**：`pickJudge` 只筛 `canJudge` + ws OPEN + 不在 exclude，**没有校验候选人是否正在对局**（函数注释 §doc line 388 写的是「picks an eligible **idle** online player」，与实现不符）。当前只靠客户端自报的 `canJudge` 兜底——若客户端在对局中未及时把 `canJudge` 置 false，一个正在打 PvP 的玩家可能被抽去做 L1 无头复算，抢占其 CPU/内存、影响手感。~~尚未修复~~ **✅ 2026-09-27 修复**：`pickJudge` 现在查 Redis `activeMatch`，同时客户端战斗中会退出裁判池、收到请求也直接拒绝，复算本身改到后台优先级执行（Web Worker / 主线程分片）。详见 `SERVER_API_INTERNAL.md §8.1`「裁判只找空闲玩家」。触发这次修复的是 botsvc PvE：机器人的首通抽查全派给了唯一在线的真人，把这位玩家的 PvP 卡成「等待对手」。
 
 - ✅（2026-07-26 修复）**L1 裁判复算长期用「裸蓝图」跑，完全无视玩家真实练度/装备**：`metaserver/pve.ts` 的
   `pveVerifications` 快照 + `gateway.judge()` 调用此前一直传 `pveUpgrades`/`unitLevels`（`JudgeRequest` 字段 7/9），

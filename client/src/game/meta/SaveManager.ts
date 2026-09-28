@@ -43,7 +43,7 @@ export interface SaveManagerOpts {
    * Account profile returned from the cloud; called back after bootstrap/refresh pulls it. Used for client persistence / UI refresh / online connectivity.
    * `gatewayUrl`: the control-plane WS address delivered by the server (not hardcoded on the client; see ApiClient.AuthResult).
    */
-  onProfile?: (profile: { displayName?: string; publicId?: string; gatewayUrl?: string; freeRename?: boolean }) => void;
+  onProfile?: (profile: { displayName?: string; publicId?: string; gatewayUrl?: string; freeRename?: boolean; nameLocked?: boolean; platformAvatarId?: string }) => void;
   /** Retrieve a local replay (ReplayStore); during L1 spot-check, offline flush uses replayId to fetch and upload for server re-validation (§8.6). */
   loadReplay?: (id: string) => Replay | null;
 }
@@ -53,7 +53,7 @@ export class SaveManager {
   private readonly store: SaveStore;
   private readonly api?: ApiClient;
   private readonly getCredential?: () => Promise<AuthCredential>;
-  private readonly onProfile?: (profile: { displayName?: string; publicId?: string; gatewayUrl?: string; freeRename?: boolean }) => void;
+  private readonly onProfile?: (profile: { displayName?: string; publicId?: string; gatewayUrl?: string; freeRename?: boolean; nameLocked?: boolean; platformAvatarId?: string }) => void;
   private readonly loadReplay?: (id: string) => Replay | null;
   /**
    * Login-reconnect-prompt: the most recent activeMatch seen from a getSave() response, or null if the
@@ -264,7 +264,7 @@ export class SaveManager {
         displayName: cloud.displayName,
         publicId: auth.publicId ?? cloud.publicId,
         gatewayUrl: auth.gatewayUrl ?? cloud.gatewayUrl,
-        freeRename: cloud.freeRename,
+        freeRename: cloud.freeRename, nameLocked: cloud.nameLocked, platformAvatarId: cloud.platformAvatarId,
       });
       await flushPending(this.queues); // settle clears that were queued offline
       await flushPendingStamina(this.queues); // settle stamina spends that were queued offline
@@ -293,7 +293,7 @@ export class SaveManager {
         displayName: cloud.displayName,
         publicId: cloud.publicId,
         gatewayUrl: cloud.gatewayUrl,
-        freeRename: cloud.freeRename,
+        freeRename: cloud.freeRename, nameLocked: cloud.nameLocked, platformAvatarId: cloud.platformAvatarId,
       });
       await flushPending(this.queues); // settle clears queued offline after reconnection
       await flushPendingStamina(this.queues); // settle stamina spends queued offline after reconnection

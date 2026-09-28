@@ -8,7 +8,7 @@ import { describe, it, expect } from 'vitest';
 import { createGameEngine } from '@nw/engine/GameEngine';
 import type { LevelDefinition } from '@nw/engine/campaign/LevelDefinition';
 import { GamePhase, Side, type InputSource, type OwnerId, type PlayerCommand } from '../src/game';
-import { matchStateHash, runJudge } from '../src/net/judgeRunner';
+import { matchStateHash, runJudge, runJudgeSliced } from '../src/net/judgeRunner';
 import { PlayerCommands } from '../src/net/proto/game';
 import { MatchMode, type JudgeRequest } from '../src/net/proto/transport';
 
@@ -127,6 +127,21 @@ describe('peer judge runner', () => {
     expect(a).toEqual(b);
     expect(a.ok).toBe(true);
   }, 30_000);
+
+  it('sliced recompute (background priority) yields exactly the synchronous verdict', async () => {
+    const req = buildJudgeRequest(authoredByFrame());
+    let pauses = 0;
+    const sliced = await runJudgeSliced(req, async () => { pauses++; }, 60);
+    expect(sliced).toEqual(runJudge(req));
+    expect(sliced.ok).toBe(true);
+    expect(pauses).toBeGreaterThan(1);
+  }, 30_000);
+
+  it('a pause that throws (deadline passed) → ok:false, no crash', async () => {
+    const req = buildJudgeRequest(authoredByFrame());
+    const out = await runJudgeSliced(req, async () => { throw new Error('deadline'); }, 60);
+    expect(out.ok).toBe(false);
+  });
 
   it('incomplete frame stream (endFrame well before terminal state) → ok:false, no crash', () => {
     const req = buildJudgeRequest(authoredByFrame());

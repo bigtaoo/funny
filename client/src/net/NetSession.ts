@@ -39,7 +39,8 @@ import {
   type DuelCancelled,
 } from './proto/transport';
 import { NetInputSource, type MatchStartInfo } from '../game';
-import { runJudge } from './judgeRunner';
+import { executeJudge } from './judgeExecutor';
+import { isBattleBusy, onBattleBusyChange } from './battleBusy';
 import { netLog, notifySessionExpired } from './log';
 import type { ApiClient } from './ApiClient';
 import { TOKEN_KEY } from '../app/appConstants';
@@ -121,6 +122,9 @@ export class NetSession {
    *  prematch_lost{context:'queue'} push (matchsvc restart-safety) can silently re-submit the same
    *  ranked matchmaking request without the player having to notice or retype anything. */
   private lastRankedDeck: string[] | null = null;
+  /** Control plane is open — caps updates on battle enter/exit are only sent then (reconnect re-sends anyway). */
+  private gatewayOpen = false;
+  private readonly unsubBattleBusy: () => void;
 
   constructor(
     private readonly platform: IPlatform,
@@ -151,13 +155,18 @@ export class NetSession {
         onStateChange: (s) => {
           // Advertise judge capability whenever the control plane (re)opens so the
           // server can pick us as a peer judge for desynced ranked matches (Phase C).
-          if (s === 'open') this.gateway.sendClientCaps(this.canJudge);
+          this.gatewayOpen = s === 'open';
+          if (s === 'open') this.sendJudgeCaps();
           if (!this.game) this.handlers.onNetState?.(s);
         },
         // gateway reconnect: server re-sends room_state for our accountId (no
         // client action needed — GATEWAY_DESIGN §7 default).
         onAuthRejected: () => { this.gatewayAuthRejected = true; },
       },
+    });
+    // Withdraw from the peer-judge pool while a battle is on screen, rejoin after it.
+    this.unsubBattleBusy = onBattleBusyChange(() => {
+      if (this.gatewayOpen) this.sendJudgeCaps();
     });
   }
 
@@ -166,6 +175,10 @@ export class NetSession {
    * full headless match, so gate it on a reasonably capable host; unknown → yes
    * (the run is bounded and only requested on rare desyncs).
    */
+  private sendJudgeCaps(): void {
+    this.gateway.sendClientCaps(this.canJudge && !isBattleBusy());
+  }
+
   private get canJudge(): boolean {
     const cores = (globalThis.navigator as { hardwareConcurrency?: number } | undefined)
       ?.hardwareConcurrency;
@@ -180,6 +193,7 @@ export class NetSession {
 
   /** Leave the room/queue and tear down both sockets. */
   close(): void {
+    this.unsubBattleBusy();
     this.gateway.leaveRoom();
     this.gateway.disconnect();
     this.game?.disconnect();
@@ -326,8 +340,18 @@ export class NetSession {
       // it headlessly and report the verdict hash; this client is a neutral third
       // party (never one of the two players in that match).
       const r = msg.judgeRequest;
-      const out = runJudge(r);
-      this.gateway.sendJudgeVerdict(r.requestId, out.stateHash, out.winnerSide, out.ok, out.stars, out.statsJson);
+      // Never take on a recompute mid-battle, even at background priority: our own
+      // lockstep comes first. Decline (meta voids the spot-check, no penalty); the
+      // gateway normally won't pick us — this covers the caps-update race.
+      if (isBattleBusy()) {
+        log.info('judge_request declined: in battle', { requestId: r.requestId });
+        this.gateway.sendJudgeVerdict(r.requestId, '', 0, false);
+        return;
+      }
+      // Background priority: a Web Worker where available, short main-thread slices otherwise.
+      void executeJudge(r).then((out) => {
+        this.gateway.sendJudgeVerdict(r.requestId, out.stateHash, out.winnerSide, out.ok, out.stars, out.statsJson);
+      });
     } else if (msg.friendPresence) {
       this.handlers.onFriendPresence?.(msg.friendPresence);
     } else if (msg.friendRequest) {

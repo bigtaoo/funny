@@ -45,6 +45,9 @@ export class SeasonService {
   backfillMissingCities(): Promise<string[]> {
     return this.management.backfillMissingCities();
   }
+  backfillBaseFloorYield(): Promise<{ worldId: string; updated: number }[]> {
+    return this.management.backfillBaseFloorYield();
+  }
   processDueSeasonSettlement(worldIds?: readonly string[]): Promise<string[]> {
     return this.management.processDueSeasonSettlement(worldIds);
   }

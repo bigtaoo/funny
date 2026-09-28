@@ -7,6 +7,7 @@ import {
   MARCH_MORALE_COMBAT_FLOOR,
   MARCH_MORALE_FLOOR_RADIUS_RATIO,
   RESOURCE_YIELD_BASE,
+  BASE_FLOOR_YIELD,
   type ResourceType,
   type TileType,
 } from './core';
@@ -16,7 +17,9 @@ import { TERRAIN_OBSTACLE, TERRAIN_CROSSING, type MapTerrainIndex } from './mapT
 
 /**
  * Per-tile hourly yield (added to `playerWorld.yieldRate` after claiming). Pure function.
- * - `base` (home city): provides a starting ink trickle (`RESOURCE_YIELD_BASE`), ensuring new players always have yield to settle.
+ * - `base` (home city): a starting ink trickle (`RESOURCE_YIELD_BASE`) plus a `BASE_FLOOR_YIELD` floor of paper,
+ *   graphite and metal (ADR-093), so every player can train troops from spawn whatever tiles surround them.
+ *   Sticker is left to the stickerShop.
  * - Tiles with a `resType` (resource / familyKeep / territory after claiming): yield the corresponding resource at `RESOURCE_YIELD_BASE × level`.
  * - All others (neutral/territory without resType): no yield.
  */
@@ -25,7 +28,9 @@ export function tileYield(
   level: number,
   resType?: ResourceType,
 ): Partial<Record<ResourceType, number>> {
-  if (type === 'base') return { ink: RESOURCE_YIELD_BASE };
+  if (type === 'base') {
+    return { ink: RESOURCE_YIELD_BASE, paper: BASE_FLOOR_YIELD, graphite: BASE_FLOOR_YIELD, metal: BASE_FLOOR_YIELD };
+  }
   if (resType) return { [resType]: RESOURCE_YIELD_BASE * Math.max(1, level) };
   return {};
 }

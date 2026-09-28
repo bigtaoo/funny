@@ -125,6 +125,25 @@ describe('ApiClient.auth — path/body per AuthCredential.kind (S0-4/S0-7)', () 
     expect(calls[0]!.body).toEqual({ token: 'portal-jwt-1' });
   });
 
+  it("kind 'crazygames' hands over the session it replaces (guestToken), so a guest can be bound", async () => {
+    const calls = installFetch(() => ({ json: { ok: true, data: authData({ token: 'tok-cg' }) } }));
+    const api = new ApiClient('https://h/api');
+    api.setToken('guest-tok');
+    await api.auth({ kind: 'crazygames', token: 'portal-jwt-1' });
+    expect(calls[0]!.body).toEqual({ token: 'portal-jwt-1', guestToken: 'guest-tok' });
+  });
+
+  it('device and wx logins never send a guest token (unchanged on every other platform)', async () => {
+    const calls = installFetch(() => ({ json: { ok: true, data: authData() } }));
+    const api = new ApiClient('https://h/api');
+    api.setToken('old-tok');
+    await api.auth({ kind: 'device', deviceId: 'dev-1' });
+    api.setToken('old-tok');
+    await api.auth({ kind: 'wx', code: 'c' });
+    expect(calls[0]!.body).toEqual({ deviceId: 'dev-1' });
+    expect(calls[1]!.body).toEqual({ code: 'c' });
+  });
+
   it('failure wraps to ApiError(code), does not retain a token', async () => {
     installFetch(() => ({ status: 401, json: { ok: false, error: { code: 'INVALID_CREDENTIALS', message: 'bad' } } }));
     const api = new ApiClient('https://h/api');

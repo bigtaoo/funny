@@ -1,0 +1,115 @@
+# CrazyGames 上架：官方要求 ↔ 我们的实现
+
+> 状态：Basic Launch 代码侧已完成（2026-09-27，同日第二轮补门户静音/安全区/分享链接）· 权威：本文（CrazyGames 专属要求的单一入口）
+> 来源：[docs.crazygames.com/requirements](https://docs.crazygames.com/requirements/intro/)（2026-09-27 逐页核过两轮：
+> 要求 8 页 + SDK intro/game + resources 的 CrazyGames App / Basic Launch 指标 / 加载 / 鼠标四页）；
+> SDK 行为以 `https://sdk.crazygames.com/crazygames-sdk-v3.js` 源码为准（文档页之外的细节都是在源码里查到的）。
+> 相关：[`store-assets-checklist.md §4`](../product/release/store-assets-checklist.md)（商店素材与提审清单）、
+> [`COMMERCIAL_DESIGN_IAP.md`](COMMERCIAL_DESIGN_IAP.md)（`iapKind()===null` 渠道）、
+> [`RETENTION_LAUNCH_PLAN.md`](RETENTION_LAUNCH_PLAN.md)（留存目标与 SSO 的由来）。
+
+## 1. 两档上线与时间窗
+
+| | Basic Launch（首次提交默认走这档） | Full Launch |
+|---|---|---|
+| 变现 | **完全没有**：视频广告、横幅、内购全部关闭（SDK 内部 `launchFlow === 'basic'` 时 `requestAd` 直接回 `adError`，`prefetchAd` 抛 `adsDisabledBasicLaunch`） | 只能用平台 SDK 广告；内购**仅邀请制**，必须走平台的 Xsolla |
+| SDK | 可选，只要求 `gameplayStart` | 全接：gameplay/loading、Data 或自有后端存档、User 模块账号集成 |
+| 账号 | 访客默认直接玩；**禁止任何外部登录方式** | 以 CG `userId` 为身份、显示 CG 用户名/头像、老用户自动登录、**不许登出后换外部账号登录** |
+| 多人 | — | `inviteLink` / `updateRoom` / 邀请参数；聊天必须响应 `disableChat`，至少脏词过滤 |
+
+**时间窗**：Basic 至少上线 7 天且满 500 次游玩，最长 21 天；按平均游戏时长、进入游戏转化率、留存评估。
+达标 → 被邀请做 Full；指标一般 → 可能允许改进后再 Basic 一次；不达标 → 只能作为新游戏重投。
+**这 7–21 天就是做 §4 Full 清单的时间**，Full 的活不需要在 Basic 提交前做完。
+（文档还提到「多人游戏可能跳过 Basic」——我们是多人游戏，提交时可以问平台，但不作为计划前提。）
+
+## 2. Basic Launch：要求 → 实现（2026-09-27 完成）
+
+| 要求 | 实现 |
+|---|---|
+| 访客默认可玩、最多 1 次点击进游戏 | `IPlatform.silentAccountOnly`：CG 包**没有登录页**。启动 → 年龄+同意合屏（唯一一次点击，`EntryGateDialog`）→ 大厅 → 首次自动进新手关。`IPlatform.skipStoryIntro` 跳过开场故事（它的「跳过」按钮会是第二次点击）。 |
+| 禁止外部登录方式 | CG 包里账号密码登录/注册表单**不可达**：`goLogin()` 在 silentAccountOnly 平台上改为重跑静默入口；设置页与大厅不给登录/登出/删号入口；大厅离线态不画「登录」字样。 |
+| 进度保存（Data 模块或自有后端） | 走自有后端：静默拿到的会话 token **写入 `TOKEN_KEY`**，于是所有「已登录」闸门（邮件/每日/排行/排位/大地图/拍卖/改名）把访客当真账号。身份优先级：门户已登录 → CG SSO；否则 → 匿名设备账号。 |
+| 门户身份被服务端拒绝时 | `IPlatform.declinePortalIdentity()`：SSO 校验失败（本部署没配 `NW_CRAZYGAMES_GAME_ID`、换钥、坏 token）就本会话改用设备身份重试一次，**不能让门户玩家落到「没有账号」**。本地 dev 服务器就是这个场景：SDK 本地模式会给一个演示 CG token。 |
+| token 失效 | `forceLogout` 在 silentAccountOnly 平台上不弹「请重新登录」，直接清 token 重跑静默入口（不走 `doLogout`：它的存档清空是给「换账号」用的，且延迟的 `setToken(null)` 会和新 token 赛跑）。 |
+| 英文本地化 + 用 SDK 语言 | `getLanguage()` 先读 `SDK.user.systemInfo.locale`；`supportedLocales` 改为 `['en','de','zh']`，不认识的语言回退**英文**（此前回退中文）。 |
+| 无广告 | 同一个包自动判断：`probeAds()` 在 init 后调 `prefetchAd('midgame')`，捕获 `adsDisabledBasicLaunch` → `hasRewardedAd()` 为 false（每日页「看广告」页签消失），结算页不再请求插屏。**升到 Full 不需要重新打包改开关。** |
+| 加载事件 | 改用 v3 的 `game.loadingStart()/loadingStop()`。此前调用的 `sdkGameLoadingStart/Stop` 是 v2 名字，v3 里只作为内部 postMessage 类型存在，`?.` 让它一直静默 no-op——旧测试 stub 的也是 v2 名字，所以一直是绿的。 |
+| 手机：禁文字选中 | `public/crazygames/index.html`：`html, body, canvas` 上 `user-select:none` + `-webkit-touch-callout:none`（可编辑元素不受影响）。 |
+| 只用相对路径 | 模板里 favicon 改相对路径，去掉 manifest / apple-touch（iframe 内无意义，且根绝对路径在门户子路径下 404）。 |
+| iOS 音频在手势中 resume | `WebAudioBus` 手势监听补上 `pointerup/touchend/click`（iOS 只认触摸结束为用户激活）。web 包同样受益。 |
+| 门户静音设置 | SDK game 模块：`game.settings.muteAudio` 为真时**必须静音，且优先于游戏内开关**。`watchPortalMute()` 在 init 后读一次、再挂 `addSettingsChangeListener` 跟随。静音有两个互不相干的原因（广告在播 / 门户静音），共用 `setAudioSuspended` 这一个开关，所以平台里各记一个布尔、取「或」（`syncAudio()`）：广告结束不能解开门户静音，门户在广告中途解除静音也不能让声音盖在广告上。不写盘、不改玩家自己的静音。 |
+| CG App 安全区 | resources/crazygames-app：App 里游戏全屏贴边，刘海/圆角会挡 UI。CG 平台现在和 web 一样实现 `getSafeAreaInsets` / `onSafeAreaInsetsChanged`（复用 `platform/web/safeAreaProbe.ts`），模板加 `viewport-fit=cover`（不加它 `env()` 永远是 0）。网站 iframe 里读数仍是 0，布局不变。**只有单测覆盖**：本地模拟不出 App 的贴边环境，要在 App 里真机看一次。 |
+| 分享链接不能指向门户外 | `shareReplay` 此前用 `window.location` 拼链接——在门户里那是 **iframe 自己的游戏文件地址**，别人点开是门户外的裸游戏。现在门户上用 `game.inviteLink({ r })` 生成门户游戏页链接（实测形如 `/game/<slug>?czy_invite=…&utm_source=…&r=<code>`），门户把 query 透传进 iframe，`getLaunchShareCode()` 照旧读 `r`；无 SDK（本地 dev）才退回页面 URL。 |
+| 包体 | 25 MB / 358 文件（上限 250 MB / 1500）。**首包实测 5.4 MB 到首帧、5.6 MB 进新手关**（生产构建、全新访客，2026-09-27），远低于手机首页要求的 20 MB 与 Basic 指南建议值，无需调整。 |
+
+## 3. 没有充值时的玩家体验（`iapKind() === null`，CG 与微信共用）
+
+金币是唯一付费货币，所有消费都能用免费金币完成，没有硬锁（不付费月入约 3.1k–8.9k，见 `ECONOMY_NUMBERS.md`）。
+这次清掉的死路：
+
+- **充值里程碑页签**：只在有支付渠道时出现（此前常驻「已充值 $0.00 / 未解锁」）。
+- **大厅金币芯片**：没有支付渠道时是纯数字，不再是跳商店的按钮。
+- **月卡续费提醒**：只在能续费的平台排程/弹出。
+- **月卡每日领取**：别处买的月卡仍在有效期时，商店照常显示领取按钮（此前领取按钮嵌在「可购买」判断里，领不到自己付过钱的东西；也不再显示美元价格）。
+- **体力不足**：没有支付渠道时提示「金币不足」，不再静默跳进商店。
+
+**仍未做**：兑换码入口只画在隐藏的金币页里，CG/微信上找不到——需要时挪到设置页。
+
+## 4. Full Launch 清单（Basic 评估期内做）
+
+1. **账号集成**（✅ 2026-09-27 完成，分支 `feat/cg-account`）：
+   - **用户名**：`/auth/crazygames` 每次登录用 token 里的 `username` 覆盖 `displayName`（截到 24 字，空的保留原名），同时写 `nameLockedBy='crazygames'`；`/profile/rename` 见到它一律 400（在扣费之前）。客户端：GET /save 返回 `nameLocked` → 设置页不给改名按钮。
+   - **头像只用 CG 头像**（用户 2026-09-27 定）：通用「平台头像」机制，**头像 id 新增一种 `url:<https>`**，走现有的 avatarId 字段传给所有人（好友、家族、资料卡、PvP 对手的 `opponent_avatar_id`），协议/proto 一个字段都没加。
+     - 服务端：账号行 `platformAvatarUrl`（只收白名单主机 `images.crazygames.com`，`shared/src/platformAvatar.ts`）；`getProfile` / `profileOf` / `profilesOf` 统一经 `effectiveAvatarId()`：有平台头像就是它，否则是装备的游戏头像。自己的头像由 GET /save 的 `platformAvatarId` 带回。
+     - 客户端：`render/avatar.ts::buildAvatar` 认 `url:`——先画字母底、图片加载完再覆盖（加载失败就一直是字母）；**只在 `IPlatform.remoteAvatars` 为真的平台画**（现在只有 CG），网页/微信/原生看到 CG 玩家是字母头像，渲染行为不变。客户端再校验一次主机白名单（值来自别的玩家）。CG 头像服务器回 `Access-Control-Allow-Origin: *`，WebGL 纹理能直接用。有平台头像时设置页不开头像选择器。
+     - 以后微信要接：它不能静默读头像（要玩家授权/自选），拿到后写同一个 `platformAvatarUrl`、白名单加主机、`WechatPlatform.remoteAvatars=true` 即可。
+   - **访客登录 CG 后进度保留**：客户端在 `/auth/crazygames` 里带上当前会话 `guestToken`（只有这一种凭据会带）；服务端在该 CG `userId` 还没账号、且 guestToken 是纯设备访客时 `bindOAuth` 到这个访客号，否则走原来的 resolve-or-create（已有 CG 账号的人回自己的号，访客号不动）。
+   - **游戏中途登录 CG**：`IPlatform.onPortalSignIn`（SDK `addAuthListener`）→ `resync()` 原地重新认证，**不跳场景**（对局中不会被踢回大厅），与设置页按钮共用同一个「最多一个在飞」的 resync。静默入口每次启动前先把存着的 token 交给 api，这样上次是访客、这次已登录 CG 的回访玩家也会被挂上。
+   - **设置页「用 CrazyGames 登录」**：只给 CG 包里的访客（`!nameLocked`），提示「登录后进度跟着账号走」；只调门户自己的 `showAuthPrompt`，不是主按钮、不自动弹。显式登录会清掉之前的 `declinePortalIdentity`（否则服务端曾拒过一次后，按钮只会弹框然后照旧以设备身份登录——实测发现的）。
+   - **验证**：metaserver 单测 10 例（绑定/已有号/有密码的号不绑/伪造 token/名字头像同步/白名单/改名拒绝/他人看到的头像）；客户端单测（guestToken 只随 CG 发、resync 去重、设置页三种状态、URL 白名单）；真 Chrome 里 CG 开发包：写入门户资料后设置页显示远程加载的 CG 头像、无改名、无账号区，访客态显示改名 + 「Sign in with CrazyGames」，点击后请求体带 `guestToken`。**本地后端没配 CG SSO，完整的「登录 → 挂号」链路要在门户 QA 工具里跑一遍。**
+2. **多人**（✅ 2026-09-27 完成，分支 `feat/cg-account`）：接口是通用的 `IPlatform.rooms`（`PlatformRooms`）与 `IPlatform.watchChatDisabled`，**只有 `CrazyGamesPlatform` 实现**，网页/微信没有这两个字段，好友房和聊天行为不变。
+   - **房间码不变**：我们仍用 6 位数字房间码；门户只以邀请参数 `room=<码>` 看到它（`platform/crazygames/crazyGamesRooms.ts`）。
+   - **邀请链接**：房间页「复制」在 CG 上复制 `game.inviteLink({ room })`（门户游戏页链接，按钮改叫「复制链接」），网页/微信仍复制裸码。
+   - **房间状态**：`room_state` 到达 → `updateRoom({ roomId: 码, isJoinable, inviteParams })`；可加入 = `WAITING` 且不满 2 人，可加入时 `showInviteButton`，否则 `hideInviteButton`。开局 → `isJoinable:false`；返回、加入失败、控制连接永久断开、对局结束或中途退出 → `leftRoom`。SDK 对 `updateRoom`/`leftRoom` 有 250 ms 节流且**超限直接抛错**，所以合并成「只发最新状态」、间隔 ≥ 300 ms，被节流就重试（最多 3 次）。
+   - **从邀请启动**：启动 URL 带 `room=` → 加入该房；带 `instantJoin=true`（门户「和朋友玩」，即 SDK 的 `isInstantMultiplayer`）→ 直接建房。意图存进 `AppState.pendingRoomIntent`，**下一次有服务器连接的大厅入口**用它开房间页，**排在新手教程前面**（邀请人在房里等）；首次启动时静默登录还没回来就先显示大厅，登录完成那次大厅刷新再打开房间。进房后本局不再触发教程。非法房间码（不是 6 位数字）直接忽略。
+   - **游戏中接受邀请**（`addJoinRoomListener`）：在房间页 → 关掉当前房、加入新房；在大厅 → 立即打开；在对局中 → **不打断对局**，记为待办，回到大厅时打开。
+   - **连续对局**：结算页「再来一局」对友谊赛仍是回大厅（在游戏内，不回 CG 界面）；友谊赛结束后房间随对局结束，所以不做「同房再开」。
+   - **CG 用户名**：见上一条账号集成（名字从门户同步、锁定）。
+   - **`disableChat`**：`ui/chatPolicy.ts` 一个开关，开启后隐藏世界频道页签（和世界地图底栏的消息预览/未读数，底栏改显示「社交」、点进去落在好友页）、家族/国家频道（显示「聊天已关闭。」）、好友/家族成员资料卡上的「发消息」、好友页签上的私信未读数；`goChat` 本身也拦。好友、家族、国家、邮件照常。设置在运行中改变时，下一次重绘生效。
+   - **验证**：`crazyGamesRooms.test.ts`（合并节流、邀请参数、leftRoom 只在告知过房间后发、节流重试、启动意图、加入监听）、`roomNav.test.ts` 平台房间 9 例、`lobbyRoomIntent.test.ts`（邀请优先于教程、未连上服务器时等待、resize 不消费）、`test/ui/chatDisabledSocialRail.ui.ts`。**门户侧的邀请按钮、个人页「加入」按钮要在门户 QA 工具里实测。**
+3. **广告**：激励视频已按「完全可选、只在非战斗界面、只在 `adFinished` 发奖」实现。奖励仍以 `platform:'dev'` 提交，客户端可伪造，只靠冷却+每日上限——门户没有服务端回调，是取舍。
+   - **看广告回体力**（✅ 2026-09-27，分支 `feat/cg-stop`）：关卡准备页体力不足时，「补充体力（金币）」旁边多一个「看广告 → +30」，每 UTC 日 3 次，当天用完按钮消失。开关是 `IPlatform.staminaRewardedAd`（只有 `CrazyGamesPlatform` 为真，iOS 壳的 AdMob 和微信都不出现）；服务端 `POST /pve/stamina/ad` 也只认 `x-nw-platform: crazygames`。数值见 ECONOMY_NUMBERS §3。顺带修了关卡准备页底部排版：原来的补充按钮压在「开战」按钮上（横屏最明显），现在「开战 → 补充行 → 体力行」自下而上排，补充行与开战按钮同宽。
+4. **gameplayStop 缺口**（✅ 2026-09-27，分支 `feat/cg-stop`）：
+   - **投降/退出关卡弹窗**会冻结对局，打开时 `gameplayStop`、取消时 `gameplayStart`；确认退出不再发 start（去向页面自己发 stop）。接线：`GameRendererCore.onPauseChange` → `GameSceneCallbacks.onPauseChange` → `PixiAppViews` 的 `withGameplayPause`（`showGame`/`showGameNet` 两个入口都包上，以后新增的对局入口自动覆盖）。
+   - **回放不算 gameplay**：`goReplay`（结算页/战绩页）和分享回放 `goStatePlayer` 不再调 `gameplayStart`；进回放之前的页面都已发过 stop，所以战绩页看完回放返回时也不会停在「游戏中」。
+   - 其他平台的 `onGameplayStart/Stop` 都是空实现，行为不变。
+5. **内购**（受邀后）：Xsolla token（`user.getXsollaUserToken()`）、webhook、`analytics.trackOrder`；访客不能买；BE/NL/CN/RS/SK 禁售盲盒类，TW/KR/JP 另有公示要求；CG App 内（`applicationType` 为商店）禁用。
+
+## 5. 不是代码的项
+
+- **封面与预览视频**（美术）：封面三张 1920×1080 / 800×1200 / 800×800，预览视频横竖各一条 1080p、15–20 s、≤ 50 MB；
+  规格与禁止项见 [`store-assets-checklist.md §4.1`](../product/release/store-assets-checklist.md)。现有的 1280×720 战斗截图不合格。
+
+- 门户内容政策逐条核对（开发者后台）、[`acceptance-smoke.md`](release/acceptance-smoke.md) CrazyGames 列 9 行（门户 QA 工具里跑）。
+- 上线前：Atlas M0 升档、备份异地（均为 2026-07 起挂着的决定）。
+- 生产环境是否配置了 `NW_CRAZYGAMES_GAME_ID`：没配也不会卡死玩家（§2 回退），但门户玩家都会变成设备访客。
+
+## 6. 其余官方条目核对结果（2026-09-27 第二轮）
+
+不需要改、但每条都对过代码的，免得下次再查一遍：
+
+| 条目 | 结论 |
+|---|---|
+| 自定义全屏按钮禁止 | 全库没有 `requestFullscreen`。 |
+| 别用 Esc / Ctrl+W 做操作、适配 AZERTY | 没有任何键盘操作（`WebAdapter` 只听 pointer 与 wheel）。 |
+| 鼠标锁定（resources/mouse-control） | 点击为主的游戏不要求。 |
+| 禁止应用商店链接、交叉推广 | 没有；唯一外链是隐私政策/用户协议（官方允许的例外）。 |
+| 数据收集要有 T&C / 隐私告知 | 首启同意弹窗（`EntryGateDialog`）。 |
+| Sitelock 白名单 | 没做 sitelock；服务端 CORS 是 `origin: true`，CG 网站与 App 的来源（`https://app.crazygames.com`、`capacitor://app.crazygames.com`）都放行。 |
+| 不同刷新率下物理一致 | 30 Hz 定点 lockstep，与显示帧率无关。 |
+| 桌面横屏可玩、DPR=1 可读 | 有横屏布局分支；门户在 iOS/低内存安卓上强制 DPR=1，这点要在门户 QA 工具里看一眼字清不清。 |
+| UGC 审核 | 聊天与改名都走 `censorChat`，命中则拒绝改名。 |
+| 可选：`happytime`、`reportGameCompletedPercentage`、`setGameContext` | 未接，都是可选。 |
+
+Basic 期间的运营信息：更新**自动通过**；评估指标参考值——平均时长 10 分钟以上、次日留存 10–15%、玩满 1 分钟的转化 80% 以上；
+累计 5 万次游玩后才有官方技术支持。
