@@ -22,6 +22,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { ui as C, txt, tearDownChildren } from './sketchUi';
 import { FS } from './fontScale';
 import { drawHudButton, hudButtonText } from '../ui/widgets/hudButton';
+import { PULSE_STEP_FPS, steppedTime } from './steppedTime';
 
 export interface GuideRect { x: number; y: number; w: number; h: number; }
 export interface GuideViewport { w: number; h: number; }
@@ -34,10 +35,10 @@ const SKIP_SIZE = 22;
 /** Steps per second the ring's breathing alpha is quantized to. The ring is a pure decoration on
  * top of otherwise-static menu screens, and alpha is one of the fields `render/renderPolicy.ts`
  * hashes — so an unquantized sine would pin every host scene at full frame rate for as long as the
- * guide is up (which is exactly what it used to do, see client-render-budget.md §7). Same call, and
- * same rate, as the world map's shield bubbles (`WorldMapRenderer/lifecycle.ts` SHIELD_ANIM_FPS)
- * and art-direction §5.4's "frame rate keeps the hand-drawn jitter, smoothness is not the goal". */
-const RING_PULSE_FPS = 10;
+ * guide is up (which is exactly what it used to do, see client-render-budget.md §7). The shared
+ * pulse rate (render/steppedTime.ts), which is art-direction §5.4's "frame rate keeps the
+ * hand-drawn jitter, smoothness is not the goal". */
+const RING_PULSE_FPS = PULSE_STEP_FPS;
 
 export class GuideOverlay {
   /** Root container — caller `addChild`s this wherever/whenever it needs to sit on top (this class
@@ -159,7 +160,7 @@ export class GuideOverlay {
    * throttling the caller is what makes this idempotent within a step — both `update` and a
    * per-frame `showAt` land on the same value, so neither can push the host past 10 repaints/s. */
   private applyPulse(): void {
-    const step = Math.floor(this.pulseT * RING_PULSE_FPS) / RING_PULSE_FPS;
+    const step = steppedTime(this.pulseT, RING_PULSE_FPS);
     this.ring.alpha = 0.5 + 0.4 * (0.5 + 0.5 * Math.sin(step * 4));
   }
 
