@@ -82,6 +82,11 @@ export interface RenderProfileInfo {
   /** Backbuffer size in device pixels (`app.view.width/height`). */
   canvasW: number;
   canvasH: number;
+  /**
+   * Set once render/adaptiveResolution.ts has dropped the resolution this session: the value it
+   * started at. `resolution` / `canvasW/H` are then the lowered ones (ADR-100).
+   */
+  resFrom?: number;
 }
 
 /** Median of an unsorted sample array. Copies: `sort` mutates, and these arrays are still in use. */
@@ -321,6 +326,7 @@ export class PerfMonitor {
       props.dprCapped = this.renderInfo.dpr > this.renderInfo.resolution;
       props.canvasW = this.renderInfo.canvasW;
       props.canvasH = this.renderInfo.canvasH;
+      if (this.renderInfo.resFrom !== undefined) props.resFrom = this.renderInfo.resFrom;
     }
     // Paint rate: the whole point of demand-driven painting is that this sits BELOW the tick rate on
     // a menu and equals it in a battle. Absent when no RenderPolicy is installed (tests, tools).

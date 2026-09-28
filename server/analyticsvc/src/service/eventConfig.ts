@@ -124,6 +124,10 @@ export const DEFAULT_CONFIG: AnalyticsConfig = {
     // at most 6 per session (cache/PerfMonitor.ts), so 1.0 here costs less than session_start; sampling
     // it would defeat the point, which is per-device/per-host comparison (iOS dpr cap, WeChat maxFPS).
     render_profile: { sample: 1.0 },
+    // The renderer dropped from resolution 2 to 1.5 because a battle could not hold 24 fps
+    // (ADR-100, client/src/render/adaptiveResolution.ts). At most once per session by construction,
+    // and the whole point is to count how often it fires — so unsampled, like render_profile.
+    render_res_down: { sample: 1.0 },
     // Button-level clicks (A9-8). Fully sampled for now so first-day "which button" analysis is exact;
     // dial down here if lobby-click volume becomes a concern.
     ui_click:       { sample: 1.0 },

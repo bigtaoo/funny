@@ -35,6 +35,7 @@
 import { preloadBootBackground } from './bootManifest';
 import { ensureBattleAssets } from './battleAssets';
 import { worldAtlas } from '../render/atlas/worldAtlas';
+import { uploadToGpu } from '../render/bake';
 import { preloadRewardIconArt } from '../render/rewardIcon';
 import { preloadGachaTextures } from '../render/gachaArt';
 import { lastRotationAt } from '../net/anomaly/deviceContext';
@@ -108,7 +109,14 @@ const WAVES: ReadonlyArray<{ id: string; run: () => Promise<unknown>; when?: () 
   // SLG world map, one 2.0 MB sheet — WorldMapScene shows a cover until it decodes. Gated: this
   // is the single biggest asset in the game and, at 1960×1827 RGBA, ~13.7 MB decoded. A player who
   // has never opened the world map should not be carrying that, on any link.
-  { id: 'slg:world',       run: () => worldAtlas.load(),      when: () => hasUsedFeature('world') },
+  //
+  // Decoded AND uploaded: the GPU upload of that one page is its own 34 ms (desktop) inside the map's
+  // first frame otherwise — see bake.ts `uploadToGpu`. Done in a second idle slot so the decode and
+  // the upload never share one.
+  { id: 'slg:world',       run: () => worldAtlas.load().then(() => whenIdle(1_000)).then(() => {
+    const bt = worldAtlas.baseTexture();
+    if (bt) uploadToGpu(bt);
+  }),                                                           when: () => hasUsedFeature('world') },
   // 1.2 MB of card backs/frames/banners. Biggest of the rest and least urgent, so: last. Gated for
   // the same reason as the world map, and it has its own entry gate since 2026-08-25 either way.
   { id: 'gacha',           run: () => preloadGachaTextures(), when: () => hasUsedFeature('gacha') },

@@ -592,3 +592,15 @@ ADR-086 收尾后回头找「客户端还有什么能在本机量的」，量到
 - **地图节拍**：`MAP_ANIM_FPS = 30` 一个累加器，护盾每拍、小人每 3 拍（10 fps）。有护盾和行军时空闲 4 s：138 / 240 → 123 / 240（护盾 30 + HUD 1）；没护盾时约 10 次/秒。
 - **门禁**：`test/renderProfile.test.ts`（分项属于最长那次、50 ms 以下不带）、`test/renderCostProbe.test.ts` + `test/ui/renderCostProbe.ui.ts`（分桶、干净 Text 不读时钟）、`test/appAssetGateWiring.test.ts`（预热在发请求和 `await` 之间）、`test/ui/panelFrameAssembly.ui.ts`（预热后第一个面板不再烘焙）、`test/ui/worldMapOverlayCoalescing.ui.ts`（行军 9–11 次/秒；行军 + 护盾 ≤ 32，旧时钟是 36），均做过变异检查。
 - **还开着**：IntroScene 首启 735–2006 ms 的根因——等一份带新字段的 iPhone 首启报告（重装后打开一次）。
+
+## 19. 首次进屏成本与自动降分辨率（ADR-099 / ADR-100，2026-09-28）
+
+- **探针**（临时，不入库）：Playwright 有头 Chrome，每个 `STOPS` 站点进入前 `Profiler.start`（采样 100 µs），落地后 `settleMs + 800 ms` 停；按调用栈算函数**包含**耗时（`buildPaperBackground` / `bake` / `renderCardCell` / `txtFit` / `updateText` / `render`），外加 init script 包 `texImage2D` / `generateMipmap` 记 > 2 ms 的上传尺寸。先 `seedAccount` + 开一次地图 + `seedWorld`，再 `reload`，保证每站都是首访。
+- **LoAF 不可用作指标**：这台机器上两版代码都会出现 400 ms 以上、帧内没有任何脚本、render 段只有 1 ms 的 LoAF，是环境噪声。看 CPU 采样。
+- **纸背景**（`render/paperRules.ts`）：一页 = 纯色矩形 + 条带窗口 sprite，全部来自一张 1024 宽的小图集。桌面 44 站：每屏 20–67 ms → ≤ 1.8 ms；整页烘焙从 bake 缓存里消失（原来每种页面尺寸一整张后缓冲）。
+- **文字**：`setTextResolution` 让新文字从渲染器分辨率起步（原来 1x 布局光栅化一次 + 首次渲染 2x 再一次）；`measuredWidth` 让 `txtFit` 不再为试字号光栅化。卡牌列表首建 86 → 36 ms；dpr 2 下 `updateText` 卡牌列表 41 → ~20、主城 60 → 47、家族 65 → 52。
+- **世界图集**：`idlePrefetch` 的 `slg:world` 波次解码后再等一个空闲时段 `uploadToGpu`。地图首帧原来的 34 ms `texImage2D`（1960×1827）不再出现。只覆盖「最近两周开过地图」的玩家（预取本身的门槛）。
+- **烘焙尺寸**：`bake` / `bakeLazy` 按 `ceil(ceil(size) × res) / res` 分配。原来小数分辨率下基础纹理会比请求短最多 `0.5 / res` 点，图集最后一行越界即抛异常；边框图集在 0.5–3.0 的 251 个分辨率里有 180 个会抛。门禁 `test/ui/bakeFractionalResolution.ui.ts` 逐个扫。
+- **自动降分辨率**（`render/adaptiveResolution.ts`）：live 场景、进入 3 s 后、5 s 窗口中位间隔 > 41.7 ms（< 24 fps）、不计 > 250 ms 的停顿、样本 ≥ 50 → 分辨率 2 → 1.5，每会话一次。验证用每帧注入 50 ms 忙等（CPU 降速 12 倍在本机对战仍有 57 fps）：6.9 s 后切换，后缓冲 2048×1536 → 1536×1152，CSS 尺寸与布局不变。线上看 `render_res_down` 与随后 `render_profile` 的 `resFrom` / `fpsP50`。
+- **门禁**：`test/ui/paperRules.ui.ts`（新尺寸不增加烘焙条目、线铺满整宽、红线位置、小数分辨率不抛）、`test/ui/textRasterOnce.ui.ts`（`measuredWidth` 与 getter 一致且不光栅化；`txtFit` 全程零光栅化）、`test/ui/bakeFractionalResolution.ui.ts`、`test/uploadToGpu.test.ts`、`test/idlePrefetch.test.ts`（上传在下一个空闲时段、下一波之前）、`test/adaptiveResolution.test.ts`（触发、30 Hz 不触发、停顿不触发、reactive 重置、≤ 1.5 不挂、只一次）、`test/appRenderResolutionWiring.test.ts`。纸背景、覆盖尺寸、`txtFit` 均做过变异检查。
+- **还开着**：`visit`（`stageSignature` 遍历）在世界地图 / 主城的采样窗口里自身耗时 150–210 ms / 1.2 s（dev 构建），是稳态成本不是首建成本，这次没动。
