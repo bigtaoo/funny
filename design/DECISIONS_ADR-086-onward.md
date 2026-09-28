@@ -297,3 +297,22 @@ docker compose -f docker-compose.cloud.yml --env-file .env config | grep MONGO_U
   - `botsvc`：`expansion.ts` 新增 `producesFromTiles`。
   - `tools/econ-sim`：`city.ts` 的收入模型。
   - 客户端不用改：资源栏读的是服务端下发的 `yieldRate`。
+
+## ADR-094 帧率上限改由 vsync 整数分频实现，两个 ticker 共用一个节拍（取代 PIXI `maxFPS`） — Accepted — 2026-09-28
+
+- **问题**：用户要求各界面帧率稳定、抖动 ≤ 3。2026-09-28 在本机真 Chrome（有头、60 Hz）逐屏测了 53 个界面：
+  - 浏览器的 rAF 本身完全均匀，但 `app.ticker` 在**每个界面**都每 3 秒丢约 4 帧，每次留下一个 33 ms 空档。
+  - 原因在 PIXI `Ticker.update` 的节流：`delta = (t - lastFrame) | 0` 先取整再和 `1000 / maxFPS` 比。60 Hz 下的 16.67 ms 被截成 16，小于 16.67，于是这一帧被跳过。线上 `render_profile` 的 `fpsP50` 常年是 59 而不是 60，就是这个。
+  - 同一套「按毫秒比较」的节流在 75 / 90 / 144 Hz 屏上会得到 1 拍、2 拍交替的不均匀节奏。
+  - `Ticker.shared`（沸腾线和 14 处战斗 / 卡牌 fx）与 `app.ticker` 各自节流、各自一条 rAF 循环，互不同步：空闲压到 20 时，101 次 shared tick 里 101 次和主画面落在不同的 vsync 上。
+- **决策**：`render/framePacer.ts` 接管两个 ticker 的 rAF 循环。
+  - 两个 ticker 的 `maxFPS` 置 0、`autoStart` 关掉并 `stop()`，由 pacer 自己的**一条** rAF 循环驱动；每次决定跑，就先 `Ticker.shared.update(t)` 再 `app.ticker.update(t)`，同一个时间戳。先 shared 后 app，这样 fx 本帧的改动能赶上本帧的绘制。
+  - 上限按 **vsync 整数分频**实现：`N = max(1, round(刷新率 / 上限 − 0.1))`，每 N 个 vsync 跑一次。60 Hz 屏：上限 60 → 每拍都跑，上限 20 → 每 3 拍跑一次；120 Hz → 60；144 Hz → 72；165 Hz → 55；90 Hz → 90。节奏永远是均匀的，代价是实际帧率只能取刷新率的整数分之一，可能比上限高或低一点（四舍五入而不是 `ceil`：75 Hz 屏跑 75 比跑 37.5 更符合「稳定」）。
+  - 那个 −0.1 是把分频的翻转点从 x.5 挪到 x.6：90 Hz / 60、30 Hz / 20 恰好等于 1.5，翻转点压在常见刷新率上时，刷新率估计抖动百分之一 Hz 就会让 N 逐帧在两个值之间跳，节奏反而乱掉。挪到 x.6 后，常见刷新率（60/75/90/100/120/144/165/240）对 60 和 20 两档上限都离翻转点 0.05 以上（有测试钉住）。
+  - 刷新率由最近 16 个 rAF 间隔的中位数估计，所以偶尔掉一帧不会拉偏；设备本身只给 30 Hz 时 N 自然落到 1。
+  - 浏览器漏掉 vsync（长帧）时按实际经过的 vsync 数累计，不会因为一次卡顿再多等一轮。
+  - 上限（60 / 20）的切换点、`holdRenderActive()` 同步拨回 60 的行为都不变（ADR-086），只是写的是 pacer 而不是 `ticker.maxFPS`。
+- **遥测跟着改**：`ticker.maxFPS` 现在恒为 0，`PerfMonitor` 改从 `render/renderStats.ts` 的 `framePacing()` 读当前上限（`windowMinCap` 与 `render_profile.maxFps` 语义不变），`render_profile` 顺带新增 **`hz`**（估计的显示刷新率）——那台常年 `fpsMax 30` 的 dpr2 设备，这个字段能直接说它是不是 30 Hz 屏。
+- **A/B 实测**（同页、大厅有输入、6 秒）：迟到帧 9 → 0，最大帧间隔 34.0 → 17.4 ms，每秒 fps 58–59 → 60，shared 与主画面错拍 9 → 0–1。
+- **不在本条范围**：空闲 60 → 20 的降频本身。用户 2026-09-28 选了「保留 20 省电，改帧率统计口径——只统计画面真在变的帧」，另行实施。
+- **影响**：`client/src/render/framePacer.ts`（新）、`render/renderPolicy.ts`、`render/renderStats.ts`、`cache/PerfMonitor.ts`；测试 `test/ui/framePacer.ui.ts`（新）、`test/ui/renderPolicy.ui.ts`、`test/PerfMonitor.test.ts`、`test/renderProfile.test.ts`；文档 `claudedocs/client-render-budget.md`、`design/game/ANALYTICS_DESIGN.md`。

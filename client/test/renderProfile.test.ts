@@ -38,7 +38,6 @@ const MAX_PROFILES_PER_SESSION = 6;
 
 class FakeTicker {
   deltaMS = 16.7;
-  maxFPS = 60;
   private cb: (() => void) | null = null;
   add(cb: () => void): void { this.cb = cb; }
   remove(_cb: unknown): void { this.cb = null; }
@@ -103,6 +102,7 @@ describe('render_profile', () => {
   let monitor: { install(t: unknown, i?: unknown): void; uninstall(): void };
   let stats: RenderStats;
   let setLiveRenderStats: (s: RenderStats | null) => void;
+  let setLiveFramePacing: (p: { capFps: number; refreshHz: number } | null) => void;
 
   beforeEach(async () => {
     vi.resetModules();
@@ -114,8 +114,10 @@ describe('render_profile', () => {
     stats = { ticks: 0, painted: 0, skipped: 0 };
     // Imported AFTER resetModules, or PerfMonitor would read a different module instance of the
     // counter holder than the one this test writes to (and every paint field would come back absent).
-    ({ setLiveRenderStats } = await import('../src/render/renderStats'));
+    ({ setLiveRenderStats, setLiveFramePacing } = await import('../src/render/renderStats'));
     setLiveRenderStats(stats);
+    // ADR-094: the cap and the refresh estimate come from the pacer, not from `ticker.maxFPS`.
+    setLiveFramePacing({ capFps: 60, refreshHz: 59.94 });
     // Same trap as the counter holder above, one module over: `vi.resetModules()` makes the mock
     // factory re-run, so the accumulator PerfMonitor drains is a NEW instance every case. Recording
     // through a module-scope import taken before this line would feed the previous case's copy, and
@@ -131,6 +133,7 @@ describe('render_profile', () => {
   afterEach(() => {
     monitor.uninstall();
     setLiveRenderStats(null);
+    setLiveFramePacing(null);
     vi.unstubAllGlobals();
   });
 
@@ -166,6 +169,8 @@ describe('render_profile', () => {
     expect(props.fpsMin).toBe(25);
     expect(props.windows).toBe(FIRST_PROFILE_WINDOWS);
     expect(props.maxFps).toBe(60);
+    // The display's own refresh rate — what tells a 30 Hz panel apart from a slow device.
+    expect(props.hz).toBe(60);
     expect(props.res).toBe(2);
     expect(props.dpr).toBe(3);
     // The one field that says whether ADR-083's dpr cap did anything on THIS device.

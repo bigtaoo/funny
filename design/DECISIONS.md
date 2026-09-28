@@ -111,6 +111,7 @@
 | [ADR-091](DECISIONS_ADR-086-onward.md#adr-091-文档里的代码路径也进门禁一次扫掉-164-处指向不存在文件的引用--accepted--2026-09-15) | 文档里的代码路径也进门禁：一次扫掉 164 处指向不存在文件的引用 | Accepted | 2026-09-15 |
 | [ADR-092](DECISIONS_ADR-086-onward.md#adr-092-单大区容量目标改为-3000-人取代-adr-032-的-500代码常量等服务端扩容验证后再改--accepted--2026-09-26) | 单大区容量目标改为 3000 人（取代 ADR-032 的 500）；代码常量等服务端扩容验证后再改 | Accepted | 2026-09-26 |
 | [ADR-093](DECISIONS_ADR-086-onward.md#adr-093-本城基础产量纸--石墨--金属各保底-50小时--accepted--2026-09-27) | 本城基础产量：纸 / 石墨 / 金属各保底 50/小时 | Accepted | 2026-09-27 |
+| [ADR-094](DECISIONS_ADR-086-onward.md#adr-094-帧率上限改由-vsync-整数分频实现两个-ticker-共用一个节拍取代-pixi-maxfps--accepted--2026-09-28) | 帧率上限改由 vsync 整数分频实现，两个 ticker 共用一个节拍（取代 PIXI `maxFPS`） | Accepted | 2026-09-28 |
 
 ---
 

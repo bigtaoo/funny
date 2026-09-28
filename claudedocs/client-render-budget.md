@@ -97,6 +97,7 @@ art-direction §5.4 本来就要「帧率保留手绘的跳跃感，不必追求
 | `test/ui/sceneGeometryBudget.ui.ts`（9 例） | 大厅一帧**索引预算 25,000**（实测 15,582 headless）。计数直接调 `GraphicsGeometry.updateBatches()`（PIXI 三角化是纯 JS），CI 无 GPU 也能拿到精确三角数；`bake()` 喂 stub renderer，量的是**上线路径**。设置页（§12）占六例：**四个状态各自量**（基础屏 / 改名弹窗 / 删号确认，预算 12,000，实测 2,004 / 2,034 / 2,028；头像选择器另给 20,000，实测 12,366 —— 20 个头像格本身就是真美术），外加纸背景必须是 `Sprite` 且几何为 0（钉机制，不只钉数字）、以及把旧那段 27 条实时描线放回来会超预算的自证 |
 | `test/liveStrokedInkCallSites.test.ts`（4 例，§12.1） | **入口侧**的两张网，源码级：① `src/` 里每一处 `SketchPen…rect(` 都要在期望表里注明属于哪一类（FALLBACK / BAKED / DOODLE / GAMEPLAY / ICON / DEV），当前 16 处；② 每一个自己画笔记本纸的文件**都必须 `bake()`**（当前 4 个，`sketchDemo.ts` 是唯一豁免的 dev 页）。两条都用「把设置页那两处改回去」做过变异验证 |
 | `test/ui/guideOverlay.ui.ts`（19 例） | 引导圆环：`update()` 一秒 60 帧**一次几何重建都不许有**、alpha 仍在动、一秒最多 ~10 个不同 alpha（`update` + 每帧 `showAt` 一起调也一样）、目标移动时几何**必须**重描、**呼吸区间仍是 0.5–0.9**（改的是成本不是观感——把环改暗的「优化」不该靠读重绘计数才发现） |
+| `test/ui/framePacer.ui.ts`（ADR-094，§14） | 帧率上限的**节奏**：60 Hz / 上限 60 每个 vsync 都跑（外加一例把 PIXI 自己 `maxFPS = 60` 在均匀 60 Hz 流上丢帧的行为钉成特征测试——哪天 PIXI 修了它会转红）；十二组刷新率 × 上限各自都是**恒定**的 vsync 间隔；两个 ticker 同一时间戳、shared 在前；上限拉高下一拍生效；长帧后不再多等一轮；常见刷新率离分频翻转点 ≥ 0.05 |
 | `test/ui/renderLoopWiring.ui.ts`（15 例） | 中间那层接线（ADR-072 的教训）：app.ts 真的装了 policy、真的过了 dpr 上限、四条指针路径都 hold、`paintMode` 对 overlay/fade 悲观 |
 
 **每一条关键断言都做过变异验证**（删掉签名里对应那行 / 把 lifecycle 改回每帧重建 / 把大厅那份 `sketchPanel` 改回旧实现 → 报 271,110 索引，红得很响）。
@@ -110,7 +111,7 @@ art-direction §5.4 本来就要「帧率保留手绘的跳跃感，不必追求
 
 1. 抢 webpack require 拿 PIXI：`window.webpackChunkpixigame.push([["probe"],{},r=>req=r])`，再 `req.c[<key ending in pixi.js-legacy/lib/index.mjs>].exports`。
 2. **拿 app 的 ticker**：包 `PIXI.Ticker.prototype.update`，第一帧（截图会强制一帧）把它存下来；之后 `tk.update(t += 16.7)` 就能**手动驱动整个循环**（场景 update + policy 决策），配合 `__nwRenderStats` 直接读出重绘率。
-   ⚠️ 认 ticker 的判据是 **`maxFPS === 60`**，不是 `this !== Ticker.shared`：`Ticker.system`（PIXI 自己用来跑 `BasePrepare` 一类的）也不是 shared，会被先抓到，而它的 `maxFPS` 是 0。2026-09-08 第一次按旧判据测，量了半天量的是 system ticker。
+   ⚠️ 认 ticker 不能用 `this !== Ticker.shared`：`Ticker.system`（PIXI 自己用来跑 `BasePrepare` 一类的）也不是 shared，会被先抓到。2026-09-08 第一次按这个判据测，量了半天量的是 system ticker。当时的判据是 `maxFPS === 60`，**ADR-094 起不再成立**（两个 ticker 的 `maxFPS` 都恒为 0）。现在更简单：e2e 构建直接用 `__nwE2E.app.ticker`；非 e2e 构建开 `nw_render_debug` 后读 `globalThis.__nwFramePacer`（`capFps` / `refreshHz` / `runs`），手动驱动就调它的 `onFrame(t)`。
 3. **拿舞台**：`app.renderer.render` 在 `app.ts` 里被 `.bind()` 过，patch 原型抓不到它；改 patch `PIXI.Graphics.prototype._render` 抓任意实例，再顺 `parent` 爬到根。
 4. 几何/draw call：包 `gl.drawElements`/`drawArrays`/`bufferData`/`texImage2D` 按 `count` 累加；单帧的 count 序列直接暴露「哪几个物件是大头」，再用 `getBounds()` 认屏上位置。
 5. 真 GPU 时间：`EXT_disjoint_timer_query_webgl2`，但**结果不会同步就绪**——beginQuery/render N 次/endQuery 放一次 JS 调用，`QUERY_RESULT` 放**下一次**调用里读。
@@ -337,19 +338,19 @@ headless（`vitest.ui` 里的真 PIXI），空闲世界地图，**2,833 个舞�
 |---|---|---|
 | 空闲 tick 率 | `IDLE_FPS = 20`，静默 `IDLE_QUIET_MS = 2 s` 后生效 | `render/renderPolicy.ts` |
 | 装饰动画静默 | 无输入 `DECOR_QUIET_AFTER_MS = 30 s` 后 | `render/idleQuiet.ts` + 三个读者 |
-| 共用 ticker 上限 | 与 app ticker 同步（60 / 20） | `RenderPolicy.setMaxFps` |
+| 共用 ticker 上限 | 与 app ticker 同步（60 / 20）；ADR-094 起两者由同一个 `FramePacer` 驱动 | `RenderPolicy.setMaxFps` → `render/framePacer.ts` |
 | GPU 偏好 | `POWER_PREFERENCE = 'low-power'` | `render/renderPolicy.ts` → `app.ts` |
 | 出站限流补桶 | 桶满且无人排队就停表 | `net/rateGate.ts` |
 
 三条**别顺手清理**的线：
 
 - **`'floor'` 不算活动。** 500 ms 地板一秒触发两次；算了活动就永远走不完 2 秒静默窗口，这条节流一次都不会生效。门禁里有一例专门喂 6 个地板帧、并断言那 6 帧真的画了（否则用例是空的）。
-- **指针事件同步把 `maxFPS` 拨回 60**（模块级 `onActivity` 回调），不等下一个 tick——降到 20 Hz 后下一 tick 最远 50 ms，第一帧点击反馈不能付这个钱。
+- **指针事件同步把上限拨回 60**（模块级 `onActivity` 回调；ADR-094 起写的是 `FramePacer.capFps`，不是 `ticker.maxFPS`），不等下一个 tick——降到 20 Hz 后下一 tick 最远 50 ms，第一帧点击反馈不能付这个钱。
 - **卡顿 watchdog 的阈值必须夹在上限之下**（`PerfMonitor` 的 `FPS_WARN_HEADROOM`：`min(nw_fps_warn, maxFPS - 5)`）。不夹的话每个健康的空闲菜单每 10 秒报一条 `cpu` 异常——和 2026-07-26「后台标签页假 cpu」同一类假阳性，只是从另一个方向来。同理 `render_profile` 的 `maxFps` **不再是常量**：`maxFps: 20, fpsP50: 20` 是一个行为正确的空闲菜单，**先读 `maxFps` 再读 `fpsP50`**。
 
 ### 这个客户端一直有两个 rAF 循环
 
-`PIXI.Application` 的 `sharedTicker` 默认 **false** → `app.ticker` 是一个新 Ticker。而 `render/boil.ts` 的沸腾线、战斗/卡牌视图共 14 处 fx 回调挂在 `PIXI.Ticker.shared` 上，**那个 ticker `autoStart = true`，只要有一个监听者就自己起一条 rAF 循环，而 ADR-083 的 `maxFPS = 60` 从来没碰过它**——大厅只要有一条沸腾线，第二条循环就按屏幕刷新率跑（ProMotion 上 120 Hz）。现在 `setMaxFps` 同时写两个 ticker，`uninstall` 把 `Ticker.shared` 还原成安装前的值（它是进程级全局，测试里必须还回去）。
+`PIXI.Application` 的 `sharedTicker` 默认 **false** → `app.ticker` 是一个新 Ticker。而 `render/boil.ts` 的沸腾线、战斗/卡牌视图共 14 处 fx 回调挂在 `PIXI.Ticker.shared` 上，**那个 ticker `autoStart = true`，只要有一个监听者就自己起一条 rAF 循环，而 ADR-083 的 `maxFPS = 60` 从来没碰过它**——大厅只要有一条沸腾线，第二条循环就按屏幕刷新率跑（ProMotion 上 120 Hz）。现在 `setMaxFps` 同时管两个 ticker，`uninstall` 把 `Ticker.shared` 还原成安装前的值（它是进程级全局，测试里必须还回去）。**ADR-094 起两条循环合并成一条**，见 §14。
 
 没有把那 14 处收敛到一个 seam：功耗问题是**速率**，而每一处都已经在积分 `deltaMS`（降速率只改采样粗细，不改动画时长）；收敛要动 14 条 destroy 路径，而那正是这个仓库出过泄漏的地方。
 
@@ -457,3 +458,29 @@ ADR-086 收尾后回头找「客户端还有什么能在本机量的」，量到
 新增的三处 `bakeLazy` 站点（`hpBar.ts`、`stickmanDraft.ts`、`UnitView/assets.ts`）已在 `pageBakeCallSites.test.ts` 里登记为 `pageScale: false`（单位/HUD 级的小块 chrome，且都骑在会 `scale` 的容器上，device-exact 会糊——ADR-073 那句话原样适用）。
 
 **为什么血条是 sprite 而不是节流重绘**：血条的 HP 分数几乎每帧都在变（尤其持续受击的基地），节流重绘（像手牌 `bar` 那样按签名判断是否重描）只能把重绘频率从 120/120 降到「HP 真的变了才描」，仍然是逐帧潜在成本；而 sprite 路径把这份成本从「重新三角化」降成「改一个数字」，两者不是同一个数量级。手牌 `bar` 留着节流是因为它的形状变化频率本来就低（拖拽时才变），血条不是。
+
+## 14. 帧率上限改成 vsync 整数分频（ADR-094，2026-09-28）
+
+**起因**：用户要求各界面帧率稳定、抖动 ≤ 3。本机真 Chrome（有头窗口、60 Hz、1366×768）逐屏测了 53 个界面：rAF 本身完全均匀，但 app ticker 在**每个界面**都每 3 秒丢约 4 帧（33 ms 空档）。
+
+**根因**：PIXI `Ticker.update` 的节流先把经过时间截成整数毫秒再比：`delta = (t - lastFrame) | 0; if (delta < 1000 / maxFPS) return;`。16.67 → 16 < 16.67，这一帧就没了。线上 `fpsP50` 常年 59 就是它。75 / 90 / 144 Hz 屏上同样的「按毫秒比」会得到 1 拍 / 2 拍交替。另外 `Ticker.shared` 自己一条 rAF 循环、自己节流，20 fps 时 101 次 tick 里 101 次和主画面不在同一个 vsync 上。
+
+**现在的做法**（`render/framePacer.ts`）：
+- 两个 ticker 都 `autoStart = false` + `stop()` + `maxFPS = 0`，由 pacer 的**一条** rAF 循环驱动，每次先 `Ticker.shared.update(t)` 再 `app.ticker.update(t)`，同一个时间戳。
+- 每 `N = max(1, round(刷新率 / 上限 − 0.1))` 个 vsync 跑一次。刷新率 = 最近 16 个 rAF 间隔的中位数。长帧按实际经过的 vsync 数计。
+- `ticker.maxFPS` 恒为 0，**别再拿它当上限读**。程序内读 `render/renderStats.ts` 的 `framePacing()`；`render_profile` 新增 `hz` 字段（估计的显示刷新率）。
+
+**修复后实测**（同一套探针，e2e 构建）：
+
+| 场景 | 上限 | 迟到帧 | 最大帧间隔 | 每秒帧数 | shared 错拍 |
+|---|---|---|---|---|---|
+| 大厅有操作 6 s | 60 | 0 | 17.0 ms | 60,60,60,60,61,60 | 0 |
+| 大厅静止 6 s | 60 | 0 | 16.9 ms | 60 ×6 | 0 |
+| 设置页静止 5 s | 20 | 0 | 50.2 ms（恒定 3 拍） | 21,19,20,20,20 | 0 |
+| 设置页有操作 5 s | 60 | 0 | 16.8 ms | 60 ×5 | 0 |
+
+修复前同样场景：大厅有操作 6 s 迟到 9 帧、最大间隔 34.0 ms、每秒 58–59；设置页 20 fps 时 shared 101/101 错拍。20 fps 那行的 21 / 19 是 1 秒分桶和 50 ms 节拍的边界量化，不是真抖动。
+
+**探针配方**：Playwright `channel: 'chrome', headless: false`（headless 没有 vsync，量不出节奏）；app ticker 上挂一个优先级 −100 的监听，记录 `lastTime + elapsedMS`（**不是** `lastTime`：它在监听者跑完之后才更新）；另起一条 rAF 记录原始 vsync 做对照；每站 3 s 真 `page.mouse.move` + 6 s 静止。当前共享的 `nwE2E.bootToLogin` 还停在旧的年龄门，探针是自己用 `entryGateCb.onAnswered({ birthYear, granted: true })` 过门的。
+
+**还没做**：空闲 60 → 20 本身仍会让「每秒帧数」跳 40。用户 2026-09-28 选了「保留 20 省电，改帧率统计口径——只统计画面真在变的帧」，另行实施。

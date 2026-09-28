@@ -21,8 +21,6 @@ const SUSTAIN_WINDOWS = 5;
 
 class FakeTicker {
   deltaMS = 16.7;
-  /** 0 = uncapped, PIXI's own meaning. renderPolicy sets 60, or 20 once a screen sits still. */
-  maxFPS = 0;
   private cb: (() => void) | null = null;
   add(cb: () => void): void { this.cb = cb; }
   remove(_cb: unknown): void { this.cb = null; }
@@ -124,11 +122,17 @@ describe('PerfMonitor: the idle frame-rate cap is not a stutter', () => {
     vi.restoreAllMocks();
   });
 
-  async function monitorOn(maxFPS: number): Promise<FakeTicker> {
+  /** The pacer's published cap (ADR-094: renderPolicy sets 60, or 20 once a screen sits still). */
+  let pacing: { capFps: number; refreshHz: number };
+
+  async function monitorOn(capFps: number): Promise<FakeTicker> {
+    // Imported AFTER resetModules, so this is the same module instance PerfMonitor reads.
+    const { setLiveFramePacing } = await import('../src/render/renderStats');
+    pacing = { capFps, refreshHz: 60 };
+    setLiveFramePacing(pacing);
     const { PerfMonitor } = await import('../src/cache/PerfMonitor');
     const monitor = new PerfMonitor();
     const ticker = new FakeTicker();
-    ticker.maxFPS = maxFPS;
     monitor.install(ticker as unknown as Parameters<typeof monitor.install>[0]);
     return ticker;
   }
@@ -168,10 +172,10 @@ describe('PerfMonitor: the idle frame-rate cap is not a stutter', () => {
     const ticker = await monitorOn(20);
     for (let w = 0; w < SUSTAIN_WINDOWS + 2; w++) {
       // ~1.6s at the 20fps idle cap …
-      ticker.maxFPS = 20;
+      pacing.capFps = 20;
       ticker.tick(1000 / 20, 32);
       // … then activity re-arms 60fps for the tail of the window. Window average ≈ 22fps.
-      ticker.maxFPS = 60;
+      pacing.capFps = 60;
       ticker.tick(1000 / 60, 12);
     }
     expect(reportAnomaly).not.toHaveBeenCalled();
@@ -180,9 +184,9 @@ describe('PerfMonitor: the idle frame-rate cap is not a stutter', () => {
   it('...and a device that is genuinely slow across such a window still reports', async () => {
     const ticker = await monitorOn(20);
     for (let w = 0; w < SUSTAIN_WINDOWS; w++) {
-      ticker.maxFPS = 20;
+      pacing.capFps = 20;
       ticker.tick(1000 / 8, 13); // 8fps under a 20fps cap — well under the clamped threshold of 15
-      ticker.maxFPS = 60;
+      pacing.capFps = 60;
       ticker.tick(1000 / 8, 3);
     }
     expect(reportAnomaly).toHaveBeenCalledWith('cpu', expect.stringContaining('sustained low fps'), expect.anything());
