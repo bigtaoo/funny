@@ -47,6 +47,8 @@ ADR-083/085 把**重绘**降到了空闲 5–12 次/秒，但**帧本身**没降
 
 ### 决策六（被迫的）：卡顿 watchdog 的阈值必须跟着上限走
 
+> **已被 ADR-095（2026-09-28）取代**：fps 改为只统计满速段，降频段不进样本，夹阈值机制删除；`render_profile.maxFps` 也改了语义。下面两段是历史。
+
 `cache/PerfMonitor` 的「持续低 fps」阈值是固定 25，而决策一会把 ticker 压到 20——**不动它的话，每一个健康的空闲菜单都会每 10 秒报一条 `cpu` 异常**。和 2026-07-26 那次「后台标签页假 cpu」同一类假阳性，只是从另一个方向来：设备不慢，是我们叫它慢的。现在阈值取 `min(nw_fps_warn, maxFPS - 5)`（`FPS_WARN_HEADROOM`）。20 Hz 上限下 10 fps 仍然会报——搬的是阈值，不是把 watchdog 关掉。
 
 顺带：`render_profile` 的 `maxFps` 字段**不再是常量**，它是上报时刻的上限。`maxFps: 20, fpsP50: 20` 是一个行为正确的空闲菜单，**先读 `maxFps` 再读 `fpsP50`**。
@@ -316,3 +318,22 @@ docker compose -f docker-compose.cloud.yml --env-file .env config | grep MONGO_U
 - **A/B 实测**（同页、大厅有输入、6 秒）：迟到帧 9 → 0，最大帧间隔 34.0 → 17.4 ms，每秒 fps 58–59 → 60，shared 与主画面错拍 9 → 0–1。
 - **不在本条范围**：空闲 60 → 20 的降频本身。用户 2026-09-28 选了「保留 20 省电，改帧率统计口径——只统计画面真在变的帧」，另行实施。
 - **影响**：`client/src/render/framePacer.ts`（新）、`render/renderPolicy.ts`、`render/renderStats.ts`、`cache/PerfMonitor.ts`；测试 `test/ui/framePacer.ui.ts`（新）、`test/ui/renderPolicy.ui.ts`、`test/PerfMonitor.test.ts`、`test/renderProfile.test.ts`；文档 `claudedocs/client-render-budget.md`、`design/game/ANALYTICS_DESIGN.md`。
+
+## ADR-095 帧率只统计「满速段」：静止降频的时段不计入 fps，另报 `idlePct` — Accepted — 2026-09-28
+
+- **问题**：ADR-094 修好之后，有人操作 / 有东西在动时各界面都稳在 60 ± 1。剩下唯一让「抖动 ≤ 3」超标的是 ADR-086 的空闲降频：菜单静止 2 秒后 tick 从 60 降到 20，按窗口算的 fps 直接差出 40。这 20 fps 的时段里画面**根本没有在变**（降频的触发条件就是「2 秒内签名没变、没有输入、不是 `live` 场景」，任何变化都会在同一 tick 拨回 60），所以肉眼看不到卡顿，只是统计口径把「故意不画」当成了「画得慢」。
+  - 同一个口径问题已经被修过两次补丁：ADR-086 决策六把 watchdog 阈值夹到 `maxFPS − 5`，2026-09-12 又改成「窗口内见过的最小上限」（`windowMinCap`）。补丁只挡住了假告警，`render_profile.fpsP50` 仍然会读出 20，还得靠人去对 `maxFps`。
+- **决策**（用户 2026-09-28 选定：保留 20 fps 省电，改统计口径）：
+  - `RenderPolicy` 在 `renderStats` 里多发布一个 `idle` 标志——pacer 被压在 `IDLE_FPS` 时为真，和上限在同一处（`setMaxFps`）改，所以输入同步拨回 60 时它也同步变假。
+  - `PerfMonitor` 的帧率只由**满速帧间隔**算：一个间隔（上一 tick → 这一 tick）只有在两端观察到的都不是 `idle` 才计入。于是：进入降频的那一段、降频中的每一段、以及从降频醒来的那一段（半截是 50 ms 的空闲间隔）都不算；醒来后第二个间隔起照常计入。醒来时如果是策略自己发现画面变了（而不是输入），会多扔掉一个本来是满速的间隔——宁可少算一帧，也不把 50 ms 算进满速段。
+  - 一个 2 秒窗口里满速时长不足 500 ms 就**不产出 fps 样本**（几帧算出来的速率噪声太大）；这个窗口对卡顿 watchdog 是中性的——既不累加连续低帧计数，也不清零。
+  - 因为 fps 现在永远是在满速上限下量的，**`windowMinCap` / `FPS_WARN_HEADROOM` 整套夹阈值的机制删除**，阈值回到固定的 `nw_fps_warn`（默认 25）。30 Hz 屏满速也是 30，仍在 25 之上。
+  - `render_profile`：
+    - `fpsP50 / fpsMin / fpsMax` 改为满速段的分布；整段 span 都在降频时这三个字段**缺省**，而不是报 0 或 20。
+    - `maxFps` 改为 span 内满速帧见过的最高上限（即那段时间实际要求的天花板，正常就是 60）；没有满速帧时退回上报时刻的上限。不再会出现「`maxFps: 20` 要先读它再读 `fpsP50`」的情况。
+    - 新增 **`idlePct`**：span 内处于降频的时间占比（0–100）。省电效果看它，流畅度看 `fpsP50`，两件事不再搅在一个数里。
+    - `tickPerSec` / `paintPerSec` / `skipPct` 口径不变（仍按全部 tick 算），它们本来就是省电指标。
+  - 卡顿异常（`cpu`）里的 `fps` 同样是满速段的值。
+- **不改的**：`IDLE_FPS = 20`、`IDLE_QUIET_MS`、降频的触发与唤醒逻辑（ADR-086 / ADR-094）完全不动；本条只改「怎么数」。
+- **读旧数据**：2026-09-28 之前的 `render_profile` 行，`fpsP50` 混着降频段，`maxFps` 是上报时刻的上限；没有 `idlePct` 字段即为旧口径。
+- **影响**：`client/src/render/renderStats.ts`、`render/renderPolicy.ts`、`cache/PerfMonitor.ts`；测试 `test/PerfMonitor.test.ts`、`test/renderProfile.test.ts`、`test/ui/renderPolicy.ui.ts`；文档 `design/game/ANALYTICS_DESIGN.md`、`claudedocs/client-render-budget.md`。

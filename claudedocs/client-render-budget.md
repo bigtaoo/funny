@@ -346,7 +346,7 @@ headless（`vitest.ui` 里的真 PIXI），空闲世界地图，**2,833 个舞�
 
 - **`'floor'` 不算活动。** 500 ms 地板一秒触发两次；算了活动就永远走不完 2 秒静默窗口，这条节流一次都不会生效。门禁里有一例专门喂 6 个地板帧、并断言那 6 帧真的画了（否则用例是空的）。
 - **指针事件同步把上限拨回 60**（模块级 `onActivity` 回调；ADR-094 起写的是 `FramePacer.capFps`，不是 `ticker.maxFPS`），不等下一个 tick——降到 20 Hz 后下一 tick 最远 50 ms，第一帧点击反馈不能付这个钱。
-- **卡顿 watchdog 的阈值必须夹在上限之下**（`PerfMonitor` 的 `FPS_WARN_HEADROOM`：`min(nw_fps_warn, maxFPS - 5)`）。不夹的话每个健康的空闲菜单每 10 秒报一条 `cpu` 异常——和 2026-07-26「后台标签页假 cpu」同一类假阳性，只是从另一个方向来。同理 `render_profile` 的 `maxFps` **不再是常量**：`maxFps: 20, fpsP50: 20` 是一个行为正确的空闲菜单，**先读 `maxFps` 再读 `fpsP50`**。
+- ~~卡顿 watchdog 的阈值必须夹在上限之下~~（`FPS_WARN_HEADROOM` / `windowMinCap`）——**ADR-095（2026-09-28）起删除**：fps 只在满速段统计，降频段不进样本，阈值回到固定的 `nw_fps_warn`。`render_profile` 的 `maxFps` 也不再是「上报时刻的上限」，见 §15。
 
 ### 这个客户端一直有两个 rAF 循环
 
@@ -483,4 +483,31 @@ ADR-086 收尾后回头找「客户端还有什么能在本机量的」，量到
 
 **探针配方**：Playwright `channel: 'chrome', headless: false`（headless 没有 vsync，量不出节奏）；app ticker 上挂一个优先级 −100 的监听，记录 `lastTime + elapsedMS`（**不是** `lastTime`：它在监听者跑完之后才更新）；另起一条 rAF 记录原始 vsync 做对照；每站 3 s 真 `page.mouse.move` + 6 s 静止。当前共享的 `nwE2E.bootToLogin` 还停在旧的年龄门，探针是自己用 `entryGateCb.onAnswered({ birthYear, granted: true })` 过门的。
 
-**还没做**：空闲 60 → 20 本身仍会让「每秒帧数」跳 40。用户 2026-09-28 选了「保留 20 省电，改帧率统计口径——只统计画面真在变的帧」，另行实施。
+**空闲 60 → 20** 本身仍会让「每秒 tick 数」跳 40——这是省电设计，不改；帧率统计口径改为只算满速段，见 §15。
+
+## 15. 帧率只统计满速段（ADR-095，2026-09-28）
+
+**为什么**：§14 之后，有输入 / 有东西在动时各界面都是 60 ± 1。唯一剩下的「抖动」是菜单静止 2 秒降到 20——那段时间画面**没有在变**（降频的前提就是签名没变、没输入、不是 `live` 场景），降频期每秒只重绘约 2 次。把它算进 fps，是把「故意不画」当成「画得慢」。用户选了保留 20 省电、改口径。
+
+**口径**：
+- `RenderPolicy` 往 `renderStats` 里多发一个 `idle`（pacer 压在 `IDLE_FPS` 时为真；和上限在 `setMaxFps` 同一处写，输入同步拨回 60 时它同步变假）。
+- `PerfMonitor` 只把**两端都不是 `idle`** 的 tick 间隔计入 fps。进降频、降频中、醒来那一段（半截是 50 ms 空闲）都不算。
+- 2 秒窗口内满速不足 500 ms → 这个窗口不出 fps 样本，对 watchdog 中性（不累加也不清零连续计数）。
+- `windowMinCap` / `FPS_WARN_HEADROOM` 删除，阈值固定 `nw_fps_warn`（默认 25）。
+
+**`render_profile` 怎么读**：
+
+| 字段 | 旧（无 `idlePct` 的行） | 新 |
+|---|---|---|
+| `fpsP50/Min/Max` | 所有窗口，混着 20 fps 的降频段 | 只算满速段；整段都在降频时**缺省** |
+| `maxFps` | 上报时刻的上限（可能是 20） | span 内满速帧见过的最高上限（正常 60） |
+| `idlePct` | — | 降频时间占比 0–100。省电看它 |
+| `tickPerSec/paintPerSec/skipPct` | 全部 tick | 不变 |
+
+**真 Chrome 实测**（有头、60 Hz、设置页，3 s 动鼠标 / 5 s 静止交替，第一条 `render_profile`，30 s）：
+
+- 旧口径（每秒 tick 数）：`60,60,60,60,60,34,20,20,58,60,…`——每次静止都从 60 掉到 20。
+- 新口径上报：`fpsP50 60, fpsMax 60, idlePct 19, maxFps 60, hz 60`。满速间隔 1380 个，中位 16.70 ms，超过 25 ms 的只有 1 个。
+- `fpsMin 45` 来自这条 span 开头的启动 / 大厅→设置切屏窗口（切屏卡顿，另一个开放项），不是降频。
+
+**门禁**：`test/PerfMonitor.test.ts`（降频段不报、醒来那一段不进样本、满速段真慢仍然报）、`test/renderProfile.test.ts`（`idlePct`、全降频时 fps 缺省、`maxFps` 取满速上限）、`test/ui/renderPolicy.ui.ts`（`idle` 与上限同步，含输入同步唤醒）。

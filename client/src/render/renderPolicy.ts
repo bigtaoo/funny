@@ -343,7 +343,7 @@ export class RenderPolicy {
   /** Drives both tickers; created on {@link install}, because it takes their loops over. */
   private pacer: FramePacer | null = null;
   /** Counters exposed for the browser measurement recipe (`window.__nwRenderStats`). */
-  readonly stats: RenderStats = { ticks: 0, painted: 0, skipped: 0 };
+  readonly stats: RenderStats = { ticks: 0, painted: 0, skipped: 0, idle: false };
 
   constructor(
     private readonly host: RenderLoopHost,
@@ -399,6 +399,9 @@ export class RenderPolicy {
    */
   private setMaxFps(fps: number): void {
     if (this.pacer) this.pacer.capFps = fps;
+    // Published beside the cap, never derived later from it: PerfMonitor must see a wake-up on
+    // input the same instant the pacer does (ADR-095).
+    this.stats.idle = fps < TARGET_FPS;
   }
 
   /** One frame's decision. Exposed (not just wired to the ticker) so tests can step it by hand. */

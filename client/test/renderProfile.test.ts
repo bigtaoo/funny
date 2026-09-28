@@ -111,7 +111,7 @@ describe('render_profile', () => {
     ({ doc, fire } = makeDoc());
     vi.stubGlobal('document', doc);
     ticker = new FakeTicker();
-    stats = { ticks: 0, painted: 0, skipped: 0 };
+    stats = { ticks: 0, painted: 0, skipped: 0, idle: false };
     // Imported AFTER resetModules, or PerfMonitor would read a different module instance of the
     // counter holder than the one this test writes to (and every paint field would come back absent).
     ({ setLiveRenderStats, setLiveFramePacing } = await import('../src/render/renderStats'));
@@ -273,6 +273,83 @@ describe('render_profile', () => {
     expect(props.fpsP50).toBe(50);
     expect(props.paintPerSec).toBeUndefined();
   });
+  // ── full-rate stretches only (ADR-095) ─────────────────────────────────────────
+  // An idle menu held at IDLE_FPS paints nothing new; its 20fps is the power saving working, not a
+  // slow device. fps is measured on the full-rate stretches and the idle share is its own field.
+
+  it('keeps idle stretches out of the fps and reports their share as idlePct', () => {
+    monitor.install(ticker, RENDER_INFO);
+    // Alternate 5 full-rate windows at 50fps with 10 idle ones at the 20fps cap (idle = 2/3 of span).
+    for (let w = 0; w < FIRST_PROFILE_WINDOWS; w++) {
+      stats.idle = w % 3 !== 0;
+      feedWindow(ticker, stats.idle ? 25 : 50, 1);
+    }
+    const props = track.mock.calls[0]![1] as Record<string, unknown>;
+    expect(props.fpsP50).toBe(50);
+    expect(props.fpsMin).toBe(50);
+    // Each idle->full switch also drops the waking interval, hence a hair over 2/3.
+    expect(props.idlePct).toBe(67);
+    expect(props.maxFps).toBe(60);
+  });
+
+  it('omits fps entirely for a span that was idle throughout, rather than reporting 20', () => {
+    const pacing = { capFps: 20, refreshHz: 60 };
+    setLiveFramePacing(pacing);
+    stats.idle = true;
+    monitor.install(ticker, RENDER_INFO);
+    feedWindow(ticker, 25, FIRST_PROFILE_WINDOWS);
+    const props = track.mock.calls[0]![1] as Record<string, unknown>;
+    expect(props.fpsP50).toBeUndefined();
+    expect(props.fpsMin).toBeUndefined();
+    expect(props.fpsMax).toBeUndefined();
+    expect(props.idlePct).toBe(100);
+    // No full-rate frame to take a ceiling from: the cap standing at report time.
+    expect(props.maxFps).toBe(20);
+  });
+
+  it('reports maxFps as the full-rate ceiling even when the report lands while idle', () => {
+    // Before ADR-095 this read the cap at report time, so a report written a second after the menu
+    // went still said `maxFps: 20` about a span measured at 60.
+    const pacing = { capFps: 60, refreshHz: 60 };
+    setLiveFramePacing(pacing);
+    monitor.install(ticker, RENDER_INFO);
+    feedWindow(ticker, 50, FIRST_PROFILE_WINDOWS - 1);
+    pacing.capFps = 20;
+    stats.idle = true;
+    feedWindow(ticker, 25, 1);
+    const props = track.mock.calls[0]![1] as Record<string, unknown>;
+    expect(props.maxFps).toBe(60);
+    expect(props.fpsP50).toBe(50);
+  });
+
+  it('does not count the interval that wakes from idle as a full-rate frame', () => {
+    // The first tick after a wake closes an interval that began at an idle tick: up to a whole idle
+    // period long. Counted, it would read as one very slow full-rate frame in every such window.
+    monitor.install(ticker, RENDER_INFO);
+    for (let w = 0; w < FIRST_PROFILE_WINDOWS; w++) {
+      stats.idle = true;
+      ticker.tick(40, 25);   // 1000ms idle
+      stats.idle = false;
+      ticker.tick(250, 1);   // the waking interval: an exaggerated 250ms gap
+      ticker.tick(10, 75);   // 750ms at 100fps
+    }
+    const props = track.mock.calls[0]![1] as Record<string, unknown>;
+    // With the wake counted: 76 frames / 1000ms = 76. Without: 75 / 750ms = 100.
+    expect(props.fpsP50).toBe(100);
+  });
+
+  it('a window with under 500ms at full rate yields no fps sample', () => {
+    monitor.install(ticker, RENDER_INFO);
+    feedWindow(ticker, 50, FIRST_PROFILE_WINDOWS - 1);
+    // One window with a 400ms full-rate burst at 10fps: too short to be a rate, so it is not the min.
+    stats.idle = true;
+    ticker.tick(40, 40);    // 1600ms idle
+    stats.idle = false;
+    ticker.tick(100, 5);    // 1 wake + 4 counted = 400ms
+    const props = track.mock.calls[0]![1] as Record<string, unknown>;
+    expect(props.fpsMin).toBe(50);
+  });
+
   // ── where the frame budget went ─────────────────────────────────────────────────
   // `fpsP50` says a device is slow; `maxFps` vs `fpsMax` says whether it was even allowed to go
   // faster. Neither says WHERE the frame went, and that is the fork the 2026-09-11 dpr-2 session was

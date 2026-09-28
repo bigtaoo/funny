@@ -23,6 +23,12 @@ export interface RenderStats {
   painted: number;
   /** Ticks skipped because the stage signature was unchanged. */
   skipped: number;
+  /**
+   * True while the policy holds the loop at `IDLE_FPS` because the screen is standing still.
+   * Written in the same place as the pacer's cap, so input that re-arms full rate clears it
+   * synchronously. PerfMonitor excludes these stretches from its fps (ADR-095).
+   */
+  idle: boolean;
 }
 
 let live: RenderStats | null = null;
