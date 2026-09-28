@@ -291,7 +291,7 @@ describe('the safety valves', () => {
     const { policy } = policyFor(() => 'reactive');
     policy.tick();
     for (let i = 0; i < 9; i++) policy.tick();
-    expect(policy.stats).toEqual({ ticks: 10, painted: 1, skipped: 9 });
+    expect(policy.stats).toEqual({ ticks: 10, painted: 1, skipped: 9, idle: false });
   });
 });
 
@@ -359,9 +359,12 @@ describe('idle tick-rate throttle', () => {
 
     run(policy, 1, IDLE_QUIET_MS - 1);   // not quiet long enough yet
     expect(capOf(policy)).toBe(TARGET_FPS);
+    expect(policy.stats.idle).toBe(false);
 
     run(policy, 1, 2);
     expect(capOf(policy)).toBe(IDLE_FPS);
+    // Published with the cap: PerfMonitor keeps these stretches out of the fps (ADR-095).
+    expect(policy.stats.idle).toBe(true);
       });
 
   it('the IDLE_FLOOR_MS paint does not count as activity — otherwise this never engages at all', () => {
@@ -385,6 +388,7 @@ describe('idle tick-rate throttle', () => {
     clockMs += 16;
     expect(policy.tick().reason).toBe('changed');
     expect(capOf(policy)).toBe(TARGET_FPS);
+    expect(policy.stats.idle).toBe(false);
   });
 
   it('a pointer event restores the rate synchronously, without waiting for a tick', () => {
@@ -395,8 +399,12 @@ describe('idle tick-rate throttle', () => {
     run(policy, 1, IDLE_QUIET_MS + 1);
     expect(capOf(policy)).toBe(IDLE_FPS);
 
+    expect(policy.stats.idle).toBe(true);
     holdRenderActive();
     expect(capOf(policy)).toBe(TARGET_FPS); // no tick happened in between
+    // ...and so does the idle flag, or the first full-rate interval after a tap would be dropped
+    // from the fps as idle while the pacer is already running it at 60.
+    expect(policy.stats.idle).toBe(false);
     policy.uninstall();
   });
 
@@ -404,6 +412,7 @@ describe('idle tick-rate throttle', () => {
     const { host, policy } = policyFor(() => 'live');
     run(policy, 60, IDLE_QUIET_MS);
     expect(capOf(policy)).toBe(TARGET_FPS);
+    expect(policy.stats.idle).toBe(false);
   });
 });
 

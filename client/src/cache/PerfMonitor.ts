@@ -10,7 +10,8 @@ import * as analytics from '../analytics';
 //
 //   ① Long-task busy ratio (Chromium only / where PerformanceObserver('longtask') is supported): sum of all >50ms
 //      main-thread long-task durations within the window ÷ window length. A high ratio means the main thread is saturated by JS = perceived "CPU spike / stutter".
-//   ② Sustained low FPS (available everywhere, including WeChat): estimates per-window FPS from ticker.deltaMS; sustained low FPS across multiple consecutive windows triggers a stutter report.
+//   ② Sustained low FPS (available everywhere, including WeChat): estimates per-window FPS from ticker.deltaMS over full-rate
+//      stretches only (idle-throttled ones are excluded, see MIN_FULL_RATE_MS); sustained low FPS across multiple consecutive windows triggers a stutter report.
 //      Environments that don't support longtask (WeChat) fall back to this path.
 //
 // Structurally mirrors MemoryMonitor: attached to app.ticker, persists across scenes, cooldown prevents alert flooding (reportAnomaly already applies a 60s cooldown for cpu-class events).
@@ -23,37 +24,28 @@ const DEFAULT_BUSY_WARN = 0.5;      // long-task busy ratio ≥ this value is co
 const WINDOW_MS = 2_000;            // sampling window
 const SUSTAIN_WINDOWS = 5;          // report only after this many consecutive low-FPS windows (≈10s), to avoid reporting transient spikes
 /**
- * Headroom below the render loop's own frame-rate ceiling, under which a low fps still counts as a
- * stutter.
+ * fps is measured over FULL-RATE frame intervals only (ADR-095, 2026-09-28).
  *
- * The watchdog's threshold cannot be allowed to exceed what the loop is even permitted to deliver.
- * `render/renderPolicy.ts` caps the ticker at TARGET_FPS (60) normally and drops it to IDLE_FPS (20)
- * on a screen that has been standing still — at which point a fixed 25fps threshold reads every
- * healthy idle menu as "sustained low fps ~20" and files a cpu anomaly every 10 seconds. Same class
- * of false positive as the backgrounded-tab one fixed on 2026-07-26, from the other direction: the
- * device is not slow, it was asked to go slow.
+ * `render/renderPolicy.ts` drops the loop to IDLE_FPS (20) on a screen whose picture has not changed
+ * for two seconds, and re-arms 60 on the very tick anything changes. Those 20fps stretches paint
+ * nothing new: the device was asked to go slow, it is not failing to go fast. Counting them made
+ * every idle menu read as a 60->20 "stutter", in the watchdog and in `render_profile` alike. Two
+ * earlier patches clamped the watchdog threshold under the lowest cap seen in the window
+ * (`FPS_WARN_HEADROOM` / `windowMinCap`, ADR-086 and 2026-09-12). They stopped the false alarms but
+ * left `fpsP50: 20` in the report for a human to explain away against `maxFps`. Measuring only the
+ * stretches where the picture can move removes the question instead, so the threshold is a plain
+ * constant again.
  *
- * The ceiling it is measured against must be the LOWEST one that applied during the window, not the
- * one standing at window end (2026-09-12 fix). renderPolicy flips between IDLE_FPS and TARGET_FPS on
- * a single tick — `applyIdleThrottles` re-arms full rate the moment anything changes — so a screen
- * the player touches every few seconds spends most of a 2s window capped at 20 and ends it at 60.
- * Reading the ceiling at window end then compares an idle-throttled average against the full-rate
- * threshold of 25 and calls it a stutter.
+ * An interval counts only if `renderStats().idle` was false at BOTH of its ends, as seen from this
+ * listener. That drops the interval entering idle, every idle one, and the one waking from it (half
+ * of which is a 50ms idle gap, however the wake happened). A wake the policy notices by itself costs
+ * one genuinely full-rate interval too; dropping a good frame is cheaper than counting a bad one.
  *
- * That this happens is not a deduction: `render_profile` catches whole spans in the act, e.g.
- * 2026-09-12 09:53 AuctionScene `maxFps:60, fpsP50:20, fpsMin:20, fpsMax:59, tickPerSec:35` — half
- * the span at the idle cap, ceiling 60 by the time the report was written.
- *
- * **What this fix does NOT explain, and an earlier revision of this comment wrongly claimed it did:**
- * the ten `cpu` anomalies of 2026-09-11 (fps 19-25). The `render_profile` rows from that same
- * session say `maxFps:60, fpsP50:30, fpsMax:30, tickPerSec:29, skipPct:2-14` on a dpr-2 /
- * 2048x1308 canvas — a device whose *display* tops out near 30 Hz, running the loop at its ceiling
- * of 60 for the entire span and simply not getting there, with dips to 16-23. `windowMinCap` stays
- * 60 for those, the threshold stays 25, and they still report — correctly. They are a real stutter
- * on a real device, not an artifact. Cross-check any `cpu` anomaly against `render_profile`'s
- * `maxFps` vs `fpsMax` before calling it either way.
+ * Unrelated to idle and still real: the 2026-09-11 dpr-2 / 2048x1308 device reporting
+ * `maxFps:60, fpsP50:30, fpsMax:30` ran at its ceiling of 60 the whole span and never got there.
+ * Cross-check a `cpu` anomaly against `render_profile`'s `hz` and `maxFps` vs `fpsMax`.
  */
-const FPS_WARN_HEADROOM = 5;
+const MIN_FULL_RATE_MS = 500;
 
 // ── render_profile (ADR-083 follow-up) ────────────────────────────────────────
 // The anomaly paths above only fire when something is WRONG, which cannot answer "what frame rate and
@@ -107,9 +99,14 @@ export class PerfMonitor {
   private ticker: PIXI.Ticker | null = null;
   private accMs = 0;
   private frames = 0;
+  /** Full-rate intervals of the current window and the ms they covered: the fps sample. See {@link MIN_FULL_RATE_MS}. */
+  private fullMs = 0;
+  private fullFrames = 0;
+  /** `renderStats().idle` as seen on the previous tick: an interval counts only if both its ends were full rate. */
+  private idleAtLastTick = false;
+  /** Highest pacer cap seen on a full-rate interval since the last profile: `render_profile.maxFps`. */
+  private spanMaxCap = 0;
   private lowFpsStreak = 0;
-  /** Lowest frame cap (`framePacing().capFps`) seen during the current window; Infinity = uncapped throughout. See {@link FPS_WARN_HEADROOM}. */
-  private windowMinCap = Infinity;
   /** Cumulative long-task duration (ms) within the current sampling window; accumulated in the PerformanceObserver callback and reset at window end. */
   private longTaskMs = 0;
   private observer: PerfObserver | null = null;
@@ -136,6 +133,8 @@ export class PerfMonitor {
   private rndMaxMs = 0;
   /** Total ms those windows covered (not wall time: hidden windows are excluded). */
   private profileSpanMs = 0;
+  /** Of {@link profileSpanMs}, the ms that were NOT full rate: `render_profile.idlePct`. */
+  private profileIdleMs = 0;
   /** Visible windows since the last profile report. */
   private windowsSinceProfile = 0;
   /** `renderStats()` at the last report, to diff paints/ticks into per-second rates. */
@@ -194,26 +193,35 @@ export class PerfMonitor {
     // Retried per tick rather than fixed by reordering app.ts, because the ordering is not this
     // module's to depend on: it must report paint rates whenever the policy installs, before or after.
     if (this.lastPaintCounters === null) this.seedPaintCounters();
+    const dt = this.ticker?.deltaMS ?? 16.7;
     this.frames += 1;
-    this.accMs += this.ticker?.deltaMS ?? 16.7;
-    // Sampled per tick, not at window end: the cap moves within a window. See FPS_WARN_HEADROOM.
-    const capNow = framePacing()?.capFps ?? 0;
-    if (capNow > 0 && capNow < this.windowMinCap) this.windowMinCap = capNow;
+    this.accMs += dt;
+    // Sampled per tick, not at window end: the policy flips idle on a single tick. See MIN_FULL_RATE_MS.
+    const idleNow = renderStats()?.idle ?? false;
+    if (!idleNow && !this.idleAtLastTick) {
+      this.fullFrames += 1;
+      this.fullMs += dt;
+      const cap = framePacing()?.capFps ?? 0;
+      if (cap > this.spanMaxCap) this.spanMaxCap = cap;
+    }
+    this.idleAtLastTick = idleNow;
     if (this.accMs < WINDOW_MS) return;
 
     const windowMs = this.accMs;
     const frames = this.frames;
-    const fps = (frames * 1000) / windowMs;
+    const fullMs = this.fullMs;
+    // null = this window was (almost) all idle: no fps to report, and nothing for the watchdog to judge.
+    const fps = fullMs >= MIN_FULL_RATE_MS ? (this.fullFrames * 1000) / fullMs : null;
     const busyRatio = Math.min(1, this.longTaskMs / windowMs);
-    const minCap = this.windowMinCap;
     // Taken unconditionally, BEFORE the hidden-window bail below: the accumulator is reset-on-read,
     // so a window this monitor throws away must still be drained or its cost leaks into the next one
-    // — and a hidden window is exactly the one whose numbers must not survive.
+    // and a hidden window is exactly the one whose numbers must not survive.
     const cost = takeFrameCost();
     this.accMs = 0;
     this.frames = 0;
+    this.fullMs = 0;
+    this.fullFrames = 0;
     this.longTaskMs = 0;
-    this.windowMinCap = Infinity;
 
     // The tab was hidden/backgrounded/occluded at some point during this window: the browser throttles
     // rAF for power saving, which can legitimately tank fps and stretch deltaMS with no real JS slowness.
@@ -226,7 +234,8 @@ export class PerfMonitor {
       return;
     }
 
-    this.fpsSamples.push(fps);
+    if (fps !== null) this.fpsSamples.push(fps);
+    this.profileIdleMs += Math.max(0, windowMs - fullMs);
     // Divided by this window's TICK count, not by the number of calls: `updMs` sums one call per
     // mounted scene (a scene plus its overlay is two), and `rndMs` sums only the ticks that actually
     // painted. Both therefore read as "ms of this work per tick", directly comparable to the frame
@@ -242,14 +251,17 @@ export class PerfMonitor {
     // ① Long-task busy ratio: report immediately if the threshold is breached in a single window (a long task is hard evidence of a saturated main thread).
     if (this.observer && busyRatio >= debugNum('nw_cpu_busy_warn', DEFAULT_BUSY_WARN)) {
       reportAnomaly('cpu', `main-thread busy ${(busyRatio * 100).toFixed(0)}% over ${Math.round(windowMs)}ms`, {
-        busyRatio: Math.round(busyRatio * 100) / 100, windowMs: Math.round(windowMs), fps: Math.round(fps),
+        busyRatio: Math.round(busyRatio * 100) / 100, windowMs: Math.round(windowMs),
+        ...(fps !== null ? { fps: Math.round(fps) } : {}),
       });
-      log.warn(`main-thread busy ${(busyRatio * 100).toFixed(0)}%`, { fps: Math.round(fps) });
+      log.warn(`main-thread busy ${(busyRatio * 100).toFixed(0)}%`, fps !== null ? { fps: Math.round(fps) } : {});
       return; // already reported; do not also trigger the FPS path for this window
     }
 
     // ② Sustained low FPS: report only after multiple consecutive windows (transient drops or scene transitions do not count).
-    const fpsWarn = this.effectiveFpsWarn(minCap);
+    // An idle window neither extends nor breaks the streak: it says nothing about how fast the device can paint.
+    if (fps === null) return;
+    const fpsWarn = debugNum('nw_fps_warn', DEFAULT_FPS_WARN);
     if (fps < fpsWarn) {
       this.lowFpsStreak += 1;
       if (this.lowFpsStreak >= SUSTAIN_WINDOWS) {
@@ -263,16 +275,6 @@ export class PerfMonitor {
       this.lowFpsStreak = 0;
     }
   };
-
-  /**
-   * Stutter threshold for this window, clamped under the lowest ceiling the render loop imposed
-   * during it. See {@link FPS_WARN_HEADROOM}. Infinity means the loop ran uncapped for the whole
-   * window (the pacer spells that `capFps === 0`), so there is nothing to clamp against.
-   */
-  private effectiveFpsWarn(minCap: number): number {
-    const warn = debugNum('nw_fps_warn', DEFAULT_FPS_WARN);
-    return Number.isFinite(minCap) ? Math.min(warn, minCap - FPS_WARN_HEADROOM) : warn;
-  }
 
   /**
    * Emit one `render_profile` when enough visible windows have accumulated (see the constants above).
@@ -291,15 +293,20 @@ export class PerfMonitor {
       scene: getActiveScene() || 'unknown',
       spanS: Math.round(spanS),
       windows: this.windowsSinceProfile,
-      fpsP50: Math.round(sorted[Math.floor(sorted.length / 2)] ?? 0),
-      fpsMin: Math.round(sorted[0] ?? 0),
-      fpsMax: Math.round(sorted[sorted.length - 1] ?? 0),
-      // The ceiling AT REPORT TIME, which is not a constant any more: renderPolicy drops the ticker
-      // to IDLE_FPS on a screen that is standing still. A profile reading `maxFps: 20, fpsP50: 20`
-      // is an idle menu behaving correctly, not a struggling device — read this field before
-      // reading fpsP50.
-      maxFps: framePacing()?.capFps ?? 0,
+      // The ceiling the fps below was measured under: the highest cap on a full-rate interval, i.e.
+      // TARGET_FPS in practice. Falls back to the cap at report time for a span that was idle
+      // throughout (ADR-095; before it, this was always the report-time cap and could read 20).
+      maxFps: this.spanMaxCap || (framePacing()?.capFps ?? 0),
+      // Share of the span held at IDLE_FPS. Power is read here, smoothness from fpsP50: two
+      // questions that used to share one number.
+      idlePct: this.profileSpanMs > 0 ? Math.round((this.profileIdleMs / this.profileSpanMs) * 100) : 0,
     };
+    // Full-rate stretches only (ADR-095). Absent, not 0, for a span that never ran at full rate.
+    if (sorted.length) {
+      props.fpsP50 = Math.round(sorted[Math.floor(sorted.length / 2)]!);
+      props.fpsMin = Math.round(sorted[0]!);
+      props.fpsMax = Math.round(sorted[sorted.length - 1]!);
+    }
     // Estimated display refresh rate (ADR-094). Absent without a pacer rather than a made-up 60.
     const pacing = framePacing();
     if (pacing) props.hz = Math.round(pacing.refreshHz);
@@ -351,6 +358,8 @@ export class PerfMonitor {
     this.updMaxMs = 0;
     this.rndMaxMs = 0;
     this.profileSpanMs = 0;
+    this.profileIdleMs = 0;
+    this.spanMaxCap = 0;
     this.windowsSinceProfile = 0;
   }
 }
