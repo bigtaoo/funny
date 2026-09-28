@@ -115,3 +115,15 @@ no gradients, no glow, no 3D render, not a screenshot.
 - [ ] 横竖方三张像同一套主视觉（同样的角色、同样的纸和笔）。
 
 交图后我这边做：裁切/缩放到精确像素、（无字版时）加标题、按门户上限压缩、放进 `art/store/crazygames/`，并更新 §4.1 状态。
+
+## 7. 出图结果（2026-09-28）
+
+三张都走 A 路（AI 直接画标题，拼写正确），未用无字版。处理：居中裁到精确比例 → Lanczos 缩放 → JPG q92。
+
+| 成品 | 原图尺寸 | 大小 |
+|---|---|---|
+| `cover_landscape_1920x1080.jpg` | 1672×941（放大 1.15×） | 874 KB |
+| `cover_portrait_800x1200.jpg` | 1024×1536 | 494 KB |
+| `cover_square_800x800.jpg` | 1254×1254 | 311 KB |
+
+原图留在 `art/store/crazygames/src/`，重裁时从这里出。
