@@ -28,7 +28,12 @@ vi.mock('../src/assets/bootManifest', () => ({ preloadBootBackground: () => boot
 vi.mock('../src/assets/battleAssets', () => ({ ensureBattleAssets: () => battle() }));
 vi.mock('../src/render/rewardIcon', () => ({ preloadRewardIconArt: () => rewardIcons() }));
 vi.mock('../src/render/gachaArt', () => ({ preloadGachaTextures: () => gacha() }));
-vi.mock('../src/render/atlas/worldAtlas', () => ({ worldAtlas: { load: () => world() } }));
+vi.mock('../src/render/atlas/worldAtlas', () => ({ worldAtlas: { load: () => world(), baseTexture: () => ({ id: 'world-page' }) } }));
+// The world wave also pushes the decoded page to the GPU (ADR-099); record when, and with what.
+const uploads: unknown[] = [];
+vi.mock('../src/render/bake', () => ({
+  uploadToGpu: (bt: unknown) => { uploads.push(bt); events.push('upload:slg:world'); return true; },
+}));
 
 // Rotation clock, driven by the tests. Defaults to "never rotated", which is the state every test
 // below except the rotation block runs in — awaitRotationQuiet returns immediately there.
@@ -92,6 +97,7 @@ function setConnection(conn: unknown): void {
 describe('idlePrefetch', () => {
   beforeEach(() => {
     events.length = 0;
+    uploads.length = 0;
     pending.clear();
     resetIdlePrefetchForTest();
     vi.useFakeTimers();
@@ -129,9 +135,26 @@ describe('idlePrefetch', () => {
       await finish(id);
     }
 
-    expect(events).toEqual(WAVE_ORDER.flatMap((id) => [`start:${id}`, `end:${id}`]));
+    expect(events).toEqual(WAVE_ORDER.flatMap((id) => [
+      `start:${id}`, `end:${id}`, ...(id === 'slg:world' ? ['upload:slg:world'] : []),
+    ]));
     // Cheapest/likeliest first: the gacha set (1.2 MB since §12.1) is last.
     expect(WAVE_ORDER[WAVE_ORDER.length - 1]).toBe('gacha');
+  });
+
+  it('uploads the decoded world page to the GPU in its own idle slot, before the next wave', async () => {
+    uploads.length = 0;
+    void startIdlePrefetch();
+    await flush();
+    for (const id of ['boot:background', 'icons:reward', 'battle']) await finish(id);
+    expect(events).toContain('start:slg:world');
+    pending.get('slg:world')?.();
+    // Decode done, upload not yet: it waits for the next idle callback rather than sharing the slot.
+    await Promise.resolve(); await Promise.resolve();
+    expect(uploads).toEqual([]);
+    await flush();
+    expect(uploads).toEqual([{ id: 'world-page' }]);
+    expect(events.indexOf('upload:slg:world')).toBeLessThan(events.indexOf('start:gacha'));
   });
 
   it('keeps going after a wave fails', async () => {

@@ -29,14 +29,16 @@ const SRC = join(__dirname, '..', 'src');
  *           device-exact texture would visibly soften. These are kilobytes; leave them alone.
  */
 const EXPECTED: Record<string, boolean> = {
-  // ── page-sized: the seven ADR-073 converted ────────────────────────────────
-  'render/sketchUi.ts::paper background (all ~30 scenes)':      true,
+  // ── page-sized: the ADR-073 conversions still standing ────────────────────
+  // (The ~30-scene paper background and the lobby's copy of it no longer bake a page at all since
+  // ADR-099 — they lay sprites off the strip atlas below.)
   'render/wearOverlay.ts::worn-page overlay':                   true,
   'render/decorCLayer.ts::C-group background doodles':          true,
   'render/decorLayer.ts::battle side-band doodles':             true,
   'render/BoardView.ts::board sheet + ruled grid':              true,
-  'scenes/LobbyScene/core.ts::lobby notebook background':       true,
   'scenes/ResultScene/builders.ts::result page margin':         true,
+  // ── page RESOLUTION, but not page-sized (see PAGE_RES_ATLASES) ────────────
+  'render/paperRules.ts::paper rule strip atlas':               true,
   // ── deliberately NOT page-sized ────────────────────────────────────────────
   'render/avatar.ts::avatar pencil rim':                        false,
   'render/boil.ts::per-frame boil offsets':                     false,
@@ -50,12 +52,11 @@ const EXPECTED: Record<string, boolean> = {
 
 /** Human label per (file, occurrence index) — keeps the map above readable. */
 const LABELS: Record<string, string[]> = {
-  'render/sketchUi.ts':             ['paper background (all ~30 scenes)'],
+  'render/paperRules.ts':           ['paper rule strip atlas'],
   'render/wearOverlay.ts':          ['worn-page overlay'],
   'render/decorCLayer.ts':          ['C-group background doodles'],
   'render/decorLayer.ts':           ['battle side-band doodles'],
   'render/BoardView.ts':            ['board sheet + ruled grid'],
-  'scenes/LobbyScene/core.ts':      ['lobby notebook background'],
   'scenes/ResultScene/builders.ts': ['result page margin'],
   'render/avatar.ts':               ['avatar pencil rim'],
   'render/boil.ts':                 ['per-frame boil offsets'],
@@ -142,12 +143,20 @@ describe('bake() call sites — pageScale is a decision, not a default', () => {
     expect(actual).toEqual(EXPECTED);
   });
 
-  it('all seven page-sized layers really are the full-page ones', () => {
+  /**
+   * Baked at `pageScale` because their pieces are laid 1:1 in design space and must be sampled as
+   * densely as a page is — but the texture itself is a small strip atlas, not the design rect, so the
+   * full-page size check below does not apply to them.
+   */
+  const PAGE_RES_ATLASES = new Set(['render/paperRules.ts']);
+
+  it('all five page-sized layers really are the full-page ones', () => {
     // Cheap sanity check that the map above did not get its buckets swapped: a page-sized bake is
     // handed the whole design rect, which in this codebase always reads as a bare `w, h` /
     // `this.w, this.h` / `rect.w, rect.h` pair — never a literal pixel size the way chrome does.
-    const pageFiles = Object.entries(EXPECTED).filter(([, v]) => v).map(([k]) => k.split('::')[0]);
-    expect(new Set(pageFiles).size).toBe(7);
+    const pageFiles = Object.entries(EXPECTED).filter(([, v]) => v).map(([k]) => k.split('::')[0])
+      .filter((rel) => !PAGE_RES_ATLASES.has(rel!));
+    expect(new Set(pageFiles).size).toBe(5);
     for (const rel of new Set(pageFiles)) {
       const f = files.find((x) => x.rel === rel)!;
       expect(f.src, `${rel} should size its bake from a layout rect`).toMatch(/bake\([\s\S]{0,200}?\b(?:w|h|rect\.[wh]|r\.[wh])\b/);

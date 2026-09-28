@@ -8,8 +8,8 @@
 import * as PIXI from 'pixi.js-legacy';
 import { IPlatform } from './platform/IPlatform';
 import { MemoryMonitor } from './cache/MemoryMonitor';
-import { PerfMonitor } from './cache/PerfMonitor';
-import { initCrashSentinel, installAnomalyWatchers, previousSessionCrash, setAnomalyStorage, recordRenderSample } from './net/anomaly';
+import { PerfMonitor, type RenderProfileInfo } from './cache/PerfMonitor';
+import { initCrashSentinel, installAnomalyWatchers, previousSessionCrash, setAnomalyStorage, recordRenderSample, getActiveScene } from './net/anomaly';
 import { installRenderCostProbe, beginRenderCost, readRenderCost } from './render/renderCostProbe';
 import * as analytics from './analytics';
 import { markBoot } from './analytics/bootTimeline';
@@ -31,8 +31,9 @@ import { ui as C } from './render/sketchUi';
 import { setBakeRenderer } from './render/bake';
 import { prewarmPanelFrame } from './render/panelFrame';
 import { msSinceActivity, POWER_PREFERENCE, RenderPolicy, rendererResolution } from './render/renderPolicy';
+import { installAdaptiveResolution } from './render/adaptiveResolution';
 import { setDebugFlagStorage } from './debugFlags';
-import { installTextPaddingFloor } from './render/pixiText';
+import { installTextPaddingFloor, setTextResolution } from './render/pixiText';
 import { preloadBoot } from './assets/bootManifest';
 import { startIdlePrefetch } from './assets/idlePrefetch';
 import { installPrefetchPolicy } from './assets/prefetchPolicy';
@@ -99,6 +100,9 @@ export async function startApp(
   // Raise the global text-padding floor so no PIXI.Text (migrated to makeText or not)
   // can clip tall CJK glyph tops. See render/pixiText.ts. Layout-neutral.
   installTextPaddingFloor();
+  // Rasterize each label once, at the renderer's resolution, instead of at 1x for layout and again
+  // at 2x on its first render. See render/pixiText.ts.
+  setTextResolution(app.renderer.resolution);
 
   // Time the actual GPU render call: PIXI's own ticker listener (registered by Application at
   // UPDATE_PRIORITY.LOW) runs strictly after SceneManager's onTick, so a stall inside render()
@@ -136,12 +140,14 @@ export async function startApp(
 
   // CPU / main-thread saturation watchdog: long-task busy ratio + sustained low FPS;
   // either condition crossing its threshold continuously triggers a cpu anomaly report (net/anomaly full-coverage channel).
-  new PerfMonitor().install(app.ticker, {
+  // Held by reference: installAdaptiveResolution below rewrites it if the resolution drops.
+  const renderInfo: RenderProfileInfo = {
     resolution: app.renderer.resolution,
     dpr:        platform.devicePixelRatio,
     canvasW:    app.view.width,
     canvasH:    app.view.height,
-  });
+  };
+  new PerfMonitor().install(app.ticker, renderInfo);
 
   // Full-coverage anomaly reporting: memory / CPU / WebGL-lost / hang / uncaught exceptions
   // are reported directly to Loki (not subject to the log-targeting allowlist) to help
@@ -196,6 +202,17 @@ export async function startApp(
   // than at Application construction because it needs `manager` to read the current scene's paint
   // mode, and it must run before the first frame the boot gate below lets through.
   new RenderPolicy(app, () => manager.paintMode).install();
+
+  // Resolution 2 -> 1.5 on a device that cannot hold 24 fps in a battle at 2 (ADR-100). Once per
+  // session, down only; reported so the field says how often it fires and what fps triggered it.
+  installAdaptiveResolution(app, () => manager.paintMode, (d) => {
+    renderInfo.resolution = d.to;
+    renderInfo.resFrom = d.from;
+    renderInfo.canvasW = app.view.width;
+    renderInfo.canvasH = app.view.height;
+    analytics.track('render_res_down', { from: d.from, to: d.to, fps: d.fps, scene: getActiveScene() });
+    console.info(`[render] resolution ${d.from} -> ${d.to} (median ${d.fps} fps)`);
+  });
 
   // ── L0 boot-tier preload gate (ASSET_PACKAGING §3, §11) ─────────────────────
   // Show a loading screen (top-most: built after all other layers) and await the

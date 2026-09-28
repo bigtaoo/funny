@@ -389,3 +389,35 @@ docker compose -f docker-compose.cloud.yml --env-file .env config | grep MONGO_U
   - 进年龄门那一帧，CPU 降速 6 倍时 256 ms → 边框图集移出之后桌面 24.7 ms（剩下的是 12 个文字纹理上传）；探针端到端读到 `rndMaxGeo 215.7`、`rndMaxScene IntroScene`、`rndMaxAt 12.1`。
   - 世界地图（seed 世界、视野里有护盾和行军，空闲 4 s 后采 4 s）：138 / 240 → 123 / 240（约 31 次/秒 = 护盾 30 + HUD 每秒 1 次）。
 - **影响**：`client/src/render/{renderCostProbe,panelFrame}.ts`、`src/app.ts`、`src/net/anomaly{.ts,/anrContext.ts}`、`src/cache/PerfMonitor.ts`、`src/scenes/worldmap/WorldMapContext.ts`、`src/scenes/worldmap/WorldMapRenderer/{lifecycle,shieldFx,tokens}.ts`；测试 `test/renderCostProbe.test.ts`、`test/ui/renderCostProbe.ui.ts`、`test/renderProfile.test.ts`、`test/appAssetGateWiring.test.ts`、`test/ui/panelFrameAssembly.ui.ts`、`test/ui/worldMapOverlayCoalescing.ui.ts`、`test/ui/worldMapShieldBubble.ui.ts`；文档 `claudedocs/client-render-budget.md` §18。
+
+## ADR-099 首次进屏卡顿：纸背景改用线条条带图集、文字只光栅化一次、世界图集在大厅空闲时上传；烘焙纹理不再比请求的小 — Accepted — 2026-09-28
+
+- **问题**（有头 Chrome、1366×768 dpr 1 与 dpr 2，按屏首次进入时 CPU 采样的包含耗时，探针见 `claudedocs/client-render-budget.md` §19）：
+  1. **纸背景**：`buildPaperBackground` 每遇到一种新的 `(w, h, 红线 x)` 就把约 28 条整页宽的 SketchPen 线烘焙成一张整页 RenderTexture，三角化 20–27 ms / 次。弹窗尺寸各不相同、侧栏宽度不同、地图页不画红线，于是设置、抽卡、世界地图、反馈、结算、主城弹窗首次打开各付一次（布防编辑、训练弹窗两次，54–67 ms）；每张还是一整张后缓冲大小的显存，留到会话结束。大厅自己还有一份一模一样的拷贝，另占一张。
+  2. **文字光栅化两次**：`PIXI.Text` 从 `settings.RESOLUTION`（1）起步，第一次渲染时才切到渲染器分辨率并重画。几乎所有标签都在布局时读过 `width`（这一读就光栅化了），所以在分辨率 2 的渲染器上（所有手机、所有 retina 屏）每个这样的标签画两遍。
+  3. **`txtFit` 试字号**：为判断放不放得下读 `probe.width`（光栅化一次），放不下就丢掉、按新字号再建一个（再光栅化一次，还多一个 canvas）。卡牌列表首建 86 ms 里它占 43 ms。
+  4. **世界图集上传**：`world_atlas.png` 1960×1827 的 `texImage2D` 在世界地图第一帧里单次 34 ms（桌面）。大厅空闲预取只解码不上传。
+  5. **（顺带发现）烘焙纹理比请求的小**：PIXI 把基础纹理尺寸存成 `round(size × res) / res`，小数分辨率下最多短 `0.5 / res` 点。图集按请求尺寸切片，最后一行越界，PIXI 的 frame setter 直接抛异常。边框图集在 0.5–3.0 之间 251 个分辨率里的 180 个会抛（含 1.1、1.33，即浏览器缩放 110% / 133%），而 ADR-098 刚把它挪进了启动阶段。线上 14 天 Loki 里没有这条异常，目前没有玩家碰到。
+- **决策**：
+  1. **`render/paperRules.ts`**：同一支笔、同样参数，只画 4 条 1024 px 的横线条带和 1 条红线条带，按 `pageBakeResolution()` 烘焙一次（按分辨率记忆，旋转换比例时重烘一张小图）。一页 = 一个纯色矩形 + 每条线若干条带窗口 sprite（按种子取条带和偏移，首尾相接；笔的端点几乎不动，接缝看不出）。不再有任何整页烘焙。条带不做首尾渐细：原来的渐细只落在每条线最外 10%，即侧栏下面和内容区右边之外。大厅的 `buildBackground` 改为直接调用共用页。
+  2. **`setTextResolution(renderer.resolution)`**（`render/pixiText.ts`，`app.ts` 启动时调用）：设 `PIXI.Text.defaultResolution`，新建的文字从一开始就是渲染器分辨率。`autoResolution` 保留，所以分辨率变化（ADR-100）时屏上的文字仍会按新值重画。
+  3. **`measuredWidth(text)`**：用同一个 `TextMetrics` 调用、同样的整设备像素取整算出 `width`，不光栅化。`txtFit` 只建一个 Text，量、改字号、再量、必要时截断，全程不光栅化；真正的光栅化只在它被显示时发生一次。
+  4. **`uploadToGpu(baseTexture)`**（`render/bake.ts`）：经 `renderer.texture.bind` 立刻上传。`idlePrefetch` 的 `slg:world` 波次在解码完成后等下一个空闲时段再上传（不和解码挤在同一个时段）。`bind` 会盖上使用时间戳，TextureGC 按常规空闲预算处理；玩家在大厅待得比那更久，进地图时就照旧上传。
+  5. **`bake` / `bakeLazy` 按「覆盖尺寸」分配**：`ceil(ceil(size) × res) / res`，保证分配出来的点尺寸不小于请求值。所有图集（边框、纸线、HUD 血条等）一处修好。
+- **实测**（桌面 dpr 1，全部 44 个站点）：纸背景每屏 20–67 ms → ≤ 1.8 ms；世界地图首帧不再有 > 8 ms 的纹理上传；卡牌列表首建 `renderCardCell` 86 → 36 ms（`txtFit` 43 → 13）。dpr 2 下 `updateText` 包含耗时：卡牌列表 41 → 17–24、主城 60 → 47、家族 65 → 52、每日 33 → 22（其余几屏在噪声范围内）。LoAF 最大值在这台机器上两版都会跳到 400 ms 以上且帧内无脚本，是环境噪声，不作为指标。
+- **不改的**：卡牌格子的「屏幕外一行」分帧建（做完上面几项后收益约 25%，不值得引入逐帧构建的状态）；`measureText` 本身的成本；`numTxt` 字形图集首建（每会话一次，约 16 ms）；从未打开过地图的玩家（不在预取范围里）首次进地图仍在第一帧上传。
+- **影响**：`client/src/render/{paperRules,sketchUi,pixiText,bake}.ts`、`src/render/atlas/spriteAtlas.ts`、`src/assets/idlePrefetch.ts`、`src/scenes/LobbyScene/core.ts`、`src/app.ts`；测试 `test/ui/paperRules.ui.ts`、`test/ui/textRasterOnce.ui.ts`、`test/ui/bakeFractionalResolution.ui.ts`、`test/uploadToGpu.test.ts`、`test/idlePrefetch.test.ts`、`test/appRenderResolutionWiring.test.ts`、`test/pageBakeCallSites.test.ts`、`test/liveStrokedInkCallSites.test.ts`、`test/ui/sceneGeometryBudget.ui.ts`；删除 `test/paperBakeSharing.test.ts`（它钉的是已不存在的整页烘焙键）。
+
+## ADR-100 慢设备自动降分辨率：对战撑不住 24 fps 时渲染分辨率 2 → 1.5 — Accepted — 2026-09-28
+
+- **问题**：一台 iPad（768×1024 CSS、dpr 2、后缓冲 2048×1308）对战时报 16–20 fps。分辨率 2 每帧要填 CSS 像素数的 4 倍，1.5 是 2.25 倍，着色像素少 44%。画面是 1–3 px 的墨线，差别看起来是「稍软」而不是「糊」。
+- **决策**（`render/adaptiveResolution.ts`，`app.ts` 在 `RenderPolicy` 之后安装）：
+  1. **只看 live 场景**（战斗）。reactive 界面本来就在跳帧，帧间隔说明不了设备能力。切到非 live 或页面隐藏就重置窗口。
+  2. **进入 live 3 s 后开始，5 s 一个窗口取中位数**：场景构建的首帧、零星卡顿自然被排除（中位数要半个窗口都慢才会变）；超过 250 ms 的间隔算停顿，不计入（降分辨率治不了停顿）；样本不足 50 个的窗口不判。
+  3. **中位间隔 > 41.7 ms（低于 24 fps）才降**。rAF 被锁在 30 Hz 的浏览器（低电量模式的 Safari，那台 iPad 报过 `fpsMax 30`）稳定在 33 ms，不会误触；60 Hz 设备掉到 30 也不会。
+  4. **每会话最多一次、只降一级、只往下**：渲染器分辨率 ≤ 1.5 的（dpr 1、微信恒为 1）根本不挂监听。
+  5. **切换**：`renderer.resolution = 1.5` + `resize(原 CSS 尺寸)`，只重建后缓冲；`setTextResolution(1.5)`；屏上文字在下一次渲染时按新分辨率重画，页面级烘焙按新 `pageBakeResolution()` 重新取键——切换那一帧一次性付出。
+  6. **上报**：`render_res_down {from, to, fps, scene}`（analyticsvc 全采样）；之后的 `render_profile` 里 `res` / `canvasW/H` 是降后的值，另带 `resFrom`。
+- **不改的**：不跨会话记忆（低电量模式这类临时原因会把画质锁死好几天；先看线上触发频率再定）；不回升；不细分 GPU 与 CPU 瓶颈（CPU 瓶颈时降了也无害，只是没收益——`render_res_down` 之后那条 `render_profile` 的 `fpsP50` 会说明有没有用）。
+- **实测**：有头 Chrome 1024×768 dpr 2 人机对战，每帧注入 50 ms 忙等（中位 19 fps），6.9 s 后切换：后缓冲 2048×1536 → 1536×1152，CSS 尺寸不变，截图布局对齐、只是略软。CPU 降速 12 倍在这台机器上对战仍有 57 fps，触发不了，所以用注入负载验证整条链路。
+- **影响**：`client/src/render/adaptiveResolution.ts`、`src/app.ts`、`src/cache/PerfMonitor.ts`（`resFrom`）、`server/analyticsvc/src/service/eventConfig.ts`；测试 `test/adaptiveResolution.test.ts`、`test/renderProfile.test.ts`、`test/appRenderResolutionWiring.test.ts`；文档 `design/game/ANALYTICS_DESIGN.md` §4.2。

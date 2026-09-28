@@ -185,6 +185,25 @@ describe('render_profile', () => {
     expect((track.mock.calls[0]![1] as Record<string, unknown>).dprCapped).toBe(false);
   });
 
+  it('reports the lowered resolution and where it came from after an adaptive drop (ADR-100)', () => {
+    // app.ts hands PerfMonitor one object and rewrites it in place when the resolution drops.
+    const info: { resolution: number; dpr: number; canvasW: number; canvasH: number; resFrom?: number } =
+      { resolution: 2, dpr: 2, canvasW: 2048, canvasH: 1308 };
+    monitor.install(ticker, info);
+    info.resolution = 1.5; info.resFrom = 2; info.canvasW = 1536; info.canvasH = 981;
+    feedWindow(ticker, 18, FIRST_PROFILE_WINDOWS);
+    const props = track.mock.calls[0]![1] as Record<string, unknown>;
+    expect(props.res).toBe(1.5);
+    expect(props.resFrom).toBe(2);
+    expect(props.canvasW).toBe(1536);
+  });
+
+  it('carries no resFrom on a session whose resolution never dropped', () => {
+    monitor.install(ticker, RENDER_INFO);
+    feedWindow(ticker, 50, FIRST_PROFILE_WINDOWS);
+    expect(track.mock.calls[0]![1]).not.toHaveProperty('resFrom');
+  });
+
   it('derives the paint rate from the counter DIFF, so a reactive scene reads below the tick rate', () => {
     // Pre-existing history the report must NOT count: 100k paints from earlier in the session.
     stats.ticks = 100_000; stats.painted = 100_000;

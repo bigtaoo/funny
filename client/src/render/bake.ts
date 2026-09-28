@@ -138,6 +138,22 @@ function cacheKey(key: string, resolution: number): string {
 }
 
 /**
+ * The point size to allocate so a RenderTexture at `resolution` is never SMALLER than `size`.
+ *
+ * PIXI stores a base texture's size as `round(size * resolution) / resolution` — whole device
+ * pixels — so at a fractional resolution it can come out up to `0.5 / resolution` points short of
+ * what was asked for. For a page that is an invisible half-pixel; for an ATLAS it is fatal: the
+ * frames cut out of it are laid out in the requested points, the last row then overruns the base
+ * texture, and PIXI's frame setter throws ("frame does not fit inside the base Texture
+ * dimensions"). Found 2026-09-28: the panel-frame atlas threw at 180 of the 251 renderer
+ * resolutions between 0.5 and 3.0 (1.1, 1.3, 1.33 — browser zoom 110% / 133% — among them), and
+ * ADR-098 had just moved that bake into app boot.
+ */
+function coveringSize(size: number, resolution: number): number {
+  return Math.ceil(Math.ceil(size) * resolution) / resolution;
+}
+
+/**
  * Draw `displayObject` (local coords, origin at 0,0) into a texture sized
  * `w x h`, cached under `key`. Repeated calls with the same key return the
  * cached texture without re-rendering — the board background is identical
@@ -156,8 +172,8 @@ export function bake(
   if (hit) return hit;
 
   const tex = PIXI.RenderTexture.create({
-    width:      Math.ceil(w),
-    height:     Math.ceil(h),
+    width:      coveringSize(w, resolution),
+    height:     coveringSize(h, resolution),
     resolution,
   });
   renderer.render(displayObject, { renderTexture: tex });
@@ -201,14 +217,33 @@ export function bakeLazy(
 
   const obj = draw();
   const tex = PIXI.RenderTexture.create({
-    width:      Math.ceil(w),
-    height:     Math.ceil(h),
+    width:      coveringSize(w, resolution),
+    height:     coveringSize(h, resolution),
     resolution,
   });
   renderer.render(obj, { renderTexture: tex });
   cache.set(ck, tex);
   obj.destroy({ children: true });
   return tex;
+}
+
+/**
+ * Upload an already-decoded texture to the GPU right now, instead of inside the first frame that
+ * draws it. Returns false where there is nothing to upload to (no renderer, or the canvas fallback).
+ *
+ * WebGL uploads lazily: `texImage2D` (plus mipmap generation, where enabled) runs inside the render
+ * of the first frame that binds the texture. For the SLG world atlas — one 1960x1827 page, ~13.7 MB
+ * decoded — that was a single 34 ms call inside the world map's first frame on a desktop
+ * (2026-09-28 probe), several times that on a phone. `assets/idlePrefetch.ts` already decodes the
+ * atlas while the player sits in the lobby; calling this from the same idle slot moves the upload
+ * there too. `bind` stamps the texture as used, so PIXI's TextureGC gives it the usual idle budget
+ * before evicting it; if the player idles past that, the map just uploads it on entry as before.
+ */
+export function uploadToGpu(baseTexture: PIXI.BaseTexture): boolean {
+  const sys = (renderer as { texture?: { bind?: (t: PIXI.BaseTexture) => void } } | null)?.texture;
+  if (!sys?.bind || !baseTexture.valid) return false;
+  sys.bind(baseTexture);
+  return true;
 }
 
 /** One cached bake, for {@link bakeStats}. */

@@ -16,10 +16,10 @@
 import * as PIXI from 'pixi.js-legacy';
 import { SketchPen } from './sketch';
 import { palette } from './theme';
-import { bake } from './bake';
 import { FS, fitFont } from './fontScale';
-import { makeText } from './pixiText';
+import { makeText, measuredWidth, cjkPadding } from './pixiText';
 import { addPanelFrame } from './panelFrame';
+import { addPaperRules } from './paperRules';
 
 /**
  * Shared scene palette. Paper / ruled line / margin / red flow from the theme
@@ -86,15 +86,20 @@ export function txt(label: string, size: number, color: number, bold = false, wo
 export function txtFit(
   label: string, size: number, color: number, bold: boolean, maxW: number,
 ): PIXI.Text {
-  const probe = txt(label, size, color, bold);
-  if (probe.width <= maxW || maxW <= 0) return probe;
-  const fitted = fitFont(size, probe.width, maxW);
-  probe.destroy();
-  const atSize = txt(label, fitted, color, bold);
-  if (atSize.width <= maxW) return atSize;
-  const keep = Math.max(1, Math.floor(label.length * (maxW / atSize.width)) - 1);
-  atSize.destroy();
-  return txt(`${label.slice(0, keep)}…`, fitted, color, bold);
+  // One Text, resized in place, measured without rasterizing (see measuredWidth): the probes for
+  // sizes that get thrown away used to each cost a full canvas draw, and a new canvas.
+  const t = txt(label, size, color, bold);
+  if (maxW <= 0) return t;
+  const w0 = measuredWidth(t);
+  if (w0 <= maxW) return t;
+  const fitted = fitFont(size, w0, maxW);
+  t.style.fontSize = fitted;
+  t.style.padding = cjkPadding(fitted);
+  const w1 = measuredWidth(t);
+  if (w1 <= maxW) return t;
+  const keep = Math.max(1, Math.floor(label.length * (maxW / w1)) - 1);
+  t.text = `${label.slice(0, keep)}…`;
+  return t;
 }
 
 /**
@@ -154,7 +159,7 @@ function devicePixelRatioSafe(): number {
  *
  * Contract: `PIXI.Text` frees its own texture (`texture/baseTexture: true`);
  * everything else (Graphics geometry, and crucially Sprites backed by a shared
- * `bake()` RenderTexture like the paper background) is destroyed with the default
+ * `bake()` RenderTexture like the paper rules and panel frames) is destroyed with the default
  * `texture: false` so the shared bake cache is never touched.
  *
  * Recurses into **sub-containers**: a plain `child.destroy({ children: true })` destroys any
@@ -211,17 +216,6 @@ export function seedForId(id: string, salt = 0): number {
 }
 
 /**
- * Bake key for {@link buildPaperBackground} — the four inputs that actually reach its draw calls,
- * and nothing else. See that function's doc comment for why the caller's tag is deliberately absent.
- * The rule's x is rounded because `railX` arrives as a fraction of the short edge: an unrounded
- * float would fragment the key on sub-pixel differences that the bake cannot represent anyway.
- */
-export function paperBakeKey(w: number, h: number, marginLine: boolean, railX?: number): string {
-  const rule = marginLine ? String(Math.round(railX ?? marginLineX(w))) : 'none';
-  return `paper:${Math.round(w)}x${Math.round(h)}:${rule}`;
-}
-
-/**
  * X of the red notebook margin rule (see buildPaperBackground). Content columns
  * should start to its right so icon cards don't sit on top of the red stripe.
  */
@@ -230,60 +224,51 @@ export function marginLineX(w: number): number {
 }
 
 /**
- * Notebook-paper background: aged paper + faint ruled lines + a red margin line
- * down the left, drawn with the shared SketchPen and baked. Mirrors the lobby /
- * board so every screen is the same page. Falls back to live Graphics when no
- * bake renderer is wired (headless tests).
+ * Notebook-paper background: aged paper + faint ruled lines + a red margin line down the left.
+ * Mirrors the lobby / board so every screen is the same page.
  *
- * ## The bake key is the drawing, not the caller (2026-09-12)
+ * The lines come from the baked strip atlas in {@link ./paperRules} — a flat fill plus one batched
+ * sprite window per line segment, no per-page bake at all. Until 2026-09-28 the whole page was
+ * stroked with `SketchPen` and baked into one full-page RenderTexture per `(w, h, rule x)`: 20-27 ms
+ * of triangulation for every new size on a desktop (a modal, a wider tab rail, the map's rule-less
+ * page each minted one), plus a full backbuffer of GPU memory per key for the rest of the session.
+ * See paperRules.ts for the measurement.
  *
- * `tag` used to lead the bake key, which minted one full-page RenderTexture **per screen**. The
- * 2026-09-10 measurement walked every screen and found 45 bake entries / 279 MiB, of which 33 were
- * full pages (262 MiB, 94%) — and byte-compared with `renderer.extract.pixels()`, 30 of those 33
- * were pixel-for-pixel identical to one of three images. Nothing below reads `tag`: the pen seed is
- * the constant `0x5bd1c7`, and the only inputs that reach a draw call are `w`, `h`, `marginLine`
- * and `railX`. So the key is now exactly those, and every screen at one size shares one texture
- * (279 -> ~65 MiB, zero visual change). A phone pays ~12.2 MiB per page, so this was the single
- * biggest retained allocation in the client.
+ * Falls back to stroking the page live when no bake renderer is wired (headless tests).
  *
- * `tag` is kept for call-site readability only — **it does not reach the drawing or the cache key**,
- * and passing a new one does not get you a different page. Note `marginLine` DOES have to be in the
- * key now that `tag` is out: the SLG overworld suppresses the red rule, and without `tag` to keep
- * them apart a map-sized page and a menu-sized page of the same dimensions would collide.
+ * `tag` is kept for call-site readability only — it reaches neither the drawing nor any cache.
+ * `marginLine: false` suppresses the red rule (the SLG overworld: there the paper is a backdrop for
+ * a full-bleed isometric map, and a lone red stripe read as a stray artifact). `railX` overrides the
+ * classic 9%-of-width position for screens whose left tab rail is wider than that (sidebarNavW, 20%
+ * of the short edge) — without it the line cuts through the middle of the rail instead of marking
+ * its edge.
  */
 export function buildPaperBackground(
   tag: string, w: number, h: number, opts: { marginLine?: boolean; railX?: number } = {},
 ): PIXI.DisplayObject {
   void tag;
   const { marginLine = true, railX } = opts;
-  const gfx = new PIXI.Graphics();
-  gfx.beginFill(ui.bg);
-  gfx.drawRect(0, 0, w, h);
-  gfx.endFill();
+  const fill = new PIXI.Graphics();
+  fill.beginFill(ui.bg);
+  fill.drawRect(0, 0, w, h);
+  fill.endFill();
 
-  const pen = new SketchPen(gfx, 0x5bd1c7);
+  const marginX = marginLine ? (railX ?? marginLineX(w)) : null;
+  const page = new PIXI.Container();
+  page.addChild(fill);
+  if (addPaperRules(page, w, h, marginX, { rule: palette.ruleLine, margin: palette.inkRed })) return page;
+  page.destroy();
+
+  // Headless fallback: the live strokes, into the fill Graphics itself (keeps the old node shape).
+  const pen = new SketchPen(fill, 0x5bd1c7);
   const lineGap = Math.round(h / 28);
   for (let y = lineGap; y < h; y += lineGap) {
     pen.line(0, y, w, y, { color: palette.ruleLine, width: 1.1, jitter: 0.7, taper: 0.9, double: false });
   }
-  // The notebook's red margin rule. Suppressed on the SLG overworld (marginLine:false):
-  // there the paper is a backdrop for a full-bleed isometric map, and a lone red vertical
-  // stripe down the left read as a stray artifact rather than as notebook stationery.
-  // `railX` overrides the classic 9%-of-width position for screens whose left tab rail is wider
-  // than that (sidebarNavW, 20% of the short edge) — without it the line cuts through the middle
-  // of the rail instead of marking its edge.
-  if (marginLine) {
-    const mx = railX ?? marginLineX(w);
-    pen.line(mx, 0, mx, h, { color: palette.inkRed, width: 2.2, jitter: 1.0, taper: 0.95 });
+  if (marginX !== null) {
+    pen.line(marginX, 0, marginX, h, { color: palette.inkRed, width: 2.2, jitter: 1.0, taper: 0.95 });
   }
-
-  const tex = bake(paperBakeKey(w, h, marginLine, railX), gfx, w, h, { pageScale: true });
-  if (tex) {
-    const s = new PIXI.Sprite(tex);
-    gfx.destroy();
-    return s;
-  }
-  return gfx;
+  return fill;
 }
 
 export interface PanelOpts {
