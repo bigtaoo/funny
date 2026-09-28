@@ -67,17 +67,20 @@ export async function currentScreen(page: Page): Promise<string> {
   return page.evaluate(() => window.__nwE2E?.state?.screen ?? '?');
 }
 
-/** intro → age gate → consent gate, all unconditional on a fresh (storage-less) browser context. */
+/**
+ * intro → entry gate (merged age + consent screen, EntryGateDialog), both unconditional on a fresh
+ * (storage-less) browser context. The answer carries both fields regardless of which half the gate
+ * actually asks: `onAnswered` only acts on a field when it is present, and an adult birth year plus
+ * a grant is the right answer for either half on its own.
+ */
 export async function bootToLogin(page: Page): Promise<void> {
   await page.goto('/');
   await screenIs(page, 'intro');
   await page.evaluate(() => window.__nwE2E!.state.introCb.onFinish(true));
-  await screenIs(page, 'ageGate');
+  await screenIs(page, 'entryGate');
   await page.evaluate(() => {
-    window.__nwE2E!.state.ageGateCb.onDeclared(new Date().getFullYear() - 30);
+    window.__nwE2E!.state.entryGateCb.onAnswered({ birthYear: new Date().getFullYear() - 30, granted: true });
   });
-  await screenIs(page, 'consent');
-  await page.evaluate(() => window.__nwE2E!.state.consentCb.onAccept());
   await screenIs(page, 'login');
 }
 
