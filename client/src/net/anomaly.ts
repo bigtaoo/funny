@@ -32,7 +32,7 @@ export {
   deviceClass, devicePixelRatio, deviceMemoryGb,
   orientation, momentContext, installRotationWatch, lastRotationAt,
 } from './anomaly/deviceContext';
-export type { FrameCostTotals } from './anomaly/anrContext';
+export type { FrameCostTotals, RenderMaxDetail } from './anomaly/anrContext';
 export {
   setActiveScene, getActiveScene, setAnrContextProvider,
   recordFrameSample, recordConstructSample, recordRenderSample, takeFrameCost,

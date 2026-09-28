@@ -29,7 +29,7 @@
 // from refreshCityLayer, which is also the only thing that knows rx/ry) and every animation step is
 // pure `rotation` / `alpha` / `scale` writes (`animateShield`). Two consequences:
 //   - A step costs a handful of property writes instead of two full Graphics tessellations, so the
-//     rate is now limited only by how often we're willing to PAINT (lifecycle.ts SHIELD_ANIM_FPS).
+//     rate is now limited only by how often we're willing to PAINT (lifecycle.ts MAP_ANIM_FPS).
 //   - The ring has to spin as a CIRCLE and get squashed afterwards, because PIXI's local transform
 //     is T·R·S — rotating a pre-squashed ellipse would wobble it instead of turning it. Hence the
 //     nesting below: `shieldGlowFx` is a Container carrying the squash (scale.y = ry/rx), and its

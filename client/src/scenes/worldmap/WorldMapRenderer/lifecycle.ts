@@ -11,10 +11,10 @@ import { destroyTokenEntry } from './tokens';
 import { animateShield, drawShieldBreakFx, SHIELD_BREAK_LIFE } from './shieldFx';
 import { updateLoadingErase, cancelLoadingErase } from './loadingReveal';
 import { overlayInkSignature } from './fog';
-import { MENU_POSE_FPS } from '../../../render/stickman/constants';
 
 /**
- * Animation-step rate for the capital-protection shield bubbles (spinning ring + breathing dome).
+ * Beat of the map's shared animation clock. The capital-protection shield bubbles (spinning ring +
+ * breathing dome) step on every beat; the tokens on every MAP_TOKEN_BEATS-th (below).
  *
  * A step no longer costs anything worth measuring — shieldFx.ts builds the geometry once per
  * layout refresh and a step is a handful of `rotation`/`alpha`/`scale` writes — so what this
@@ -28,20 +28,23 @@ import { MENU_POSE_FPS } from '../../../render/stickman/constants';
  * step the biggest moving thing on the map strobed ("这个护盾的动画，看起来不连贯啊" report), which
  * is not the same phenomenon as art-direction §5.4's hand-drawn frame-rate jitter. See shieldFx.ts.
  */
-const SHIELD_ANIM_FPS = 30;
+const MAP_ANIM_FPS = 30;
 
 /**
- * Step rate for the march / occupy / siege / stationed tokens — both the walk-cycle pose and a
- * march's position along its route, on one shared clock so they change on the same frames.
+ * Tokens (march / occupy / siege / stationed) step on every MAP_TOKEN_BEATS-th beat of that clock,
+ * i.e. 10 fps — both the walk-cycle pose and a march's position along its route, together.
  *
  * These used to advance on every tick, and that alone held the (demand-painted) map at the full
  * frame rate whenever any team was in the field: 60 repaints a second for a figure that crosses a
- * tile in tens of seconds, i.e. well under a pixel per frame. 12 is the rate every other decorative
- * rig in this client poses at (MENU_POSE_FPS, "on twos") and art-direction §5.4's hand-drawn call.
+ * tile in tens of seconds, i.e. well under a pixel per frame. ADR-097 stepped them at 12
+ * (the menu pose rate) on a clock of their own — which, next to a 30 fps shield, painted ~35 times a
+ * second, because two unaligned clocks change on different frames. Deriving the token step from
+ * the shield's beat makes every token frame a shield frame too: 30 paints/s with a shield in view,
+ * 10 without. 10 over 12 because 12 does not divide 30 (ADR-098).
  * Only the TIME inputs are stepped: `syncTokens` still runs every frame, so a pan or zoom moves the
- * tokens with the map on the same frame instead of 83 ms behind it.
+ * tokens with the map on the same frame instead of 100 ms behind it.
  */
-const MAP_TOKEN_ANIM_FPS = MENU_POSE_FPS;
+const MAP_TOKEN_BEATS = 3;
 import { t } from '../../../i18n';
 import { tileToScreen, ISO_RATIO } from '../../../render/isoGrid';
 import { BASE_FOOTPRINT, citySpriteTiles, cityGroundFwdPx } from '@nw/shared';
@@ -116,18 +119,22 @@ export class WorldMapRendererLifecycle implements LifecycleHandlers {
     // meantime (30 s of quiet = 2.9 revolutions, i.e. a visible snap to a random angle). The
     // break-pop flashes below are NOT gated: those are one-shot reactions to something that just
     // happened, not ambience.
-    if (!decorationsQuiet()) {
-      ctx.shieldAnimT += dt;
-      ctx.shieldAnimAcc += dt;
-    }
-    // Step at SHIELD_ANIM_FPS, keeping the remainder rather than zeroing it: zeroing quantised the
+    // The beat itself always runs (tokens are not ambience — a march's position is state); only the
+    // shield's use of it is gated.
+    const quiet = decorationsQuiet();
+    if (!quiet) ctx.shieldAnimT += dt;
+    ctx.mapAnimAcc += dt;
+    // One beat at MAP_ANIM_FPS, keeping the remainder rather than zeroing it: zeroing quantised the
     // real interval to whole frames (6 frames at 60 Hz, 7 after any hiccup) while the phase kept
     // advancing on true `dt`, so evenly-spaced motion got unevenly sampled and jittered on top of
     // being slow. `%=` also collapses a long stall into one step instead of a burst.
-    const shieldStepSec = 1 / SHIELD_ANIM_FPS;
-    const shieldStep = ctx.shieldAnimAcc >= shieldStepSec;
-    if (shieldStep) ctx.shieldAnimAcc %= shieldStepSec;
-    if (shieldStep && ctx.shieldGeom.size > 0) {
+    const beatSec = 1 / MAP_ANIM_FPS;
+    const beat = ctx.mapAnimAcc >= beatSec;
+    if (beat) {
+      ctx.mapAnimAcc %= beatSec;
+      ctx.mapAnimBeats += 1;
+    }
+    if (beat && !quiet && ctx.shieldGeom.size > 0) {
       for (const [key] of ctx.shieldGeom) {
         const cityC = ctx.citySprites.get(key);
         const shieldFx = cityC?.getChildByName('shieldFx') as PIXI.Graphics | undefined;
@@ -162,7 +169,7 @@ export class WorldMapRendererLifecycle implements LifecycleHandlers {
     if (ctx.overlayInkDirty || overlayInkSignature(ctx) !== ctx.overlayInkSig) {
       this.fog.renderOverlayInk();
     }
-    // Tokens, on the other hand, DO move (on the MAP_TOKEN_ANIM_FPS clock above): a march rides its
+    // Tokens, on the other hand, DO move (every MAP_TOKEN_BEATS-th beat above): a march rides its
     // route between the server ticks instead of jumping on each one, and an occupy hold plays its
     // 'attacking' clip throughout. This is sprite transforms and clip playback only — no Graphics rebuild.
     //
@@ -172,10 +179,10 @@ export class WorldMapRendererLifecycle implements LifecycleHandlers {
     // that loop. The sync passes gate their own zoom<3-only drawing internally, so no zoom check
     // is needed here.
     ctx.tokenAnimT += dt;
-    const tokenStepT = Math.floor(ctx.tokenAnimT * MAP_TOKEN_ANIM_FPS) / MAP_TOKEN_ANIM_FPS;
-    const tokenDt = tokenStepT - ctx.tokenAnimStepT;
-    if (tokenDt > 0) {
-      ctx.tokenAnimStepT = tokenStepT;
+    let tokenDt = 0;
+    if (beat && ctx.mapAnimBeats % MAP_TOKEN_BEATS === 0) {
+      tokenDt = ctx.tokenAnimT - ctx.tokenAnimStepT;
+      ctx.tokenAnimStepT = ctx.tokenAnimT;
       ctx.tokenNowMs = Date.now();
     }
     if (

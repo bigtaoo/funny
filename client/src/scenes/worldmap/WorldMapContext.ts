@@ -217,8 +217,11 @@ export class WorldMapContext {
   overlayInkDirty = false;
   /** Signature (fog.ts `overlayInkSignature`) the overlay ink was last painted for; -1 until then. */
   overlayInkSig = -1;
-  /** Seconds accumulated toward the next shield-bubble animation step (lifecycle.ts SHIELD_ANIM_FPS). */
-  shieldAnimAcc = 0;
+  /** Seconds accumulated toward the next beat of the map's shared animation clock (lifecycle.ts
+   *  MAP_ANIM_FPS), and the beats counted so far — shields step on every beat, tokens on every
+   *  MAP_TOKEN_BEATS-th, so the two only ever change on the same frames. */
+  mapAnimAcc = 0;
+  mapAnimBeats = 0;
   cityLayer!: PIXI.Container;
   citySprites: Map<string, PIXI.Container> = new Map();
   /** cacheKey ("x:y" or "node:id") → local-space geometry of an active capital-protection shield
@@ -311,8 +314,8 @@ export class WorldMapContext {
    *  visibly frozen in between. Runs independently of push arrivals: this only repaints existing
    *  state, it never fetches (the poll itself was removed in P1-2 — see WorldMapNet.start()). */
   hudTickTimer = 0;
-  /** Seconds of scene time feeding the march/occupy/stationed token clock (lifecycle.ts
-   *  MAP_TOKEN_ANIM_FPS), and the last whole step of it the tokens were advanced to. */
+  /** Seconds of scene time, and its value at the last token beat (lifecycle.ts MAP_TOKEN_BEATS):
+   *  the difference is the dt a token step advances the walk cycles by. */
   tokenAnimT = 0;
   tokenAnimStepT = 0;
   /** Wall clock (ms) sampled on the last token step — what a march's position along its route is

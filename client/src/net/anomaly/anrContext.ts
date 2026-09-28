@@ -66,9 +66,22 @@ export interface FrameCostTotals {
   rndMs: number;
   /** Longest single `renderer.render()` call. */
   rndMaxMs: number;
+  /** Where that longest render went (see render/renderCostProbe.ts); null when none was recorded. */
+  rndMaxDetail: RenderMaxDetail | null;
 }
 
-const frameCost: FrameCostTotals = { updMs: 0, updMaxMs: 0, rndMs: 0, rndMaxMs: 0 };
+/** The split of the longest `renderer.render()` call, plus when and on which scene it happened. */
+export interface RenderMaxDetail {
+  texMs: number;
+  shMs: number;
+  txtMs: number;
+  geoMs: number;
+  scene: string;
+  /** Seconds since page load (`performance.now()`), so a first-launch frame reads as ~0-2. */
+  atS: number;
+}
+
+const frameCost: FrameCostTotals = { updMs: 0, updMaxMs: 0, rndMs: 0, rndMaxMs: 0, rndMaxDetail: null };
 
 /**
  * Read the accumulated frame cost and reset it.
@@ -79,7 +92,7 @@ const frameCost: FrameCostTotals = { updMs: 0, updMaxMs: 0, rndMs: 0, rndMaxMs: 
  */
 export function takeFrameCost(): FrameCostTotals {
   const out = { ...frameCost };
-  frameCost.updMs = 0; frameCost.updMaxMs = 0; frameCost.rndMs = 0; frameCost.rndMaxMs = 0;
+  frameCost.updMs = 0; frameCost.updMaxMs = 0; frameCost.rndMs = 0; frameCost.rndMaxMs = 0; frameCost.rndMaxDetail = null;
   return out;
 }
 
@@ -130,10 +143,18 @@ export function recordConstructSample(scene: string, ms: number): void {
  */
 let lastLongRender: { ms: number; scene: string; ts: number } | null = null;
 
-/** Called by the renderer.render() wrapper installed in app.ts, with how long the call took. */
-export function recordRenderSample(ms: number): void {
+/**
+ * Called by the renderer.render() wrapper installed in app.ts, with how long the call took and, when
+ * the render-cost probe is installed, how that time split (see render/renderCostProbe.ts).
+ */
+export function recordRenderSample(ms: number, split?: { texMs: number; shMs: number; txtMs: number; geoMs: number }): void {
   frameCost.rndMs += ms;
-  if (ms > frameCost.rndMaxMs) frameCost.rndMaxMs = ms;
+  if (ms > frameCost.rndMaxMs) {
+    frameCost.rndMaxMs = ms;
+    frameCost.rndMaxDetail = split
+      ? { ...split, scene: activeScene, atS: performance.now() / 1000 }
+      : null;
+  }
   if (ms < LONG_FRAME_MS) return;
   if (!lastLongRender || ms >= lastLongRender.ms) lastLongRender = { ms: Math.round(ms), scene: activeScene, ts: Date.now() };
 }

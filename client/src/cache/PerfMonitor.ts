@@ -1,6 +1,6 @@
 import * as PIXI from 'pixi.js-legacy';
 import { netLog } from '../net/log';
-import { reportAnomaly, getActiveScene, takeFrameCost } from '../net/anomaly';
+import { reportAnomaly, getActiveScene, takeFrameCost, type RenderMaxDetail } from '../net/anomaly';
 import { debugNum } from '../debugFlags';
 import { framePacing, renderStats } from '../render/renderStats';
 import * as analytics from '../analytics';
@@ -63,6 +63,8 @@ const MIN_FULL_RATE_MS = 500;
 const FIRST_PROFILE_WINDOWS = 15;   // ≈30s of visible sampling
 const PROFILE_EVERY_WINDOWS = 150;  // ≈5min of visible sampling
 const MAX_PROFILES_PER_SESSION = 6;
+/** `rndMax` at or above this carries its split (`rndMaxTex/Sh/Txt/Geo/Scene/At`); 3+ frames at 60 Hz. */
+const RND_MAX_DETAIL_MS = 50;
 
 
 
@@ -131,6 +133,8 @@ export class PerfMonitor {
   /** Worst single `update()` / `render()` call across every visible window since the last report. */
   private updMaxMs = 0;
   private rndMaxMs = 0;
+  /** Split of the render behind {@link rndMaxMs}: `render_profile.rndMaxTex/Sh/Txt/Geo/Scene/At`. */
+  private rndMaxDetail: RenderMaxDetail | null = null;
   /** Total ms those windows covered (not wall time: hidden windows are excluded). */
   private profileSpanMs = 0;
   /** Of {@link profileSpanMs}, the ms that were NOT full rate: `render_profile.idlePct`. */
@@ -243,7 +247,7 @@ export class PerfMonitor {
     this.updSamples.push(cost.updMs / frames);
     this.rndSamples.push(cost.rndMs / frames);
     if (cost.updMaxMs > this.updMaxMs) this.updMaxMs = cost.updMaxMs;
-    if (cost.rndMaxMs > this.rndMaxMs) this.rndMaxMs = cost.rndMaxMs;
+    if (cost.rndMaxMs > this.rndMaxMs) { this.rndMaxMs = cost.rndMaxMs; this.rndMaxDetail = cost.rndMaxDetail ?? null; }
     this.profileSpanMs += windowMs;
     this.windowsSinceProfile += 1;
     this.maybeReportProfile();
@@ -346,6 +350,16 @@ export class PerfMonitor {
       props.updMax = round1(this.updMaxMs);
       props.rndP50 = round1(median(this.rndSamples));
       props.rndMax = round1(this.rndMaxMs);
+      // Only for a frame worth explaining: below this the split is noise and five fields per row.
+      const d = this.rndMaxDetail;
+      if (d && this.rndMaxMs >= RND_MAX_DETAIL_MS) {
+        props.rndMaxTex = round1(d.texMs);
+        props.rndMaxSh = round1(d.shMs);
+        props.rndMaxTxt = round1(d.txtMs);
+        props.rndMaxGeo = round1(d.geoMs);
+        props.rndMaxScene = d.scene;
+        props.rndMaxAt = round1(d.atS);
+      }
     }
 
     analytics.track('render_profile', props);
@@ -357,6 +371,7 @@ export class PerfMonitor {
     this.rndSamples = [];
     this.updMaxMs = 0;
     this.rndMaxMs = 0;
+    this.rndMaxDetail = null;
     this.profileSpanMs = 0;
     this.profileIdleMs = 0;
     this.spanMaxCap = 0;

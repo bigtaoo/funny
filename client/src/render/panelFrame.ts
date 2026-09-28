@@ -248,6 +248,20 @@ function slicesFor(weightIdx: number, tierIdx: number): Slices | null {
 }
 
 /**
+ * Build the atlas now instead of inside the first `sketchPanel()` call.
+ *
+ * The atlas is ~6,200 SketchPen shapes / ~410k vertices, and PIXI triangulates all of them inside
+ * the bake render: 30-40 ms on a desktop, 200+ ms at 6x CPU throttle (2026-09-28 probe). Lazily,
+ * that cost landed on whichever frame first showed a panel — the age/consent gate that interrupts
+ * a new player's intro, or a returning player's first lobby paint. app.ts calls this while the boot
+ * asset gate is waiting on the network, behind the loading screen, where nothing is animating.
+ * A no-op without a bake renderer, and after the first call.
+ */
+export function prewarmPanelFrame(): void {
+  slicesFor(0, 0);
+}
+
+/**
  * Reset the memoised atlas. Only for tests — production bakes once and the
  * `bake()` cache holds the texture for the process lifetime.
  */

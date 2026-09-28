@@ -3,7 +3,7 @@
  * (ASSET_PACKAGING §3, §11.3) and in `PixiAppViews.showGacha` (§10).
  *
  * Both are single lines in `startApp()`, and both fail SILENTLY if removed: dropping the
- * `await preloadBoot(...)` just means the first lobby paints with whatever textures happen to
+ * `await bootAssets` (the `preloadBoot(...)` promise) just means the first lobby paints with whatever textures happen to
  * have arrived, and dropping `startIdlePrefetch()` just means the next gates go back to cold
  * downloads. Nothing throws, no behavioural test notices — `startApp()` needs a real
  * canvas/platform/backend and is not unit-testable end to end (see the same reasoning in
@@ -24,11 +24,25 @@ describe('app.ts asset-gate wiring', () => {
 
   it('awaits the L0 boot gate behind a LoadingOverlay', () => {
     expect(src).toMatch(/new LoadingOverlay\(/);
-    expect(src).toMatch(/await preloadBoot\(/);
+    // Issued first, awaited after the panel-frame prewarm (next case) — still awaited before anything below.
+    expect(src).toMatch(/const bootAssets = preloadBoot\(/);
+    expect(src).toMatch(/await bootAssets;/);
+  });
+
+  it('spends the boot-gate wait on the panel-frame atlas: after the requests go out, before the await', () => {
+    // prewarmPanelFrame (render/panelFrame.ts) moves a ~410k-vertex bake off the first frame that
+    // shows a panel. Ahead of preloadBoot it would delay the requests; after the await it would sit
+    // on the critical path instead of in the network wait.
+    const issue = src.indexOf('= preloadBoot(');
+    const warm = src.indexOf('prewarmPanelFrame();');
+    const wait = src.indexOf('await bootAssets;');
+    expect(issue).toBeGreaterThan(-1);
+    expect(warm).toBeGreaterThan(issue);
+    expect(wait).toBeGreaterThan(warm);
   });
 
   it('destroys the loading overlay before the first scene is shown', () => {
-    const gate = src.indexOf('await preloadBoot(');
+    const gate = src.indexOf('await bootAssets;');
     const destroy = src.indexOf('loading.destroy()');
     const start = src.indexOf('core.start()');
     expect(gate).toBeGreaterThan(-1);
