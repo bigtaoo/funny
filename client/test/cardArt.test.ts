@@ -5,8 +5,14 @@
 // DefenseEditorScene, AuctionScene, GachaScene, FriendsScene mail) must go through, either directly
 // or via cardInstanceArtUrl()/equippedSkinIdFor() for callers that only have a card instance/defId
 // or a raw SaveData.equipped map rather than a resolved unitType + skin id pair.
-import { describe, it, expect } from 'vitest';
-import { UNIT_ART_URLS, SKIN_PORTRAIT_ART, unitPortraitUrl, equippedSkinIdFor, cardInstanceArtUrl, containScale } from '../src/render/cardArt';
+import { describe, it, expect, afterEach } from 'vitest';
+import * as fs from 'fs';
+import * as path from 'path';
+import {
+  UNIT_ART_URLS, CARD_ART_URLS, SKIN_PORTRAIT_ART, THUMB_LONG_EDGE, artUrlForBox,
+  unitPortraitUrl, equippedSkinIdFor, cardInstanceArtUrl, containScale,
+} from '../src/render/cardArt';
+import { setDesignScale, resetDesignScaleForTest } from '../src/render/bake';
 import { skinEquipKey } from '../src/game/meta/skinDefs';
 import { UnitType } from '@nw/engine/types';
 
@@ -101,5 +107,49 @@ describe('containScale', () => {
   it('fits a non-square box (CardScene.drawArtFit path) the same way', () => {
     const scale = containScale(560, 1030, 200, 260);
     expect(scale).toBeCloseTo(Math.min(200 / 560, 260 / 1030));
+  });
+});
+
+// ADR-096: unit art is handed out as a 640px thumbnail, and only a box that would magnify it gets the
+// full export back. The full exports (up to 2181x1514) cost 113ms of texImage2D on a cold codex visit.
+describe('thumbnail unit art (ADR-096)', () => {
+  const pngSize = (url: string): { w: number; h: number } => {
+    const b = fs.readFileSync(path.join(__dirname, '..', url.replace(/^\//, '')));
+    return { w: b.readUInt32BE(16), h: b.readUInt32BE(20) };
+  };
+  const oversized = [UnitType.Max, UnitType.Lena, UnitType.Mara, UnitType.Ironclad, UnitType.Runner,
+    UnitType.Harpy, UnitType.Medic, UnitType.Berserker, UnitType.Splitter];
+
+  afterEach(() => resetDesignScaleForTest());
+
+  it('hands out the thumbnail for every unit whose export is bigger than one', () => {
+    for (const u of oversized) {
+      const url = CARD_ART_URLS[`unit_${u}`]!;
+      expect(url, u).toContain('/units/thumb/');
+      const { w, h } = pngSize(url);
+      expect(Math.max(w, h), u).toBe(THUMB_LONG_EDGE);
+    }
+    expect(UNIT_ART_URLS.max).toBe(CARD_ART_URLS[`unit_${UnitType.Max}`]);
+  });
+
+  it('keeps a small box on the thumbnail and swaps a box that would magnify it for the full export', () => {
+    const thumb = CARD_ART_URLS[`unit_${UnitType.Harpy}`]!;
+    expect(artUrlForBox(thumb, 320)).toBe(thumb);
+    const full = artUrlForBox(thumb, 780);
+    expect(full).not.toBe(thumb);
+    expect(full).not.toContain('/thumb/');
+    expect(Math.max(pngSize(full).w, pngSize(full).h)).toBeGreaterThan(THUMB_LONG_EDGE);
+  });
+
+  it('measures the box in device pixels, not design units', () => {
+    const thumb = CARD_ART_URLS[`unit_${UnitType.Harpy}`]!;
+    expect(artUrlForBox(thumb, 400)).toBe(thumb);
+    setDesignScale(2);
+    expect(artUrlForBox(thumb, 400)).not.toBe(thumb);
+  });
+
+  it('returns a url that has no thumbnail unchanged, however big the box', () => {
+    const archer = CARD_ART_URLS[`unit_${UnitType.Archer}`]!;
+    expect(artUrlForBox(archer, 2000)).toBe(archer);
   });
 });

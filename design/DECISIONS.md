@@ -113,6 +113,7 @@
 | [ADR-093](DECISIONS_ADR-086-onward.md#adr-093-本城基础产量纸--石墨--金属各保底-50小时--accepted--2026-09-27) | 本城基础产量：纸 / 石墨 / 金属各保底 50/小时 | Accepted | 2026-09-27 |
 | [ADR-094](DECISIONS_ADR-086-onward.md#adr-094-帧率上限改由-vsync-整数分频实现两个-ticker-共用一个节拍取代-pixi-maxfps--accepted--2026-09-28) | 帧率上限改由 vsync 整数分频实现，两个 ticker 共用一个节拍（取代 PIXI `maxFPS`） | Accepted | 2026-09-28 |
 | [ADR-095](DECISIONS_ADR-086-onward.md#adr-095-帧率只统计满速段静止降频的时段不计入-fps另报-idlepct--accepted--2026-09-28) | 帧率只统计「满速段」：静止降频的时段不计入 fps，另报 `idlePct` | Accepted | 2026-09-28 |
+| [ADR-096](DECISIONS_ADR-086-onward.md#adr-096-切屏卡顿兵种立绘分两档640-px-缩略图--抽卡揭示用原图图鉴贴图到齐不再整屏重建live-帧不再走签名--accepted--2026-09-28) | 切屏卡顿：兵种立绘分两档（640 px 缩略图 + 抽卡揭示用原图）、图鉴贴图到齐不再整屏重建、`live` 帧不再走签名 | Accepted | 2026-09-28 |
 
 ---
 

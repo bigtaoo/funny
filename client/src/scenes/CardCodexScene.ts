@@ -57,7 +57,6 @@ export class CardCodexScene implements Scene {
   private readonly cb: CardCodexCallbacks;
   private hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
-  private readonly artHooked = new Set<string>();
   private destroyed = false;
 
   private layer!: PIXI.Container;
@@ -319,7 +318,7 @@ export class CardCodexScene implements Scene {
           const entry = this.codexEntries[idx];
           if (!entry) continue;
           const x = left + c * (tileW + colGap);
-          const face = drawCardTile(entry, x, 0, tileW, tileH, rowC, this.flipped, this.artHooked, () => this.render());
+          const face = drawCardTile(entry, x, 0, tileW, tileH, rowC, this.flipped);
           if (face) faces.set(c, face);
         }
         this.layer.addChild(rowC);
@@ -381,7 +380,7 @@ export class CardCodexScene implements Scene {
       if (!swapped && p >= 0.5) {
         swapped = true;
         if (this.flipped.has(key)) this.flipped.delete(key); else this.flipped.add(key);
-        drawTileFace(container, box, card, art, story, this.flipped.has(key), this.artHooked, () => this.render());
+        drawTileFace(container, box, card, art, story, this.flipped.has(key));
       }
       container.scale.x = Math.max(0.02, p < 0.5 ? 1 - p / 0.5 : (p - 0.5) / 0.5);
       if (p >= 1) {

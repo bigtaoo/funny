@@ -337,3 +337,22 @@ docker compose -f docker-compose.cloud.yml --env-file .env config | grep MONGO_U
 - **不改的**：`IDLE_FPS = 20`、`IDLE_QUIET_MS`、降频的触发与唤醒逻辑（ADR-086 / ADR-094）完全不动；本条只改「怎么数」。
 - **读旧数据**：2026-09-28 之前的 `render_profile` 行，`fpsP50` 混着降频段，`maxFps` 是上报时刻的上限；没有 `idlePct` 字段即为旧口径。
 - **影响**：`client/src/render/renderStats.ts`、`render/renderPolicy.ts`、`cache/PerfMonitor.ts`；测试 `test/PerfMonitor.test.ts`、`test/renderProfile.test.ts`、`test/ui/renderPolicy.ui.ts`；文档 `design/game/ANALYTICS_DESIGN.md`、`claudedocs/client-render-budget.md`。
+
+## ADR-096 切屏卡顿：兵种立绘分两档（640 px 缩略图 + 抽卡揭示用原图）、图鉴贴图到齐不再整屏重建、`live` 帧不再走签名 — Accepted — 2026-09-28
+
+- **问题**：ADR-094/095 之后稳态各界面都是 60 ± 1，剩下的抖动全在**切屏第一帧**。有头 Chrome、1366×768、dev 构建，用 LoAF + `texImage2D` 包装 + CDP Profiler 按帧聚合定位：
+  - 图鉴（`cardCodex`）首次进入 LoAF 52 / 81 / 183 ms，其中 GL 上传 113 ms——12 张兵种立绘都是最长边 ~2200 px 的原图，在 ~110 px 的格子里显示。
+  - 在世界地图停留 70 s 后再回图鉴 162 ms，其中 120 ms 是重新上传：PIXI `TextureGC` 把 3600 帧没用过的纹理从显存逐出，回来就得再传一次。
+  - 图鉴每张图解码完成都触发整屏 `render()`，12 张图 = 12 次重建（慢机上是连续卡顿，测试里还会无限重建）。
+  - 主城屏主线程时间约四分之一花在 `RenderPolicy` 每帧画完后的 `stageSignature` 遍历——`live` 场景（战斗、世界地图、主城）每帧都画，签名根本用不上。
+  - 家族屏 `applyFamily` 先 `render()` 一次，频道和入会申请各自回来又各 `render()` 一次，申请又排在频道后面串行等。
+- **决策**：
+  1. **立绘两档**：`client/src/assets/units/thumb/<name>.png`，最长边 640 px（= 320 逻辑 px × `MAX_RENDER_RESOLUTION` 2），由 `art/scripts/exportUnitCardArt.mjs` 从已提交的原图派生；原图本身不超过 640 × 1.25 的兵种（archer / infantry / shieldbearer）不出缩略图。`CARD_ART_URLS` / `UNIT_ART_URLS` / `L1_CARD_ART_URLS` 一律交出缩略图。
+  2. 唯一需要大图的是抽卡单抽揭示（`picSize = 0.68 × cellW`，宽屏约 780 设计 px）：`artUrlForBox(url, boxLongEdge)` 在 `boxLongEdge × devicePxPerDesignUnit() > 640` 时换成原图，否则原样返回；`GachaScene/odds.ts` 的 `drawEntryPicture`（概率表与揭示共用）走它。`devicePxPerDesignUnit = renderer.resolution × designScale`，新增在 `render/bake.ts`。
+  3. **图鉴贴图到齐不重建**：`CardCodexScene/tile.ts` 改用 `buildFittedSprite`（先隐藏、`loaded` 时自己 fit + 显示），外面包一层 slot 容器（它会改写自己的 x/y）。`artHooked` / `onArtLoaded` 整套删掉。
+  4. **`live` 帧不走签名**：`RenderPolicy.tick` 只在非 `live` 的重绘后才算 `stageSignature`；`live` 帧把 `lastSignature` 记为 `-1`（签名是 `>>>0` 的无符号数，`-1` 永远不会匹配），切回 reactive 时第一帧必然判为变化、画一次，然后照常跳帧。
+  5. **家族屏只画两次**：`applyFamily` 末尾 `await Promise.all([loadChannel(), loadJoinRequests()])`（并行），`loadJoinRequests` 不再自己 `render()`，由 `loadMyFamily` 在最后统一 `render()` 一次。
+- **实测**（有头 Chrome 1366×768）：图鉴首访 183 → 77 ms（GL 113 → 18 ms），被 TextureGC 逐出后回访 162 ms → 无 LoAF；家族首访 159 ms 一帧 → 97 / 57 ms；所有屏 1 分钟内回访无 ≥ 50 ms 的帧。明细见 `claudedocs/client-render-budget.md` §16。
+- **放大审计**：各 `STOPS` × {桌面 1366 dpr1、retina 1920 dpr2、手机 390 dpr3}，缩略图的最大显示倍率 0.76（retina 卡组），没有任何地方被放大。审计没覆盖到的抽卡揭示走原图（上面第 2 条）。
+- **不改的**（首帧成本还在，面太广，另立项）：PIXI.Text 创建 / `measureText` / `getContext`；`buildPaperBackground` 里 `SketchPen` 逐段圆头线（每个新 bake key 约 27 ms）；世界地图程序化地块；`world_atlas.png` 1960×1827 上传（29–42 ms）；卡组（`cardRoster`）JS 构建（`renderCardCell`、`txtFit`、字形图集）。
+- **影响**：`art/scripts/exportUnitCardArt.mjs`、`client/src/assets/units/thumb/*`、`render/{bake,cardArt,renderPolicy}.ts`、`scenes/CardCodexScene{,/tile}.ts`、`scenes/GachaScene/odds.ts`、`scenes/FamilyScene/data.ts`；测试 `test/cardArt.test.ts`、`test/ui/renderPolicy.ui.ts`、`test/ui/cardCodexScene.ui.ts`、`test/familyLoadDecouple.test.ts`；文档 `claudedocs/client-render-budget.md` §16、`claudedocs/file-formats.md`。

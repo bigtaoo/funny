@@ -23,6 +23,15 @@
 //   units below despite the same encode step; they're being right-sized for real DPR3 need
 //   rather than left at native master resolution or at some earlier ad hoc smaller export.
 //
+// - Thumbnails (THUMB below, 2026-09-28, ADR-096): every display EXCEPT that reveal card is under
+//   320 logical px, and the renderer never draws above 2 device px per logical px
+//   (render/renderPolicy.ts MAX_RENDER_RESOLUTION), so those sites get a 640px long-edge copy in
+//   client/src/assets/units/thumb/. Uploading the full-size exports for a 100px codex tile cost
+//   113ms of texImage2D on the first codex visit (harpy alone is 1564x2094, ~17MB of GPU memory
+//   with mipmaps) and PIXI's texture GC evicts textures that large, so the same hitch came back on
+//   every return after a minute elsewhere. render/cardArt.ts `artUrlForBox` swaps back to the full
+//   export when a box really is bigger than the thumbnail.
+//
 // Encode: sharp's palette:true PNG path runs libimagequant (quantize to ≤256 colors + dithering)
 // then zlib at max effort — same trick pngquant uses, no extra native tool required (sharp
 // already vendors imagequant, see `sharp.versions.imagequant`). Verify each output visually
@@ -31,7 +40,8 @@
 // palette one so you can eyeball whether the given unit is worth keeping truecolor.
 //
 // Run: node art/scripts/exportUnitCardArt.mjs
-// Out: client/src/assets/units/<name>.png, client/src/assets/units/skins/skin_<name>.png
+// Out: client/src/assets/units/<name>.png, client/src/assets/units/thumb/<name>.png,
+//      client/src/assets/units/skins/skin_<name>.png
 
 import sharp from '../../client/node_modules/sharp/lib/index.js';
 import fs from 'node:fs';
@@ -42,6 +52,8 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const OUT_DIR = path.join(ROOT, 'client/src/assets/units');
 const UNIT_MAX_LONG_EDGE = 2200; // see header note — nothing today actually exceeds this one.
 const SKIN_MAX_LONG_EDGE = 900; // see header note — trims several skin masters down to this.
+// = 320 logical px x MAX_RENDER_RESOLUTION; must match render/cardArt.ts THUMB_LONG_EDGE.
+const THUMB_MAX_LONG_EDGE = 640;
 
 // name → master art file (masters live under art/, one folder per unit; filenames aren't
 // uniform because each was authored/exported at a different time — see art/units/*/).
@@ -104,7 +116,19 @@ async function derive(srcRel, outAbs, maxLongEdge) {
 }
 
 for (const [name, src] of Object.entries(UNITS)) {
+  // medic's master is only a .xcf in art/ (no flattened png), so its export cannot be re-derived.
+  if (!fs.existsSync(path.join(ROOT, src))) { console.log(`${name}.png`.padEnd(24) + ' (no master png — kept as committed)'); continue; }
   await derive(src, path.join(OUT_DIR, `${name}.png`), UNIT_MAX_LONG_EDGE);
+}
+// Thumbnails come from the committed full exports, not the masters: every unit has one (medic has no
+// master png), and the thumbnail is then guaranteed to be the same picture that ships at full size.
+// Skipped where the export is already within 25% of the thumbnail size: the copy would save nothing
+// and cardArt.ts falls back to the full url for a unit without a thumbnail.
+for (const name of Object.keys(UNITS)) {
+  const full = path.join(OUT_DIR, `${name}.png`);
+  const { width, height } = await sharp(full).metadata();
+  if (Math.max(width, height) <= THUMB_MAX_LONG_EDGE * 1.25) continue;
+  await derive(path.relative(ROOT, full), path.join(OUT_DIR, 'thumb', `${name}.png`), THUMB_MAX_LONG_EDGE);
 }
 for (const [name, src] of Object.entries(SKINS)) {
   await derive(src, path.join(OUT_DIR, 'skins', `${name}.png`), SKIN_MAX_LONG_EDGE);

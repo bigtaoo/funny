@@ -113,3 +113,43 @@ describe('FamilyScene loadData() — preloadedFamily hand-off', () => {
     expect(core.mode).toBe('myFamily');
   });
 });
+
+/**
+ * 2026-09-28 (ADR-096): for a leader, the join-request list rendered the scene when it landed and
+ * loadData() rendered it again immediately after — two full rebuilds in one frame, the biggest part
+ * of a 98ms frame on the family screen's first visit. Now both lists arrive together and one render
+ * shows them.
+ */
+describe('FamilyScene loadData() — approver', () => {
+  function approverCore(): FamilySceneCore {
+    const core = fakeCore();
+    (core as { isFamilyApprover: boolean }).isFamilyApprover = true;
+    (core.cb.worldApi as unknown as { listJoinRequests: unknown }).listJoinRequests =
+      vi.fn().mockResolvedValue([{ requestId: 'r1' }]);
+    return core;
+  }
+
+  it('paints the roster, then once more when channel and requests are both in', async () => {
+    const core = approverCore();
+    await new DataPanel(core).loadData();
+    expect(core.joinRequests).toHaveLength(1);
+    expect(core.render).toHaveBeenCalledTimes(2);
+  });
+
+  it('asks for the requests without waiting for the channel', async () => {
+    const core = approverCore();
+    (core.cb.worldApi.getFamilyChannel as ReturnType<typeof vi.fn>).mockReturnValueOnce(new Promise(() => {}));
+    void new DataPanel(core).loadData();
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    expect((core.cb.worldApi as unknown as { listJoinRequests: ReturnType<typeof vi.fn> }).listJoinRequests).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-renders after a refetch from the approve action', async () => {
+    const core = approverCore();
+    (core.cb.worldApi as unknown as { getFamily: unknown }).getFamily = vi.fn().mockResolvedValue(FAM);
+    await new DataPanel(core).loadMyFamily('fam1');
+    // The roster paint inside applyFamily, then the one that shows the refreshed lists.
+    expect(core.render).toHaveBeenCalledTimes(2);
+    expect(core.joinRequests).toHaveLength(1);
+  });
+});
