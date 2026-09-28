@@ -2,7 +2,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { netLog } from '../net/log';
 import { reportAnomaly, getActiveScene, takeFrameCost } from '../net/anomaly';
 import { debugNum } from '../debugFlags';
-import { renderStats } from '../render/renderStats';
+import { framePacing, renderStats } from '../render/renderStats';
 import * as analytics from '../analytics';
 
 // Runtime CPU / main-thread saturation monitor: browsers expose no direct CPU usage API; the observable equivalent signal is "main thread fully occupied".
@@ -108,7 +108,7 @@ export class PerfMonitor {
   private accMs = 0;
   private frames = 0;
   private lowFpsStreak = 0;
-  /** Lowest `ticker.maxFPS` seen during the current window; Infinity = uncapped throughout. See {@link FPS_WARN_HEADROOM}. */
+  /** Lowest frame cap (`framePacing().capFps`) seen during the current window; Infinity = uncapped throughout. See {@link FPS_WARN_HEADROOM}. */
   private windowMinCap = Infinity;
   /** Cumulative long-task duration (ms) within the current sampling window; accumulated in the PerformanceObserver callback and reset at window end. */
   private longTaskMs = 0;
@@ -197,7 +197,7 @@ export class PerfMonitor {
     this.frames += 1;
     this.accMs += this.ticker?.deltaMS ?? 16.7;
     // Sampled per tick, not at window end: the cap moves within a window. See FPS_WARN_HEADROOM.
-    const capNow = this.ticker?.maxFPS ?? 0;
+    const capNow = framePacing()?.capFps ?? 0;
     if (capNow > 0 && capNow < this.windowMinCap) this.windowMinCap = capNow;
     if (this.accMs < WINDOW_MS) return;
 
@@ -267,7 +267,7 @@ export class PerfMonitor {
   /**
    * Stutter threshold for this window, clamped under the lowest ceiling the render loop imposed
    * during it. See {@link FPS_WARN_HEADROOM}. Infinity means the loop ran uncapped for the whole
-   * window (PIXI spells that `maxFPS === 0`), so there is nothing to clamp against.
+   * window (the pacer spells that `capFps === 0`), so there is nothing to clamp against.
    */
   private effectiveFpsWarn(minCap: number): number {
     const warn = debugNum('nw_fps_warn', DEFAULT_FPS_WARN);
@@ -298,8 +298,11 @@ export class PerfMonitor {
       // to IDLE_FPS on a screen that is standing still. A profile reading `maxFps: 20, fpsP50: 20`
       // is an idle menu behaving correctly, not a struggling device — read this field before
       // reading fpsP50.
-      maxFps: this.ticker?.maxFPS ?? 0,
+      maxFps: framePacing()?.capFps ?? 0,
     };
+    // Estimated display refresh rate (ADR-094). Absent without a pacer rather than a made-up 60.
+    const pacing = framePacing();
+    if (pacing) props.hz = Math.round(pacing.refreshHz);
     if (this.renderInfo) {
       props.res = this.renderInfo.resolution;
       props.dpr = this.renderInfo.dpr;

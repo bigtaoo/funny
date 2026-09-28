@@ -38,3 +38,23 @@ export function setLiveRenderStats(stats: RenderStats | null): void { live = sta
 
 /** The installed policy's live counters, or null when no policy is installed (tests, tools). */
 export function renderStats(): Readonly<RenderStats> | null { return live; }
+
+/**
+ * The frame pacer's current cap and refresh estimate (ADR-094). Same reason as the counters above
+ * for living here: `PerfMonitor` used to read `ticker.maxFPS`, which the pacer now pins to 0 so
+ * PIXI's own throttle stays out of the way.
+ */
+export interface FramePacing {
+  /** Tick-rate ceiling in fps (60, or 20 on an idle screen); 0 = uncapped. */
+  readonly capFps: number;
+  /** Estimated display refresh rate in Hz. */
+  readonly refreshHz: number;
+}
+
+let livePacing: FramePacing | null = null;
+
+/** Publish (or retract) the installed pacer. Called only by `RenderPolicy.install` / `.uninstall`. */
+export function setLiveFramePacing(p: FramePacing | null): void { livePacing = p; }
+
+/** The installed pacer, or null when no policy is installed (tests, tools). */
+export function framePacing(): FramePacing | null { return livePacing; }

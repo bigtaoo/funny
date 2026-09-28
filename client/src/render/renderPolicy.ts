@@ -15,9 +15,11 @@
  * 1. {@link rendererResolution} — cap the backbuffer at {@link MAX_RENDER_RESOLUTION}. Pure
  *    fill-rate saving, no behavioural risk. The art style is hand-drawn ink at ~2 px stroke
  *    widths; dpr 3 buys nothing a reader can see.
- * 2. `ticker.maxFPS = `{@link TARGET_FPS} — one assignment, halves the frame count on every
- *    120 Hz device. `dt` is unaffected in kind (every consumer already integrates `deltaMS`),
- *    only its distribution changes, so no simulation reads differently.
+ * 2. A {@link TARGET_FPS} cap — halves the frame count on every 120 Hz device. `dt` is unaffected
+ *    in kind (every consumer already integrates `deltaMS`), only its distribution changes, so no
+ *    simulation reads differently. Enforced by `render/framePacer.ts` as a whole-number divisor of
+ *    the refresh rate, not by PIXI's `ticker.maxFPS` (ADR-094: that throttle drops ~2% of frames
+ *    at 60 Hz).
  * 3. Demand-driven painting for scenes that declare `paint: 'reactive'` (see `Scene.paint` in
  *    scenes/SceneManager.ts): the stage is painted only when it actually CHANGED.
  *
@@ -43,7 +45,8 @@
  */
 import * as PIXI from 'pixi.js-legacy';
 import { debugFlag } from '../debugFlags';
-import { setLiveRenderStats, type RenderStats } from './renderStats';
+import { setLiveFramePacing, setLiveRenderStats, type RenderStats } from './renderStats';
+import { FramePacer, type FrameScheduler } from './framePacer';
 import { setDecorationsQuiet } from './idleQuiet';
 
 /**
@@ -337,10 +340,8 @@ export class RenderPolicy {
   private lastPaintMs = 0;
   /** Last tick that painted for a real reason — see {@link IDLE_QUIET_MS} on why 'floor' isn't one. */
   private lastBusyMs = 0;
-  /** Current tick-rate ceiling, so a rate that hasn't changed isn't re-assigned every frame. */
-  private appliedMaxFps = 0;
-  /** `PIXI.Ticker.shared.maxFPS` as found, restored on {@link uninstall} (it is a global). */
-  private sharedMaxFpsBefore = 0;
+  /** Drives both tickers; created on {@link install}, because it takes their loops over. */
+  private pacer: FramePacer | null = null;
   /** Counters exposed for the browser measurement recipe (`window.__nwRenderStats`). */
   readonly stats: RenderStats = { ticks: 0, painted: 0, skipped: 0 };
 
@@ -348,10 +349,15 @@ export class RenderPolicy {
     private readonly host: RenderLoopHost,
     /** Current scene's paint mode; `undefined` (no scene, or a scene that never declared one) = 'live'. */
     private readonly paintMode: () => PaintMode | undefined,
+    /** rAF seam for the pacer; tests pass a manual one so no real frame loop runs under them. */
+    private readonly scheduler?: FrameScheduler,
   ) {}
 
   install(): void {
-    this.sharedMaxFpsBefore = PIXI.Ticker.shared.maxFPS;
+    // `Ticker.shared` first: fx that animate this frame must land before the paint that shows them.
+    this.pacer = new FramePacer([PIXI.Ticker.shared, this.host.ticker], this.scheduler);
+    this.pacer.install();
+    setLiveFramePacing(this.pacer);
     this.setMaxFps(TARGET_FPS);
     setLiveRenderStats(this.stats);
     this.publishStats();
@@ -369,8 +375,13 @@ export class RenderPolicy {
     setLiveRenderStats(null);
     setDecorationsQuiet(false);
     onActivity = null;
-    PIXI.Ticker.shared.maxFPS = this.sharedMaxFpsBefore;
+    this.pacer?.uninstall();
+    this.pacer = null;
+    setLiveFramePacing(null);
   }
+
+  /** The installed pacer (tests, and the measurement recipe via `__nwRenderStats`). */
+  get framePacer(): FramePacer | null { return this.pacer; }
 
   /**
    * Apply a tick-rate ceiling to BOTH loops.
@@ -383,12 +394,11 @@ export class RenderPolicy {
    * existed. Capping it here rather than converting fourteen `Ticker.shared` call sites to a seam:
    * the power problem is the rate, and every one of those sites already integrates `deltaMS`, so a
    * lower rate changes how finely an effect is sampled and not how long it takes.
+   *
+   * Since ADR-094 both are driven by one {@link FramePacer}, so they also tick on the same vsync.
    */
   private setMaxFps(fps: number): void {
-    if (this.appliedMaxFps === fps) return;
-    this.appliedMaxFps = fps;
-    this.host.ticker.maxFPS = fps;
-    PIXI.Ticker.shared.maxFPS = fps;
+    if (this.pacer) this.pacer.capFps = fps;
   }
 
   /** One frame's decision. Exposed (not just wired to the ticker) so tests can step it by hand. */
@@ -424,6 +434,9 @@ export class RenderPolicy {
     // the host where it mattered most. See debugFlags.ts.
     if (!debugFlag('nw_render_debug')) return;
     (globalThis as { __nwRenderStats?: RenderPolicy['stats'] }).__nwRenderStats = this.stats;
+    // The pacer too: `capFps` / `refreshHz` / `runs` are what a frame-pacing probe reads, and since
+    // ADR-094 `ticker.maxFPS` is always 0, so it can no longer tell the app ticker apart by its cap.
+    (globalThis as { __nwFramePacer?: FramePacer | null }).__nwFramePacer = this.pacer;
   }
 
   /**
