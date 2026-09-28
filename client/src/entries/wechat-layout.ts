@@ -186,10 +186,10 @@ async function capture(name: string): Promise<void> {
 
 /**
  * Boot gates → lobby. Written as a loop over whatever screen is currently up rather than as a fixed
- * sequence, because the order is a product decision that has moved twice (intro → age gate →
- * consent → login, plus the FTUE redirect that lands a brand-new account in the tutorial LEVEL
- * rather than the lobby — see `registerAndEnterLobby` in test/browser/lib/nwE2E.ts). A loop absorbs
- * a reorder; a fixed sequence times out on it.
+ * sequence, because the order is a product decision that keeps moving (intro → entry gate — the
+ * merged age + consent screen — → login, plus the FTUE redirect that lands a brand-new account in
+ * the tutorial LEVEL rather than the lobby — see `registerAndEnterLobby` in
+ * test/browser/lib/nwE2E.ts). A loop absorbs a reorder; a fixed sequence times out on it.
  */
 async function reachLobby(handle: E2EHandle, deadlineMs: number): Promise<string | null> {
   const state = handle.state;
@@ -206,8 +206,9 @@ async function reachLobby(handle: E2EHandle, deadlineMs: number): Promise<string
     const bag = state[`${screen}Cb`] as Record<string, (...a: unknown[]) => unknown> | undefined;
     try {
       if (screen === 'intro' && bag?.onFinish) bag.onFinish(true);
-      else if (screen === 'ageGate' && bag?.onDeclared) bag.onDeclared(new Date().getFullYear() - 30);
-      else if (screen === 'consent' && bag?.onAccept) bag.onAccept();
+      else if (screen === 'entryGate' && bag?.onAnswered) {
+        bag.onAnswered({ birthYear: new Date().getFullYear() - 30, granted: true });
+      }
       else if (screen === 'game' && bag?.onExitToLobby) bag.onExitToLobby();
       else if (screen === 'login' && bag?.onRegister && !registered) {
         registered = true;
