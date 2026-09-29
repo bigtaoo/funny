@@ -399,7 +399,7 @@ docker compose -f docker-compose.cloud.yml --env-file .env config | grep MONGO_U
   4. **世界图集上传**：`world_atlas.png` 1960×1827 的 `texImage2D` 在世界地图第一帧里单次 34 ms（桌面）。大厅空闲预取只解码不上传。
   5. **（顺带发现）烘焙纹理比请求的小**：PIXI 把基础纹理尺寸存成 `round(size × res) / res`，小数分辨率下最多短 `0.5 / res` 点。图集按请求尺寸切片，最后一行越界，PIXI 的 frame setter 直接抛异常。边框图集在 0.5–3.0 之间 251 个分辨率里的 180 个会抛（含 1.1、1.33，即浏览器缩放 110% / 133%），而 ADR-098 刚把它挪进了启动阶段。线上 14 天 Loki 里没有这条异常，目前没有玩家碰到。
 - **决策**：
-  1. **`render/paperRules.ts`**：同一支笔、同样参数，只画 4 条 1024 px 的横线条带和 1 条红线条带，按 `pageBakeResolution()` 烘焙一次（按分辨率记忆，旋转换比例时重烘一张小图）。一页 = 一个纯色矩形 + 每条线若干条带窗口 sprite（按种子取条带和偏移，首尾相接；笔的端点几乎不动，接缝看不出）。不再有任何整页烘焙。条带不做首尾渐细：原来的渐细只落在每条线最外 10%，即侧栏下面和内容区右边之外。大厅的 `buildBackground` 改为直接调用共用页。
+  1. **`render/paperRules.ts`**：同一支笔、同样参数，只画 4 条 1024 px 的横线条带和 1 条红线条带，按 `pageBakeResolution()` 烘焙一次（按分辨率记忆，旋转换比例时重烘一张小图）。一页 = 一个纯色矩形 + 每条线若干条带窗口 sprite（按种子取条带和偏移，首尾相接；笔的端点几乎不动，接缝看不出）。（ADR-104 起 WebGL 下这些窗口并成两个 Mesh，Canvas 回退仍是 sprite。）不再有任何整页烘焙。条带不做首尾渐细：原来的渐细只落在每条线最外 10%，即侧栏下面和内容区右边之外。大厅的 `buildBackground` 改为直接调用共用页。
   2. **`setTextResolution(renderer.resolution)`**（`render/pixiText.ts`，`app.ts` 启动时调用）：设 `PIXI.Text.defaultResolution`，新建的文字从一开始就是渲染器分辨率。`autoResolution` 保留，所以分辨率变化（ADR-100）时屏上的文字仍会按新值重画。
   3. **`measuredWidth(text)`**：用同一个 `TextMetrics` 调用、同样的整设备像素取整算出 `width`，不光栅化。`txtFit` 只建一个 Text，量、改字号、再量、必要时截断，全程不光栅化；真正的光栅化只在它被显示时发生一次。
   4. **`uploadToGpu(baseTexture)`**（`render/bake.ts`）：经 `renderer.texture.bind` 立刻上传。`idlePrefetch` 的 `slg:world` 波次在解码完成后等下一个空闲时段再上传（不和解码挤在同一个时段）。`bind` 会盖上使用时间戳，TextureGC 按常规空闲预算处理；玩家在大厅待得比那更久，进地图时就照旧上传。
@@ -464,6 +464,13 @@ docker compose -f docker-compose.cloud.yml --env-file .env config | grep MONGO_U
 - **问题**：ADR-102 之后格子池之外还有 ~250 个 Sprite 没拆开。按「场景层 + 构造器名」数可见节点（种子账号，1366×768，同一轮两次一致）：纸面背景横线 76 个 Sprite、行军小人 70 个 Sprite + 15 个容器、底部 HUD 62、顶栏产量 43、主城横幅 2——这些都是画面上真有的东西。真正的空转在**城池层**：每座玩家城一个容器 13 个节点（建筑图、名字、血条、护盾罩、护盾光环子树（虚线环 + 装闪光点的容器 + 4 个闪光点）、破盾闪光），17 座城 221 个节点，其中 136 个 Graphics 里 110 个是空的——没受损就没有血条，没护盾就没有罩子和光环，破盾闪光只活 0.4 秒。空 Graphics 照样被渲染器和变化检测（ADR-101）逐个走一遍。
 - **决策**：四个特效层（`hpbar`、`shieldFx`、`shieldGlowFx`、`shieldBreakFx`）建出来就 `visible = false`；画的地方才显示：血条在「受损」分支里、护盾罩和光环跟 `protectedUntil` 同步、破盾闪光在入队时显示、`lifecycle.update` 里过期清掉时再隐藏。NPC 城的耐久条同样处理。节点不销毁（容器是跨刷新复用的，同一座城可能再次上护盾）。
 - **实测**：没护盾、没受损的城从 13 个可见节点降到 3 个（容器、建筑图、名字）。这一轮种子 9 座城（3 座带护盾、2 座受损）：城池层 117 → 53 个可见节点；17 座城那一轮按同样算法约 221 → 70–90。耗时没做 A/B——ADR-102 订正里说过，这个探针对几十到一百多个节点的差异量不出来。claude-in-chrome 看过：护盾罩、虚线环、闪光点、受损城的血条都在。
-- **不改的**：纸面背景的 76 条横线（所有场景共用 `buildPaperBackground`，静态、同一张纹理能合批；要降就得烘成一张图，影响面是全部场景，单独立项）；行军小人（动画本身，每个 ~14 个节点）；HUD / 顶栏（都是真控件）。
+- **不改的**：纸面背景的 76 条横线（所有场景共用 `buildPaperBackground`，静态、同一张纹理能合批；要降就得烘成一张图，影响面是全部场景，单独立项——已由 ADR-104 并成两个 Mesh，没有烘图）；行军小人（动画本身，每个 ~14 个节点）；HUD / 顶栏（都是真控件）。
 - **影响**：`client/src/scenes/worldmap/WorldMapRenderer/city.ts`、`lifecycle.ts`；测试 `test/ui/worldMapShieldBubble.ui.ts` 新增一组（普通城四层都隐藏 / 血条随受损显隐 / 护盾罩与光环随护盾显隐、破盾闪光活到寿命结束再隐藏；去掉破盾隐藏、去掉光环同步两处变异均验红），`test/ui/worldMapCityDurabilityBar.ui.ts` 补 `visible` 断言。
 
+## ADR-104 纸背景横线并成网格：每页约 80 个 Sprite 变成 2 个 Mesh — Accepted — 2026-09-29
+
+- **问题**：ADR-099 之后，纸背景（`buildPaperBackground`，约 40 个场景共用）= 纯色底 + 条带图集上截出的窗口 Sprite。横屏一页 27 条横线、每条 2–3 段，加红线 2 段：1920×911 窗口下大厅 / 扭蛋 88 个、世界地图（无红线）86 个 Sprite。它们同一张纹理、本来就合批，但渲染器和变化检测（ADR-101）每帧都逐个走一遍。ADR-103 时把这件事留作「单独立项」。另查过「只在世界地图缩放 1 级隐藏横线」：缩放 2、3 级横线会从半透明格子里透出来（记忆 `fps-pacing-sweep-2026-09-28`），只能省一个缩放级，不如直接减节点。
+- **决策**：`render/paperRules.ts` 在 WebGL 下把所有横线窗口写成**一个** `PIXI.Mesh` 的四边形，红线另一个 Mesh（两者颜色不同，Mesh 没有逐顶点颜色）。每个四边形的四个角和纹理坐标与原来那个 Sprite 完全一样（竖线把 Sprite 的 90° 旋转折进顶点顺序），纹理是图集整张。几何按「页宽 × 页高 × 红线 x」缓存 24 个（LRU），同尺寸重建直接复用；Mesh 销毁时几何引用归零只释放 GPU 缓冲，下次画会重新上传，所以共享安全，没销毁的旧页也只占有限几份。**Canvas 回退**（`bakeRendererIsCanvas()`）保留原来的 Sprite 窗口：pixi 的 canvas 网格渲染按三角形逐个画，会出缝。
+- **实测**（claude-in-chrome，1920×911，e2e 构建，新旧两个 dev server 同一账号）：大厅、扭蛋（带左侧标签栏的红线位置）、世界地图三种页面，把背景节点单独渲染到纹理里取像素做 FNV 哈希——原尺寸、0.7371 倍 + 亚像素偏移、0.5 倍、1.3333 倍四种变换，新旧**逐字节相同**。节点：页面子节点 89 → 3（地图 87 → 2）。背景单独渲染一次（dev 构建）约 19–41 µs → 5.5–12.5 µs；加上变化检测少走的 ~86 个节点（§20 的 0.3–0.7 µs / 节点），每帧省约 0.05–0.08 ms，用户感觉不到，是减少常驻遍历成本的整理。多了 1 次绘制调用（横线 Mesh 顶点超过 `Mesh.BATCHABLE_SIZE`，单独画；红线 8 个顶点仍进批）。
+- **没测**：竖屏、真机 Canvas 回退（只有单元测试覆盖）。
+- **影响**：`client/src/render/paperRules.ts`、`render/bake.ts`（`bakeRendererIsCanvas`）、`render/sketchUi.ts`（注释）；测试 `test/ui/paperRules.ui.ts` 改成按网格顶点检查，新增「Mesh 与 Sprite 逐四边形顶点 / 纹理坐标一致」（四种尺寸与分辨率）、「同尺寸共享几何、销毁后可复用」、「Canvas 下仍是 Sprite」；`test/ui/sceneGeometryBudget.ui.ts` 设置页断言改为 2 个 Mesh。变异检查：竖线顶点左右写反、去掉 Canvas 分支、去掉几何复用，三处各自验红。

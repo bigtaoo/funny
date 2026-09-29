@@ -51,6 +51,11 @@ export function hasBakeRenderer(): boolean {
   return renderer !== null;
 }
 
+/** True when the wired renderer is pixi.js-legacy's Canvas fallback (no WebGL on this device). */
+export function bakeRendererIsCanvas(): boolean {
+  return renderer?.type === PIXI.RENDERER_TYPE.CANVAS;
+}
+
 /**
  * Tell the bake layer how large the design rect is drawn on screen. Called by
  * `ScalingManager.applyScaling` (construction and every resize) — the one place that computes it.
