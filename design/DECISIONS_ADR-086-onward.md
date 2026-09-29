@@ -421,3 +421,25 @@ docker compose -f docker-compose.cloud.yml --env-file .env config | grep MONGO_U
 - **不改的**：不跨会话记忆（低电量模式这类临时原因会把画质锁死好几天；先看线上触发频率再定）；不回升；不细分 GPU 与 CPU 瓶颈（CPU 瓶颈时降了也无害，只是没收益——`render_res_down` 之后那条 `render_profile` 的 `fpsP50` 会说明有没有用）。
 - **实测**：有头 Chrome 1024×768 dpr 2 人机对战，每帧注入 50 ms 忙等（中位 19 fps），6.9 s 后切换：后缓冲 2048×1536 → 1536×1152，CSS 尺寸不变，截图布局对齐、只是略软。CPU 降速 12 倍在这台机器上对战仍有 57 fps，触发不了，所以用注入负载验证整条链路。
 - **影响**：`client/src/render/adaptiveResolution.ts`、`src/app.ts`、`src/cache/PerfMonitor.ts`（`resFrom`）、`server/analyticsvc/src/service/eventConfig.ts`；测试 `test/adaptiveResolution.test.ts`、`test/renderProfile.test.ts`、`test/appRenderResolutionWiring.test.ts`；文档 `design/game/ANALYTICS_DESIGN.md` §4.2。
+
+## ADR-101 变化检测少走冤枉路：被覆盖层盖住的场景不遍历、画完后的基线能沿用就不重走 — Accepted — 2026-09-29
+
+- **问题**（有头 Chrome、1366×768 dpr 1、dev 构建、带种子数据的账号，每项 5 s CPU 采样，新旧交替各 3 轮，探针见 `claudedocs/client-render-budget.md` §20）：`stageSignature` 在世界地图静止时每 5 s 占 256–338 ms，是主线程忙碌时间的 35–42%；主城静止时占 260–372 ms（43–68%）；拖动时两屏都还有 170–285 ms。两个来源：
+  1. **主城下面整张地图照样被遍历**：主城（以及好友、聊天、家族、门派、拍卖、布防、装备这些覆盖层）是 `pushOverlay` 叠在活场景上的。ADR-097 让被盖住的地图停摆，但签名遍历仍然每个 tick 走完它的 1,500–2,100 个节点，而覆盖层是铺满全屏的不透明纸张，下面的任何变化都看不见。
+  2. **每次重画后都要重走一遍整棵树**建立基线（`render()` 自己会改签名读的字段：文字光栅化、容器排序）。拖动时每帧都画、下一帧根本不看基线，这次遍历全白走；静止时护盾 30 fps、tick 60 Hz，每两个 tick 三次遍历，其中一次是这个。
+- **决策**：
+  1. **`setSignatureCovered(root, covered)`**（`render/renderPolicy.ts`）：被标记的子树在签名里折成一个常数、不下探。`SceneManager` 每个 tick 推导一次：有覆盖层、并且覆盖层在显示列表里确实排在 `current` 之上时，标记 `current.container`；push / pop / 硬切换时也立即推导一次。**是推导不是在 push 时记录**：淡入途中叠上的覆盖层，那一刻的 `current` 是正在淡出的旧场景，随后被销毁，新场景反而排在覆盖层之上（e2e 探针就是这样进主城的，记录式的第一版因此一直在遍历真地图）。只改签名、**不隐藏**地图：隐藏会让大纹理被 TextureGC 逐出（ADR-097 同一理由），而且渲染成本另当别论。
+  2. **画完后的基线**（`RenderPolicy.baselineAfterPaint`）：
+     - `hold` 且下一个 tick 仍在 hold 之内（剩余 > 50 ms，即一个 `IDLE_FPS` 周期）→ 不走，基线置 -1。只有手势最后一帧才走。
+     - `changed` → 画前 `decide` 刚走过一次。如果那次遍历没看到 render 会改的东西（`Text` / `BitmapText` 的 `dirty`、`sortableChildren && sortDirty`），直接沿用它的签名。
+     - **兜底**：沿用之后紧接着的那个 tick 如果又是 `changed`，这次画完真走一遍。于是 render 端还有别的、这张清单不知道的改动时，代价是多画一帧然后稳定，绝不会让静止画面一直满帧重画；中间隔一个 skipped tick 就解除（护盾那种隔帧变化能一直沿用）。
+     - `floor`、以及即将结束的 hold → 照常走。
+  3. 顺带：遍历改成模块级递归函数（不再每次建闭包），`visible` 每节点只读一次。离线基准 1,875 节点 147 → 约 100 ns / 节点。
+- **实测**（每 5 s，基线三轮 → 新三轮）：
+  - 世界地图静止：签名 256 / 282 / 272 → 140 / 165 / 191 ms，主线程忙碌约 698 → 552 ms。
+  - 世界地图拖动：签名 171 / 187 / 206 → < 1 ms。
+  - 主城静止：签名 301 / 260 / 358 → 52 / 26 / 52 ms，忙碌约 457 → 207 ms。
+  - 主城拖动：签名 219 / 238 / 272 → 0。
+  - 重画次数不变（同一轮里 painted 数一致），省的只是判断。
+- **不改的**：世界地图自己的 650 个格子有一半在屏幕外（317 个、845 个节点），视口裁剪能再砍掉地图静止时一半的遍历和一部分渲染，但要改地图的格子管理，风险另算，这次没做。`render` 本身（地图静止约 330 ms / 5 s）没动。
+- **影响**：`client/src/render/renderPolicy.ts`、`src/scenes/SceneManager.ts`；测试 `test/ui/renderPolicy.ui.ts`（新增「covered subtrees」「the baseline after a paint」两组，8 处变异均验红）、`test/ui/sceneManager.ui.ts`（新增「overlays and the change detector」，淡入途中叠覆盖层的顺序保护和逐 tick 推导各验红一次）。

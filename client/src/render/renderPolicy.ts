@@ -129,6 +129,13 @@ export const IDLE_QUIET_MS = 2_000;
  */
 export const DECOR_QUIET_AFTER_MS = 30_000;
 
+/**
+ * A hold with more than this left will certainly still be holding on the next tick, so the paint
+ * needs no baseline (see `RenderPolicy.baselineAfterPaint`). One {@link IDLE_FPS} period: the
+ * longest gap between two ticks the pacer schedules. A late frame past it costs one extra paint.
+ */
+const HOLD_WALK_MARGIN_MS = 1000 / IDLE_FPS;
+
 /** How a scene wants to be painted. See `Scene.paint`. */
 export type PaintMode = 'live' | 'reactive';
 
@@ -259,48 +266,97 @@ function mixString(h: number, s: string): number {
  * `mask` presence bit.
  */
 export function stageSignature(root: PIXI.Container): number {
-  let h = 0x811c9dc5;
-  const visit = (o: PIXI.DisplayObject): void => {
-    const d = o as PIXI.DisplayObject & {
-      visible?: boolean; renderable?: boolean; alpha?: number; tint?: number;
-      transform?: { _localID?: number };
-      texture?: {
-        baseTexture?: { uid?: number; dirtyId?: number };
-        frame?: { x: number; y: number; width: number; height: number };
-      };
-      geometry?: { dirty?: number };
-      text?: unknown;
-      children?: PIXI.DisplayObject[];
-      zIndex?: number;
-    };
-    h = mix(h, d.visible === false ? 1 : 2);
-    if (d.visible === false) return;
-    h = mix(h, d.renderable === false ? 3 : 4);
-    h = mix(h, Math.round((d.alpha ?? 1) * 1024));
-    h = mix(h, d.tint ?? 0);
-    h = mix(h, d.transform?._localID ?? 0);
-    h = mix(h, d.zIndex ?? 0);
-    const tex = d.texture;
-    if (tex) {
-      // `baseTexture.uid` + the frame rect, NOT `texture.uid` — PIXI's `Texture` has no `uid` at
-      // all (only `BaseTexture` does), so the first version of this line hashed `undefined` on
-      // every sprite in the tree and an atlas frame swap went undetected. Caught by the mutation
-      // sweep in test/ui/renderPolicy.ui.ts: deleting the line changed nothing.
-      h = mix(h, tex.baseTexture?.uid ?? 0);
-      const f = tex.frame;
-      if (f) h = mix(mix(mix(mix(h, f.x), f.y), f.width), f.height);
-      h = mix(h, tex.baseTexture?.dirtyId ?? 0);
-    }
-    if (d.geometry) h = mix(h, d.geometry.dirty ?? 0);
-    if (typeof d.text === 'string') h = mixString(h, d.text);
-    const kids = d.children;
-    if (kids) {
-      h = mix(h, kids.length);
-      for (let i = 0; i < kids.length; i++) visit(kids[i]!);
-    }
-  };
+  walkHash = 0x811c9dc5;
+  walkRenderMutates = false;
   visit(root);
-  return h;
+  return walkHash;
+}
+
+/**
+ * Subtrees the walk folds in as a constant instead of descending: a scene sitting under a
+ * full-screen overlay (SceneManager.pushOverlay). Its pixels are painted over completely, so no
+ * change inside it can be seen — and it is the bulk of the tree: the world map under the City
+ * overlay is 1,553 of 2,526 nodes, walked 90 times a second for nothing (ADR-101).
+ *
+ * An array compared by identity rather than a WeakSet or a flag on the object: the check runs on
+ * every node, and a length test on an empty array is the cheapest thing the walk does.
+ */
+const coveredRoots: PIXI.DisplayObject[] = [];
+
+/**
+ * Mark `root` as painted over (or not any more). Called by `SceneManager` around an overlay; the
+ * overlay itself calls {@link invalidateRender} on the way in and out, so the switch always paints.
+ */
+export function setSignatureCovered(root: PIXI.DisplayObject, covered: boolean): void {
+  const i = coveredRoots.indexOf(root);
+  if (covered && i < 0) coveredRoots.push(root);
+  else if (!covered && i >= 0) coveredRoots.splice(i, 1);
+}
+
+// Walk state as module variables rather than a closure: one allocation fewer per walk, and a plain
+// recursive function is what V8 inlines best on a 2,000-node tree walked every tick.
+let walkHash = 0;
+/**
+ * Whether the tree just walked holds something the NEXT render will itself change in a way the
+ * signature reads: a `Text` / `BitmapText` waiting to re-rasterise (new texture frame, new glyph
+ * children) or a container waiting to sort. Tells {@link RenderPolicy} whether the pre-paint
+ * signature can stand in as the post-paint baseline, which saves a whole second walk (ADR-101).
+ */
+let walkRenderMutates = false;
+
+type Walked = PIXI.DisplayObject & {
+  visible?: boolean; renderable?: boolean; alpha?: number; tint?: number;
+  transform?: { _localID?: number };
+  texture?: {
+    baseTexture?: { uid?: number; dirtyId?: number };
+    frame?: { x: number; y: number; width: number; height: number };
+  };
+  geometry?: { dirty?: number };
+  text?: unknown;
+  dirty?: unknown;
+  children?: PIXI.DisplayObject[];
+  zIndex?: number;
+  sortableChildren?: boolean;
+  sortDirty?: boolean;
+};
+
+function visit(o: PIXI.DisplayObject): void {
+  const d = o as Walked;
+  let h = walkHash;
+  const shown = d.visible !== false;
+  h = mix(h, shown ? 2 : 1);
+  if (!shown) { walkHash = h; return; }
+  if (coveredRoots.length !== 0 && coveredRoots.includes(o)) { walkHash = mix(h, 5); return; }
+  h = mix(h, d.renderable === false ? 3 : 4);
+  h = mix(h, Math.round((d.alpha ?? 1) * 1024));
+  h = mix(h, d.tint ?? 0);
+  h = mix(h, d.transform?._localID ?? 0);
+  h = mix(h, d.zIndex ?? 0);
+  const tex = d.texture;
+  if (tex) {
+    // `baseTexture.uid` + the frame rect, NOT `texture.uid` — PIXI's `Texture` has no `uid` at
+    // all (only `BaseTexture` does), so the first version of this line hashed `undefined` on
+    // every sprite in the tree and an atlas frame swap went undetected. Caught by the mutation
+    // sweep in test/ui/renderPolicy.ui.ts: deleting the line changed nothing.
+    h = mix(h, tex.baseTexture?.uid ?? 0);
+    const f = tex.frame;
+    if (f) h = mix(mix(mix(mix(h, f.x), f.y), f.width), f.height);
+    h = mix(h, tex.baseTexture?.dirtyId ?? 0);
+  }
+  if (d.geometry) h = mix(h, d.geometry.dirty ?? 0);
+  if (typeof d.text === 'string') {
+    h = mixString(h, d.text);
+    if (d.dirty === true) walkRenderMutates = true;
+  }
+  const kids = d.children;
+  if (kids) {
+    h = mix(h, kids.length);
+    if (d.sortableChildren && d.sortDirty) walkRenderMutates = true;
+    walkHash = h;
+    for (let i = 0; i < kids.length; i++) visit(kids[i]!);
+    return;
+  }
+  walkHash = h;
 }
 
 // ── the policy ────────────────────────────────────────────────────────────────
@@ -337,6 +393,10 @@ export interface RenderTickResult {
  */
 export class RenderPolicy {
   private lastSignature = -1;
+  /** What {@link decide} walked on a 'changed' tick, or -1 if render will move it. */
+  private prePaintSignature = -1;
+  /** The last paint's baseline was {@link prePaintSignature}, not a fresh walk. */
+  private reusedBaseline = false;
   private lastPaintMs = 0;
   /** Last tick that painted for a real reason — see {@link IDLE_QUIET_MS} on why 'floor' isn't one. */
   private lastBusyMs = 0;
@@ -412,17 +472,12 @@ export class RenderPolicy {
     if (result.painted) {
       this.host.render();
       this.lastPaintMs = now();
-      // Re-read AFTER painting: render itself mutates fields the signature reads (Text rasterises
-      // into its texture and clears its dirty flag, containers sort their children), so a
-      // pre-paint baseline would report a change on every following tick and never settle.
-      //
-      // Not for a `live` paint: nothing compares against it while the scene stays live, and the walk
-      // is not "microseconds" on a live scene — it was a quarter of the city screen's main-thread
-      // time (ADR-096). -1 is never a signature (they are unsigned), so the first tick after a
-      // switch to a reactive scene reads as 'changed' and paints, as a scene switch does anyway.
-      this.lastSignature = result.reason === 'live' ? -1 : stageSignature(this.host.stage);
+      this.lastSignature = this.baselineAfterPaint(result.reason);
       this.stats.painted++;
     } else {
+      // A skipped tick means the reused baseline was right: the guard only arms for the tick
+      // straight after a reuse, so an animation changing every other tick keeps reusing.
+      this.reusedBaseline = false;
       this.stats.skipped++;
     }
     return result;
@@ -463,12 +518,48 @@ export class RenderPolicy {
     setDecorationsQuiet(t - lastActivityMs >= DECOR_QUIET_AFTER_MS);
   }
 
+  /**
+   * The signature the next tick compares against, after a paint.
+   *
+   * It has to describe the tree AFTER `render()`, because render itself changes fields the walk
+   * reads (a `Text` rasterises into a new frame, a `BitmapText` rebuilds its glyphs, a container
+   * sorts). The first version re-walked the whole tree after every paint to get it, which on the
+   * world map and the city was a third of all walking while idle and all of it while dragging
+   * (ADR-101). It only has to walk when the answer could actually be used and is not already known:
+   *
+   * - `live` — nothing compares against it while the scene stays live, and the walk is not cheap
+   *   on a live scene (ADR-096). -1 is never a signature (they are unsigned), so the first tick
+   *   after a switch to a reactive scene reads as 'changed' and paints, as a switch does anyway.
+   * - `hold` that will still be holding next tick — that tick paints without looking. Only the last
+   *   paint of a gesture walks, so a drag across the map stops walking 60 times a second.
+   * - `changed` — {@link decide} walked the tree a moment ago. If that walk saw nothing render will
+   *   change, its signature IS the post-paint one. The one guard: if the tick right after such a
+   *   reuse reads 'changed' again, walk for real this time. A render-side change this list does not
+   *   know about therefore costs one extra paint and then settles; it can never keep a still screen
+   *   painting every tick.
+   * - `floor`, and a hold that is about to end — walk.
+   */
+  private baselineAfterPaint(reason: RenderTickResult['reason']): number {
+    const reused = this.reusedBaseline;
+    this.reusedBaseline = false;
+    if (reason === 'live') return -1;
+    if (reason === 'hold' && activeUntilMs - now() > HOLD_WALK_MARGIN_MS) return -1;
+    if (reason === 'changed' && this.prePaintSignature !== -1 && !reused) {
+      this.reusedBaseline = true;
+      return this.prePaintSignature;
+    }
+    return stageSignature(this.host.stage);
+  }
+
   private decide(): RenderTickResult {
     if ((this.paintMode() ?? 'live') !== 'reactive') return { painted: true, reason: 'live' };
     if (renderHoldActive()) return { painted: true, reason: 'hold' };
     if (now() - this.lastPaintMs >= IDLE_FLOOR_MS) return { painted: true, reason: 'floor' };
     const sig = stageSignature(this.host.stage);
-    if (sig !== this.lastSignature) return { painted: true, reason: 'changed' };
+    if (sig !== this.lastSignature) {
+      this.prePaintSignature = walkRenderMutates ? -1 : sig;
+      return { painted: true, reason: 'changed' };
+    }
     return { painted: false, reason: 'skipped' };
   }
 }

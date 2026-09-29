@@ -2,7 +2,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { netLog } from '../net/log';
 import { setActiveScene, recordFrameSample } from '../net/anomaly';
 import { updateMusic } from '../audio/audioBus';
-import { invalidateRender, type PaintMode } from '../render/renderPolicy';
+import { invalidateRender, setSignatureCovered, type PaintMode } from '../render/renderPolicy';
 import { DEFAULT_TRACK } from '../audio/musicCatalogue';
 import type { MusicTrack } from '../audio/types';
 
@@ -140,6 +140,13 @@ export class SceneManager {
    * no teardown+rebuild. Only one slot: nothing today nests a second overlay on top of this one.
    */
   private overlayScene: Scene | null = null;
+  /**
+   * The container {@link overlayScene} paints over, handed to `renderPolicy.setSignatureCovered` so
+   * the change detector stops walking it (ADR-101). Every overlay is a full-screen scene on opaque
+   * paper, so nothing that moves underneath can be seen until it is popped — and pop / goto both
+   * force a paint. Kept separately from `current` so the uncover always hits what was covered.
+   */
+  private coveredContainer: PIXI.Container | null = null;
 
   /** Full-screen paper-tint cover, attached to `app.stage` (screen pixels) only while a fade is running. */
   private overlay: PIXI.Graphics | null = null;
@@ -178,6 +185,7 @@ export class SceneManager {
       this.targetStage.removeChild(this.overlayScene.container);
       this.destroyScene(this.overlayScene);
       this.overlayScene = null;
+      this.syncCovered();
     }
 
     // Default (no fade requested), or cold start (nothing to cross-fade from): swap in the same
@@ -292,6 +300,7 @@ export class SceneManager {
     this.overlayScene = scene;
     this.current?.pause?.();
     this.targetStage.addChild(scene.container); // addChild appends last → renders on top of `current`
+    this.syncCovered();
     setActiveScene(scene.constructor?.name ?? 'Scene');
     invalidateRender();
   }
@@ -303,9 +312,32 @@ export class SceneManager {
     this.overlayScene = null;
     this.targetStage.removeChild(ov.container);
     this.destroyScene(ov);
+    this.syncCovered();
     this.current?.resume?.();
     setActiveScene(this.current?.constructor?.name ?? 'Scene');
     invalidateRender();
+  }
+
+  /**
+   * Derive which container the overlay paints over, and tell the change detector (ADR-101).
+   *
+   * Re-derived every tick as well as at push / pop, rather than recorded once at push: `current`
+   * can change under a mounted overlay — an overlay pushed mid-fade covers the OUTGOING scene, and
+   * the swap then destroys it — and a stale record would leave the real scene walked and a
+   * destroyed container in the detector's list. Only when the overlay is actually above `current`
+   * in the display list: pushed mid-fade, the incoming scene is added after it and paints on top.
+   */
+  private syncCovered(): void {
+    const ov = this.overlayScene;
+    const cur = this.current;
+    const stage = this.targetStage;
+    const next = ov && cur && ov.container.parent === stage && cur.container.parent === stage
+      && stage.children.indexOf(ov.container) > stage.children.indexOf(cur.container)
+      ? cur.container : null;
+    if (this.coveredContainer === next) return;
+    if (this.coveredContainer) setSignatureCovered(this.coveredContainer, false);
+    this.coveredContainer = next;
+    if (next) setSignatureCovered(next, true);
   }
 
   private destroyScene(scene: Scene): void {
@@ -347,6 +379,7 @@ export class SceneManager {
 
   private onTick = (): void => {
     this.stepTransition(this.app.ticker.deltaMS);
+    this.syncCovered();
 
     // BGM, derived fresh every frame (AUDIO_DESIGN.md §7 step 7). See `AudioBus.updateMusic`
     // for why this is a derivation and not a notify-on-scene-change: with 40 scenes and three

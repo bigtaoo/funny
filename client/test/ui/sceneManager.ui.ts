@@ -26,6 +26,7 @@ import { SceneManager, type Scene, type InputGate, type DialogGate } from '../..
 import { setAudioBus, NullAudioBus } from '../../src/audio/audioBus';
 import type { AudioBus, MusicTrack } from '../../src/audio/types';
 import { InputManager } from '../../src/inputSystem/InputManager';
+import { stageSignature } from '../../src/render/renderPolicy';
 
 /** Fake PIXI.Application exposing just what SceneManager touches, plus a manual frame(). */
 function makeApp() {
@@ -290,6 +291,64 @@ describe('SceneManager overlays (pushOverlay/popOverlay)', () => {
     expect(first.destroy).toHaveBeenCalledTimes(1);
     expect(stage.children).not.toContain(first.container);
     expect(stage.children).toContain(second.container);
+  });
+});
+
+// ADR-101: the scene an overlay paints over drops out of the change detector's walk. Asserted through
+// the signature itself: "a change under the overlay does not move it" is the saving, and "a change
+// the player can see always does" is the part that must never break.
+describe('SceneManager overlays and the change detector', () => {
+  /** Does moving something inside `scene` change what the detector sees? */
+  function seen(stage: PIXI.Container, scene: Scene): boolean {
+    const probe = new PIXI.Graphics();
+    scene.container.addChild(probe);
+    const before = stageSignature(stage);
+    probe.x += 7;
+    const moved = stageSignature(stage) !== before;
+    scene.container.removeChild(probe);
+    return moved;
+  }
+
+  it('the covered scene is not walked while an overlay is up, and is again once it is popped', () => {
+    const { app, stage, frame } = makeApp();
+    const mgr = new SceneManager(app);
+    const base = makeScene();
+    mgr.goto(base);
+    expect(seen(stage, base)).toBe(true);
+    const overlay = makeScene();
+    mgr.pushOverlay(overlay);
+    expect(seen(stage, base)).toBe(false);
+    expect(seen(stage, overlay)).toBe(true);
+    frame();
+    expect(seen(stage, base)).toBe(false);          // the per-tick re-derivation agrees
+    mgr.popOverlay();
+    expect(seen(stage, base)).toBe(true);
+  });
+
+  it('a hard goto with an overlay up uncovers — the next scene is walked in full', () => {
+    const { app, stage } = makeApp();
+    const mgr = new SceneManager(app);
+    mgr.goto(makeScene());
+    mgr.pushOverlay(makeScene());
+    const next = makeScene();
+    mgr.goto(next);
+    expect(seen(stage, next)).toBe(true);
+  });
+
+  it('an overlay pushed mid-fade never hides the incoming scene, which lands on top of it', () => {
+    // pushOverlay is documented as settled-state only, but the e2e walker (and a fast enough tap)
+    // can reach it during a fade: `current` is then the OUTGOING scene, and the swap puts the
+    // incoming one above the overlay. Recording "covered = current" at push time left the real map
+    // walked and a destroyed container in the detector's list; the per-tick derivation must not.
+    const { app, stage, frame } = makeApp();
+    const mgr = new SceneManager(app);
+    mgr.goto(makeScene());
+    const incoming = makeScene();
+    mgr.goto(incoming, { fade: true });
+    mgr.pushOverlay(makeScene());
+    expect(frameUntil(frame, () => stage.children.includes(incoming.container))).toBe(true);
+    frame();
+    expect(seen(stage, incoming)).toBe(true);
   });
 });
 

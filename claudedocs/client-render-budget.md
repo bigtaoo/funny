@@ -603,4 +603,13 @@ ADR-086 收尾后回头找「客户端还有什么能在本机量的」，量到
 - **烘焙尺寸**：`bake` / `bakeLazy` 按 `ceil(ceil(size) × res) / res` 分配。原来小数分辨率下基础纹理会比请求短最多 `0.5 / res` 点，图集最后一行越界即抛异常；边框图集在 0.5–3.0 的 251 个分辨率里有 180 个会抛。门禁 `test/ui/bakeFractionalResolution.ui.ts` 逐个扫。
 - **自动降分辨率**（`render/adaptiveResolution.ts`）：live 场景、进入 3 s 后、5 s 窗口中位间隔 > 41.7 ms（< 24 fps）、不计 > 250 ms 的停顿、样本 ≥ 50 → 分辨率 2 → 1.5，每会话一次。验证用每帧注入 50 ms 忙等（CPU 降速 12 倍在本机对战仍有 57 fps）：6.9 s 后切换，后缓冲 2048×1536 → 1536×1152，CSS 尺寸与布局不变。线上看 `render_res_down` 与随后 `render_profile` 的 `resFrom` / `fpsP50`。
 - **门禁**：`test/ui/paperRules.ui.ts`（新尺寸不增加烘焙条目、线铺满整宽、红线位置、小数分辨率不抛）、`test/ui/textRasterOnce.ui.ts`（`measuredWidth` 与 getter 一致且不光栅化；`txtFit` 全程零光栅化）、`test/ui/bakeFractionalResolution.ui.ts`、`test/uploadToGpu.test.ts`、`test/idlePrefetch.test.ts`（上传在下一个空闲时段、下一波之前）、`test/adaptiveResolution.test.ts`（触发、30 Hz 不触发、停顿不触发、reactive 重置、≤ 1.5 不挂、只一次）、`test/appRenderResolutionWiring.test.ts`。纸背景、覆盖尺寸、`txtFit` 均做过变异检查。
-- **还开着**：`visit`（`stageSignature` 遍历）在世界地图 / 主城的采样窗口里自身耗时 150–210 ms / 1.2 s（dev 构建），是稳态成本不是首建成本，这次没动。
+- **还开着**（2026-09-29 已处理，见 §20 / ADR-101）：`visit`（`stageSignature` 遍历）在世界地图 / 主城的采样窗口里自身耗时 150–210 ms / 1.2 s（dev 构建），是稳态成本不是首建成本，这次没动。
+
+## 20. 变化检测的遍历成本（ADR-101，2026-09-29）
+
+- **探针**（临时，不入库）：Playwright 有头 Chrome 1366×768，`registerAndEnterLobby` → `seedAccount` → 开一次地图 → `seedWorld`。每屏落地后等 4 s，分两段各 5 s：静止（不动鼠标）和拖动（按住左键画圈），每段 `Profiler.start`（100 µs 采样），按调用栈算 `stageSignature` / `render` 的包含耗时，并读 `__nwRenderStats` 的 ticks / painted 差值。进主城要先进地图、**等淡入结束**再调 `onOpenCity`——淡入途中叠覆盖层是另一个状态（见 ADR-101 决策 1）。新旧代码交替跑三轮再比，单轮噪声能到 ±30%。
+- **节点构成**（种子账号）：世界地图约 1,900–2,100 个节点，其中一个 650 个子节点的格子容器占 1,550–1,710 个（Graphics 格子 + Sprite + BitmapText 标签）；BitmapText 398–483 个，每个字形还是一个 Sprite。主城叠在地图上时，舞台约 2,500 个节点，其中主城自己只有约 535 个。
+- **每次遍历的成本**：约 0.3–0.7 µs / 节点（dev 构建，属性访问是多态的）。地图一次遍历约 0.7–1 ms；静止时 tick 仍是 60 Hz（护盾 30 fps 的变化算「忙」），所以每秒约 60 次。
+- **结果**：见 ADR-101「实测」。拖动时两屏的遍历基本清零；主城静止降到原来的约 15%；地图静止降约 40%，剩下的就是每个 tick 画前那一次。
+- **门禁**：`test/ui/renderPolicy.ui.ts` 用一个 `visible` getter 计数的节点数遍历次数（遍历对每个节点只读一次 `visible`）；`test/ui/sceneManager.ui.ts` 直接比对 `stageSignature(stage)` 看某个场景里的改动能不能被看见。
+- **还开着**：地图格子没有视口裁剪（一半在屏幕外）。要再往下降，下一步就是它。

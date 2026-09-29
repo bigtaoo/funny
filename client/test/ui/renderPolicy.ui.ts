@@ -22,7 +22,7 @@ import {
   ACTIVE_AFTER_INPUT_MS, DECOR_QUIET_AFTER_MS, IDLE_FLOOR_MS, IDLE_FPS, IDLE_QUIET_MS,
   MAX_RENDER_RESOLUTION, RenderPolicy, TARGET_FPS,
   holdRenderActive, invalidateRender, rendererResolution, resetRenderHold, setRenderPolicyClock,
-  stageSignature, type PaintMode,
+  setSignatureCovered, stageSignature, type PaintMode,
 } from '../../src/render/renderPolicy';
 import type { FrameScheduler } from '../../src/render/framePacer';
 import { decorationsQuiet, setDecorationsQuiet } from '../../src/render/idleQuiet';
@@ -333,6 +333,154 @@ describe('stageSignature', () => {
     const sigBefore = stageSignature(a);
     a.setChildIndex(second, 0);
     expect(stageSignature(a)).not.toBe(sigBefore);
+  });
+});
+
+// ── walking less (ADR-101) ────────────────────────────────────────────────────
+//
+// The walk was 40% of the world map's and the city's idle main thread. Two savings, each pinned both
+// ways: the walk is skipped where it was wasted, and every case where skipping would hide a change
+// still paints (or at worst paints one frame late — never stops painting, never keeps painting).
+
+/** A node that counts how often the walk reads it: the walk reads `visible` exactly once per node. */
+function walkCounter(): { node: PIXI.Container; walks: () => number } {
+  const node = new PIXI.Container();
+  let reads = 0;
+  Object.defineProperty(node, 'visible', { get: () => { reads += 1; return true; }, set: () => {} });
+  return { node, walks: () => reads };
+}
+
+describe('covered subtrees (a scene under a full-screen overlay)', () => {
+  it('a change inside a covered subtree does not repaint; uncovering it does', () => {
+    const { host, policy } = policyFor(() => 'reactive');
+    const under = new PIXI.Container();
+    const g = new PIXI.Graphics();
+    under.addChild(g);
+    host.stage.addChild(under);
+    policy.tick();
+    setSignatureCovered(under, true);
+    expect(policy.tick().reason).toBe('changed');      // covering is itself a change of picture
+    expect(policy.tick().painted).toBe(false);
+    g.x += 5;
+    expect(policy.tick().painted).toBe(false);          // painted over: nothing to show
+    setSignatureCovered(under, false);
+    // Uncovering alone moves the signature, even with no invalidateRender() around it.
+    expect(policy.tick().reason).toBe('changed');
+    expect(policy.tick().painted).toBe(false);
+    g.x += 5;
+    expect(policy.tick().reason).toBe('changed');
+  });
+
+  it('is not descended into at all — that is the saving', () => {
+    const under = new PIXI.Container();
+    const probe = walkCounter();
+    under.addChild(probe.node);
+    const stage = new PIXI.Container();
+    stage.addChild(under);
+    stageSignature(stage);
+    expect(probe.walks()).toBe(1);
+    setSignatureCovered(under, true);
+    stageSignature(stage);
+    expect(probe.walks()).toBe(1);
+    setSignatureCovered(under, false);
+    stageSignature(stage);
+    expect(probe.walks()).toBe(2);
+  });
+});
+
+describe('the baseline after a paint', () => {
+  function setup(render?: (stage: PIXI.Container) => void) {
+    const made = policyFor(() => 'reactive');
+    if (render) {
+      const count = made.host.render.bind(made.host);
+      made.host.render = (): void => { count(); render(made.host.stage); };
+    }
+    const probe = walkCounter();
+    made.host.stage.addChild(probe.node);
+    made.policy.tick();
+    expect(made.policy.tick().painted).toBe(false);
+    return { ...made, probe };
+  }
+
+  it('a drag does not walk at all — every tick of it paints without looking', () => {
+    const { policy, probe } = setup();
+    const before = probe.walks();
+    for (let i = 0; i < 30; i++) {
+      holdRenderActive();                      // a pointer move every frame
+      expect(policy.tick().reason).toBe('hold');
+      clockMs += 16;
+    }
+    expect(probe.walks()).toBe(before);
+  });
+
+  it('the last paint of a gesture walks, so the screen settles the moment the hold ends', () => {
+    const { policy, probe } = setup();
+    holdRenderActive();
+    policy.tick();
+    const before = probe.walks();
+    clockMs += ACTIVE_AFTER_INPUT_MS - 10;     // under one tick left
+    expect(policy.tick().reason).toBe('hold');
+    expect(probe.walks()).toBe(before + 1);
+    clockMs += 20;
+    expect(policy.tick().painted).toBe(false); // no extra paint for the hold having ended
+  });
+
+  it('a change walks once, not twice — the pre-paint walk stands in for the post-paint one', () => {
+    const { host, policy, probe } = setup();
+    const g = new PIXI.Graphics();
+    host.stage.addChild(g);
+    policy.tick();
+    policy.tick();
+    // An animation stepping every other tick, like the world map's 30 fps shield at 60 Hz.
+    const before = probe.walks();
+    for (let i = 0; i < 10; i++) {
+      g.x += 1;
+      expect(policy.tick().reason).toBe('changed');
+      expect(policy.tick().painted).toBe(false);
+    }
+    expect(probe.walks() - before).toBe(20);
+  });
+
+  it('a Text that render re-rasterises gets a real post-paint walk (no extra paint)', () => {
+    const text = new PIXI.Text('a');
+    const { host, policy } = setup(() => text.updateText(true));
+    host.stage.addChild(text);
+    policy.tick();
+    expect(policy.tick().painted).toBe(false);
+    text.text = 'something longer';
+    expect(policy.tick().reason).toBe('changed');
+    expect(policy.tick().painted).toBe(false);
+  });
+
+  it('a container that render sorts gets a real post-paint walk (no extra paint)', () => {
+    const layer = new PIXI.Container();
+    layer.sortableChildren = true;
+    const a = new PIXI.Graphics();
+    const b = new PIXI.Graphics();
+    layer.addChild(a, b);
+    // What `Container.updateTransform` does on the way into a real render.
+    const { host, policy } = setup(() => { if (layer.sortDirty) layer.sortChildren(); });
+    host.stage.addChild(layer);
+    policy.tick();
+    expect(policy.tick().painted).toBe(false);
+    a.zIndex = 5;
+    expect(policy.tick().reason).toBe('changed');
+    expect(policy.tick().painted).toBe(false);
+  });
+
+  it('a render-side change nothing knows about costs one extra paint, then settles', () => {
+    // The guard: the paint straight after a reused baseline walks for real.
+    const g = new PIXI.Graphics();
+    const { host, policy } = setup(() => { g.y += 1; });   // moves on every render
+    host.stage.addChild(g);
+    policy.tick();
+    policy.tick();
+    g.x += 1;
+    expect(policy.tick().reason).toBe('changed');
+    expect(policy.tick().reason).toBe('changed');          // the one extra
+    let paints = 0;
+    for (let i = 0; i < 10; i++) if (policy.tick().painted) paints++;
+    expect(paints).toBe(0);
   });
 });
 
