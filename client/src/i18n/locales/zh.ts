@@ -587,6 +587,7 @@ export const zh = {
   'equip.unequip': '卸下',
   'equip.salvage': '分解',
   'equip.salvageAll': '全部分解',
+  'equip.moreActions': '更多',
   'equip.confirmSalvage': '分解 {name}？返还 {refund}',
   'equip.confirmSalvageOne': '分解其中 1 件 {name}（共 {count} 件）？返还 {refund}',
   'equip.confirmSalvageAll': '分解全部 {count} 件 {name}？返还 {refund}',

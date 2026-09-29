@@ -581,6 +581,7 @@ export const en: Record<TranslationKey, string> = {
   'equip.unequip': 'Unequip',
   'equip.salvage': 'Salvage',
   'equip.salvageAll': 'Salvage All',
+  'equip.moreActions': 'More',
   'equip.confirmSalvage': 'Salvage {name}? Refunds {refund}',
   'equip.confirmSalvageOne': 'Salvage 1 {name} (out of {count})? Refunds {refund}',
   'equip.confirmSalvageAll': 'Salvage all {count} {name}? Refunds {refund}',
