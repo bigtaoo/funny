@@ -72,8 +72,10 @@ export function createShopNav(ctx: AppCtx): ShopNav {
         // viable on iOS/Android's flat store cut, uneconomic through Paddle's fixed per-txn fee.
         includeMobileOnlyCoinTiers: platform.iapKind() === 'apple' || platform.iapKind() === 'google',
       } : {}),
-      // Promo-code redemption (B-PROMO): only available when online + logged in.
-      ...(shopLoggedIn ? {
+      // Promo-code redemption (B-PROMO): only available when online + logged in, and never in the
+      // App Store build — App Review rejected it under 3.1.1 (IOS_RELEASE.md §9.2); discounts there go
+      // through App Store offer codes instead.
+      ...(shopLoggedIn && platform.iapKind() !== 'apple' ? {
         async redeemPromo(code: string) {
           try {
             const { save } = await client.redeemPromoCode(code);

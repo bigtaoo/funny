@@ -82,6 +82,11 @@ export async function redeemPromoCodeHandler(core: MetaCore, req: FastifyRequest
   if (!code || typeof code !== 'string') {
     return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'code required'));
   }
+  // App Store builds must not unlock anything outside IAP (App Review 3.1.1, IOS_RELEASE.md §9.2). The
+  // client already hides the promo row there; this also closes it for iOS builds shipped before that.
+  if (clientPlatformOf(req) === 'ios') {
+    return reply.code(403).send(err(ErrorCode.BAD_REQUEST, 'PROMO_UNAVAILABLE_ON_PLATFORM'));
+  }
   const { cols, commercial, now } = core.deps;
   const v = await commercial.promoRedeem({ accountId, code, clientPlatform: clientPlatformOf(req) });
   if (!v.ok) {
