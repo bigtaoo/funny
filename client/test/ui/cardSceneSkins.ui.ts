@@ -12,7 +12,6 @@ import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n, t } from '../../src/i18n';
 import { CardScene, type CardCallbacks } from '../../src/scenes/CardScene';
 import { makeNewSave } from '../../src/game/meta/SaveData';
-import { skinDisplayName } from '../../src/game/meta/skinDefs';
 import { UnitType } from '@nw/engine/types';
 
 const memStore = (() => {
@@ -38,8 +37,23 @@ function findLabelPos(container: PIXI.Container, label: string): { x: number; y:
   return found;
 }
 
-function tap(scene: { container: PIXI.Container }, label: string): void {
-  const pos = findLabelPos(scene.container, label);
+/**
+ * Where a skin's wardrobe tile label is. Tiles read just "Skin" since 2026-09-29 (the card header
+ * names the character), so they are found by the `skinTile:<id>` tag rather than by their text.
+ */
+function findTilePos(container: PIXI.Container, skinId: string): { x: number; y: number } | null {
+  let found: { x: number; y: number } | null = null;
+  const walk = (node: PIXI.Container): void => {
+    if (found) return;
+    if (node instanceof PIXI.Text && node.name === `skinTile:${skinId}`) { found = { x: node.x, y: node.y }; return; }
+    for (const c of node.children) walk(c as PIXI.Container);
+  };
+  walk(container);
+  return found;
+}
+
+function tap(scene: { container: PIXI.Container }, label: string, pos0?: { x: number; y: number } | null): void {
+  const pos = pos0 ?? findLabelPos(scene.container, label);
   expect(pos, `label "${label}" not found in rendered tree`).not.toBeNull();
   const hits = (scene as unknown as { core: { hitRects: Hit[] } }).core.hitRects;
   const hit = hits.find(({ rect: r }) =>
@@ -69,9 +83,34 @@ describe('CardScene — Skins tab (folded in from the retired CollectionScene)',
     const scene = new CardScene(createLayout(1920, 1080), new InputManager(), cb);
 
     tap(scene, t('roster.tab.skins'));
-    tap(scene, skinDisplayName('skin_e1'));
+    tap(scene, 'skin_e1 tile', findTilePos(scene.container, 'skin_e1'));
 
     expect(equipCalls).toEqual([{ unitType: UnitType.Lena, skinId: 'skin_e1' }]);
+  });
+
+  // 2026-09-29: "Chen Shou·Skin" / "Standard-Look" ran to 0.65-0.76 of the font floor in a 108-wide
+  // tile. The card header names the character, so the tiles say only which look they are.
+  it('labels the tiles with the short look names, not "<hero>·Skin"', () => {
+    const scene = new CardScene(createLayout(1920, 1080), new InputManager(), {
+      onBack() {},
+      getSave: () => makeNewSave(),
+      fuseCards: async () => ({ ok: true }),
+      fuseCardsBatch: async () => ({ ok: true, completed: 0 }),
+      setCardLock: async () => ({ ok: true }),
+      getOwnedSkins: () => ['skin_e1'],
+      getEquippedSkin: () => null,
+      equipSkin: () => {},
+      initialTab: 'skins',
+    });
+    const texts: Record<string, string> = {};
+    const walk = (node: PIXI.Container): void => {
+      if (node instanceof PIXI.Text && node.name?.startsWith('skinTile:')) texts[node.name] = node.text;
+      for (const c of node.children) walk(c as PIXI.Container);
+    };
+    walk(scene.container);
+    expect(texts['skinTile:skin_e1']).toBe(t('shop.skinLabel'));
+    expect(texts['skinTile:default']).toBe(t('collection.defaultShort'));
+    scene.destroy();
   });
 });
 
@@ -104,12 +143,12 @@ describe('CardScene — Skins tab card grid layout', () => {
     // width" follow-up, CARD_W_TARGET=440) fits 3 cards per row instead of 2 — masonry ties resolve to
     // the lowest column index first, so with all-equal card heights this fills col0/col1/col2 row-major:
     // row 0 = lichuang/chenshou/suyuan, row 1 = max/lena/mara.
-    const lichuang = findLabelPos(scene.container, skinDisplayName('skin_shop_c1'))!;
-    const chenshou = findLabelPos(scene.container, skinDisplayName('skin_shop_e1'))!;
-    const suyuan = findLabelPos(scene.container, skinDisplayName('skin_shop_r1'))!;
-    const max = findLabelPos(scene.container, skinDisplayName('skin_l1'))!;
-    const lena = findLabelPos(scene.container, skinDisplayName('skin_e1'))!;
-    const mara = findLabelPos(scene.container, skinDisplayName('skin_e2'))!;
+    const lichuang = findTilePos(scene.container, ('skin_shop_c1'))!;
+    const chenshou = findTilePos(scene.container, ('skin_shop_e1'))!;
+    const suyuan = findTilePos(scene.container, ('skin_shop_r1'))!;
+    const max = findTilePos(scene.container, ('skin_l1'))!;
+    const lena = findTilePos(scene.container, ('skin_e1'))!;
+    const mara = findTilePos(scene.container, ('skin_e2'))!;
     for (const p of [lichuang, chenshou, suyuan, max, lena, mara]) expect(p).not.toBeNull();
 
     // Column 0: lichuang/max; column 1: chenshou/lena; column 2: suyuan/mara — three distinct x's.
@@ -139,7 +178,7 @@ describe('CardScene — Skins tab card grid layout', () => {
     expect(s.core.scrollY).toBe(0);
 
     // chenshou's tile (column 1, row 0) stays on-screen both before and after the drag below.
-    const before = findLabelPos(scene.container, skinDisplayName('skin_shop_e1'))!;
+    const before = findTilePos(scene.container, ('skin_shop_e1'))!;
     expect(before).not.toBeNull();
 
     // (150, 150) sits in the column-0 card's portrait area, clear of every tile's hit rect (tiles
@@ -149,7 +188,7 @@ describe('CardScene — Skins tab card grid layout', () => {
     (scene as unknown as { update(dt: number): void }).update(1 / 60);
     expect(s.core.scrollY).toBeGreaterThan(0);
 
-    const after = findLabelPos(scene.container, skinDisplayName('skin_shop_e1'))!;
+    const after = findTilePos(scene.container, ('skin_shop_e1'))!;
     expect(after.y).toBeLessThan(before.y); // content shifted up as scrollY increased
 
     // Dragging far past the bottom must clamp, not scroll indefinitely.
@@ -304,7 +343,7 @@ describe('CardScene — wardrobe first paint after a scrolled roster', () => {
     expect(core.scrollY).toBeGreaterThan(0);
 
     tap(scene, t('roster.tab.skins'));
-    expect(findLabelPos(scene.container, skinDisplayName('skin_e1'))).not.toBeNull();
+    expect(findTilePos(scene.container, ('skin_e1'))).not.toBeNull();
     scene.destroy();
   });
 
@@ -330,7 +369,7 @@ describe('CardScene — wardrobe first paint after a scrolled roster', () => {
 
     scene.showTab('skins');
     expect(core.scrollY).toBe(0);
-    expect(findLabelPos(scene.container, skinDisplayName('skin_e1'))).not.toBeNull();
+    expect(findTilePos(scene.container, ('skin_e1'))).not.toBeNull();
 
     scene.showTab('skins'); // idempotent — must not throw the parked offset away
     expect(core.scrollY).toBe(0);
@@ -362,7 +401,7 @@ describe('CardScene — wardrobe clamps before it culls', () => {
       fuseCards: async () => ({ ok: true }),
       fuseCardsBatch: async () => ({ ok: true, completed: 0 }),
       setCardLock: async () => ({ ok: true }),
-      // One owned skin per character, so each of the 6 cards carries a uniquely named tile.
+      // One owned skin per character, so each of the 6 cards carries a uniquely tagged tile.
       getOwnedSkins: () => ['skin_shop_c1', 'skin_shop_r1', 'skin_shop_e1', 'skin_e1', 'skin_e2', 'skin_l1'],
       getEquippedSkin: () => null,
       equipSkin: () => {},
@@ -373,7 +412,7 @@ describe('CardScene — wardrobe clamps before it culls', () => {
   /** Which of the 6 wardrobe cards currently have a drawn skin tile, by character. */
   const drawnSkins = (scene: CardScene): string[] =>
     ['skin_shop_c1', 'skin_shop_e1', 'skin_shop_r1', 'skin_l1', 'skin_e1', 'skin_e2']
-      .filter((id) => findLabelPos(scene.container, skinDisplayName(id)) !== null);
+      .filter((id) => findTilePos(scene.container, (id)) !== null);
 
   it('paints on the very first render after an out-of-range offset, not one render later', () => {
     const scene = shortScene();

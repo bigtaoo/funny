@@ -637,6 +637,7 @@ export const de: Record<TranslationKey, string> = {
   'collection.equip': 'Ausrüsten',
   'collection.equipped': 'Ausgerüstet',
   'collection.default': 'Standard-Look',
+  'collection.defaultShort': 'Standard',
   'collection.cardType.unit': 'Einheit',
   'collection.cardType.building': 'Gebäude',
   'collection.cardType.spell': 'Zauber',

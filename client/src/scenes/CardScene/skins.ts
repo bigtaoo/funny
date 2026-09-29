@@ -8,7 +8,7 @@
 // instead of the old single-column "one row per character" list that left most of the screen width empty.
 import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
-import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor, marginLineX } from '../../render/sketchUi';
+import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor, marginLineX, fitOrWrap } from '../../render/sketchUi';
 import { FS, snapFont } from '../../render/fontScale';
 import { buildIcon } from '../../render/icons';
 import { FACTION_COLOR } from '../../render/factionIcon';
@@ -16,7 +16,7 @@ import { unitPortraitUrl } from '../../render/cardArt';
 import { sidebarNavW, bottomNavH } from '../../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { CARD_DEFS, type CardDef } from '../../game/meta/cardDefs';
-import { skinsForUnitType, skinDisplayName } from '../../game/meta/skinDefs';
+import { skinsForUnitType } from '../../game/meta/skinDefs';
 import type { UnitType } from '@nw/engine/types';
 import { CardSceneCore, CELL_GAP } from './core';
 
@@ -107,9 +107,12 @@ export class SkinsPanel {
   } {
     const unitType = def.unitType as UnitType;
     const skins = skinsForUnitType(unitType, owned);
+    // Short names: the card's header already names the character, so a tile only says which look it
+    // is. "Chen Shou·Skin" / "Standard-Look" in a 108-wide tile ran to 0.65-0.76 of the font floor
+    // (2026-09-29); the skin picker in the card detail, which has the width, keeps the full names.
     const tiles: Array<{ id: string | null; label: string }> = [
-      { id: null, label: t('collection.default') },
-      ...skins.map((id) => ({ id, label: skinDisplayName(id) })),
+      { id: null, label: t('collection.defaultShort') },
+      ...skins.map((id) => ({ id, label: t('shop.skinLabel') })),
     ];
     const portraitW = Math.round(PORTRAIT_MAX_H * PORTRAIT_RATIO);
     const tileAreaW = cardW - CARD_PAD * 2 - portraitW - PORTRAIT_TILE_GAP;
@@ -206,7 +209,8 @@ export class SkinsPanel {
 
     const name = txt(tile.label, snapFont(Math.round(h * 0.13)), C.dark, true);
     name.anchor.set(0.5, 0.5); name.x = x + w / 2; name.y = y + h * 0.62;
-    if (name.width > w - 8) name.scale.set((w - 8) / name.width);
+    fitOrWrap(name, w - 8);
+    name.name = `skinTile:${tile.id ?? 'default'}`; // test hook: tiles no longer carry unique labels
     core.bodyLayer.addChild(name);
 
     const status = txt(isEquipped ? t('collection.equipped') : t('collection.equip'),

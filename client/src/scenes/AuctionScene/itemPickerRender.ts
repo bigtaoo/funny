@@ -16,12 +16,12 @@
 // module > class+composition > inheritance chain).
 import * as PIXI from 'pixi.js-legacy';
 import { AUCTION_STATIC_REF_PRICE } from '@nw/shared';
-import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
+import { ui as C, txt, sketchPanel, seedFor, fitOrWrap } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
 import { drawSidebarTabs, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTab } from '../../ui/widgets/HubTabs';
 import { t, type TranslationKey } from '../../i18n';
 import { buildIcon, type IconKind } from '../../render/icons';
-import { levelStarsText } from '../../render/levelStars';
+import { levelStarsText, buildLevelStars } from '../../render/levelStars';
 import { buildMaterialIcon } from '../../render/atlas/materialAtlas';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import type { EquipmentInstance, CardInstance, EquipRarity } from '../../game/meta/SaveData';
@@ -51,7 +51,18 @@ const CARD_VALUE_PER_LEVEL = 300;
 const SKIN_VALUE = 800;
 
 export interface PickEntry {
+  /** The whole line — name, level stars as text, "×N" — for places that have one text field. */
   label: string;
+  /**
+   * The same, in parts, for the pick card: it draws the name alone and the stars / count as a star
+   * row and a corner badge, since the three on one line ("Chen Shou ★★★★★★★★★ ×3") ran to 0.75 of
+   * the font floor in a 181px card (2026-09-29).
+   */
+  name: string;
+  /** Level stars to draw (0 = none). */
+  stars: number;
+  /** Stack size; the badge shows from 2. */
+  count: number;
   value: number;
   locked: boolean;
   cls: 'material' | 'equipment' | 'card' | 'skin';
@@ -146,7 +157,7 @@ export function buildPickEntries(core: AuctionSceneCore): PickEntry[] {
   const entries: PickEntry[] = [];
   for (const mat of MATERIALS) {
     entries.push({
-      material: mat, label: t(`material.${mat}` as TranslationKey),
+      material: mat, label: t(`material.${mat}` as TranslationKey), name: t(`material.${mat}` as TranslationKey), stars: 0, count: 1,
       value: AUCTION_STATIC_REF_PRICE[mat] ?? 0, locked: false, cls: 'material',
       onPick: () => pickAndReturn(core, () => { core.createClass = 'material'; core.createMaterial = mat; }),
     });
@@ -163,6 +174,7 @@ export function buildPickEntries(core: AuctionSceneCore): PickEntry[] {
     const base = stars ? `${equipName(rep.defId)} ${stars}` : equipName(rep.defId);
     entries.push({
       defId: rep.defId, label: count > 1 ? `${base} ×${count}` : base,
+      name: equipName(rep.defId), stars: Math.min(rep.level, EQUIP_MAX_LEVEL), count,
       value: EQUIP_VALUE_BY_RARITY[rep.rarity] ?? 0, locked: false, cls: 'equipment',
       onPick: () => pickAndReturn(core, () => { core.createClass = 'equipment'; core.createEquipId = rep.id; }),
     });
@@ -184,6 +196,7 @@ export function buildPickEntries(core: AuctionSceneCore): PickEntry[] {
     const base = stars ? `${cardName(rep.defId)} ${stars}` : cardName(rep.defId);
     entries.push({
       defId: rep.defId, label: count > 1 ? `${base} ×${count}` : base,
+      name: cardName(rep.defId), stars: Math.min(rep.level, MAX_CARD_LEVEL), count,
       value: CARD_VALUE_BASE + (rep.level - 1) * CARD_VALUE_PER_LEVEL, locked: rep.locked, cls: 'card',
       onPick: () => pickAndReturn(core, () => { core.createClass = 'card'; core.createCardId = rep.id; }),
     });
@@ -199,7 +212,7 @@ export function buildPickEntries(core: AuctionSceneCore): PickEntry[] {
     const count = skinCounts[skinId] ?? 1;
     const base = skinDisplayName(skinId);
     entries.push({
-      skinId, label: count > 1 ? `${base} ×${count}` : base,
+      skinId, label: count > 1 ? `${base} ×${count}` : base, name: base, stars: 0, count,
       value: SKIN_VALUE, locked: false, cls: 'skin',
       onPick: () => pickAndReturn(core, () => { core.createClass = 'skin'; core.createSkinId = skinId; }),
     });
@@ -341,11 +354,24 @@ function renderPickCard(core: AuctionSceneCore, entry: PickEntry, x: number, y: 
     core.bodyLayer.addChild(lk);
   }
 
+  if (entry.count > 1) {
+    const badge = txt(`×${entry.count}`, FS.micro, C.mid, true);
+    badge.x = x + 10; badge.y = y + 6;
+    core.bodyLayer.addChild(badge);
+  }
+
   renderPickIcon(core, entry, x + cardW / 2, y + 14 + 28, 56, seedFor(x, y, cardW));
 
-  const nameLbl = txt(entry.label, FS.body, C.dark, true);
+  // Stars as their own row between the glyph and the name, like the inventory's bag cards.
+  if (entry.stars > 0) {
+    const row = buildLevelStars(entry.stars, cardW - 18, 12, 2);
+    row.container.x = x + (cardW - row.container.width) / 2; row.container.y = y + 72;
+    core.bodyLayer.addChild(row.container);
+  }
+
+  const nameLbl = txt(entry.name, FS.body, C.dark, true);
   nameLbl.anchor.set(0.5, 0); nameLbl.x = x + cardW / 2; nameLbl.y = y + 88;
-  if (nameLbl.width > cardW - 18) nameLbl.scale.set((cardW - 18) / nameLbl.width);
+  fitOrWrap(nameLbl, cardW - 18);
   core.bodyLayer.addChild(nameLbl);
 
   const hint = txt(t('auction.pickHint'), FS.small, C.accent, true);
