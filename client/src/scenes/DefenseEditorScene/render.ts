@@ -3,9 +3,9 @@
 // (roster.ts) are split into their own form-① free-function modules — see each file's header
 // comment — since RenderPanel just needs a one-line delegate for each, not their full bodies here.
 import { t } from '../../i18n';
-import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
+import { ui as C, txt, sketchPanel, seedFor, fitOrWrap } from '../../render/sketchUi';
 import { drawButtonLabel, buttonLabelIconW } from '../../ui/widgets/buttonLabel';
-import { FS } from '../../render/fontScale';
+import { FS, currentFontFloor } from '../../render/fontScale';
 import * as PIXI from 'pixi.js-legacy';
 import { BuildingType, UnitType } from '@nw/engine/types';
 import type { CardInstance } from '../../game/meta/SaveData';
@@ -37,7 +37,7 @@ export interface RenderHandlers {
   /** Draws the tool palette and returns the height it used (it wraps to more rows when narrow). */
   renderPalette(top: number): number;
   renderAttackBody(top: number, bottom: number): void;
-  renderAttackToolbar(x: number, y: number, w: number, h: number): void;
+  renderAttackToolbar(x: number, y: number, w: number): number;
   renderCardRosterPanel(x: number, y: number, w: number, h: number): void;
   renderRosterCell(
     c: { card: CardInstance; unitType: UnitType; troops: number; cap: number },
@@ -68,7 +68,7 @@ export interface RenderHandlers {
     isLeader?: boolean
   ): void;
   renderFooter(top: number): void;
-  renderAttackHeaderControls(headerH: number): void;
+  renderAttackHeaderControls(headerH: number): number;
   renderActionButtons(rightEdge: number, top: number, rowH: number, scale?: number): void;
 }
 
@@ -125,8 +125,8 @@ export class RenderPanel implements RenderHandlers {
     renderAttackBodyImpl(this.core, top, bottom);
   }
 
-  renderAttackToolbar(x: number, y: number, w: number, h: number): void {
-    renderAttackToolbarImpl(this.core, x, y, w, h);
+  renderAttackToolbar(x: number, y: number, w: number): number {
+    return renderAttackToolbarImpl(this.core, x, y, w);
   }
 
   renderCardRosterPanel(x: number, y: number, w: number, h: number): void {
@@ -307,8 +307,14 @@ export class RenderPanel implements RenderHandlers {
    * Attack-mode header controls: the troop readout (garrison / committed / pool) at the top-left
    * (right of the back pill, scaled to clear the centred title) + the Fill/Clear/Save cluster at the
    * top-right — both drawn over the baked header chrome so the bottom footer band frees up entirely.
+   *
+   * Returns the height of the band it took BELOW the header (0 when the readout fits in it). In
+   * portrait the gap between the back pill and the title is ~190 design px against a ~790 px
+   * readout, which the old `scale.set(avail / width)` squeezed to 0.24 — 7.7 design px against a
+   * floor of 20 (2026-09-29). When the gap cannot hold it even at the floor, the readout moves to a
+   * full-width row of its own under the header instead, and wraps there if it has to.
    */
-  renderAttackHeaderControls(headerH: number): void {
+  renderAttackHeaderControls(headerH: number): number {
     const core = this.core;
     const { w } = core;
     const troopsStr = `${core.committedTroops()}/${core.teamCapacity()}`;
@@ -328,11 +334,22 @@ export class RenderPanel implements RenderHandlers {
     const titleLeft = w / 2 - titleNode.width / 2;
     titleNode.destroy({ texture: true, baseTexture: true });
     const avail = titleLeft - 12 - startX;
-    if (avail > 20 && counts.width > avail) counts.scale.set(avail / counts.width);
+    const minScale = Math.min(1, currentFontFloor() / FS.title);
+    let bandH = 0;
+    if (avail > 20 && counts.width * minScale <= avail) {
+      if (counts.width > avail) counts.scale.set(avail / counts.width);
+    } else {
+      counts.anchor.set(0, 0);
+      counts.x = PAD;
+      counts.y = headerH + 4;
+      fitOrWrap(counts, w - PAD * 2, 'left');
+      bandH = Math.ceil(counts.height) + 8;
+    }
     core.bodyLayer.addChild(counts);
 
     // ~2x the shared button size, only in the roomy attack header (the defense footer keeps scale 1).
     this.renderActionButtons(w - PAD, 0, headerH, 2);
+    return bandH;
   }
 
   /**
