@@ -81,9 +81,10 @@ describe('WorldMapRenderer tile pool — isometric paint order (2026-08-15)', ()
     expect(ctx.pool.length).toBeGreaterThan(0);
   });
 
-  it('gives every slot a zIndex equal to its tile depth rank (tx + ty)', () => {
+  it('gives every shown slot a zIndex equal to its tile depth rank (tx + ty)', () => {
     const ctx = newScene();
-    for (const s of ctx.pool) expect(s.g.zIndex).toBe(s.tx + s.ty);
+    // Culled slots (ADR-102) keep the tile they last drew, so only shown ones are compared.
+    for (const s of ctx.pool) if (s.g.visible) expect(s.g.zIndex).toBe(s.tx + s.ty);
   });
 
   it('paints strictly back-to-front in screen y, at every pan offset', () => {
@@ -114,7 +115,7 @@ describe('WorldMapRenderer tile pool — isometric paint order (2026-08-15)', ()
     ctx.view.setZoom(2);
 
     expect(ctx.poolContainer.sortableChildren).toBe(true);
-    for (const s of ctx.pool) expect(s.g.zIndex).toBe(s.tx + s.ty);
+    for (const s of ctx.pool) if (s.g.visible) expect(s.g.zIndex).toBe(s.tx + s.ty);
     expect(firstDepthInversion(paintOrder(ctx))).toBe(-1);
   });
 

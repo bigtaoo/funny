@@ -84,8 +84,8 @@ export class WorldMapRendererPool implements PoolHandlers {
     this.refreshPool();
   }
 
-  /** Modulo-wrap pool update: reposition all slots, redraw only those whose
-   *  tile content changed (i.e. that scrolled to a new map position). */
+  /** Modulo-wrap pool update: reposition all slots, hide those off screen, and redraw only the
+   *  on-screen ones whose tile content changed (i.e. that scrolled to a new map position). */
   refreshPool(): void {
     const ctx = this.core.ctx;
     if (ctx.zoom === 3) return;
@@ -97,6 +97,16 @@ export class WorldMapRendererPool implements PoolHandlers {
     const b = visibleTileBounds(ctx.w, ctx.h - HUD_H, ctx.panX, ctx.panY, tp);
     const x0 = b.minTx - 1;
     const y0 = b.minTy - 1;
+    // A slot's on-screen extent around its tile center, for culling. The tallest and widest art a
+    // pooled tile draws is a landmark building (drawTileL1: tp*1.3 tall, up to 1.52:1, base 0.72*hh
+    // below the center), i.e. about ±1 tp across and 1.12 tp above the center; the diamond itself
+    // reaches hh = tp/4 below it. Rounded up so a margin error never shows as a missing tile.
+    const cullW = tp * 1.05;
+    const cullUp = tp * 1.2;
+    const cullDown = tp * 0.3;
+    // The map band the mask shows (build.ts): between the header and the bottom HUD.
+    const top = ctx.topInset;
+    const bottom = ctx.h - HUD_H;
     for (let dy = 0; dy < poolH; dy++) {
       for (let dx = 0; dx < poolW; dx++) {
         const tx = x0 + dx;
@@ -114,7 +124,19 @@ export class WorldMapRendererPool implements PoolHandlers {
         // in front of it. zIndex = tx+ty is the tile's screen-Y rank (screen y ∝ (tx+ty)), so
         // sorting on it makes nearer rows paint last (2026-08-15, "瞭望塔和拒马乱糟糟" pass).
         slot.g.zIndex = tx + ty;
-        if (slot.tx === tx && slot.ty === ty) continue;
+        // Viewport culling (ADR-102). The pool is the tile-space bounding box of a screen rectangle
+        // that projects to a diamond there, so its four corners (about half the slots) lie off
+        // screen. A culled slot is hidden and NOT redrawn: its stale tx/ty makes the draw below
+        // happen the moment it scrolls into view. Hiding matters beyond the renderer — the change
+        // detector (render/renderPolicy.ts) does not descend into invisible subtrees.
+        if (slot.g.x + cullW < 0 || slot.g.x - cullW > ctx.w || slot.g.y + cullDown < top || slot.g.y - cullUp > bottom) {
+          slot.g.visible = false;
+          continue;
+        }
+        if (slot.tx === tx && slot.ty === ty) {
+          slot.g.visible = tx >= 0 && ty >= 0 && tx < ctx.mapW && ty < ctx.mapH;
+          continue;
+        }
         slot.tx = tx; slot.ty = ty;
         this.drawTileSlot(slot, tx, ty);
       }
