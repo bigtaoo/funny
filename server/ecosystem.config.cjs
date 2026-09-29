@@ -307,6 +307,7 @@ module.exports = {
           process.env.NW_MONGO_URI ||
           'mongodb://127.0.0.1:27017/?replicaSet=rs0',
         NW_ANALYTICS_MONGO_DB: process.env.NW_ANALYTICS_MONGO_DB || 'notebook_wars_analytics',
+        NW_META_INTERNAL_URL: META_BASE, // C5-b token revocation list only
       },
     },
   ],

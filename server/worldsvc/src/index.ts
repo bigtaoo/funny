@@ -1,6 +1,15 @@
 // worldsvc process bootstrap (S8-0 + S8-4 + S8-5): connect dedicated DB → optional Redis → services → public REST listen.
 // SLG_DESIGN §14.1 P1: worldsvc is a public face (reverse proxy /world → this process; /auction moved to auctionsvc, §9 task 6).
-import { SLG_MAP_W, SLG_MAP_H, createLogger, startHeartbeat, SlgShopPriceCache, WordlistCache, fetchInternalJson } from '@nw/shared';
+import {
+  SLG_MAP_W,
+  SLG_MAP_H,
+  createLogger,
+  startHeartbeat,
+  startTokenRevocationList,
+  SlgShopPriceCache,
+  WordlistCache,
+  fetchInternalJson,
+} from '@nw/shared';
 import { createWorldMongo } from './db';
 import { connectRedis } from './redis';
 import { WorldService } from './service';
@@ -160,8 +169,15 @@ async function main(): Promise<void> {
     ...(leases ? { worlds: () => leases.owned() } : {}),
   });
 
+  // C5-b: tokens of purged accounts, polled from metaserver (shared/src/tokenRevocation.ts).
+  const tokenRevocations = startTokenRevocationList(env.metaInternalUrl, {
+    caller: 'worldsvc',
+    key: env.internalKey,
+    log: createLogger('worldsvc:token-revocations'),
+  });
+
   const server = startHttpApi(
-    { host: env.host, port: env.port, jwtSecret: env.jwtSecret, internalKey: env.internalKey },
+    { host: env.host, port: env.port, jwtSecret: env.jwtSecret, internalKey: env.internalKey, tokenRevocations },
     svc,
     sectSvc,
     nationChannelSvc,
@@ -171,6 +187,7 @@ async function main(): Promise<void> {
 
   const shutdown = async (): Promise<void> => {
     scheduler.stop();
+    tokenRevocations?.stop();
     await leases?.stop().catch(() => {});
     server.close();
     stopWorldMetrics();

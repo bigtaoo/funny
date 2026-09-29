@@ -6,7 +6,8 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtemp, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createMongo, makeNewSave, type MongoHandle } from '@nw/shared';
+import { TOKEN_REVOCATION_RETENTION_MS, TOKEN_REVOCATIONS_PATH, createMongo, makeNewSave, type MongoHandle } from '@nw/shared';
+import { buildApp } from '../src/app.js';
 import { purgeDeletedAccountsOnce } from '../src/accountPurge.js';
 import type { AccountPurgeClient, PurgeCallResult, RemotePurgeStep } from '../src/accountPurgeClient.js';
 import { ACCOUNT_DELETE_GRACE_MS } from '../src/service/auth/helpers.js';
@@ -230,5 +231,46 @@ describe.skipIf(!mongo)('account purge orchestrator e2e', () => {
     const r2 = await run(client, NOW + 31 * 60 * 1000);
     expect(r2.purged).toBe(1);
     expect(client.calls).toHaveLength(0); // every step was already confirmed
+  });
+  it('puts the account on the token revocation list at claim time, before any step — and keeps the first revokedAt', async () => {
+    await seedAccount('gone', NOW - 8 * DAY);
+    const client = new FakePurgeClient();
+    client.behavior.social = 'fail'; // the very first step fails
+    await run(client);
+    const row = await m.collections.tokenRevocations.findOne({ _id: 'gone' });
+    expect(row).toMatchObject({ revokedAt: NOW, reason: 'account_purged' });
+    expect(row!.expireAt.getTime()).toBe(NOW + TOKEN_REVOCATION_RETENTION_MS);
+
+    client.behavior = {};
+    await run(client, NOW + 31 * 60 * 1000);
+    expect((await m.collections.accounts.findOne({ _id: 'gone' }))!.purgedAt).toBeDefined();
+    // The retry did not move revokedAt (tokens minted in between stay revoked, the TTL is not pushed out).
+    expect((await m.collections.tokenRevocations.findOne({ _id: 'gone' }))!.revokedAt).toBe(NOW);
+    // Accounts still inside the grace period are not revoked.
+    await seedAccount('fresh', NOW - DAY);
+    await run(client, NOW + 62 * 60 * 1000);
+    expect(await m.collections.tokenRevocations.findOne({ _id: 'fresh' })).toBeNull();
+  });
+
+  it('serves the list on the internal route, filtered by since, behind the internal key', async () => {
+    await m.collections.tokenRevocations.insertMany([
+      { _id: 'old', revokedAt: NOW - 10 * DAY, reason: 'account_purged', expireAt: new Date(NOW + DAY) },
+      { _id: 'new', revokedAt: NOW - DAY, reason: 'account_purged', expireAt: new Date(NOW + DAY) },
+    ]);
+    const app = await buildApp({ cols: m.collections, jwt: { secret: 's' }, internalKey: 'k', commercialUrl: null, gatewayUrl: null, now: () => NOW });
+    try {
+      const all = await app.inject({ method: 'GET', url: TOKEN_REVOCATIONS_PATH, headers: { 'x-internal-key': 'k' } });
+      expect(all.statusCode).toBe(200);
+      expect(all.json().asOf).toBe(NOW);
+      expect(all.json().revocations.map((r: { accountId: string }) => r.accountId).sort()).toEqual(['new', 'old']);
+      const since = await app.inject({ method: 'GET', url: `${TOKEN_REVOCATIONS_PATH}?since=${NOW - 2 * DAY}`, headers: { 'x-internal-key': 'k' } });
+      expect(since.json().revocations).toEqual([{ accountId: 'new', revokedAt: NOW - DAY }]);
+      const bad = await app.inject({ method: 'GET', url: `${TOKEN_REVOCATIONS_PATH}?since=abc`, headers: { 'x-internal-key': 'k' } });
+      expect(bad.statusCode).toBe(400);
+      const noKey = await app.inject({ method: 'GET', url: TOKEN_REVOCATIONS_PATH });
+      expect(noKey.statusCode).toBe(401);
+    } finally {
+      await app.close();
+    }
   });
 });

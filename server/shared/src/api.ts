@@ -198,6 +198,8 @@ export const ERROR_HTTP_STATUS: Record<string, number> = {
   [ErrorCode.ACCOUNT_BANNED]: 403,
   [ErrorCode.ACCOUNT_MUTED]: 403,
   [ErrorCode.ACCOUNT_NOT_DELETED]: 400,
+  // Purged account / revoked token (C5-b). metaserver sets 410 itself; the stateless services map it here.
+  [ErrorCode.ACCOUNT_DELETED]: 410,
   [ErrorCode.DELETION_TOKEN_INVALID]: 400,
   [ErrorCode.INSUFFICIENT_STAMINA]: 402,
   [ErrorCode.NOT_IN_WORLD]: 403,

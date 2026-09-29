@@ -285,7 +285,15 @@ initI18n
 - worldsvc `sieges`（战报，30 天 TTL，只有 id）、对手针对其地块的攻城伤害行（地块没了之后由结算的失效目标分支取消并让对方部队返回）；meta 里他人反作弊记录中的 `judgeAccountId`；auctionsvc 已终结的交易日志（30 天 `purgeAt` TTL）、其仅作为买家出现的挂单；admin 库的审计日志/补偿单/交易审核单（运维问责记录，publicId 已随墓碑失效）。
 - 其余本就有 TTL 的数据按原 TTL 过期；Mongo 备份最多保留 `NW_BACKUP_KEEP_DAYS`（默认 7 天，S3 副本的生命周期由存储桶策略决定）。
 
-**已知残余**：worldsvc/socialsvc/auctionsvc/analyticsvc 只做无状态 JWT 校验，不连账号库——一个在删除前泄露且未过期的 token 理论上仍能在这些服务里写入少量新数据（客户端删号时会清空本地凭证，metaserver 也不再续期，最长 30 天后失效）。彻底解决需要 token 吊销表，未做。
+**令牌吊销表（2026-09-29，同日第二轮）**：worldsvc/socialsvc/auctionsvc/analyticsvc/gateway 只做无状态 JWT 验签、不连账号库，墓碑只挡得住 metaserver——一个在删除前泄露、还没过期的 token，原本能在这些服务里继续用最多 30 天，还能把刚清掉的数据重新建出来（新的 `playerWorld`、好友申请、带 `user_id` 的埋点）。现在：
 
-**测试**：metaserver `test/account-purge.e2e.test.ts`（宽限期边界、步骤顺序与参数、失败/挂起后从断点续跑、墓碑形态、冷存档 mtime、幂等）+ `test/account-deletion.test.ts`（已清除账号 token → 410）；各服务 `test/accountPurge.e2e.test.ts`。
+- **表**：meta 库 `tokenRevocations`，`{ _id: accountId, revokedAt, reason: 'account_purged', expireAt }`，一个账号一行。清除任务**认领账号时、第一步之前**写入（`$setOnInsert`：重试不改 `revokedAt`，也不顺延过期）——不是等墓碑，因为各服务的清除步骤跑完之后、墓碑写下之前，泄露的 token 仍能往已清过的服务里写。
+- **语义**：拒绝该账号 `iat × 1000 ≤ revokedAt` 的 token（秒精度，同一秒按「已吊销」算）；之后签发的不受影响，所以同一张表以后可以直接承载「退出所有设备」。
+- **分发**：meta 内部端点 `GET /internal/auth/token-revocations?since=`（`SERVER_API_INTERNAL §15`）；各服务进程内的 `TokenRevocationList`（`shared/src/tokenRevocation.ts`）每 60 秒增量拉一次（`since` = 上次 `asOf` − 5 分钟重叠，吸收写入提交延迟和多实例时钟差），验签后查内存 Map，热路径零 I/O。meta 自己用同一个类，数据源直接读本库。选拉不选推：表很小，拉取方断线后下一轮自愈，不需要补发。
+- **命中后**：metaserver/worldsvc/socialsvc/auctionsvc → 410 `ACCOUNT_DELETED`（shared `ERROR_HTTP_STATUS` 补了这个映射）；gateway WS 握手 → 4401（与过期 token 同码，客户端已把它当「重新登录」处理）；analyticsvc 不拒请求，按匿名入库、不挂 `user_id`。meta 对已吊销 token **不续期**，所以 token 最多比吊销晚 30 天失效。
+- **过期**：`expireAt = revokedAt + 31 天`（token TTL 30 天，`signToken` 没有环境变量可改，+1 天余量），Mongo TTL 索引删行；各进程的内存表按同一窗口自行修剪。
+- **失败模式**：进程启动后首次拉取成功前 fail-open（meta 暂时不可达时服务照常对外，而不是每个请求都硬依赖 meta）；之后拉取失败沿用上次的表。没配 meta 内部地址 → 启动时打一条 warn、不做检查（analyticsvc 为此新增 `NW_META_INTERNAL_URL`，gateway 复用 `NW_META_BASE_URL`）。
+- **剩余窗口**：写入吊销行到各服务拉到它之间最多约 60 秒；清除任务的远程步骤就在同一轮紧接着执行，这 60 秒里泄露 token 的零星写入不会被回收。接受——前提是 token 已泄露**且**恰好落在这一分钟。
+
+**测试**：metaserver `test/account-purge.e2e.test.ts`（宽限期边界、步骤顺序与参数、失败/挂起后从断点续跑、墓碑形态、冷存档 mtime、幂等、认领即写吊销行、内部端点）+ `test/account-deletion.test.ts`（已清除账号 / 已吊销 token → 410）；各服务 `test/accountPurge.e2e.test.ts`；吊销表：shared `test/tokenRevocation.test.ts`（iat 语义、fail-open、增量 since、修剪、HTTP 源）+ worldsvc/socialsvc/auctionsvc/analyticsvc `test/tokenRevocationHttp.test.ts` + gateway `test/tokenRevocation.test.ts`。
 

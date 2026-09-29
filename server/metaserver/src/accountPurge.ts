@@ -28,6 +28,12 @@
 //             so it runs while the account row still has its deviceId.
 //   meta      last: the account row is the one place that still knows the deviceId and holds the claim.
 //
+// Before the first step runs, the account's tokens are put on the revocation list (tokenRevocations.ts):
+// the other services verify JWTs without the accounts database, so without it a leaked token could keep
+// calling worldsvc/socialsvc/... after their step and re-create what was just erased. They pick the row up
+// within a poll interval (60s); the steps behind it take at least that long in practice, and a straggler
+// write in that window is not cleaned up — accepted, it needs a leaked token AND that minute.
+//
 // The tombstone `{ _id, createdAt, deletedAt, purgedAt }` is kept instead of deleting the row outright: an
 // unexpired JWT for the account (30-day TTL, sliding renewal) would otherwise meet a missing row, and
 // getOrCreateSave/ensurePublicId would happily resurrect a save and a publicId for it. With the tombstone,
@@ -36,6 +42,7 @@ import type { AccountDoc, AccountPurgeStep, Collections } from '@nw/shared';
 import { ACCOUNT_PURGE_STEPS, createLogger } from '@nw/shared';
 import { ACCOUNT_DELETE_GRACE_MS } from './service/auth/helpers.js';
 import { scrubArchivedPlayers } from './replayArchive.js';
+import { revokeAccountTokens } from './tokenRevocations.js';
 import type { AccountPurgeClient, RemotePurgeStep } from './accountPurgeClient.js';
 
 const log = createLogger('meta:account-purge');
@@ -96,6 +103,7 @@ export async function purgeDeletedAccountsOnce(deps: AccountPurgeDeps): Promise<
     result.scanned++;
     let outcome: Outcome;
     try {
+      await revokeAccountTokens(cols, doc._id, deps.now());
       outcome = await runSteps(deps, doc);
     } catch (e) {
       // runSteps already records per-step failures; this is the local meta step or a Mongo error.

@@ -95,9 +95,11 @@ describe('createMongo', () => {
     await handle.ensureIndexes();
     await handle.ensureIndexes();
     const idx = await handle.collections.accounts.indexes();
-    // _id_ + the 6 explicit indexes on accounts (openid/deviceId/password.loginId/oauth/publicId/
-    // reputationDecayAt), not doubled by a second ensureIndexes() call.
-    expect(idx.length).toBe(7);
+    // _id_ + the 7 explicit indexes on accounts (openid/deviceId/password.loginId/oauth/publicId/
+    // reputationDecayAt/deletedAt), not doubled by a second ensureIndexes() call.
+    expect(idx.length).toBe(8);
+    // Same for the token revocation list: _id_ + revokedAt + the expireAt TTL.
+    expect((await handle.collections.tokenRevocations.indexes()).length).toBe(3);
   });
 
   it('rejects and logs a credential-free error message when the connection fails', async () => {

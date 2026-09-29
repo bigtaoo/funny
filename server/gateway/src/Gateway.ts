@@ -18,7 +18,7 @@
 //   • dispatcher          — per-connection rate limiting + the control-message switch.
 // Each depends on its siblings only through the narrow interfaces in `gateway/types.ts`
 // (ConnLookup/Push/MatchCommandsPort/PeerJudgePort) — this file is the only place that wires them together.
-import type { JwtConfig } from '@nw/shared';
+import type { JwtConfig, TokenRevocationList } from '@nw/shared';
 import type { MatchsvcClient, PushMsg } from './matchsvcClient';
 import type { MetaClient } from './metaClient';
 import type { SocialsvcClient } from './socialsvcClient';
@@ -45,12 +45,14 @@ export class Gateway {
     matchsvc: MatchsvcClient,
     meta: MetaClient,
     socialsvc?: SocialsvcClient,
+    tokenRevocations?: TokenRevocationList | null,
   ) {
     // connRegistry is constructed first (it owns the account→socket map every other layer reads through
     // ConnLookup) but its callbacks reference the sibling layers below — safe because none of those
     // callbacks FIRE until a real WS connection arrives, well after this constructor returns.
     this.connRegistry = new ConnRegistry(opts, {
       jwt,
+      tokenRevocations,
       matchsvc,
       onOnline: (accountId) => void this.presence.notifyOnline(accountId),
       onOffline: (accountId) => void this.presence.notifyOffline(accountId),
