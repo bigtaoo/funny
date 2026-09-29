@@ -121,6 +121,7 @@
 | [ADR-101](DECISIONS_ADR-086-onward.md#adr-101-变化检测少走冤枉路被覆盖层盖住的场景不遍历画完后的基线能沿用就不重走--accepted--2026-09-29) | 变化检测少走冤枉路：覆盖层下的场景不遍历、画完后的基线能沿用就不重走 | Accepted | 2026-09-29 |
 | [ADR-102](DECISIONS_ADR-086-onward.md#adr-102-世界地图格子池视口裁剪屏幕外的格子隐藏滚进来才画--accepted--2026-09-29) | 世界地图格子池视口裁剪：屏幕外的格子隐藏、滚进来才画 | Accepted | 2026-09-29 |
 | [ADR-103](DECISIONS_ADR-086-onward.md#adr-103-世界地图城池层空的特效层隐藏不留在可见树上--accepted--2026-09-29) | 世界地图城池层：空的特效层隐藏，不留在可见树上 | Accepted | 2026-09-29 |
+| [ADR-104](DECISIONS_ADR-086-onward.md#adr-104-纸背景横线并成网格每页约-80-个-sprite-变成-2-个-mesh--accepted--2026-09-29) | 纸背景横线并成网格：每页约 80 个 Sprite 变成 2 个 Mesh | Accepted | 2026-09-29 |
 
 ---
 

@@ -227,8 +227,9 @@ export function marginLineX(w: number): number {
  * Notebook-paper background: aged paper + faint ruled lines + a red margin line down the left.
  * Mirrors the lobby / board so every screen is the same page.
  *
- * The lines come from the baked strip atlas in {@link ./paperRules} — a flat fill plus one batched
- * sprite window per line segment, no per-page bake at all. Until 2026-09-28 the whole page was
+ * The lines come from the baked strip atlas in {@link ./paperRules} — a flat fill plus two meshes
+ * (ruled lines, margin rule) cut from that atlas, no per-page bake at all (sprite windows on the
+ * Canvas fallback). Until 2026-09-28 the whole page was
  * stroked with `SketchPen` and baked into one full-page RenderTexture per `(w, h, rule x)`: 20-27 ms
  * of triangulation for every new size on a desktop (a modal, a wider tab rail, the map's rule-less
  * page each minted one), plus a full backbuffer of GPU memory per key for the rest of the session.
