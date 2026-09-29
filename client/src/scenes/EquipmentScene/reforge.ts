@@ -118,13 +118,16 @@ export class ReforgePanel {
       panelRoot.addChild(empty);
     }
 
-    const closeBtn = sketchPanel(60, 26, { fill: 0xeeeeee, border: C.mid, seed: seedFor(0, 22, 60) });
-    closeBtn.x = mx + (mw - 60) / 2; closeBtn.y = my + mh - 34;
-    panelRoot.addChild(closeBtn);
+    // Sized from its label, 60 at the least: a fixed 60 held "Cancel" but not "Abbrechen", whose
+    // middle sat inside the box and both ends outside it (2026-09-29).
     const closeLbl = core.stxt(t('equip.cancel'), FS.tiny, C.dark);
-    closeLbl.anchor.set(0.5, 0.5); closeLbl.x = closeBtn.x + 30; closeLbl.y = closeBtn.y + 13;
+    const closeW = Math.max(60, Math.ceil(closeLbl.width) + 16);
+    const closeBtn = sketchPanel(closeW, 26, { fill: 0xeeeeee, border: C.mid, seed: seedFor(0, 22, closeW) });
+    closeBtn.x = mx + (mw - closeW) / 2; closeBtn.y = my + mh - 34;
+    panelRoot.addChild(closeBtn);
+    closeLbl.anchor.set(0.5, 0.5); closeLbl.x = closeBtn.x + closeW / 2; closeLbl.y = closeBtn.y + 13;
     panelRoot.addChild(closeLbl);
-    core.modalHits.push({ rect: core.toModalScreen({ x: closeBtn.x, y: closeBtn.y, w: 60, h: 26 }), sound: 'sfx.ui.back', fn: () => { core.closeModal(); core.render(); } });
+    core.modalHits.push({ rect: core.toModalScreen({ x: closeBtn.x, y: closeBtn.y, w: closeW, h: 26 }), sound: 'sfx.ui.back', fn: () => { core.closeModal(); core.render(); } });
     core.modalHits.push({ rect: core.toModalScreen({ x: mx, y: my, w: mw, h: mh }), fn: () => {} });
     core.modalHits.push({ rect: { x: 0, y: 0, w, h }, sound: 'sfx.ui.back', fn: () => { core.closeModal(); core.render(); } });
   }
