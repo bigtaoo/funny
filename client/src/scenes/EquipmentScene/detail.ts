@@ -67,7 +67,8 @@ export class DetailPanel {
     // Natural (unscaled) content size — everything below is laid out in this local frame.
     // Equip/unequip/reforge/salvage moved onto the grid cell (InventoryPanel.renderInstanceCell)
     // and fire directly; this modal keeps affixes + enhance rate/cost + the protect toggle, plus
-    // its own confirm button for enhance (see the file header comment for why).
+    // its own confirm button for enhance (see the file header comment for why), plus whichever of
+    // the cell's actions did not fit on it.
     const mw = Math.min(330, w - 24);
     const affixCount = inst.affixes.length;
     const protectCount = save.inventory?.items?.[PROTECT_ENHANCE_ITEM_ID] ?? 0;
@@ -76,7 +77,15 @@ export class DetailPanel {
     // (gap+confirm button, 2026-07-22b — enhance now requires opening this modal to set the
     // protect toggle first, see instanceActions) + 18 (demote-risk warning line, +7/+8 only,
     // ADR-063) or 24 (maxed); +12 bottom pad.
-    const mh = 44 + affixCount * 20 + (maxed ? 24 : 58 + 40 + (demoteChance > 0 ? 18 : 0)) + 12;
+    // Actions the grid cell had no room for (cells.ts splitCellActions) get a full-width button
+    // each below the enhance section. Enhance itself never needs one: this modal is its UI.
+    const overflowKeys = core.cellOverflow.get(inst.id) ?? [];
+    const extraActions = overflowKeys.length === 0 ? []
+      : this.instanceActions(save, inst).filter((a) => a.key !== 'enhance' && overflowKeys.includes(a.key));
+    const actionBtnH = 32;
+    const actionGap = 6;
+    const actionsH = extraActions.length * (actionGap + actionBtnH) + (extraActions.length > 0 ? 4 : 0);
+    const mh = 44 + affixCount * 20 + (maxed ? 24 : 58 + 40 + (demoteChance > 0 ? 18 : 0)) + actionsH + 12;
     const mx = 0;
     const my = 0;
 
@@ -221,9 +230,38 @@ export class DetailPanel {
       cy += btnH;
     }
 
-    // Hit priority is first-match: the confirm button / protect toggle (above) win, then the
-    // panel area is inert, then a tap anywhere outside the panel closes the detail (added last =
-    // lowest). The remaining actions (equip / reforge / salvage) still live on the grid cell.
+    if (extraActions.length > 0) cy += 4;
+    for (const a of extraActions) {
+      cy += actionGap;
+      const enabled = !a.disabled;
+      const onDark = enabled && (a.fill === C.dark || a.fill === 0x3355aa);
+      const ink = enabled ? (onDark ? C.light : C.dark) : C.mid;
+      const b = sketchPanel(mw - 24, actionBtnH, { fill: enabled ? a.fill : C.btnOff, border: enabled ? a.stroke : C.mid, seed: seedFor(cy, 23, mw) });
+      b.x = mx + 12; b.y = cy;
+      panelRoot.addChild(b);
+      const bl = core.stxt(a.label, FS.tiny, ink, true);
+      const icSz = 16;
+      const groupW = icSz + 6 + bl.width;
+      const ic = buildIcon(a.icon, icSz, ink);
+      ic.x = mx + (mw - groupW) / 2; ic.y = cy + (actionBtnH - icSz) / 2;
+      panelRoot.addChild(ic);
+      bl.anchor.set(0, 0.5); bl.x = ic.x + icSz + 6; bl.y = cy + actionBtnH / 2;
+      panelRoot.addChild(bl);
+      if (enabled) {
+        // Equip/unequip leave the item's modal behind; reforge and salvage open their own dialog
+        // on top of it and rely on detailId to come back here (see showConfirm / openReforgeSelect).
+        const leaves = a.key === 'equip' || a.key === 'unequip';
+        core.modalHits.push({
+          rect: core.toModalScreen({ x: mx + 12, y: cy, w: mw - 24, h: actionBtnH }),
+          fn: () => { if (leaves) this.closeDetail(); a.fn(); },
+        });
+      }
+      cy += actionBtnH;
+    }
+
+    // Hit priority is first-match: the confirm button / protect toggle / action buttons (above)
+    // win, then the panel area is inert, then a tap anywhere outside the panel closes the detail
+    // (added last = lowest). Actions the grid cell had room for stay there only.
     core.modalHits.push({ rect: core.toModalScreen({ x: mx, y: my, w: mw, h: mh }), fn: () => {} });
     core.modalHits.push({ rect: { x: 0, y: 0, w, h }, fn: () => this.closeDetail() });
   }

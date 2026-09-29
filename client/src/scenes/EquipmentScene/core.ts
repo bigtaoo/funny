@@ -140,6 +140,11 @@ export class EquipmentSceneCore {
 
   /** Instance id of the currently open detail panel (null = none). Re-read from save on every repaint (closed if the item was salvaged). */
   detailId: string | null = null;
+  /**
+   * Per instance: keys of the actions its grid cell had no room for (behind its "more" button, see
+   * cells.ts splitCellActions). The detail modal lists these. Written on every cell draw.
+   */
+  cellOverflow = new Map<string, readonly string[]>();
   /** Inventory tab slot filter ('all' = no filter); seeded from cb.initialFilterSlot in the constructor. */
   filterSlot: EquipSlot | 'all' = 'all';
 

@@ -581,6 +581,7 @@ export const de: Record<TranslationKey, string> = {
   'equip.unequip': 'Ablegen',
   'equip.salvage': 'Zerlegen',
   'equip.salvageAll': 'Alles zerlegen',
+  'equip.moreActions': 'Mehr',
   'equip.confirmSalvage': '{name} zerlegen? Erstattet {refund}',
   'equip.confirmSalvageOne': '1 {name} zerlegen (von {count})? Erstattet {refund}',
   'equip.confirmSalvageAll': 'Alle {count} {name} zerlegen? Erstattet {refund}',
