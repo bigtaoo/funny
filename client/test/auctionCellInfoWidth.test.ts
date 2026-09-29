@@ -151,12 +151,12 @@ describe('auction cell — the info column holds its one-line rows in every loca
   // listings run a fixed 72h (`AUCTION_DURATION_SEC`) and the sweep's seed tops out at 21 hours, so
   // what is ever drawn is a single-digit day count with two-digit h/m/s.
   //
-  // NOT parameterised over the locales above, deliberately: at `d >= 1` the Chinese format
-  // ('{d}天{h}时{m}分{s}秒' — four full-width unit glyphs) measures 187 design px against this
-  // 167-px column and would wrap, which is the same defect §55.2 fixed in German. It has never been
-  // seen because the sweep's seed never lists anything more than a day out, and shortening it is a
-  // copy decision this round did not take — recorded in §55.4, not silently absorbed here.
-  for (const locale of ['en', 'de']) {
+  // Chinese included. §55.4.1 once recorded '{d}天{h}时{m}分{s}秒' as 187 px and left it out of this
+  // loop; that was a miscount (it is 7 half-width + 4 full-width cells = 165 here). A real Chrome
+  // measures '2天23时59分59秒' at 157 px against 166 (full-width glyphs are 1 em, narrower than the two
+  // half-width cells this model charges), and the zh sweep rows draw the same-length '0天18时59分38秒'
+  // on one line (2026-09-29, §68.2). The d >= 1 case has the same character count, so it fits too.
+  for (const locale of ['en', 'de', 'zh']) {
     it(`${locale}: the countdown fits on one line at the longest duration a listing has`, () => {
       const line = fill(DICTS[locale]!, 'auction.timeLeft', { d: '2', h: '23', m: '59', s: '59' });
       expect(widthOf(line)).toBeLessThanOrEqual(COLUMN_W);

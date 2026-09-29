@@ -7,13 +7,13 @@
 // 2026-09-06 to keep this file under the 500-line convention; DailyPanelCtx/Hit/CHECKIN_PULSE are
 // re-exported here so `./DailyScene/panels` stays the one import path both DailyScene.ts and the
 // UI tests use.
-import { makeText } from '../../../render/pixiText';
+import { makeText, measuredWidth } from '../../../render/pixiText';
 import { t, TranslationKey } from '../../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../../render/sketchUi';
 import { drawButtonLabel, buttonLabelIconW } from '../../../ui/widgets/buttonLabel';
 import { drawStatusTag } from '../../../ui/widgets/statusTag';
 import { buildRewardIcon } from '../../../render/rewardIcon';
-import { FS, snapFont } from '../../../render/fontScale';
+import { FS, snapFont, fitFont } from '../../../render/fontScale';
 import type { SaveData } from '../../../game/meta/SaveData';
 import { dailyRewardClaimable, makeDayKey, weeklyPoints, weeklyClaimableTiers, WEEKLY_CHEST_THRESHOLDS } from '../../../game/meta/retention';
 import type { DailyPanelCtx } from '../types';
@@ -167,6 +167,31 @@ export function renderWeekly(ctx: DailyPanelCtx, areaX: number, top: number, are
   const PAD = areaX + areaW * 0.05;
   const cardW = areaW * 0.9;
 
+  // Geometry every card shares: the Claim button, and the strip left of it that the progress label
+  // and the reward row under it have to share.
+  const btnW = cardW * 0.32;
+  const btnH = cardH * 0.55;
+  const btnX = PAD + cardW - btnW - cardW * 0.03;
+  const labelX = PAD + cardW * 0.05;
+  const labelW = btnX - labelX - cardW * 0.03;
+  const labelText = (threshold: number): string =>
+    t('daily.weekly.pointsProgress', { n: Math.min(points, threshold), threshold });
+
+  // The font is sized off cardH, which in portrait is large next to a narrow cardW, so the label is
+  // (1) stepped down the font scale until it fits that strip on one line, and only wraps if even the
+  // legibility floor does not fit; and (2) the reward row follows the label's REAL bottom instead of
+  // a fixed `cardH * 0.58`. The flat `cardW * 0.55` wrap this replaces broke German's
+  // "9 / 9 Aktivitätspunkte" into three lines on 360x640, and the third ("te") landed on the reward
+  // icon and its "+20" (2026-09-15 sweep, fixed 2026-09-29). One size for all three cards, fitted to
+  // the widest, so a shorter "9 / 9" does not come out a step larger than "12 / 15" under it.
+  const labelFS0 = snapFont(Math.round(cardH * 0.28));
+  let labelFS = labelFS0;
+  for (const threshold of WEEKLY_CHEST_THRESHOLDS) {
+    const probe = txt(labelText(threshold), labelFS0, 0x333333);
+    labelFS = Math.min(labelFS, fitFont(labelFS0, measuredWidth(probe), labelW));
+    probe.destroy({ texture: true, baseTexture: true });
+  }
+
   WEEKLY_CHEST_THRESHOLDS.forEach((threshold, i) => {
     const def = tierDefs.find((td) => td.threshold === threshold);
     const isClaimed = claimedTiers.has(threshold);
@@ -177,50 +202,38 @@ export function renderWeekly(ctx: DailyPanelCtx, areaX: number, top: number, are
     bg.x = PAD; bg.y = cy;
     container.addChild(bg);
 
-    // Wrapped and width-capped to the left ~55% of the card (mirrors renderDailyTasks' label
-    // cap above) — the card is much taller in portrait than landscape (both share the same
-    // areaH-derived cardH, but portrait's design height stretches far past landscape's), so
-    // this font (sized off cardH) renders large enough to run the unwrapped progress string
-    // straight into the "Claim" button sitting at cardW*0.65 (09.08.2026 bug report: button
-    // looked "misplaced" in portrait because the text was drawn on top of/through it — the
-    // button was fine, the label just wasn't clipped to make room for it). Landscape's cardH
-    // is small enough that the string already fits on one line well inside the cap, so this
-    // is a no-op there.
-    const label = txt(
-      t('daily.weekly.pointsProgress', { n: Math.min(points, threshold), threshold }),
-      snapFont(Math.round(cardH * 0.28)), 0x333333, false, cardW * 0.55,
-    );
-    label.x = PAD + cardW * 0.05;
+    const btnY = cy + (cardH - btnH) / 2;
+
+    const label = txt(labelText(threshold), labelFS, 0x333333, false, labelW);
+    label.x = labelX;
     label.y = cy + cardH * 0.14;
     container.addChild(label);
 
     if (def) {
       const singleItem = def.reward.kind === 'equipment' || def.reward.kind === 'card';
-      const iconY = cy + cardH * 0.58;
+      const iconY = Math.max(cy + cardH * 0.58, label.y + label.height + cardH * 0.04);
       const rc = Math.round(cardH * 0.3);
       const ic = buildRewardIcon(def.reward, rc, 0x336644);
       if (ic) {
-        ic.x = PAD + cardW * 0.05; ic.y = iconY;
+        ic.x = labelX; ic.y = iconY;
         container.addChild(ic);
         if (!singleItem) {
           const rt = txt(`+${def.reward.count}`, snapFont(Math.round(cardH * 0.26)), 0x336644);
-          rt.x = PAD + cardW * 0.05 + rc + cardW * 0.02; rt.y = iconY + rc * 0.5 - rt.height / 2;
+          rt.x = labelX + rc + cardW * 0.02; rt.y = iconY + rc * 0.5 - rt.height / 2;
           container.addChild(rt);
         }
       }
     }
 
-    const btnW = cardW * 0.32;
-    const btnH = cardH * 0.55;
-    const btnX = PAD + cardW - btnW - cardW * 0.03;
-    const btnY = cy + (cardH - btnH) / 2;
     const btnFill = isClaimed ? 0xaaaaaa : isClaimable ? 0x336644 : 0xaaaaaa;
     const btnBg = sketchPanel(btnW, btnH, { fill: btnFill, border: 0x666666, width: 1.5, seed: seedFor(btnX, btnY, 0) });
     btnBg.x = btnX; btnBg.y = btnY;
     container.addChild(btnBg);
     drawButtonLabel(container, btnX, btnY, btnW, btnH,
       isClaimed ? t('daily.tasks.rewardClaimed') : t('daily.weekly.claim'), 'gift', 0xffffff,
-      snapFont(Math.round(btnH * 0.36)), { bold: false });
+      // Same margin as the ads button below: with the default 10 px inset German's "Heute abgeholt"
+      // ran border to border (2026-09-29).
+      snapFont(Math.round(btnH * 0.36)), { bold: false, inset: Math.round(btnW * 0.14) });
 
     if (isClaimable && ctx.cb.onClaimWeekly) {
       hits.push({ rect: { x: btnX, y: btnY, w: btnW, h: btnH }, sound: 'sfx.ui.reward', fn: () => ctx.doClaimWeekly(threshold) });
