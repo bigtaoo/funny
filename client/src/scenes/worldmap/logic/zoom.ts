@@ -17,8 +17,8 @@ export interface ZoomCfg {
   tile: number;   // px per tile
   visW: number;   // visible tile columns
   visH: number;   // visible tile rows (mapH area)
-  poolW: number;  // pool columns = visW + 2 (one buffer on each side)
-  poolH: number;  // pool rows = visH + 2
+  poolW: number;  // pool columns = visW + 3 (see makeZoomCfgs)
+  poolH: number;  // pool rows = visH + 3
 }
 
 /**
@@ -40,7 +40,11 @@ export function makeZoomCfgs(w: number, h: number): [ZoomCfg, ZoomCfg, ZoomCfg] 
     const b = visibleTileBounds(w, mh, 0, 0, tile);
     const visW = b.maxTx - b.minTx;
     const visH = b.maxTy - b.minTy;
-    return { tile, visW, visH, poolW: visW + 2, poolH: visH + 2 };
+    // +3, not +2 (ADR-102): refreshPool starts the pool one tile before the floored bounds, and at a
+    // fractional pan the ceil−floor span is visW + 1, one more than at pan 0 — so +2 left the last
+    // column/row with no slot of its own (the bottom-right corner tile showed as a gap). Off-screen
+    // slots are culled, so the spare row and column cost next to nothing.
+    return { tile, visW, visH, poolW: visW + 3, poolH: visH + 3 };
   };
   // Divisor = tiles across screen width; smaller divisor = bigger tiles = fewer on screen.
   // L1 19→16→13→11 (each step cuts on-screen tile count, count ∝ divisor²) — the map read as an
