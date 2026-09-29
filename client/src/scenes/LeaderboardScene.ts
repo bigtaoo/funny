@@ -8,7 +8,9 @@ import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { buildIcon } from '../render/icons';
-import { FS, snapFont } from '../render/fontScale';
+import { FS, snapFont, currentFontFloor } from '../render/fontScale';
+import { measuredWidth } from '../render/pixiText';
+import { fitToWidth } from '../ui/widgets/truncateText';
 import { formatLadderTitle, getTitleKeys } from '../game/meta/titles';
 import { wheelScrollY } from '../ui/wheelScroll';
 import { dispatchHit, type Hit } from '../ui/hits';
@@ -106,6 +108,28 @@ export function fitNameAndTitle(
   const nameScale = nameW > 0 ? Math.min(1, nameBudget / nameW) : 1;
   const titleScale = titleW > 0 ? Math.min(1, titleBudget / titleW) : 1;
   return { nameScale, titleScale, titleX: nameW * nameScale + gap };
+}
+
+/**
+ * How far a row's player name may shrink before the rest of it is cut instead — the lobby header's
+ * rule (LobbyScene/header.ts NAME_MIN_SCALE), and never under the legibility floor. Names run to
+ * 24 characters, all of them CJK if the player likes: at 20+ such characters the old
+ * `scale.set(avail / width)` took a row name to ~16 design px, under the floor of 20 (2026-09-29).
+ * The full name is one tap away, on the profile.
+ */
+const NAME_MIN_SCALE = 0.8;
+
+/** Fit `lbl` (showing `full` at `size`) into `maxW`: shrink to {@link NAME_MIN_SCALE}, then cut with "…". */
+export function fitRowName(lbl: PIXI.Text, full: string, size: number, maxW: number): void {
+  lbl.text = full;
+  lbl.scale.set(1);
+  const fullW = measuredWidth(lbl);
+  if (fullW <= maxW) return;
+  const minScale = Math.min(1, Math.max(NAME_MIN_SCALE, currentFontFloor() / size));
+  const scale = maxW / fullW;
+  if (scale >= minScale) { lbl.scale.set(scale); return; }
+  lbl.text = fitToWidth(full, size, maxW / minScale);
+  lbl.scale.set(minScale);
 }
 
 export interface LeaderboardEntry {
@@ -456,9 +480,9 @@ export class LeaderboardScene implements Scene {
     // never compete; single-line rows share one span. Either way the block is clamped to
     // `contentRight` so a long name can never push the title into the tier column.
     const gap = 4;
+    const fullName = e.displayName || `#${e.publicId}`;
     if (g.twoLine) {
-      const nameAvail = g.contentRight - g.nameX;
-      if (nameLbl.width > nameAvail) nameLbl.scale.set(nameAvail / nameLbl.width);
+      fitRowName(nameLbl, fullName, g.nameFs, g.contentRight - g.nameX);
       if (titleLbl) {
         titleLbl.x = x + g.nameX;
         const titleAvail = g.contentRight - g.nameX;
@@ -466,10 +490,10 @@ export class LeaderboardScene implements Scene {
       }
     } else {
       const fit = fitNameAndTitle(nameLbl.width, titleLbl?.width ?? 0, g.contentRight - g.nameX, gap);
-      if (fit.nameScale < 1) nameLbl.scale.set(fit.nameScale);
+      fitRowName(nameLbl, fullName, g.nameFs, nameLbl.width * fit.nameScale);
       if (titleLbl) {
         if (fit.titleScale < 1) titleLbl.scale.set(fit.titleScale);
-        titleLbl.x = x + g.nameX + fit.titleX;
+        titleLbl.x = x + g.nameX + nameLbl.width + gap;
       }
     }
 

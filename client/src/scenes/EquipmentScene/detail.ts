@@ -12,7 +12,7 @@
 // a direct reference the other way isn't available yet at construction time.
 import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
-import { ui as C, sketchPanel, seedFor, tearDownChildren, drawLoadingOverlay } from '../../render/sketchUi';
+import { ui as C, txt, sketchPanel, seedFor, tearDownChildren, drawLoadingOverlay } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
 import { sidebarNavW, hubTabsHeight } from '../../ui/widgets/HubTabs';
 import { withTimeout, TimeoutError } from '../../ui/busyTracker';
@@ -39,6 +39,14 @@ function affixIconKind(affixId: string): IconKind | null {
   // `critmult`, matching its art's kind name.
   if (stat === 'siege' || stat === 'crit' || stat === 'critmult') return stat;
   return null;
+}
+
+/** Height `label` takes at the modal's fine-print size when wrapped to `width` (layout-only probe). */
+function wrappedHeight(label: string, width: number): number {
+  const probe = txt(label, FS.micro, C.dark, false, width);
+  const hh = probe.height;
+  probe.destroy(true);
+  return hh;
 }
 
 export class DetailPanel {
@@ -85,7 +93,18 @@ export class DetailPanel {
     const actionBtnH = 32;
     const actionGap = 6;
     const actionsH = extraActions.length * (actionGap + actionBtnH) + (extraActions.length > 0 ? 4 : 0);
-    const mh = 44 + affixCount * 20 + (maxed ? 24 : 58 + 40 + (demoteChance > 0 ? 18 : 0)) + actionsH + 12;
+    // The protect and demote lines are sentences, and in German each runs past the panel's width
+    // (2026-09-29: "Schutzstein ×0 (Material bei Fehlschlag behalten)" was drawn 476 px wide in a
+    // 280 px panel and cut off at its edge). They wrap inside the panel instead, and every line
+    // past the first adds its height to the section.
+    const textW = mw - 24;
+    const boxSz = 14;
+    const protectText = t('equip.protect').replace('{n}', String(protectCount));
+    const demoteText = t('equip.enhanceDemoteWarn').replace('{pct}', String(Math.round(demoteChance * 100)));
+    const oneLineH = wrappedHeight('X', textW);
+    const protectExtra = maxed ? 0 : Math.max(0, wrappedHeight(protectText, textW - boxSz - 4) - oneLineH);
+    const demoteExtra = demoteChance > 0 ? Math.max(0, wrappedHeight(demoteText, textW) - oneLineH) : 0;
+    const mh = 44 + affixCount * 20 + (maxed ? 24 : 58 + 40 + protectExtra + (demoteChance > 0 ? 18 + demoteExtra : 0)) + actionsH + 12;
     const mx = 0;
     const my = 0;
 
@@ -170,10 +189,10 @@ export class DetailPanel {
       if (demoteChance > 0) {
         // Demote-risk warning (ADR-063): only +7/+8 attempts carry this, so it's easy to miss —
         // called out in red rather than folded into the success-rate line above.
-        const demoteLbl = core.stxt(t('equip.enhanceDemoteWarn').replace('{pct}', String(Math.round(demoteChance * 100))), FS.micro, C.red);
+        const demoteLbl = core.stxt(demoteText, FS.micro, C.red, false, textW);
         demoteLbl.x = mx + 12; demoteLbl.y = cy;
         panelRoot.addChild(demoteLbl);
-        cy += 18;
+        cy += 18 + demoteExtra;
       }
       const affordable = canAffordEnhance(save, cost);
       const costColor = affordable ? C.mid : C.red;
@@ -187,7 +206,6 @@ export class DetailPanel {
       const protecting = core.useProtectEnhance && canToggle;
       const protectColor = canToggle ? (protecting ? C.accent : C.dark) : C.mid;
       // Toggle checkbox: a small ink box, ticked with a hand-drawn check when on (replaces [✓]/[ ]).
-      const boxSz = 14;
       const box = new PIXI.Graphics();
       box.lineStyle(1.5, protectColor, 1);
       box.drawRect(mx + 12, cy, boxSz, boxSz);
@@ -197,16 +215,16 @@ export class DetailPanel {
         ck.x = mx + 12; ck.y = cy;
         panelRoot.addChild(ck);
       }
-      const protectLbl = core.stxt(t('equip.protect').replace('{n}', String(protectCount)), FS.micro, protectColor);
+      const protectLbl = core.stxt(protectText, FS.micro, protectColor, false, textW - boxSz - 4);
       protectLbl.x = mx + 12 + boxSz + 4; protectLbl.y = cy + 2;
       panelRoot.addChild(protectLbl);
       if (canToggle && !core.bt.busy) {
         core.modalHits.push({
-          rect: core.toModalScreen({ x: mx + 10, y: cy - 2, w: mw - 20, h: 18 }),
+          rect: core.toModalScreen({ x: mx + 10, y: cy - 2, w: mw - 20, h: 18 + protectExtra }),
           fn: () => { core.useProtectEnhance = !core.useProtectEnhance; core.render(); },
         });
       }
-      cy += 22;
+      cy += 22 + protectExtra;
 
       // Confirm-enhance button (2026-07-22b): unlike equip/reforge/salvage, enhance takes the
       // protect toggle above as a parameter, so it can't just fire from the grid cell — the
