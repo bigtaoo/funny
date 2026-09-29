@@ -30,7 +30,6 @@ const memStore = (() => {
 initI18n('en', memStore, ['zh', 'en', 'de']);
 
 const CELL = 40;
-const SIZE = Math.min(CELL, CELL) * 0.72; // drawUnit's own portrait size → the bar's full width
 const SIEGE_ONLY_COLOR = 0x8a6cd4;
 const HP_COLORS = [0x4caf50, 0xe0a020, 0xcc3b3b];
 
@@ -66,6 +65,15 @@ function drawBar(type: UnitType, troops: number, cap: number, mode: 'attack' | '
   return g;
 }
 
+/** The bar's full width, read off its dark track: the portrait (and so the bar) is sized to leave
+ *  room for the troop count under it, so it is not a fixed fraction of the cell. */
+function barWidth(g: PIXI.Graphics): number {
+  const track = fills(g).find((f) => f.color === 0x000000);
+  expect(track, 'no troop bar track').toBeDefined();
+  expect(track!.width).toBeGreaterThan(CELL * 0.5);
+  return track!.width;
+}
+
 const infantryHp = fromFp(UNIT_BLUEPRINTS[UnitType.Infantry].hp_fp);       // 60
 const shieldHp = fromFp(UNIT_BLUEPRINTS[UnitType.ShieldBearer].hp_fp);     // 240
 
@@ -74,6 +82,7 @@ describe('DefenseEditorScene troop bar — HP vs siege-only split (ADR-069)', ()
     // Level-1 lichuang: 200 troops in a 60-HP infantry body → 30% of the bar is HP, 70% siege-only.
     const cap = 200;
     const g = drawBar(UnitType.Infantry, cap, cap);
+    const SIZE = barWidth(g);
     const segments = fills(g);
     const hpSeg = segments.find((f) => HP_COLORS.includes(f.color));
     const siegeSeg = segments.find((f) => f.color === SIEGE_ONLY_COLOR);
@@ -98,6 +107,7 @@ describe('DefenseEditorScene troop bar — HP vs siege-only split (ADR-069)', ()
   it('a partially filled over-cap card splits at the HP cap, not at the fill ratio', () => {
     // 120 of 200 troops on a 60-HP body: 60 HP + 60 siege-only, i.e. half the drawn fill each.
     const g = drawBar(UnitType.Infantry, 120, 200);
+    const SIZE = barWidth(g);
     const segments = fills(g);
     const hpSeg = segments.find((f) => HP_COLORS.includes(f.color))!;
     const siegeSeg = segments.find((f) => f.color === SIEGE_ONLY_COLOR)!;
@@ -107,6 +117,7 @@ describe('DefenseEditorScene troop bar — HP vs siege-only split (ADR-069)', ()
 
   it('an under-filled card below its HP cap draws only the HP tone, and shorter than the bar', () => {
     const g = drawBar(UnitType.Infantry, 30, 200); // 30 troops < 60 HP cap
+    const SIZE = barWidth(g);
     const segments = fills(g);
     expect(segments.some((f) => f.color === SIEGE_ONLY_COLOR)).toBe(false);
     const hpSeg = segments.find((f) => HP_COLORS.includes(f.color))!;
