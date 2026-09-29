@@ -151,7 +151,7 @@ export class WorldMapRendererLifecycle implements LifecycleHandlers {
         const cityC = ctx.citySprites.get(key);
         const shieldBreakFx = cityC?.getChildByName('shieldBreakFx') as PIXI.Graphics | undefined;
         if (!shieldBreakFx || fx.age >= SHIELD_BREAK_LIFE) {
-          shieldBreakFx?.clear();
+          if (shieldBreakFx) { shieldBreakFx.clear(); shieldBreakFx.visible = false; }
           ctx.shieldBreakFx.delete(key);
           continue;
         }
