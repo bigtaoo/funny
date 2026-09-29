@@ -33,6 +33,28 @@ const PORTRAIT_TILE_GAP = 14;
 const HEADER_H = 44;
 const TILE_W = 108, TILE_H = 108, TILE_GAP = 10;
 
+/**
+ * Tile width: {@link TILE_W}, or wider when a label a tile can show needs it — the look name, and
+ * the status line under it. German's "Ausgerüstet" (~121 design px at the floor against 100 inside
+ * a 108 tile) ran out of both sides (2026-09-29); it is "Getragen" now — a look is worn, not
+ * equipped — and every shipped locale fits 108. Widening is the backstop, and a costly one: a
+ * portrait card's tile area holds two tiles only up to ~120 wide, past that one per row.
+ */
+function skinTileW(): number {
+  const nameSize = snapFont(Math.round(TILE_H * 0.13));
+  const statusSize = snapFont(Math.round(TILE_H * 0.11));
+  const widest = [
+    [t('collection.defaultShort'), nameSize], [t('shop.skinLabel'), nameSize],
+    [t('collection.equipped'), statusSize], [t('collection.equip'), statusSize],
+  ].reduce((max, [label, size]) => {
+    const probe = txt(label as string, size as number, C.dark, true);
+    const pw = probe.width;
+    probe.destroy({ texture: true, baseTexture: true });
+    return Math.max(max, pw);
+  }, 0);
+  return Math.max(TILE_W, Math.ceil(widest) + 8);
+}
+
 /** Skins wardrobe domain (see ../CardScene.ts assembly + ./core.ts for the shared state). */
 export class SkinsPanel {
   constructor(private readonly core: CardSceneCore) {}
@@ -103,6 +125,7 @@ export class SkinsPanel {
     portraitW: number;
     tileAreaW: number;
     tilesPerRow: number;
+    tileW: number;
     cardH: number;
   } {
     const unitType = def.unitType as UnitType;
@@ -116,11 +139,12 @@ export class SkinsPanel {
     ];
     const portraitW = Math.round(PORTRAIT_MAX_H * PORTRAIT_RATIO);
     const tileAreaW = cardW - CARD_PAD * 2 - portraitW - PORTRAIT_TILE_GAP;
-    const tilesPerRow = Math.max(1, Math.floor((tileAreaW + TILE_GAP) / (TILE_W + TILE_GAP)));
+    const tileW = skinTileW();
+    const tilesPerRow = Math.max(1, Math.floor((tileAreaW + TILE_GAP) / (tileW + TILE_GAP)));
     const rows = Math.ceil(tiles.length / tilesPerRow);
     const tileAreaH = rows * (TILE_H + TILE_GAP) - TILE_GAP;
     const cardH = Math.max(PORTRAIT_MAX_H, HEADER_H + tileAreaH) + CARD_PAD * 2;
-    return { tiles, portraitW, tileAreaW, tilesPerRow, cardH };
+    return { tiles, portraitW, tileAreaW, tilesPerRow, tileW, cardH };
   }
 
   /** One character's wardrobe card: portrait + name on the left header, skin tiles wrapped to the right. */
@@ -137,7 +161,7 @@ export class SkinsPanel {
     const core = this.core;
     const unitType = def.unitType as UnitType;
     const equipped = core.cb.getEquippedSkin(unitType);
-    const { tiles, portraitW, tileAreaW, tilesPerRow } = this.cardMetrics(def, cardW, owned);
+    const { tiles, portraitW, tileAreaW, tilesPerRow, tileW } = this.cardMetrics(def, cardW, owned);
     const tileAreaX = x + CARD_PAD + portraitW + PORTRAIT_TILE_GAP;
 
     const y = yUnscrolled - core.scrollY;
@@ -176,9 +200,9 @@ export class SkinsPanel {
       const row = Math.floor(i / tilesPerRow);
       this.renderSkinTile(
         tile,
-        tileAreaX + col * (TILE_W + TILE_GAP),
+        tileAreaX + col * (tileW + TILE_GAP),
         tileTop + row * (TILE_H + TILE_GAP),
-        TILE_W, TILE_H,
+        tileW, TILE_H,
         tile.id === equipped,
         unitType,
       );

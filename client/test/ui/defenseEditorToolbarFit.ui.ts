@@ -145,4 +145,20 @@ describe('DefenseEditorScene attack mode — 360x640, German', () => {
     expect(new Set(names.map((n) => Math.round(n!.getGlobalPosition().x))).size).toBe(2);
     scene.destroy();
   });
+
+  it('keeps the Fill / Clear / Save buttons off the title (they move under the header in portrait)', () => {
+    const scene = buildScene();
+    const all = texts(scene.container);
+    const titleText = (scene as unknown as { core: { titleText(): string } }).core.titleText();
+    const tb = all.find((l) => l.text === titleText)!.getBounds();
+    const buttons = [t('world.team.fill'), t('world.defense.clear'), t('world.defense.save')]
+      .map((s) => all.find((l) => l.text === s));
+    for (const b of buttons) {
+      expect(b, 'button label drawn').toBeDefined();
+      const bb = b!.getBounds();
+      const overlaps = bb.left < tb.right && bb.right > tb.left && bb.top < tb.bottom && bb.bottom > tb.top;
+      expect(overlaps, `"${b!.text}" covers the title`).toBe(false);
+    }
+    scene.destroy();
+  });
 });

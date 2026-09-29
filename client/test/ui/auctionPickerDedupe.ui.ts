@@ -349,6 +349,17 @@ describe('item picker card — name alone, stars and count drawn beside it', () 
     expect(texts).toContain(cardName('suyuan'));
     expect(texts).toContain('×3');
     expect(texts.some((x) => x.includes('★'))).toBe(false);
+    // The star row is centred under the glyph, on the name's axis (9 stars of 12 + 2px gaps).
+    let stars: { x: number } | null = null;
+    let nameX = NaN;
+    const find = (n: { children?: unknown[]; name?: string | null; text?: unknown; x?: number }): void => {
+      if (n.name === 'pickStars') stars = n as { x: number };
+      if (n.text === cardName('suyuan')) nameX = n.x!;
+      for (const c of (n.children ?? []) as { children?: unknown[] }[]) find(c);
+    };
+    find(scene.core.bodyLayer);
+    expect(stars).not.toBeNull();
+    expect(stars!.x + (9 * 12 + 8 * 2) / 2).toBeCloseTo(nameX, 0);
     const entry = buildPickEntries(scene.core).find((e: PickEntry & { stars?: number }) => e.cls === 'card')!;
     expect((entry as unknown as { stars: number }).stars).toBe(9);
     scene.destroy();

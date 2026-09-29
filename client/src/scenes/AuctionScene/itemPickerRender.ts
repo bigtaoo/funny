@@ -364,8 +364,13 @@ function renderPickCard(core: AuctionSceneCore, entry: PickEntry, x: number, y: 
 
   // Stars as their own row between the glyph and the name, like the inventory's bag cards.
   if (entry.stars > 0) {
-    const row = buildLevelStars(entry.stars, cardW - 18, 12, 2);
-    row.container.x = x + (cardW - row.container.width) / 2; row.container.y = y + 72;
+    const size = 12, gap = 2, maxW = cardW - 18;
+    const row = buildLevelStars(entry.stars, maxW, size, gap);
+    // Width from the count, not `row.container.width`: the star sprites' texture may not have
+    // loaded yet, and an unloaded row measures 0 — which centred its left end on the card's middle.
+    const rowW = Math.min(maxW, entry.stars * size + (entry.stars - 1) * gap);
+    row.container.x = x + (cardW - rowW) / 2; row.container.y = y + 72;
+    row.container.name = 'pickStars'; // test hook: auctionPickerDedupe.ui.ts
     core.bodyLayer.addChild(row.container);
   }
 
