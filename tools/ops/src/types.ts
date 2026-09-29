@@ -199,11 +199,22 @@ export interface ReportView {
   reason: string;
   ts: number;
   status: 'open' | 'dismissed' | 'upheld';
+  /** Guideline 1.2 taxonomy (harassment/hate/sexual/spam/cheating/offensive_name/other); absent on older reports. */
+  category?: string;
+  /** 'block' = auto-filed when the reporter blocked the target; absent = explicit report. */
+  source?: 'report' | 'block';
   contentRef?:
+    | { kind: 'content'; channel: string; messageId?: string; snapshot?: string; snapshotSource?: 'server' | 'client' }
     | { kind: 'message'; conversationId: string; messageId: string }
     | { kind: 'name'; snapshot: string };
   resolvedBy?: string;
   resolvedAt?: number;
+}
+
+/** Outcome of POST /admin/reports/purge-author — per backend, counts or the error that backend returned. */
+export interface PurgeAuthorView {
+  social: Record<string, number> | { error: string };
+  world: Record<string, number> | { error: string };
 }
 
 /** Player appeal record (CONTENT_MODERATION_DESIGN.md CM10/CM11; mirror of metaserver's AppealDoc). */

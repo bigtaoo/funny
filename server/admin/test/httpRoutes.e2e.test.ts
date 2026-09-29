@@ -545,6 +545,17 @@ describe.skipIf(!mongo)('admin ops HTTP routes e2e', () => {
       const r = await call(csToken, 'POST', '/admin/reports/rep1/resolve', { resolution: 'dismissed', accountId: 'acc-report' });
       expect(r.status).toBe(403);
     });
+    it('Guideline 1.2 content removal routes: gated on reports.action; wired through to the service', async () => {
+      expect((await call(csToken, 'POST', '/admin/reports/rep1/delete-content')).status).toBe(403);
+      expect((await call(csToken, 'POST', '/admin/reports/purge-author', { accountId: 'acc-report' })).status).toBe(403);
+      // rep1 is a player-level report (no contentRef) → nothing single to delete.
+      const del = await call(rootToken, 'POST', '/admin/reports/rep1/delete-content');
+      expect(del.status).toBe(400);
+      // No moderation client wired in this suite → both halves report their failure instead of a fake success.
+      const purge = await call(rootToken, 'POST', '/admin/reports/purge-author', { accountId: 'acc-report' });
+      expect(purge.status).toBe(200);
+      expect(purge.json).toMatchObject({ ok: true, social: { error: 'socialsvc not configured' }, world: { error: 'worldsvc not configured' } });
+    });
     it('appeal queue: list then resolve', async () => {
       const list = await call(rootToken, 'GET', '/admin/appeals?status=open');
       expect(list.status).toBe(200);

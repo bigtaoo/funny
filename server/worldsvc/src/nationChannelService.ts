@@ -3,7 +3,7 @@
 // Redis pub/sub. Without Redis the service degrades to O(n) HTTP push. Offline members fetch
 // history via REST (TTL 7 days).
 import { randomBytes } from 'node:crypto';
-import { FAMILY_MSG_BODY_MAX, SlgError, censorChat, type ChatRegion, type WordlistCache } from '@nw/shared';
+import { FAMILY_MSG_BODY_MAX, SlgError, censorChat, UNRESOLVED_SENDER_NAME, type ChatRegion, type WordlistCache } from '@nw/shared';
 import type { WorldCollections, NationMessageDoc } from './db';
 import type { WorldGatewayClient } from './gatewayClient';
 import type { WorldCommercialClient } from './commercialClient';
@@ -61,7 +61,7 @@ export class NationChannelService {
   async sendMessage(
     worldId: string,
     accountId: string,
-    senderName: string,
+    _clientSenderName: string,
     body: string,
     clientPlatform?: string,
     region: ChatRegion = 'global',
@@ -71,8 +71,8 @@ export class NationChannelService {
     if (!body || body.length > FAMILY_MSG_BODY_MAX) throw new SlgError('BAD_REQUEST');
 
     // Resolve publicId + display name + title from meta (source of truth for renames); best-effort,
-    // falls back to the client-supplied senderName if meta is unavailable or profile not found —
-    // a stale/incorrect client-side cache must never be preferred over the account's real name.
+    // falls back to a neutral placeholder if meta is unavailable or profile not found — never to the
+    // client-supplied name, which would bypass the display-name filter (Guideline 1.2).
     // Family + sect name (world chat spans every family/sect, unlike the family/sect-scoped channels
     // where the sender's own family/sect is already known) is independent of the profile fetch — run
     // both in parallel instead of sequentially (comm-audit batch F item 8), and read sectId straight off
@@ -106,7 +106,7 @@ export class NationChannelService {
     // cross-instance coordination.
     const msgId = `nm:${worldId}:${ts}:${seq}:${randomBytes(4).toString('hex')}`;
     const senderPublicId = profile?.publicId ?? '';
-    const resolvedSenderName = profile?.displayName ?? senderName;
+    const resolvedSenderName = profile?.displayName ?? UNRESOLVED_SENDER_NAME;
     const title = profile?.equippedTitle;
 
     const familyName = mem?.name;
@@ -180,6 +180,25 @@ export class NationChannelService {
       body: d.body,
       ts: d.ts.getTime(),
     }));
+  }
+
+  /**
+   * Staff removal of one reported world/sect chat message (App Store Review Guideline 1.2, reached via
+   * /admin/world/moderation/*). Both channels' ids are globally unique (`nm:`/`sm:` + random suffix), so the
+   * id alone is enough. Returns whether a message was removed (false = already gone / TTL-expired).
+   */
+  async deleteMessage(channel: 'world' | 'sect', messageId: string): Promise<boolean> {
+    const col = channel === 'world' ? this.deps.cols.nationMessages : this.deps.cols.sectMessages;
+    return (await col.deleteOne({ _id: messageId })).deletedCount > 0;
+  }
+
+  /** Staff purge of every world/sect chat message one account authored (Guideline 1.2). Idempotent. */
+  async purgeAuthor(accountId: string): Promise<{ worldMessages: number; sectMessages: number }> {
+    const [w, s] = await Promise.all([
+      this.deps.cols.nationMessages.deleteMany({ senderId: accountId }),
+      this.deps.cols.sectMessages.deleteMany({ senderId: accountId }),
+    ]);
+    return { worldMessages: w.deletedCount, sectMessages: s.deletedCount };
   }
 
   private async worldMemberAccountIds(worldId: string, exclude: string): Promise<string[]> {

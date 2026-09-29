@@ -46,6 +46,8 @@ export interface SectMessageView {
   id: string;
   senderId: string;
   senderName: string;
+  /** Sender's publicId ('' when unresolvable) — the client keys block-hiding and Report/Block on it (Guideline 1.2). */
+  senderPublicId: string;
   /** Sender's equipped title (称号), if any. */
   title?: string;
   /** Sender's sect name (宗门) — the sect itself, since this channel is sect-scoped. */

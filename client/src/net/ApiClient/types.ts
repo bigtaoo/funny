@@ -30,6 +30,10 @@ export type ConversationView = Schemas['ConversationView'];
 export type ChatMessageView = Schemas['ChatMessageView'];
 export type MailView = Schemas['MailView'];
 export type MailAttachmentView = Schemas['MailAttachmentView'];
+// —— UGC safety (App Review 1.2: POST /friends/report|block, GET /friends/blocked) ——
+export type ReportCategory = Schemas['ReportCategory'];
+export type ReportContent = Schemas['ReportContent'];
+export type BlockedUserView = Schemas['BlockedUser'];
 /** Offline badge aggregate (friend requests / unread conversations / unread mail + total); fetched once after login. */
 export type SocialBadges = Schemas['SocialBadges'];
 /**

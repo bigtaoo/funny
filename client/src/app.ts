@@ -26,6 +26,7 @@ import { AppealDialog } from './ui/dialogs/AppealDialog';
 import { FeedbackDialog } from './ui/dialogs/FeedbackDialog';
 import { SubscriptionDisclosureDialog } from './ui/dialogs/SubscriptionDisclosureDialog';
 import { setSubscriptionDisclosureSink } from './ui/dialogs/subscriptionDisclosure';
+import { installModerationHost } from './ui/dialogs/moderationHost';
 import { t } from './i18n';
 import { ui as C } from './render/sketchUi';
 import { setBakeRenderer } from './render/bake';
@@ -379,6 +380,18 @@ export async function startApp(
     app.stage.addChild(dlg.container);
     disclosureDialog = dlg;
     input.holdForModal(true);
+  });
+
+  // Player safety overlays (App Review 1.2: report / block / blocked list, ui/moderation.ts). Mounted
+  // by their own host module rather than inline here: four overlay kinds share one slot and one
+  // exactly-once holdForModal pairing (test/moderationHost.test.ts guards it the way
+  // appDialogInputGate.test.ts guards the three dialogs above).
+  installModerationHost({
+    stage: app.stage,
+    screen: () => app.screen,
+    gameLayer: scaling.gameLayer,
+    designSize: () => scaling.designSize,
+    input,
   });
 
   // Stage-level dialogs sit outside targetStage, so SceneManager.onTick (which only ticks

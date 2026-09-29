@@ -5,6 +5,7 @@
 import { t } from '../../../i18n';
 import type { WorldTileView } from '../../../net/WorldApiClient';
 import type { WorldMapContext } from '../WorldMapContext';
+import { isBlocked } from '../../../ui/moderation';
 
 /**
  * Aggregated SLG-entry fetch (P1-5, comm-audit-2026-07-27): one `POST /world/enter` round-trip
@@ -74,9 +75,11 @@ export async function loadData(ctx: WorldMapContext): Promise<void> {
     ctx.stationed = entry.stationed;
     ctx.siegeHolds = entry.siegeHolds;
 
-    ctx.worldChatLatest = entry.worldChannel[0] ?? null; // server returns newest-first
+    // Server returns newest-first. Blocked senders never reach the bar or its unread count (App Review 1.2).
+    const visible = entry.worldChannel.filter((m) => !isBlocked(m.senderPublicId));
+    ctx.worldChatLatest = visible[0] ?? null;
     const seenTs = ctx.getWorldChatSeenTs();
-    ctx.worldChatUnread = entry.worldChannel.filter((m) => m.ts > seenTs).length;
+    ctx.worldChatUnread = visible.filter((m) => m.ts > seenTs).length;
   } catch { /* offline OK */ }
   // Deliberately not awaited and deliberately not folded into `/world/enter`: the team panel is the
   // only consumer, and blocking first paint on it would undo the point of the single-round-trip entry.

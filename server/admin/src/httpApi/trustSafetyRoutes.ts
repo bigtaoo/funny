@@ -91,6 +91,24 @@ export async function handleTrustSafetyRoutes(ctx: RouteCtx): Promise<boolean> {
     return true;
   }
 
+  // ── Staff content removal (reports.action, App Store Review Guideline 1.2): the reported message itself,
+  // or everything one account wrote across socialsvc + worldsvc. Banning stays on /admin/accounts/:id/ban.
+  const reportDeleteMatch = path.match(/^\/admin\/reports\/([^/]+)\/delete-content$/);
+  if (method === 'POST' && reportDeleteMatch) {
+    requireCap(actor, 'reports.action');
+    const id = decodeURIComponent(reportDeleteMatch[1] ?? '');
+    const result = await svc.deleteReportedContent(actor, id);
+    send(res, 200, { ok: true, ...result });
+    return true;
+  }
+  if (method === 'POST' && path === '/admin/reports/purge-author') {
+    requireCap(actor, 'reports.action');
+    const b = await readJson(req);
+    const result = await svc.purgeAuthorContent(actor, str(b.accountId));
+    send(res, 200, { ok: true, ...result });
+    return true;
+  }
+
   // ── Player appeal review queue (appeals.view/.action, CONTENT_MODERATION_DESIGN.md CM10/CM11) ──
   if (method === 'GET' && path === '/admin/appeals') {
     requireCap(actor, 'appeals.view');

@@ -145,6 +145,11 @@ export class ScalingManager {
     this.applyScaling(screenW, screenH);
   }
 
+  /** Current design-space size — what a stage-level overlay drawn at `gameLayer`'s transform lays out in. */
+  get designSize(): { w: number; h: number } {
+    return { w: this.layout.designWidth, h: this.layout.designHeight };
+  }
+
   /** Convert screen (CSS pixel) coordinates to design-space coordinates. */
   toDesignSpace(screenX: number, screenY: number): { x: number; y: number } {
     return {

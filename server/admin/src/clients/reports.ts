@@ -1,4 +1,4 @@
-import { fetchInternalJson } from '@nw/shared';
+import { fetchInternalJson, type ReportCategory, type ReportChannel } from '@nw/shared';
 import { log } from './shared';
 
 // ── UGC report review queue (socialsvc /internal/reports, CONTENT_MODERATION_DESIGN.md CM9/CM11) ──────────
@@ -11,7 +11,12 @@ export interface ReportRow {
   reason: string;
   ts: number;
   status: 'open' | 'dismissed' | 'upheld';
+  /** Guideline 1.2 taxonomy; absent on older reports. */
+  category?: ReportCategory;
+  /** 'block' = auto-filed when the reporter blocked the target; absent on older reports (= 'report'). */
+  source?: 'report' | 'block';
   contentRef?:
+    | { kind: 'content'; channel: ReportChannel; messageId?: string; snapshot?: string; snapshotSource?: 'server' | 'client' }
     | { kind: 'message'; conversationId: string; messageId: string }
     | { kind: 'name'; snapshot: string };
   resolvedBy?: string;
@@ -42,7 +47,10 @@ export class HttpReportsClient implements ReportsClient {
     const qs = new URLSearchParams();
     if (opts?.status) qs.set('status', opts.status);
     if (opts?.limit) qs.set('limit', String(opts.limit));
-    const r = await fetchInternalJson<{ reports?: ReportRow[] }>(`${this.socialBaseUrl}/internal/reports?${qs}`, {
+    // socialsvc wraps every reply in the ApiResp envelope ({ ok, data }). This used to read `body.reports`,
+    // which is always undefined on the real service, so the ops queue rendered empty in every deployment —
+    // only the fetch-mocked unit test ever saw rows (found 2026-09-29 while wiring Guideline 1.2 alerts).
+    const r = await fetchInternalJson<{ data?: { reports?: ReportRow[] } }>(`${this.socialBaseUrl}/internal/reports?${qs}`, {
       caller: 'admin',
       key: this.internalKey,
       timeoutMs: 10000,
@@ -50,7 +58,7 @@ export class HttpReportsClient implements ReportsClient {
       label: 'social /internal/reports',
     });
     if (!r.ok || !r.body) return [];
-    return r.body.reports ?? [];
+    return r.body.data?.reports ?? [];
   }
 
   async resolveReport(id: string, resolution: 'dismissed' | 'upheld', resolvedBy: string): Promise<{ ok: boolean }> {

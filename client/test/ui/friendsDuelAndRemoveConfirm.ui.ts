@@ -57,7 +57,6 @@ function buildFriendsScene(friends: FriendView[]): { scene: FriendsScene; spies:
     addFriend: async () => {},
     respond: async () => {},
     removeFriend: spies.removeFriend,
-    blockUser: async () => {}, reportUser: async () => {},
     duelInvite: spies.duelInvite,
     duelRespond: spies.duelRespond,
     loadConversations: async () => [],

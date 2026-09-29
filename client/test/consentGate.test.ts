@@ -13,7 +13,7 @@
 //     drawn and then ignored.
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { createAppCore } from '../src/app/createAppCore';
-import { AGE_DECLARED_FLAG, SEEN_INTRO_FLAG, GDPR_CONSENT_FLAG, TOKEN_KEY } from '../src/app/appConstants';
+import { AGE_DECLARED_FLAG, SEEN_INTRO_FLAG, GDPR_CONSENT_FLAG, TERMS_ACCEPTED_FLAG, TOKEN_KEY } from '../src/app/appConstants';
 import { needsConsentChoice } from '../src/platform/consentRegion';
 import { HeadlessPlatform } from './harness/HeadlessPlatform';
 import { HeadlessAppViews } from './harness/HeadlessAppViews';
@@ -32,6 +32,12 @@ function launch(flags: Record<string, boolean> = {}, storage: Record<string, str
   const views = new HeadlessAppViews();
   createAppCore(platform, views).start();
   return { views, platform };
+}
+
+/** Every flag as it now stands on disk. */
+function storedFlags(platform: HeadlessPlatform): Record<string, boolean> {
+  const raw = platform.storage.getItem('nw_save_v1');
+  return (JSON.parse(raw ?? '{}') as { flags?: Record<string, boolean> }).flags ?? {};
 }
 
 /** The consent flag as it now stands on disk (undefined = never answered). */
@@ -88,8 +94,34 @@ describe('consent gate', () => {
     // `false` and `undefined` are different answers. `SaveManager.getFlag` cannot tell them apart
     // (it returns `flags[key] === true`), which is why the gate reads `save.flags` directly.
     withTimeZone('Europe/Berlin');
-    const { views } = launch({ [GDPR_CONSENT_FLAG]: false });
+    const { views } = launch({ [GDPR_CONSENT_FLAG]: false, [TERMS_ACCEPTED_FLAG]: true });
     expect(views.screen).not.toBe('consent');
+  });
+
+  // App Review 1.2: the Terms of Use (EULA) carry the zero-tolerance / report / block clause, and a
+  // player must have agreed to the CURRENT text. TERMS_ACCEPTED_FLAG is versioned in its key, so a
+  // player who consented under the old text is asked again — for the terms only.
+  it('asks a player who accepted older terms to accept the current Terms of Use, keeping their analytics answer', async () => {
+    withTimeZone('Europe/Berlin');
+    const { views, platform } = launch({ [GDPR_CONSENT_FLAG]: false });
+    expect(views.screen).toBe('consent');
+    expect(views.consentMode).toBe('terms');
+
+    views.consent!.onAccept();
+    const flags = storedFlags(platform);
+    expect(flags[TERMS_ACCEPTED_FLAG]).toBe(true);
+    expect(flags[GDPR_CONSENT_FLAG], 'accepting the terms must not turn analytics on').toBe(false);
+    await until(() => views.screen !== 'consent');
+    expect(views.screen).not.toBe('consent');
+  });
+
+  it('records the Terms of Use as accepted with either consent answer on first launch', () => {
+    withTimeZone('Europe/Berlin');
+    const { views, platform } = launch();
+    views.consent!.onDecline(); // "Essentials only" still accepts the terms — it is what lets them play
+    const flags = storedFlags(platform);
+    expect(flags[TERMS_ACCEPTED_FLAG]).toBe(true);
+    expect(flags[GDPR_CONSENT_FLAG]).toBe(false);
   });
 
   it('reports nothing at all after a refusal — not even the consent event', async () => {
@@ -146,7 +178,7 @@ describe('consent gate', () => {
       },
     });
 
-    const { views } = launch({ [GDPR_CONSENT_FLAG]: false }, { nw_api_base: 'http://api.test' });
+    const { views } = launch({ [GDPR_CONSENT_FLAG]: false, [TERMS_ACCEPTED_FLAG]: true }, { nw_api_base: 'http://api.test' });
     await until(() => seen.some((r) => r.url.includes('d=1')));
 
     expect(views.screen).not.toBe('consent');

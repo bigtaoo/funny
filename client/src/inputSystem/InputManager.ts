@@ -63,12 +63,27 @@ export class InputManager {
    * and the modal gate can never clear each other.
    */
   private modals = 0;
+  /**
+   * Taps that land while the modal gate is up, for overlays that hit-test manually instead of (or
+   * as well as) through PixiJS events — ui/dialogs/moderationHost.ts, whose overlays sit under a
+   * transformed container. Only a down AND up both made under the gate count as a tap, so the
+   * pointer-up that OPENED the overlay (dispatched to the scene before the gate rose) never also
+   * lands on the overlay.
+   */
+  private modalTaps: Handler[] = [];
+  private modalDown = false;
 
   /** Gate all pointer dispatch on/off (see {@link suppressed}). Called by the SceneManager around fades. */
   suppress(on: boolean): void { this.suppressed = on; }
 
   /** Raise (`true`) / lower (`false`) the modal gate around a stage-level dialog (see {@link modals}). */
-  holdForModal(on: boolean): void { this.modals = Math.max(0, this.modals + (on ? 1 : -1)); }
+  holdForModal(on: boolean): void { this.modals = Math.max(0, this.modals + (on ? 1 : -1)); this.modalDown = false; }
+
+  /** Subscribe to taps made while the modal gate is up (see {@link modalTaps}). */
+  onModalTap(fn: Handler): Unsub {
+    this.modalTaps.push(fn);
+    return () => { this.modalTaps = this.modalTaps.filter(f => f !== fn); };
+  }
 
   /** Register (or clear) the fade-abort hook fired on a suppressed pointer-down (see {@link suppressedDownHook}). */
   onSuppressedInput(fn: (() => void) | null): void { this.suppressedDownHook = fn; }
@@ -126,7 +141,7 @@ export class InputManager {
     holdRenderActive();
     // Modal open (see `modals`): the scene underneath is covered and must not see this tap at all.
     // Checked before the fade gate — a modal is not a transition, so there is nothing to abort.
-    if (this.modals > 0) return;
+    if (this.modals > 0) { this.modalDown = true; return; }
     // A down during a fade aborts it (via the hook) and is consumed — never delivered to a scene.
     if (this.suppressed) { this.suppressedDownHook?.(); return; }
     this.dispatch(this.downs, x, y);
@@ -138,7 +153,11 @@ export class InputManager {
   }
   _emitUp(x: number, y: number): void {
     holdRenderActive();
-    if (this.modals > 0 || this.suppressed) return;
+    if (this.modals > 0) {
+      if (this.modalDown) { this.modalDown = false; this.dispatch(this.modalTaps, x, y); }
+      return;
+    }
+    if (this.suppressed) return;
     // The hook may have lifted suppression mid-gesture; still swallow this release so the
     // fade-aborting tap doesn't land on the freshly-mounted scene as a real tap.
     if (this.swallowUp) { this.swallowUp = false; return; }

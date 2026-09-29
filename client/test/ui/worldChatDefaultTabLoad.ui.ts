@@ -49,7 +49,7 @@ describe('FriendsScene — entering via defaultTab kicks off the same loads as s
       addFriend: async () => {},
       respond: async () => {},
       removeFriend: async () => {},
-      blockUser: async () => {}, reportUser: async () => {}, duelInvite: () => {}, duelRespond: () => {},
+      duelInvite: () => {}, duelRespond: () => {},
       loadConversations: async () => [],
       openChat() {},
       loadMail: async () => ({ mail: [], unread: 0 }),

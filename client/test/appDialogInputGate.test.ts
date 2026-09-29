@@ -76,4 +76,14 @@ describe('app.ts stage-level dialog input gate (2026-08-10: taps fell through to
     // suppress() belongs to SceneManager's fade freeze; app.ts must never touch it directly.
     expect(src).not.toMatch(/input\.suppress\(/);
   });
+
+  // The player-safety overlays (App Review 1.2 report / block / blocked list) mount from their own
+  // host module, which pairs the gate itself — its behaviour is driven in test/ui/moderation.ui.ts.
+  // What only this file can see is that app.ts installs it at all, with the real InputManager.
+  it('installs the moderation host with the same input gate', () => {
+    const m = src.match(/installModerationHost\(\{([\s\S]*?)\}\);/);
+    expect(m, 'expected installModerationHost({...}) in app.ts').not.toBeNull();
+    expect(m![1]).toMatch(/\binput,/);
+    expect(m![1]).toMatch(/gameLayer: scaling\.gameLayer/);
+  });
 });

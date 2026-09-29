@@ -25,9 +25,10 @@ import { showToastMessage } from '../net/log';
 import { WorldApiClient } from '../net/WorldApiClient';
 import { defaultPvpDeck, validatePvpDeckClient } from '../game/meta/pvpLoadout';
 import * as analytics from '../analytics';
+import { installModerationBackend, syncBlockedForSession } from './blockedSync';
 import {
   clientPlatformName,
-  SEEN_INTRO_FLAG, GDPR_CONSENT_FLAG, AGE_DECLARED_FLAG, MIN_AGE_YEARS, TOKEN_KEY, PLAYER_NAME_KEY, PLAYER_PUBLIC_ID_KEY,
+  SEEN_INTRO_FLAG, GDPR_CONSENT_FLAG, TERMS_ACCEPTED_FLAG, AGE_DECLARED_FLAG, MIN_AGE_YEARS, TOKEN_KEY, PLAYER_NAME_KEY, PLAYER_PUBLIC_ID_KEY,
   PLAYER_AVATAR_KEY, FALLBACK_SEASON, FREE_RENAME_KEY, PLATFORM_AVATAR_KEY, NAME_LOCKED_KEY,
 } from './appConstants';
 import type { AppCtx, AppState, Nav } from './appCtx';
@@ -80,6 +81,8 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     if (platform.storage.getItem(TOKEN_KEY)) platform.storage.setItem(TOKEN_KEY, token);
   });
   const replayStore = new ReplayStore(platform.storage);
+  // Report / block / blocked list (App Review 1.2, ui/moderation.ts) — offered only with an API.
+  installModerationBackend(api, platform.storage);
 
   // Mutable session-lifetime state, shared by reference with every nav module.
   const state: AppState = {
@@ -120,6 +123,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       if (avatarChanged && state.inLobby) nav.goLobby();
       if (publicId) {
         platform.storage.setItem(PLAYER_PUBLIC_ID_KEY, publicId);
+        syncBlockedForSession(api, platform.storage); // blocked list for this account (ui/moderation.ts)
         void featureFlags?.refresh(); // publicId received from save response → re-fetch bootstrap so targeted log capture takes effect immediately
       }
       if (!displayName) return;
@@ -243,7 +247,10 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
 
     const needAge = declaredAge !== true;
     const needConsent = answeredGdpr === undefined;
-    if (!needAge && !needConsent) { next(); return; }
+    // The current Terms of Use (EULA) — see TERMS_ACCEPTED_FLAG. A player who answered consent under
+    // an older text is asked for the terms alone ('terms' mode); their analytics answer is kept.
+    const needTerms = saveManager.get().flags[TERMS_ACCEPTED_FLAG] !== true;
+    if (!needAge && !needConsent && !needTerms) { next(); return; }
 
     /** Shared tail of a granted/refused consent answer: persist locally, mirror to the account. */
     const recordConsent = (granted: boolean): void => {
@@ -256,7 +263,10 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     };
 
     views.showEntryGate(
-      { age: needAge ? 'ask' : 'ok', consent: needConsent ? (needsConsentChoice() ? 'choice' : 'accept-only') : null },
+      {
+        age: needAge ? 'ask' : 'ok',
+        consent: needConsent ? (needsConsentChoice() ? 'choice' : 'accept-only') : needTerms ? 'terms' : null,
+      },
       {
         onAnswered({ birthYear, granted }) {
           if (birthYear !== undefined) {
@@ -264,7 +274,12 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
             saveManager.setFlag(AGE_DECLARED_FLAG, oldEnough);
             if (!oldEnough) { views.showAgeGate('blocked', { onDeclared() { /* dead end */ } }); return; }
           }
-          if (granted !== undefined) recordConsent(granted);
+          // Either consent button (and the lone 'terms' Accept) accepts the Terms of Use; only a real
+          // consent question records an analytics answer.
+          if (granted !== undefined) {
+            if (needConsent) recordConsent(granted);
+            saveManager.setFlag(TERMS_ACCEPTED_FLAG, true);
+          }
           next();
         },
       },

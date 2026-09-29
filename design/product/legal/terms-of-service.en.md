@@ -42,7 +42,11 @@ We grant you a limited, non-exclusive, non-transferable, revocable license to us
 ## 4. User-generated content (UGC)
 
 - You are responsible for content you create (display names, chat, reports) and grant us a non-exclusive license to use it for operating, displaying, moderating, and securing the service.
-- We use profanity filtering, reporting, and blocking as moderation tools, and **may, but are not obligated to**, review, remove, or restrict violating content.
+- **Zero tolerance.** There is no tolerance for objectionable content (harassment, bullying, hate speech, sexual content, violence, spam/scams, impersonation, doxxing, or anything unlawful) or for abusive users. This covers chat (world / family / sect / private), family announcements, mail, and player / family / sect names.
+- **Filtering.** User content is automatically filtered for profanity and other objectionable material before other players see it.
+- **Report & block.** Any player or message can be reported in-game (tap the name or message → "Report" → pick a reason), and any player can be blocked ("Block"). Blocking immediately hides that player's content from the blocker, stops them messaging the blocker, and notifies our moderation team. Blocks can be reviewed and undone under "Blocked players".
+- **Our response.** We review every report and act on it **within 24 hours**: the objectionable content is removed and the offender is warned, muted, suspended, or permanently banned depending on severity (see §8). Severe violations lead to an immediate permanent ban; unlawful content may be reported to the authorities.
+- **EULA.** These Terms are the game's end-user licence agreement. For the iOS app they supplement Apple's standard Licensed Application EULA, and players accept them before registering or logging in.
 - You may not post content that infringes others' rights or violates §3.
 
 ---

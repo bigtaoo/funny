@@ -19,8 +19,6 @@ export interface NetworkHandlers {
   doAdd(publicId: string): Promise<void>;
   doRespond(requestId: string, accept: boolean): Promise<void>;
   doRemove(publicId: string): Promise<void>;
-  doBlock(publicId: string): Promise<void>;
-  doReport(publicId: string): Promise<void>;
   doDuel(publicId: string): void;
   doDuelRespond(inviteId: string, accept: boolean): void;
   doCreateFamily(): Promise<void>;
@@ -162,18 +160,6 @@ export class NetworkPanel implements NetworkHandlers {
     core.popup.hide();
     try { await core.cb.removeFriend(publicId); core.toast('friends.removed', 'success'); } catch { core.toast('friends.error'); }
     void this.refresh();
-  }
-
-  async doBlock(publicId: string): Promise<void> {
-    const core = this.core;
-    try { await core.cb.blockUser(publicId); core.toast('friends.blockedDone', 'success'); } catch { core.toast('friends.error'); }
-    void this.refresh();
-  }
-
-  /** UGC report (design-doc-audit-2026-07, COMPLIANCE_GLOBAL.md §7): admin-review-only, does not block/unfriend. */
-  async doReport(publicId: string): Promise<void> {
-    const core = this.core;
-    try { await core.cb.reportUser(publicId); core.toast('friends.reportedDone', 'success'); } catch { core.toast('friends.error'); }
   }
 
   doDuel(publicId: string): void {

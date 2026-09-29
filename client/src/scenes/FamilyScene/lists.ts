@@ -6,6 +6,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
 import { isChatDisabled } from '../../ui/chatPolicy';
+import { isBlocked } from '../../ui/moderation';
 import { ui as C, txt, sketchPanel, sketchButton, sketchAccentBar, seedFor } from '../../render/sketchUi';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { scrollRegionLayer } from '../../ui/widgets/scrollRegionLayer';
@@ -280,7 +281,11 @@ export function renderChannel(
   // Message list. The input box below stays pinned off `listH2` (the naive space reserved for
   // it); only the scrollable message area's cull/clamp/indicator use the peek-adjusted viewH2,
   // so a partial next message always peeks above the fold when there's more to scroll to.
-  const msgH = core.messages.length * R;
+  // A blocked player's messages are dropped here, at render time, so a block — or a live push from
+  // them — never shows (App Review 1.2). Channel is returned newest-first; render oldest-at-top for
+  // natural reading (matches Sect/World chat).
+  const ordered = core.messages.filter((m) => !isBlocked(core.senderPublicIdOf(m))).reverse();
+  const msgH = ordered.length * R;
   const viewH2 = peekViewportH(listH2, R, msgH);
   core.channelMax = Math.max(0, msgH - viewH2);
   core.channelRegionTop = y0;
@@ -294,9 +299,8 @@ export function renderChannel(
   // rebuilding — same as the roster column above (see ./repaint.ts).
   const over = viewH2;
 
-  // Channel is returned newest-first; render oldest-at-top for natural reading (matches Sect/World chat).
-  const ordered = [...core.messages].reverse();
   let cy = y0 - core[scrollKey];
+  const me = core.cb.myAccountId;
   for (const msg of ordered) {
     if (cy + R < y0 - over || cy > y0 + viewH2 + over) { cy += R; continue; }
     drawChatLine(
@@ -304,6 +308,10 @@ export function renderChannel(
       { senderName: msg.senderName ?? msg.senderId, title: msg.title, familyName: msg.familyName },
       msg.body, FS.label, FS.label, colW - ROW_INSET * 2,
     );
+    // Tapping someone else's message opens their card: Report (this message) / Block.
+    if (msg.senderId !== me) {
+      core.hitRects.push({ rect: { x: x0, y: cy, w: colW, h: R }, fn: () => core.openMessageSender(msg), scroll: 'channel' });
+    }
     cy += R;
   }
 
@@ -312,7 +320,7 @@ export function renderChannel(
   const bar = drawScrollIndicator(core.bodyLayer, view, core[scrollKey], max);
   core.repaint.register('channel', { layer: list, key: scrollKey, view, max, bar });
 
-  if (core.messages.length === 0) {
+  if (ordered.length === 0) {
     const emptyLbl = txt(t('family.noMessages'), FS.label, MUTED);
     emptyLbl.alpha = 0.8;
     emptyLbl.x = x0 + 12; emptyLbl.y = y0 + 8;

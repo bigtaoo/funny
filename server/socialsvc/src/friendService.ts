@@ -9,20 +9,23 @@
 // This class is a thin delegating facade so external callers (httpApi routes, this package's own
 // tests) keep importing `FriendService` from this one path with an unchanged public API and behavior.
 import type { ChatRegion } from '@nw/shared';
-import type { FriendServiceDeps } from './friend/types';
+import type { FriendServiceDeps, ReportInput } from './friend/types';
 import type { ReportDoc } from './db';
 import { FriendRelationsService } from './friend/relations';
 import { FriendChatService } from './friend/chat';
+import { ModerationService, type SocialModerationChannel } from './moderationService';
 
 export * from './friend/types';
 
 export class FriendService {
   private readonly relations: FriendRelationsService;
   private readonly chat: FriendChatService;
+  private readonly moderation: ModerationService;
 
   constructor(deps: FriendServiceDeps) {
     this.relations = new FriendRelationsService(deps);
     this.chat = new FriendChatService(deps);
+    this.moderation = new ModerationService(deps);
   }
 
   // --- friend relations (friend/relations.ts) ---
@@ -44,8 +47,8 @@ export class FriendService {
   searchFriend(publicId: string) {
     return this.relations.searchFriend(publicId);
   }
-  requestFriend(accountId: string, publicId: string, message: string | undefined) {
-    return this.relations.requestFriend(accountId, publicId, message);
+  requestFriend(accountId: string, publicId: string, message: string | undefined, region: ChatRegion = 'global') {
+    return this.relations.requestFriend(accountId, publicId, message, region);
   }
   respondFriend(accountId: string, requestId: string, accept: boolean) {
     return this.relations.respondFriend(accountId, requestId, accept);
@@ -53,20 +56,31 @@ export class FriendService {
   removeFriend(accountId: string, publicId: string) {
     return this.relations.removeFriend(accountId, publicId);
   }
-  blockUser(accountId: string, publicId: string) {
-    return this.relations.blockUser(accountId, publicId);
+  blockUser(accountId: string, publicId: string, input: ReportInput = {}) {
+    return this.relations.blockUser(accountId, publicId, input);
+  }
+  listBlocked(accountId: string) {
+    return this.relations.listBlocked(accountId);
   }
   unblockUser(accountId: string, publicId: string) {
     return this.relations.unblockUser(accountId, publicId);
   }
-  reportUser(accountId: string, publicId: string, reason: string) {
-    return this.relations.reportUser(accountId, publicId, reason);
+  reportUser(accountId: string, publicId: string, input: ReportInput | string = {}) {
+    return this.relations.reportUser(accountId, publicId, input);
   }
   listReports(status: ReportDoc['status'] = 'open', limit = 200) {
     return this.relations.listReports(status, limit);
   }
   resolveReport(id: string, resolution: 'dismissed' | 'upheld', resolvedBy: string) {
     return this.relations.resolveReport(id, resolution, resolvedBy);
+  }
+
+  // --- staff content removal (moderationService.ts, Guideline 1.2) ---
+  deleteContent(channel: SocialModerationChannel, messageId: string | undefined, targetId: string | undefined) {
+    return this.moderation.deleteContent(channel, messageId, targetId);
+  }
+  purgeAuthor(accountId: string) {
+    return this.moderation.purgeAuthor(accountId);
   }
 
   // --- 1:1 private chat (friend/chat.ts) ---

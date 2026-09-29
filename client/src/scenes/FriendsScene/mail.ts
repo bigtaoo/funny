@@ -20,6 +20,7 @@ import type { FriendsSceneCore } from './core';
 import { drawStatusTag } from '../../ui/widgets/statusTag';
 import { addButton, centerLabel, scrollRegion } from './chrome';
 import type { NetworkHandlers } from './network';
+import { canModerate, isBlocked, messageContent, requestBlock, requestReport, type ModerationTarget } from '../../ui/moderation';
 
 // ⚠️ Material-attachment id namespace: every server system that sends a `kind: 'material'` mail
 // attachment (auctionsvc, worldsvc season rewards, battlepass, retention, events) uses the short
@@ -45,13 +46,15 @@ export class MailPanel {
     const { layer } = scrollRegion(core, regionH);
 
     if (core.loading) { centerLabel(core, layer, 'friends.loading', regionH); core.maxScroll = 0; return; }
-    if (core.mail.length === 0) { centerLabel(core, layer, 'mail.empty', regionH); core.maxScroll = 0; return; }
+    // Mail from a blocked player is hidden like any other feed item of theirs (App Review 1.2).
+    const mail = core.mail.filter((m) => !isBlocked(playerSender(m)));
+    if (mail.length === 0) { centerLabel(core, layer, 'mail.empty', regionH); core.maxScroll = 0; return; }
 
     let cy = Math.round(h * 0.01);
     const screenY = (c: number) => core.regionTop + c - core.scrollY;
     const rowGap = Math.round(h * 0.014);
     const rh = Math.round(h * 0.10);
-    for (const m of core.mail) {
+    for (const m of mail) {
       const sy = screenY(cy);
       if (core.rowVisible(sy, rh)) this.drawMailRow(layer, m, sy);
       cy += rh + rowGap;
@@ -183,6 +186,19 @@ export class MailPanel {
     }
 
     const dH = Math.round(h * 0.07);
+    // Mail written by a player (not the system) gets Report / Block above Delete (App Review 1.2).
+    const sender = playerSender(m);
+    if (sender && canModerate(sender)) {
+      const target: ModerationTarget = {
+        publicId: sender, name: m.fromName || `#${sender}`,
+        content: messageContent('mail', `${m.subject}\n${m.body}`, m.mailId),
+      };
+      const sGap = Math.round(w * 0.02);
+      const sW = Math.round((panelW - sGap) / 2);
+      const sY = core.bodyBottom - dH * 2 - Math.round(h * 0.025);
+      addButton(core, t('friends.report'), px, sY, sW, dH, C.paper, C.red, () => requestReport(target), C.red);
+      addButton(core, t('friends.block'), px + sW + sGap, sY, sW, dH, C.paper, C.red, () => requestBlock(target), C.red);
+    }
     const deleteBlocked = hasAtt && !m.claimed;
     addButton(core, t('mail.delete'), px, core.bodyBottom - dH - Math.round(h * 0.01), panelW, dH, C.paper, deleteBlocked ? C.mid : C.red,
       () => deleteBlocked ? core.toast('mail.deleteBlockedAttachment') : void this.network.doMailDelete(m), deleteBlocked ? C.mid : C.red,
@@ -242,6 +258,11 @@ export class MailPanel {
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────────
+
+/** The sending player's publicId, or null for system mail (`from` is 'system' or a publicId, see MailView). */
+function playerSender(m: MailView): string | null {
+  return m.from && m.from !== 'system' ? m.from : null;
+}
 
 function attachmentLabel(a: MailAttachmentView): string {
   const n = a.count ?? 1;

@@ -39,6 +39,10 @@ import { ui as C, buildPaperBackground, tearDownChildren } from '../../render/sk
 import { drawConfirmDialog } from '../../ui/dialogs/confirmDialog';
 import { ProfilePopup, type ProfileAction } from '../../ui/dialogs/ProfilePopup';
 import { showToastMessage } from '../../net/log';
+import {
+  canModerate, messageContent, onBlockedChange, openPlayerCard, safetyActions,
+  type ModerationTarget, type ReportContent,
+} from '../../ui/moderation';
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { drawSceneHeader, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
 import { sidebarNavW, bottomNavH } from '../../ui/widgets/HubTabs';
@@ -193,6 +197,8 @@ export class FamilySceneCore {
     this.unsubs.push(input.onMove((x, y) => this.handleMove(x, y)));
     this.unsubs.push(input.onUp((x, y) => this.handleUp(x, y)));
     this.unsubs.push(input.onWheel((x, y, deltaY) => this.handleWheel(x, y, deltaY)));
+    // A block hides the player's channel messages at once (App Review 1.2; lists.ts filters them).
+    this.unsubs.push(onBlockedChange(() => { if (!this.destroyed) this.render(); }));
   }
 
   /** Width of the social hub rail left of the notebook binding line (matches every other left-edge tab
@@ -393,7 +399,7 @@ export class FamilySceneCore {
    *  them, "Add Friend" otherwise (neither for my own row). Rank/ELO/family/sect are fetched by the
    *  popup itself (see ProfilePopup's `fetchExtra`) — this only supplies what the roster already has
    *  for free (name/avatar). */
-  openMemberProfile(mem: FamilyMemberView): void {
+  openMemberProfile(mem: FamilyMemberView, content?: ReportContent): void {
     const isMe = mem.accountId === this.cb.myAccountId;
     const alreadyFriend = !!mem.publicId && this.friendPublicIds.has(mem.publicId);
     const actions: ProfileAction[] = [];
@@ -401,6 +407,11 @@ export class FamilySceneCore {
       const publicId = mem.publicId;
       if (!alreadyFriend) actions.push({ labelKey: 'friends.add', fn: () => void this.doAddFriend(publicId) });
       else if (!isChatDisabled()) actions.push({ labelKey: 'friends.message', fn: () => this.cb.openChat(publicId, mem.displayName ?? publicId) });
+      // Report / Block (App Review 1.2) — `content` is the channel message the popup was opened from.
+      actions.push(...safetyActions({
+        publicId, name: mem.displayName ?? publicId, ...(mem.avatarId ? { avatarId: mem.avatarId } : {}),
+        ...(content ? { content } : {}),
+      }));
     }
     this.profilePopup.show({
       name: mem.displayName ?? mem.publicId ?? t('family.unknownMember'),
@@ -409,6 +420,37 @@ export class FamilySceneCore {
       actions,
       ...(mem.avatarId ? { avatarId: mem.avatarId } : {}),
     });
+  }
+
+  /**
+   * The sender's publicId for a channel message. FamilyMessageView carries the accountId; older servers omit
+   * `senderPublicId`, so it falls back to the roster (every sender is, or was, a member). The field
+   * itself wins when present — needed for senders who have since left.
+   */
+  senderPublicIdOf(msg: FamilyMessageView): string | undefined {
+    const direct = msg.senderPublicId;
+    return direct || this.members.find((m) => m.accountId === msg.senderId)?.publicId;
+  }
+
+  /** Channel-row tap: the sender's profile card with Report (this message) / Block. Own rows: nothing. */
+  openMessageSender(msg: FamilyMessageView): void {
+    if (msg.senderId === this.cb.myAccountId) return;
+    const content = messageContent('family', msg.body, msg.id);
+    const mem = this.members.find((m) => m.accountId === msg.senderId);
+    if (mem) { this.openMemberProfile(mem, content); return; }
+    const publicId = this.senderPublicIdOf(msg);
+    if (publicId) openPlayerCard({ publicId, name: msg.senderName, content });
+  }
+
+  /** Who a report of the family announcement is filed against: the leader (who writes it). */
+  announcementAuthor(): ModerationTarget | null {
+    const fam = this.family;
+    const leader = fam?.members?.find((m) => m.accountId === fam.leaderId) ?? this.members.find((m) => m.role === 'leader');
+    if (!fam?.announcement || !leader?.publicId || !canModerate(leader.publicId)) return null;
+    return {
+      publicId: leader.publicId, name: leader.displayName ?? leader.publicId,
+      content: messageContent('announcement', fam.announcement, fam.familyId),
+    };
   }
 
   private async doAddFriend(publicId: string): Promise<void> {

@@ -283,6 +283,7 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
         onFamilyMsg: (f) => view.applyFamilyMsg({
           id: `push:${f.ts}:${f.fromPublicId}`,
           senderId: f.fromPublicId,
+          senderPublicId: f.fromPublicId,
           senderName: f.fromName,
           body: f.text,
           ts: f.ts,
@@ -337,6 +338,7 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
         onSectMsg: (s) => view.applySectMsg({
           id: `push:${s.ts}:${s.fromPublicId}`,
           senderId: s.fromPublicId,
+          senderPublicId: s.fromPublicId,
           senderName: s.fromName,
           body: s.text,
           ts: s.ts,

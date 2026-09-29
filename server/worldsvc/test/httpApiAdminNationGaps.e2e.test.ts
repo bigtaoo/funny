@@ -165,6 +165,56 @@ describe.skipIf(!mongo)('worldsvc httpApi route-dispatch gaps: admin.ts + nation
     });
   });
 
+  // Staff chat moderation (App Store Review Guideline 1.2): admin removes one reported world/sect message, or
+  // every world/sect message one account wrote.
+  describe('admin.ts moderation', () => {
+    const seed = async () => {
+      const cols = m.collections;
+      await Promise.all([cols.nationMessages.deleteMany({}), cols.sectMessages.deleteMany({})]);
+      const ts = new Date(now());
+      await cols.nationMessages.insertMany([
+        { _id: 'nm:w:1:1:aa', worldId: 'w', senderId: 'troll', senderName: 'T', senderPublicId: '1', body: 'bad', ts },
+        { _id: 'nm:w:1:2:bb', worldId: 'w', senderId: 'troll', senderName: 'T', senderPublicId: '1', body: 'worse', ts },
+        { _id: 'nm:w:1:3:cc', worldId: 'w', senderId: 'nice', senderName: 'N', senderPublicId: '2', body: 'hello', ts },
+      ]);
+      await cols.sectMessages.insertMany([
+        { _id: 'sm:s:1:1:aa', worldId: 'w', sectId: 's', senderId: 'troll', senderName: 'T', body: 'bad', ts },
+        { _id: 'sm:s:1:2:bb', worldId: 'w', sectId: 's', senderId: 'nice', senderName: 'N', body: 'hi', ts },
+      ]);
+    };
+    const post = (path: string, body: unknown, headers: Record<string, string> = internalHeaders) =>
+      fetch(`${base}${path}`, { method: 'POST', headers, body: JSON.stringify(body) });
+
+    it('delete-message: removes exactly the named world/sect message; a second call reports deleted:false', async () => {
+      await seed();
+      const r1 = await post('/admin/world/moderation/delete-message', { channel: 'world', messageId: 'nm:w:1:1:aa' });
+      expect(r1.status).toBe(200);
+      expect((await jsonBody(r1)).data).toEqual({ deleted: true });
+      expect(await m.collections.nationMessages.countDocuments({})).toBe(2);
+      const again = await post('/admin/world/moderation/delete-message', { channel: 'world', messageId: 'nm:w:1:1:aa' });
+      expect((await jsonBody(again)).data).toEqual({ deleted: false });
+      const sect = await post('/admin/world/moderation/delete-message', { channel: 'sect', messageId: 'sm:s:1:1:aa' });
+      expect((await jsonBody(sect)).data).toEqual({ deleted: true });
+      expect(await m.collections.sectMessages.countDocuments({})).toBe(1);
+    });
+
+    it('delete-message: bad channel / missing messageId → 400; no internal key → 401', async () => {
+      expect((await post('/admin/world/moderation/delete-message', { channel: 'dm', messageId: 'x' })).status).toBe(400);
+      expect((await post('/admin/world/moderation/delete-message', { channel: 'world' })).status).toBe(400);
+      expect((await post('/admin/world/moderation/delete-message', { channel: 'world', messageId: 'x' }, { 'content-type': 'application/json' })).status).toBe(401);
+    });
+
+    it("purge-author: removes every world + sect message by that account and nobody else's", async () => {
+      await seed();
+      const r = await post('/admin/world/moderation/purge-author', { accountId: 'troll' });
+      expect(r.status).toBe(200);
+      expect((await jsonBody(r)).data).toEqual({ worldMessages: 2, sectMessages: 1 });
+      expect(await m.collections.nationMessages.find({}).map((d) => d.senderId).toArray()).toEqual(['nice']);
+      expect(await m.collections.sectMessages.find({}).map((d) => d.senderId).toArray()).toEqual(['nice']);
+      expect((await post('/admin/world/moderation/purge-author', {})).status).toBe(400);
+    });
+  });
+
   describe('nationRoutes.ts', () => {
     const W = 's1-http-nation';
 

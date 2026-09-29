@@ -200,6 +200,8 @@ export class AdminService {
   // ── reports ──
   listReports(...args: Parameters<ReportsService['listReports']>) { return this.reports.listReports(...args); }
   resolveReport(...args: Parameters<ReportsService['resolveReport']>) { return this.reports.resolveReport(...args); }
+  deleteReportedContent(...args: Parameters<ReportsService['deleteReportedContent']>) { return this.reports.deleteReportedContent(...args); }
+  purgeAuthorContent(...args: Parameters<ReportsService['purgeAuthorContent']>) { return this.reports.purgeAuthorContent(...args); }
 
   // ── appeals ──
   listAppeals(...args: Parameters<AppealsService['listAppeals']>) { return this.appeals.listAppeals(...args); }

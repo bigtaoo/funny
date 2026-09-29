@@ -108,7 +108,8 @@ export async function handleFamilyRoutes(ctx: RouteCtx): Promise<boolean> {
     const body = await readJson(req);
     const announcement = typeof body.announcement === 'string' ? body.announcement : null;
     if (announcement == null) { sendErr(res, ErrorCode.BAD_REQUEST, 'announcement required'); return true; }
-    await familySvc.setAnnouncement(accountId, announcement);
+    const announcementRegion = (req.headers['x-chat-region'] as ChatRegion | undefined) ?? 'global';
+    await familySvc.setAnnouncement(accountId, announcement, announcementRegion);
     send(res, 200, ok({}));
     return true;
   }

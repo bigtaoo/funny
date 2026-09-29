@@ -6,7 +6,7 @@ import { loadSocialsvcEnv } from '../src/config';
 
 const ENV_KEYS = [
   'NW_SOCIAL_PORT', 'NW_SOCIAL_HOST', 'NW_SOCIAL_MONGO_URI', 'NW_SOCIAL_MONGO_DB',
-  'NW_GATEWAY_INTERNAL_URL', 'NW_META_INTERNAL_URL', 'NW_ADMIN_INTERNAL_URL',
+  'NW_GATEWAY_INTERNAL_URL', 'NW_META_INTERNAL_URL', 'NW_ADMIN_INTERNAL_URL', 'NW_ALERT_WEBHOOK_URL',
   // Base ServerEnv vars loadServerEnv() itself reads (must be present or it throws).
   'NW_JWT_SECRET', 'NW_MONGO_URI', 'NW_MONGO_DB', 'NW_INTERNAL_KEY',
 ] as const;
@@ -42,6 +42,7 @@ describe('loadSocialsvcEnv', () => {
     expect(env.gatewayInternalUrl).toBeUndefined();
     expect(env.metaInternalUrl).toBeUndefined();
     expect(env.adminInternalUrl).toBeUndefined();
+    expect(env.alertWebhookUrl).toBeUndefined();
   });
 
   it('every social-specific var set -> all threaded through verbatim', () => {
@@ -52,6 +53,7 @@ describe('loadSocialsvcEnv', () => {
     process.env.NW_GATEWAY_INTERNAL_URL = 'http://gateway:8090';
     process.env.NW_META_INTERNAL_URL = 'http://meta:18080';
     process.env.NW_ADMIN_INTERNAL_URL = 'http://admin:18083';
+    process.env.NW_ALERT_WEBHOOK_URL = 'https://hooks.slack.com/services/T/B/X';
 
     const env = loadSocialsvcEnv();
     expect(env.port).toBe(19999);
@@ -61,16 +63,19 @@ describe('loadSocialsvcEnv', () => {
     expect(env.gatewayInternalUrl).toBe('http://gateway:8090');
     expect(env.metaInternalUrl).toBe('http://meta:18080');
     expect(env.adminInternalUrl).toBe('http://admin:18083');
+    expect(env.alertWebhookUrl).toBe('https://hooks.slack.com/services/T/B/X');
   });
 
   it('falsy empty-string overrides fall back to undefined, not the empty string itself', () => {
     process.env.NW_GATEWAY_INTERNAL_URL = '';
     process.env.NW_META_INTERNAL_URL = '';
     process.env.NW_ADMIN_INTERNAL_URL = '';
+    process.env.NW_ALERT_WEBHOOK_URL = '';
     const env = loadSocialsvcEnv();
     expect(env.gatewayInternalUrl).toBeUndefined();
     expect(env.metaInternalUrl).toBeUndefined();
     expect(env.adminInternalUrl).toBeUndefined();
+    expect(env.alertWebhookUrl).toBeUndefined();
   });
 
   it("with its own Mongo URI unset, falls back to the local dev Mongo — never to metaserver's login (ADR-090)", () => {

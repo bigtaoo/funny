@@ -17,7 +17,8 @@ import {
   type AuditAction,
 } from '@nw/shared';
 import type { AdminCollections, AuditDoc } from '../db';
-import type { StatsClient, PlayerClient, AntiCheatClient, MismatchClient, PvpCardStatsClient, SuspiciousPveClient, MailDispatcher, AnalyticsClient, WorldClient, AuctionClient, LadderClient, EventsClient, GachaPoolsClient, PromoClient, PaddleEventsClient, ReportsClient, AppealsClient, EnforcementClient, FeedbackClient } from '../clients';
+import type { StatsClient, PlayerClient, AntiCheatClient, MismatchClient, PvpCardStatsClient, SuspiciousPveClient, MailDispatcher, AnalyticsClient, WorldClient, AuctionClient, LadderClient, EventsClient, GachaPoolsClient, PromoClient, PaddleEventsClient, ReportsClient, AppealsClient, EnforcementClient, FeedbackClient, ModerationClient } from '../clients';
+import { nullModerationClient } from '../clients/moderation';
 import { AdminError } from './errors';
 
 const log = createLogger('admin:service');
@@ -51,6 +52,8 @@ export interface AdminServiceDeps {
   appeals: AppealsClient;
   enforcement: EnforcementClient;
   feedback: FeedbackClient;
+  /** Staff content removal (Guideline 1.2) in socialsvc + worldsvc; omit = unavailable (tests, partial stacks). */
+  moderation?: ModerationClient;
   now: () => number;
 }
 
@@ -93,6 +96,7 @@ export class AdminCore {
   readonly appeals: AppealsClient;
   readonly enforcement: EnforcementClient;
   readonly feedback: FeedbackClient;
+  readonly moderation: ModerationClient;
   readonly now: () => number;
 
   constructor(deps: AdminServiceDeps) {
@@ -116,6 +120,7 @@ export class AdminCore {
     this.appeals = deps.appeals;
     this.enforcement = deps.enforcement;
     this.feedback = deps.feedback;
+    this.moderation = deps.moderation ?? nullModerationClient;
     this.now = deps.now;
   }
 

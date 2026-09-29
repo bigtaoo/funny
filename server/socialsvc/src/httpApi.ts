@@ -16,7 +16,7 @@
 //   httpApi/internalFamilyRoutes.ts   /internal/family/* (by-account, member, batch, by-sect, sect, prosperity/refresh, activity(-and-prosperity), slg-reset)
 //   httpApi/internalMailRoutes.ts     /internal/mail/* (atomic claim/unclaim, system mail single + bulk)
 //   httpApi/internalPushRoutes.ts     /internal/push (generic delegated push) + /internal/presence/{online,offline} (friend presence fan-out)
-//   httpApi/internalReportsRoutes.ts  /internal/reports (UGC review queue list + resolve)
+//   httpApi/internalReportsRoutes.ts  /internal/reports (UGC review queue list + resolve) + /internal/moderation/* (staff content removal)
 //   httpApi/familyRoutes.ts        /social/family/* (create/search/browse/join/leave/kick/role/disband/announcement/channel)
 //   httpApi/profileRoutes.ts       /social/profile/:publicId/extra (unified profile-popup rank/family/sect extras)
 //   httpApi/friendRoutes.ts        /social/friends/* + /social/badges (P2)

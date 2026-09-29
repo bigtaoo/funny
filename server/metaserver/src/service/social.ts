@@ -16,7 +16,7 @@ import { accountIdOf, type MetaCore } from './base.js';
 type SocialHandlers = Pick<
   MetaHandlers,
   | 'getFriends' | 'getFriendRequests' | 'getSocialBadges' | 'searchFriend' | 'requestFriend'
-  | 'respondFriend' | 'removeFriend' | 'blockUser' | 'unblockUser' | 'reportUser' | 'getConversations'
+  | 'respondFriend' | 'removeFriend' | 'blockUser' | 'unblockUser' | 'getBlockedUsers' | 'reportUser' | 'getConversations'
   | 'getMessages' | 'sendChat' | 'readChat' | 'getMail' | 'readMail' | 'deleteMail'
   | 'claimMail' | 'sendMail'
 >;
@@ -71,6 +71,10 @@ export class SocialService implements SocialHandlers {
 
     async blockUser(req: FastifyRequest, reply: FastifyReply) {
       return this.proxySocial(req, reply, '/social/friends/block', req.body);
+    }
+
+    async getBlockedUsers(req: FastifyRequest, reply: FastifyReply) {
+      return this.proxySocial(req, reply, '/social/friends/blocked');
     }
 
     async unblockUser(req: FastifyRequest, reply: FastifyReply) {

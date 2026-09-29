@@ -12,6 +12,7 @@ import { drawButtonLabel } from '../../ui/widgets/buttonLabel';
 import { FS, snapFont } from '../../render/fontScale';
 import { MIN_PASSWORD_LEN, MIN_LOGIN_ID_LEN, type LoginSceneCallbacks, type Field, type View } from './types';
 import type { Hit } from '../../ui/hits';
+import { legalUrl } from '../../ui/dialogs/ConsentDialog';
 
 /** Quick tap-grow-then-fire press animation, shared by every button this scene draws.
  *  PRESS_DUR is also read by LoginScene.update() to know when to fire the deferred action. */
@@ -80,6 +81,34 @@ export function drawLanding(host: FormHost): void {
   hint.style.align = 'center';
   hint.anchor.set(0.5, 0); hint.x = w / 2; hint.y = offY + btnH + Math.round(h * 0.012);
   host.container.addChild(hint);
+
+  drawTermsNotice(host, hint.y + hint.height);
+}
+
+/**
+ * "By logging in or signing up you agree to our Terms of Use (EULA)…" + a tappable link to them
+ * (App Review 1.2: the terms, with their zero-tolerance clause, are agreed to before an account
+ * exists). Sits at the bottom of the screen, or just under `minY` when the content above runs lower.
+ */
+function drawTermsNotice(host: FormHost, minY: number): void {
+  const { w, h } = host;
+  const note = txt(t('auth.termsNotice'), FS.label, C.mid, false, Math.round(w * 0.86));
+  note.style.align = 'center';
+  note.anchor.set(0.5, 0);
+  const link = txt(t('consent.terms'), FS.label, C.accent, true);
+  link.anchor.set(0.5, 0);
+  const gap = Math.round(h * 0.006);
+  const blockH = note.height + gap + link.height;
+  const y = Math.max(Math.round(minY + h * 0.015), Math.round(h * 0.985 - blockH));
+  note.x = w / 2; note.y = y;
+  link.x = w / 2; link.y = y + note.height + gap;
+  host.container.addChild(note);
+  host.container.addChild(link);
+  const pad = Math.round(h * 0.012);
+  host.hits.push({
+    rect: { x: w / 2 - link.width / 2 - pad, y: link.y - pad, w: link.width + pad * 2, h: link.height + pad * 2 },
+    fn: () => { if (typeof window !== 'undefined') window.open(legalUrl('/terms'), '_blank', 'noopener'); },
+  });
 }
 
 /**
@@ -172,6 +201,8 @@ export function drawForm(host: FormHost, isRegister: boolean): void {
     rect: { x: w / 2 - swap.width / 2 - sp, y: y - swap.height / 2 - sp, w: swap.width + 2 * sp, h: swap.height + 2 * sp },
     fn: () => host.goView(isRegister ? 'password' : 'register'),
   });
+
+  drawTermsNotice(host, y + swap.height / 2);
 }
 
 function drawField(

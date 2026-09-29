@@ -315,7 +315,7 @@ describe('FriendsScene — social tab rail still dispatches to switchTab after s
       addFriend: async () => {},
       respond: async () => {},
       removeFriend: async () => {},
-      blockUser: async () => {}, reportUser: async () => {}, duelInvite: () => {}, duelRespond: () => {},
+      duelInvite: () => {}, duelRespond: () => {},
       loadConversations: async () => [],
       openChat() {},
       loadMail: async () => ({ mail: [], unread: 0 }),

@@ -107,8 +107,9 @@ export class HeadlessAppViews implements AppViews {
   equipment?: EquipmentCallbacks;
   stats?: StatsCallbacks;
   consent?: ConsentCallbacks;
-  /** Which button set the last showConsent asked for ('choice' = the two-answer EU/US card). */
-  consentMode?: ConsentMode;
+  /** Which button set the last showConsent asked for ('choice' = the two-answer EU/US card; 'terms' =
+   *  the entry gate's Terms-of-Use-only re-accept, see TERMS_ACCEPTED_FLAG). */
+  consentMode?: ConsentMode | 'terms';
   /** The age gate's mode + callback, when the core put it up. */
   ageGate?: { mode: AgeGateMode; cb: AgeGateCallbacks };
   reconnectPrompt?: ReconnectPromptCallbacks;

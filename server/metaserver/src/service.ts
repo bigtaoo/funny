@@ -153,6 +153,7 @@ export class MetaService implements MetaHandlers {
   removeFriend(...args: Parameters<SocialService['removeFriend']>) { return this.socialSvc.removeFriend(...args); }
   blockUser(...args: Parameters<SocialService['blockUser']>) { return this.socialSvc.blockUser(...args); }
   unblockUser(...args: Parameters<SocialService['unblockUser']>) { return this.socialSvc.unblockUser(...args); }
+  getBlockedUsers(...args: Parameters<SocialService['getBlockedUsers']>) { return this.socialSvc.getBlockedUsers(...args); }
   reportUser(...args: Parameters<SocialService['reportUser']>) { return this.socialSvc.reportUser(...args); }
   getConversations(...args: Parameters<SocialService['getConversations']>) { return this.socialSvc.getConversations(...args); }
   getMessages(...args: Parameters<SocialService['getMessages']>) { return this.socialSvc.getMessages(...args); }

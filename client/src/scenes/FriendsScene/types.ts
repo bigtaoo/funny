@@ -44,8 +44,6 @@ export interface FriendsSceneCallbacks {
   addFriend(publicId: string): Promise<void>;
   respond(requestId: string, accept: boolean): Promise<void>;
   removeFriend(publicId: string): Promise<void>;
-  blockUser(publicId: string): Promise<void>;
-  reportUser(publicId: string): Promise<void>;
   /** Friend challenge ("切磋"): fire-and-forget, result arrives via applyDuelInvited/applyDuelCancelled pushes. */
   duelInvite(publicId: string): void;
   duelRespond(inviteId: string, accept: boolean): void;
