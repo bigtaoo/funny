@@ -1,7 +1,7 @@
 # Nivara Privacy Policy
 
 > **Effective date**: {{EFFECTIVE_DATE}} (to be confirmed by legal before launch)
-> **Last updated**: 2026-06-23 (draft)
+> **Last updated**: 2026-09-29 (draft)
 > **Applies to**: Nivara (development codename *Notebook Wars*; the "Game"), including the web version, iOS / Android clients, the WeChat Mini Game, and aggregator platforms such as CrazyGames.
 >
 > ⚠️ **This is a product/engineering draft, not final legal text.** It must be reviewed and approved by counsel before release and reconciled against each distribution channel (App Store / Google Play / WeChat / CrazyGames) and applicable regional law (GDPR / UK GDPR / PIPL / CCPA, etc.). Placeholder items (URLs, legal entity, contact email, effective date, third-party SDK list) must be replaced with real values before launch.
@@ -93,10 +93,12 @@ We **do not perform cross-app ad tracking**. Rewarded video in the mobile app is
 
 ## 7. Retention & deletion
 
-- **Account & saves**: retained while the account exists; after you delete your account a **7-day grace period** applies (log back in to restore), after which data is asynchronously purged or anonymized.
-- **Transaction records**: a minimal set is retained as legally/platform required (tax, refund disputes), and may be kept even after account deletion.
-- **Analytics events**: retained for a limited operational period; deleted in bulk by pseudonymous user_id on account deletion.
-- **Chat/reports**: retained for a limited period for moderation and safety.
+- **Account & saves**: retained while the account exists; after you delete your account a **7-day grace period** applies (log back in to restore). Once it ends, an automated job erases your data across all our services, normally within a few hours: your login credentials, profile, saves, inventory, wallet, friends, private messages, mail, and your presence in the game world. Your account record is reduced to an internal identifier with no personal data. If you still have an auction trade in progress (someone has bid on your listing, or you are the highest bidder), erasure waits until that trade settles, so the other player is not left out of pocket.
+- **Shared spaces**: messages you posted in family/sect/world channels are deleted. If you led a family or sect, leadership passes automatically to another member (or it is disbanded if no one is left). Other players' match history and battle reports are kept, but your name is removed from them.
+- **Transaction records**: a minimal set is retained as legally/platform required (tax, refund disputes) for **10 full calendar years** (counted from the end of the year of the transaction) and then deleted. It may be kept after account deletion for that period; it is then no longer linked to your identity, and raw receipts/payment-provider payloads are removed.
+- **Analytics events**: retained for a limited operational period; deleted in bulk on account deletion, both by pseudonymous user_id and by the device identifier of events recorded before you logged in.
+- **Chat/reports**: retained for a limited period for moderation and safety. On account deletion, reports against you are removed; reports you filed about other players are kept without your identity so they can still be reviewed.
+- **Backups**: erased data disappears from our rolling database backups as they expire (7 days by default).
 
 ### In-app account deletion
 As required by Apple App Store 5.1.1(v) and similar rules, the Game provides an **in-app account deletion entry** in **Settings** (no email needed). Flow: Settings → Delete Account → second confirmation → server-side soft delete (`deletedAt`) → local credentials & saves cleared → recoverable by logging in within the 7-day grace period, purged thereafter.

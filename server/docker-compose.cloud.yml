@@ -83,6 +83,11 @@ services:
       NW_COMMERCIAL_INTERNAL_URL: http://commercial:8092
       NW_GATEWAY_INTERNAL_URL: http://gateway:8090
       NW_SOCIALSVC_INTERNAL_URL: http://socialsvc:8085
+      # C5-b account purge (metaserver accountPurge.ts): meta calls each service's
+      # /internal/accounts/:id/purge. Missing → that step fails closed and accounts stay pending forever.
+      NW_WORLD_INTERNAL_URL: http://worldsvc:18084
+      NW_AUCTION_INTERNAL_URL: http://auctionsvc:18086
+      NW_ANALYTICS_INTERNAL_URL: http://analyticsvc:18085
       # Feature flag delivery + client log targeted collection (FEATURE_FLAGS_DESIGN §9).
       # ⚠ Critical gotcha (same as matchsvc): missing NW_ADMIN_INTERNAL_URL → flag polling disabled → /bootstrap always returns empty map → targeted collection never works.
       NW_ADMIN_INTERNAL_URL: http://admin:8083

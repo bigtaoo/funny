@@ -200,7 +200,7 @@ export class WorldCore {
   footprintFree(...args: Parameters<SpawnService['footprintFree']>): ReturnType<SpawnService['footprintFree']> { return this.spawnSvc.footprintFree(...args); }
   footprintOwnedBy(...args: Parameters<SpawnService['footprintOwnedBy']>): ReturnType<SpawnService['footprintOwnedBy']> { return this.spawnSvc.footprintOwnedBy(...args); }
   isBaseIntact(worldId: string, accountId: string, mainBaseTile: string): Promise<boolean> { return this.spawnSvc.isBaseIntact(worldId, accountId, mainBaseTile); }
-  purgePlayerWorld(worldId: string, accountId: string): Promise<void> { return this.spawnSvc.purgePlayerWorld(worldId, accountId); }
+  purgePlayerWorld(worldId: string, accountId: string): ReturnType<SpawnService['purgePlayerWorld']> { return this.spawnSvc.purgePlayerWorld(worldId, accountId); }
 
   // ── vision (core/vision.ts) ───────────────────────────────────────
   familyMemberIds(worldId: string, accountId: string): Promise<Set<string>> { return this.visionSvc.familyMemberIds(worldId, accountId); }

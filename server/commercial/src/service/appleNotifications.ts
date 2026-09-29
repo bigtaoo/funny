@@ -71,7 +71,10 @@ export class AppleNotificationService {
       if (byToken) return byToken;
     }
     const link = await this.core.cols.appleTransactionLinks.findOne({ _id: tx.originalTransactionId });
-    return link?.accountId ?? null;
+    // A link whose account was purged routes nowhere: granting would re-create the deleted wallet, so the
+    // notification is recorded as `unlinked` like any other charge we cannot attribute to a live player.
+    if (!link || link.accountPurgedAt != null) return null;
+    return link.accountId;
   }
 
   /** Record every notification, routed or not — this log is the only trace support has of what Apple sent. */

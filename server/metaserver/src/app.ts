@@ -201,7 +201,7 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
   app.setErrorHandler((error: Error & { statusCode?: number }, req, reply) => {
     const status = error.statusCode ?? 500;
     const code =
-      status === 401 ? 'UNAUTHENTICATED' : status === 400 ? 'BAD_REQUEST' : 'INTERNAL';
+      status === 401 ? 'UNAUTHENTICATED' : status === 400 ? 'BAD_REQUEST' : status === 410 ? 'ACCOUNT_DELETED' : 'INTERNAL';
     // 5xx = real problem (include stack), 4xx = expected validation failure (single line only).
     // Body included (2026-07-28, redacted/size-capped — see redactedBodyForLog): this is the thrown-
     // exception path (schema validation, security-handler throws), a different code path from the
@@ -290,7 +290,13 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
 
   // Public REST routes — generated from openapi.yml at build time (ADR-023).
   // MetaService is structurally checked against MetaHandlers at compile time (missing method = tsc error).
-  await registerRoutes(app, service, makeSecurityHandlers(opts.jwt, now));
+  // isPurged rides the same cached ban-status read rejectIfBanned uses (one Mongo read per account per
+  // 60s at most), so this per-request check costs a Map lookup on the hot path.
+  await registerRoutes(
+    app,
+    service,
+    makeSecurityHandlers(opts.jwt, now, async (accountId) => !!(await accountCache.getBanStatus(opts.cols, accountId)).purgedAt),
+  );
 
   return app;
 }

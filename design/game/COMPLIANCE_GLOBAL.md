@@ -1,6 +1,6 @@
 # Notebook Wars — 海外合规设计（Web / iOS / Google Play）
 
-> 状态：设计中 · 权威：本文（海外三渠道合规的单一入口）· 更新：2026-09-04（§8「Web 专属」三条——CrazyGames 提审前的四处代码硬伤已修，见该节）；2026-08-10（§2 表格/§8 checklist 勾选核对——隐私政策页/EU同意弹窗/删除账号入口三项实际代码里均已实现，文档此前未跟着勾，见下方对应行）
+> 状态：设计中 · 权威：本文（海外三渠道合规的单一入口）· 更新：2026-09-29（§3.5 账号删除补上真正的跨服务清除任务——此前只有软删，宽限期后什么都不删）；2026-09-04（§8「Web 专属」三条——CrazyGames 提审前的四处代码硬伤已修，见该节）；2026-08-10（§2 表格/§8 checklist 勾选核对——隐私政策页/EU同意弹窗/删除账号入口三项实际代码里均已实现，文档此前未跟着勾，见下方对应行）
 >
 > ⚠️ **本文是工程侧合规映射，不是法律意见。** 涉及隐私政策文本、年龄分级问卷答案、未成年人判定阈值等，最终以平台审核要求与法务/律师确认为准。本文负责的是「把合规义务翻译成代码/配置/上架清单上的 TODO」。
 
@@ -28,7 +28,7 @@
 | 平台内购强制（数字商品只能用平台 IAP） | Apple 3.1.1 / Google Play Payments | iOS / Android | commercial 充值 / `iapVerify` | 🟡 服务端验单已就绪且生产 fail-closed；客户端原生下单 SDK 待接（需真实开发者账号，见 `IAP_CREDENTIALS.md`），月卡/年卡 web 端已接 Paddle |
 | iOS 隐私营养标签 + ATT | Apple | iOS | analyticsvc 采集项 | ❌ 待填（需上架时人工在 ASC 操作，非代码任务） |
 | Google Play 数据安全表 | Google | Android | analyticsvc 采集项 | ❌ 待填（需上架时人工在 Play Console 操作，非代码任务） |
-| 应用内删除账号入口 | Apple 5.1.1(v)（有注册即强制） | iOS（Android 跟进） | account / save / commercial | ✅ `DELETE /account`（软删+7天宽限撤销，见 §3.5/`SERVER_API.md §2.10`）+ `SettingsScene` 入口 |
+| 应用内删除账号入口 | Apple 5.1.1(v)（有注册即强制） | iOS（Android 跟进） | account / save / commercial | ✅ `DELETE /account`（软删+7天宽限撤销，宽限期满后跨服务清除，见 §3.5/`SERVER_API.md §2.10`）+ `SettingsScene` 入口 |
 | UGC 治理（昵称 / 私聊） | 平台 + 各地区 | 全 | social 私聊 / displayName | ✅ 敏感词过滤 + 拉黑 + 举报（2026-07-27 补齐，见 §7） |
 
 ---
@@ -96,7 +96,10 @@
 
 ### 3.5 数据权利与删除账号
 - **Apple 5.1.1(v) 强制**：凡支持账号注册的 App，**必须提供应用内删除账号入口**（不能只让发邮件）。
-- 落地：`SettingsScene` 加「删除账号」→ 二次确认 → 调端点 `DELETE /account`（软删 `accounts.deletedAt`；meta 编排：删/匿名化 saves + 通知 commercial 处理钱包/交易留存 + analyticsvc 按 user_id 删事件 + social 解好友关系）。**契约见 [`SERVER_API.md §2.10`](SERVER_API.md)**。
+- 落地：`SettingsScene` 加「删除账号」→ 二次确认 → 调端点 `DELETE /account`（软删 `accounts.deletedAt`，7 天内重新登录即恢复）。**契约见 [`SERVER_API.md §2.10`](SERVER_API.md)**。
+- **宽限期后的清除（2026-09-29 落地）**：此前本节写的「meta 编排：删/匿名化…」只是设计，**没有任何代码执行**——软删账号的数据在所有服务里永久留存，与隐私政策 §7「宽限期后清除」的承诺不符。现在 metaserver `accountPurge.ts` 每小时扫描过了宽限期的账号，按 social → world → auction → commercial → analytics → meta 顺序调用各服务幂等的 `POST /internal/accounts/:id/purge`，可断点续跑，最后把账号行缩成不含个人数据的墓碑。**权威描述（清单、顺序、领导角色、留存）见 [`ACCOUNT_DESIGN.md`「C5-b 账号清除」](ACCOUNT_DESIGN.md)**。
+- **与隐私政策对齐的实际行为**：宽限期满后通常 1 小时内开始清除；若玩家在拍卖行的交易仍待结算（其挂单已有人出价 / 其是最高出价者），等交易按期结算完才清除该账号（保护对手方）；群聊（家族/门派/国家频道）里本人发的消息删除；本人提交的举报单保留但去身份；家族/门派领导权自动移交其他成员，无人可接则解散；对手的对局记录/战报保留，但本人昵称抹掉；交易记录保留最小集并与身份解绑；备份按备份保留期（默认 7 天）滚动淘汰。
+- **交易记录保留期限（2026-09-29 拍板）**：**10 个完整日历年，之后删除**，对所有账号生效。从记录所在年的年末起算（2016 年的记录保留到 2026-12-31），由 commercial `transactionRetention.ts` 每 6 小时清理；细节见 ACCOUNT_DESIGN「C5-b 账号清除 → 留存」。此前代码里这些集合没有 TTL（= 无限期），网页版隐私页写「7 年」，三处不一致，现统一为 10 年。注意网页端 Paddle 是 Merchant of Record、iOS 端 Apple 是卖方，法定账簿义务主要在它们那里；10 年是按最长的德国记账凭证期限取的保守值，法务若确认可缩短，只改 `TRANSACTION_RETENTION_YEARS` 一处 + 本节 + 隐私政策。
 - GDPR 数据导出（DSAR）：测试期可走人工，正式期再做自助导出。
 
 ---
@@ -183,7 +186,7 @@
 | 埋点同意/删除 | analyticsvc `enabled` 开关 + 按 user_id 删（ANALYTICS §10）；首启同意弹窗（按地区两形态）+ 设置页撤回开关 + 拒绝启动的无鉴权计数（`?d=1` → `boots_daily.declined`），2026-09-21 补齐 | — |
 | 抽卡掉率数据 | commercial `GachaPool.weight` + pity | 公示页 + `displayRates` 回执字段 + i18n |
 | 内购 | `iapVerify` dev 桩 | 平台 IAP/Billing SDK + 真票据校验 |
-| 账号删除 | account 模型 + `DELETE /account` 契约（SERVER_API §2.10；订正 2026-09-03，与本文 §3.5 清单口径统一） | meta 编排实现（删/匿名化 + 跨服务联动） |
+| 账号删除 | account 模型 + `DELETE /account` 契约（SERVER_API §2.10）+ 宽限期后跨服务清除任务（2026-09-29，§3.5 / ACCOUNT_DESIGN「C5-b 账号清除」） | token 吊销表（已清除账号残留 JWT 在非 meta 服务的最长 30 天窗口） |
 | UGC | social 敏感词 + 拉黑 + 举报 + displayName 过滤（2026-07-27 全部补齐） | — |
 | 隐私政策入口 | — | LoginScene / SettingsScene 链接 |
 

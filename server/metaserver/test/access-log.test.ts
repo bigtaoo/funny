@@ -28,7 +28,8 @@ function fakeCols(): Collections {
   const saves = new FakeCol();
   const s = { _id: ACC, save: { accountId: ACC, rev: 1 } as unknown, rev: 1 };
   saves.docs.set(ACC, s);
-  return { saves, cardInstances: new FakeCol() } as unknown as Collections;
+  // bearerAuth reads accounts once per account (C5-b purged-token check); empty = no account is purged.
+  return { saves, cardInstances: new FakeCol(), accounts: new FakeCol() } as unknown as Collections;
 }
 
 async function makeApp(): Promise<FastifyInstance> {

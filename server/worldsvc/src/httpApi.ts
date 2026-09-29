@@ -14,6 +14,7 @@
 // exports a void handler rather than a chain link.
 //   httpApi/helpers.ts     wire helpers (readJson/send/sendErr/numQ/sanitizeSenderNameFallback) + RouteDeps/RouteCtx types
 //   httpApi/admin.ts       /admin/world/* (map-templates, list, patrol, allocate/open/settle/reset/close/merge) — C4/§17.7
+//   httpApi/internalRoutes.ts /internal/* service-to-service calls (account-deletion purge) — X-Internal-Key, like admin.ts
 //   httpApi/mapRoutes.ts   map/tile reads, march/occupations/stationed/territories lists
 //   httpApi/seasonRoutes.ts season resolve/join/transfer, world join/enter
 //   httpApi/actionRoutes.ts abandon/relocate/watchtower, structure build/demolish, march dispatch/recall/instant-return, team cancel/recall, sweep
@@ -35,6 +36,7 @@ import { send, sendErr, type RouteDeps, type RouteCtx } from './httpApi/helpers'
 // the table by varying URLs.
 import { routeTimings } from './metrics';
 import { handleAdminRoutes } from './httpApi/admin';
+import { handleInternalRoutes } from './httpApi/internalRoutes';
 import { handleMapRoutes } from './httpApi/mapRoutes';
 import { handleSeasonRoutes } from './httpApi/seasonRoutes';
 import { handleActionRoutes } from './httpApi/actionRoutes';
@@ -102,6 +104,11 @@ export function startHttpApi(
         const aurl = new URL(req.url ?? '', `http://${req.headers.host ?? 'world'}`);
         if (aurl.pathname.startsWith('/admin/world/')) {
           return handleAdminRoutes(req, res, method, aurl, internalAuth, deps);
+        }
+        // Service-to-service calls (metaserver's account-deletion purge job) — same X-Internal-Key gate and
+        // same "before JWT" placement: the caller is a service, not a player, and has no bearer token.
+        if (aurl.pathname.startsWith('/internal/')) {
+          return handleInternalRoutes(req, res, method, aurl, internalAuth, deps);
         }
       }
 

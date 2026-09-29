@@ -36,6 +36,17 @@ export interface MetaEnv extends ServerEnv {
   lokiPushUrl: string | null;
   /** Redis URL for cross-login active-match tracking (login-reconnect-prompt). null = feature disabled (getSave never returns activeMatch). */
   redisUrl: string | null;
+  /**
+   * Internal base URLs of the three services the C5-b account purge (accountPurge.ts) has to reach besides
+   * socialsvc/commercial. null = that purge step can never complete: the account stays pending and is
+   * retried every tick (fail-closed on purpose — silently skipping a service would leave personal data
+   * behind while reporting the account as erased).
+   */
+  worldInternalUrl: string | null;
+  auctionInternalUrl: string | null;
+  analyticsInternalUrl: string | null;
+  /** Account purge tick interval (ms). 0 = disabled. Default 1h. */
+  accountPurgeIntervalMs: number;
 }
 
 export function loadMetaEnv(): MetaEnv {
@@ -55,5 +66,9 @@ export function loadMetaEnv(): MetaEnv {
     region: process.env.NW_REGION ?? null,
     lokiPushUrl: process.env.NW_LOKI_PUSH_URL ?? null,
     redisUrl: process.env.NW_REDIS_URL ?? null,
+    worldInternalUrl: process.env.NW_WORLD_INTERNAL_URL ?? null,
+    auctionInternalUrl: process.env.NW_AUCTION_INTERNAL_URL ?? null,
+    analyticsInternalUrl: process.env.NW_ANALYTICS_INTERNAL_URL ?? null,
+    accountPurgeIntervalMs: Number(process.env.NW_ACCOUNT_PURGE_INTERVAL_MS ?? 3600_000),
   };
 }

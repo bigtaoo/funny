@@ -56,9 +56,30 @@ function maybeRenewToken(
   reply.header(RENEWED_TOKEN_HEADER, signToken(payload.sub, jwt));
 }
 
-export function makeSecurityHandlers(jwt: JwtConfig, now: () => number = () => Date.now()) {
+function accountDeleted(): AuthError {
+  const e = new Error('account deleted') as AuthError;
+  e.name = ErrorCode.ACCOUNT_DELETED;
+  e.statusCode = 410;
+  return e;
+}
+
+/**
+ * `isPurged` (C5-b account purge): a JWT outlives the account it names — 30-day TTL, and the sliding
+ * renewal below would extend it forever on any request. After the purge job has tombstoned the row, every
+ * handler that lazily creates per-account state (getOrCreateSave, ensurePublicId, ...) would otherwise
+ * resurrect data for an erased account, so the token is refused here, before any handler runs and before
+ * a renewed token could be minted. Soft-deleted-but-not-yet-purged accounts are NOT refused here: the
+ * grace-period undo (POST /account/cancel-deletion) needs a working token. Omitted in unit tests that
+ * build the handlers without a database.
+ */
+export function makeSecurityHandlers(
+  jwt: JwtConfig,
+  now: () => number = () => Date.now(),
+  isPurged?: (accountId: string) => Promise<boolean>,
+) {
   return {
-    bearerAuth(req: FastifyRequest, reply?: FastifyReply) {
+    // Synchronous unless an isPurged check is wired in (glue awaits either form).
+    bearerAuth(req: FastifyRequest, reply?: FastifyReply): void | Promise<void> {
       const token = extractBearer(req.headers['authorization']);
       if (!token) throw unauthenticated('missing bearer token');
       let payload: TokenPayload;
@@ -67,8 +88,15 @@ export function makeSecurityHandlers(jwt: JwtConfig, now: () => number = () => D
       } catch {
         throw unauthenticated('invalid token');
       }
-      req.accountId = payload.sub;
-      maybeRenewToken(payload, jwt, reply, now);
+      const accept = () => {
+        req.accountId = payload.sub;
+        maybeRenewToken(payload, jwt, reply, now);
+      };
+      if (!isPurged) return accept();
+      return isPurged(payload.sub).then((purged) => {
+        if (purged) throw accountDeleted();
+        accept();
+      });
     },
   };
 }

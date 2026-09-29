@@ -18,6 +18,7 @@ import { FunnelService } from './service/funnel';
 import { DistService } from './service/dist';
 import { IngestService } from './service/ingest';
 import { RetentionByService } from './service/retentionBy';
+import { AccountPurgeService } from './service/accountPurge';
 
 export * from './service/defs';
 
@@ -31,6 +32,7 @@ export class AnalyticsService {
   private readonly dist: DistService;
   private readonly ingest: IngestService;
   private readonly retentionBy: RetentionByService;
+  private readonly accountPurge: AccountPurgeService;
 
   constructor(
     private readonly cols: AnalyticsCollections,
@@ -41,6 +43,8 @@ export class AnalyticsService {
     this.dist = new DistService(cols, now);
     this.ingest = new IngestService(cols, now);
     this.retentionBy = new RetentionByService(cols, now);
+    // Clock-free: a purge deletes by identity, never by time.
+    this.accountPurge = new AccountPurgeService(cols);
   }
 
   getConfig(): AnalyticsConfig {
@@ -82,4 +86,7 @@ export class AnalyticsService {
 
   // ── ingest ──
   ingestEvents(...args: Parameters<IngestService['ingestEvents']>) { return this.ingest.ingestEvents(...args); }
+
+  // ── account deletion (metaserver purge job) ──
+  purgeAccount(...args: Parameters<AccountPurgeService['purgeAccount']>) { return this.accountPurge.purgeAccount(...args); }
 }

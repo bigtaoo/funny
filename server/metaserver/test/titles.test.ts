@@ -63,7 +63,8 @@ function fakeCols(seed?: { accountId: string; mutate?: (s: SaveData) => void }):
     seed.mutate?.(s);
     saves.docs.set(seed.accountId, { _id: seed.accountId, save: s, rev: s.rev });
   }
-  return { saves } as unknown as Collections;
+  // bearerAuth reads accounts once per account (C5-b purged-token check); empty = no account is purged.
+  return { saves, accounts: new FakeCol() } as unknown as Collections;
 }
 
 async function makeApp(cols: Collections): Promise<FastifyInstance> {

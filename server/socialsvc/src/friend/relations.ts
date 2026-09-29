@@ -7,7 +7,7 @@ import type { ReportDoc } from '../db';
 import type { ProfileView, FriendView, FriendRequestView, SocialBadges } from '@nw/shared';
 import { FRIEND_CAP, friendEdgeId, blockId, REPORT_REASON_MAX } from '@nw/shared';
 import type { FriendServiceDeps, SocialError } from './types';
-import { hasBlock, isFriend } from './shared';
+import { hasBlock, isFriend, releaseFriendSlot } from './shared';
 
 export class FriendRelationsService {
   constructor(private readonly deps: FriendServiceDeps) {}
@@ -61,7 +61,7 @@ export class FriendRelationsService {
    *  failed). No-op if the counter row doesn't exist yet or is already at 0 — a future ensureFriendCounter
    *  bootstrap recomputes the correct count from scratch regardless, so there's nothing to under-flow. */
   private async releaseFriendSlot(accountId: string): Promise<void> {
-    await this.deps.cols.friendCounts.updateOne({ _id: accountId, count: { $gt: 0 } }, { $inc: { count: -1 } });
+    await releaseFriendSlot(this.deps.cols, accountId);
   }
 
   /** Fetch only the accountId list (for presence fan-out; no profile data needed). */

@@ -10,6 +10,7 @@ import { MailService } from './mailService';
 import { HttpSocialGatewayClient, nullSocialGatewayClient } from './gatewayClient';
 import { HttpSocialMetaClient, nullSocialMetaClient } from './metaClient';
 import { startHttpApi } from './httpApi';
+import { AccountPurgeService } from './accountPurge';
 
 async function main(): Promise<void> {
   const env = loadSocialsvcEnv();
@@ -75,6 +76,7 @@ async function main(): Promise<void> {
     mailSvc,
     gateway,
     meta,
+    new AccountPurgeService({ cols: mongo.collections, gateway, meta, now: () => Date.now() }),
   );
 
   const shutdown = async (): Promise<void> => {

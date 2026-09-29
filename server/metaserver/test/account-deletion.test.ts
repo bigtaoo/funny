@@ -17,6 +17,7 @@ interface AccountDoc {
   _id: string;
   deletedAt?: number;
   deletionConfirmToken?: string;
+  purgedAt?: number;
 }
 interface SaveDocRow { _id: string; save: SaveData; rev: number }
 
@@ -123,6 +124,30 @@ describe('POST /account/cancel-deletion (P0-13)', () => {
     expect(cancelRes.statusCode).toBe(200);
     const doc = await accounts.findOne({ _id: ACC });
     expect(doc?.deletedAt).toBeUndefined();
+    await a.close();
+  });
+});
+
+describe('purged account (C5-b purge tombstone)', () => {
+  it('a still-valid JWT for a purged account is refused with 410 before any handler runs', async () => {
+    const { app } = build({ _id: ACC, deletedAt: clock - 8 * 24 * 3600 * 1000, purgedAt: clock });
+    const a = await app;
+    const res = await a.inject({ method: 'GET', url: '/save', headers: auth });
+    expect(res.statusCode).toBe(410);
+    expect(res.json().error.code).toBe('ACCOUNT_DELETED');
+    // No renewed token is minted for it either.
+    expect(res.headers['x-nw-token']).toBeUndefined();
+    await a.close();
+  });
+
+  it('a soft-deleted (not yet purged) account keeps a working token for cancel-deletion', async () => {
+    const { app } = build({ _id: ACC, deletedAt: clock, deletionConfirmToken: 'tok-abc' });
+    const a = await app;
+    const res = await a.inject({
+      method: 'POST', url: '/account/cancel-deletion', headers: auth,
+      payload: { confirmToken: 'tok-abc' },
+    });
+    expect(res.statusCode).toBe(200);
     await a.close();
   });
 });

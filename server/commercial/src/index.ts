@@ -7,6 +7,7 @@ import { loadCommercialEnv } from './config';
 import { loadInternalAuth, IAP_TIERS, createLogger, startHeartbeat, connectDailyCounterRedis } from '@nw/shared';
 import { createAppleSubscriptionReader, createReceiptVerifier } from './iap';
 import { createAppleServerApi } from './iap/appleServerApi';
+import { sweepExpiredTransactionsOnce } from './transactionRetention';
 
 async function main(): Promise<void> {
   // Hardening (L2-3): IAP dev stub must never be enabled in production — enabling it accidentally
@@ -55,7 +56,25 @@ async function main(): Promise<void> {
     svc,
   );
 
+  // Ten-year transaction-record retention (transactionRetention.ts). Every 6h rather than daily: a deploy
+  // resets every timer, and a daily one on a service redeployed more than once a day would never fire.
+  // Each run is an indexed range delete, so running often costs next to nothing.
+  const runRetention = (): void => {
+    void sweepExpiredTransactionsOnce({ cols: mongo.collections, now: () => Date.now() })
+      .then((r) => {
+        const total = Object.values(r.removed).reduce((a, b) => a + b, 0);
+        if (total > 0) console.log('[commercial] transaction retention sweep', { cutoff: new Date(r.cutoff).toISOString(), ...r.removed });
+      })
+      .catch((e) => console.error('[commercial] transaction retention sweep failed:', (e as Error).message));
+  };
+  const retentionTimer = setInterval(runRetention, 6 * 3600 * 1000);
+  retentionTimer.unref();
+  const retentionKickoff = setTimeout(runRetention, 5 * 60 * 1000);
+  retentionKickoff.unref();
+
   const shutdown = async (): Promise<void> => {
+    clearInterval(retentionTimer);
+    clearTimeout(retentionKickoff);
     server.close();
     await mongo.close();
     process.exit(0);
