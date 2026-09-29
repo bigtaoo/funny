@@ -2,7 +2,7 @@
 // Uses node:http (commercial does not import fastify). Contract: SERVER_API.md §9 / COMMERCIAL_DESIGN §5.
 // Protocol errors (auth / method / parsing) → 4xx; business results (including INSUFFICIENT_FUNDS etc.) → 200 + {ok,...} mapped by meta.
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'http';
-import { createLogger, type InternalAuthVerifier, type CustomPoolCategory } from '@nw/shared';
+import { createLogger, ok, err, ErrorCode, type InternalAuthVerifier, type CustomPoolCategory } from '@nw/shared';
 import type { CommercialService } from './service';
 import type { IapProductKind } from './iap';
 
@@ -125,6 +125,22 @@ export function startInternalHttp(
           return send(res, 200, { ok: true, accounts });
         }
 
+        // Account-deletion purge (metaserver purge job). Unlike every other route here it answers in the
+        // shared ok()/err() envelope, because the job drives six services through one client and reads the
+        // same `{ done, removed }` shape from each. Its own catch: the route-wide one maps failures to 400,
+        // and the job must see a 5xx (retry later), not a 4xx that reads like a bad request.
+        {
+          const m = /^\/internal\/accounts\/([^/]+)\/purge$/.exec(url.pathname);
+          if (m) {
+            if (req.method !== 'POST') return send(res, 404, { ok: false, error: 'not found' });
+            try {
+              return send(res, 200, ok(await svc.purgeAccount(decodeURIComponent(m[1]!))));
+            } catch (e) {
+              log.error(`account purge failed: ${(e as Error).message}`);
+              return send(res, 500, err(ErrorCode.INTERNAL, 'internal server error'));
+            }
+          }
+        }
         if (req.method !== 'POST') return send(res, 404, { ok: false, error: 'not found' });
         const b = await readJson(req);
 

@@ -151,11 +151,16 @@ export async function createAnalyticsMongo(uri: string, dbName: string): Promise
     await events.createIndex({ webview: 1, ts: -1 }, { sparse: true });
     await events.createIndex({ geo_country: 1, ts: -1 }, { sparse: true });
     await events.createIndex({ ip: 1, ts: -1 }, { sparse: true });
+    // Account-deletion purge: pre-login events carry only a device id, so the purge deletes by
+    // device_id — which had no index on events at all (sessions has {device_id, started_at} below).
+    await events.createIndex({ device_id: 1 });
     // sessions: TTL 90 days, same window as events (2026-07-27 audit finding: previously permanent)
     await sessions.createIndex({ started_at: -1 });
     await sessions.createIndex({ started_at: 1 }, { expireAfterSeconds: 7776000 });
     await sessions.createIndex({ device_id: 1, started_at: -1 });
     await sessions.createIndex({ ip: 1, started_at: -1 }, { sparse: true }); // account-protection: find sessions sharing an IP
+    // Account-deletion purge deletes a player's sessions by user_id, which nothing else queried.
+    await sessions.createIndex({ user_id: 1 });
     // funnels_daily
     await funnels_daily.createIndex({ date: -1, platform: 1 });
     // boots_daily: the _id is already `${date}|${platform}`, so the upsert needs no index of its

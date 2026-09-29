@@ -10,6 +10,7 @@
 import {
   SlgError,
   SHARD_TRANSFER_COOLDOWN_MS,
+  tileId,
   type WorldStatus,
 } from '@nw/shared';
 import { WorldCore } from './core';
@@ -94,7 +95,7 @@ export class TransferService {
     ]);
     if (busyMarch || busyHold || busyStationed) throw new SlgError('TRANSFER_BUSY', 'An in-flight march, occupation-hold, or stationed team blocks transfer; recall/wait for it first');
 
-    await this.vacateShard(fromWorldId, accountId);
+    await vacateShard(this.core, fromWorldId, accountId);
     const view = await this.territory.joinWorld(toWorldId, accountId);
     await cols.shardTransfers.updateOne(
       { _id: accountId },
@@ -139,24 +140,11 @@ export class TransferService {
     let moved = 0;
     for (const pw of players) {
       try {
-        // Force-clear anything that would otherwise block a voluntary transfer: delete in-flight marches,
-        // occupation holds, and stationed (parked-in-the-field) teams outright (not a refund/recall — the
-        // shard is closing, there is no "later" for these to resolve into; troops committed to them are
-        // simply gone, same as any other shard-scoped asset forfeited by vacateShard below). Stationed teams
-        // additionally hold a Redis occ entry (and, for garrison-mode teams, a 9-cell cover entry) that must
-        // be cleared alongside the Mongo doc — left alone, that tile becomes an eternal ghost that no one
-        // (the source shard included) can ever park a team on again, per the "one park per tile" rule.
-        await cols.marches.deleteMany({ worldId: sourceWorldId, ownerId: pw.accountId });
-        await cols.occupations.deleteMany({ worldId: sourceWorldId, ownerId: pw.accountId });
-        const stationedDocs = await cols.stationed.find({ worldId: sourceWorldId, ownerId: pw.accountId }).toArray();
-        if (stationedDocs.length > 0) {
-          await cols.stationed.deleteMany({ worldId: sourceWorldId, ownerId: pw.accountId });
-          for (const sd of stationedDocs) {
-            await this.core.clearOccupancy(sourceWorldId, sd.tile, sd.tile);
-            if (sd.mode === 'garrison') await this.core.removeCover(sourceWorldId, sd.x, sd.y, sd.tile);
-          }
-        }
-        await this.vacateShard(sourceWorldId, pw.accountId);
+        // Force-clear anything that would otherwise block a voluntary transfer (see forceClearShardPresence:
+        // the shard is closing, there is no "later" for in-flight state to resolve into — troops committed to
+        // it are simply gone, same as any other shard-scoped asset forfeited by vacateShard below).
+        await forceClearShardPresence(this.core, sourceWorldId, pw.accountId);
+        await vacateShard(this.core, sourceWorldId, pw.accountId);
         await this.territory.joinWorld(targetWorldId, pw.accountId);
         moved++;
       } catch (err) {
@@ -171,13 +159,88 @@ export class TransferService {
     await cols.worlds.updateOne({ _id: sourceWorldId }, { $set: { status: 'closed' as WorldStatus } });
     return { moved, failed };
   }
+}
 
-  /** Shared "leave this shard entirely" step: purge tiles/playerWorld (existing helper) + free the population slot it was holding. */
-  private async vacateShard(worldId: string, accountId: string): Promise<void> {
-    await this.core.purgePlayerWorld(worldId, accountId);
-    await this.core.deps.cols.worlds.updateOne(
+/** Per-collection counts of what forceClearShardPresence removed (feeds the account-purge response). */
+export interface ShardPresenceCleared {
+  marches: number;
+  occupations: number;
+  stationed: number;
+  contestedTiles: number;
+  siegeDamage: number;
+}
+
+/**
+ * Force-clear one account's in-flight state in one shard, without refunding anything. Shared by the ops
+ * shard merge (mergeShard above) and the account-deletion purge (accountPurge.ts) — both are "this player's
+ * presence in this shard ends NOW" operations with no later for a march/hold/park to resolve into.
+ *
+ *  - In-flight marches, occupation holds and stationed (parked-in-the-field) teams are deleted outright. A
+ *    stepping march holds a Redis occ entry on the cell it last reached (same cleanup recallMarch does), a
+ *    stationed team holds one on its tile, and a garrison-mode team additionally a 9-cell cover entry — all
+ *    must go alongside the Mongo doc, or that tile becomes an eternal ghost no one can ever park a team on
+ *    again, per the "one park per tile" rule.
+ *  - Arrow towers on the player's own tiles registered cover in the same Redis reverse index. vacateShard's
+ *    purgePlayerWorld deletes those tiles (structure gone with them) but never touched Redis, so the cover is
+ *    swept here first — exactly like passiveRelocate (combatSiege/helpers.ts) does before its own tile wipe.
+ *  - Tiles this player is mid-way through occupying carry `contestedBy`; the OccupationDoc that would have
+ *    settled or cleared them is deleted above, so without the $unset (same one cancelOccupation uses) the tile
+ *    would stay contested by nobody, forever.
+ *  - Pending delayed siege hits this player launched (attackerId) are deleted: settling one after the player
+ *    left would hand a captured building to an account that no longer has a presence in the shard. Hits
+ *    AGAINST this player (defenderId) are deliberately left alone — they belong to the besieging player, whose
+ *    team is carried on that row; once vacateShard deletes the target tiles the settlement takes its existing
+ *    stale-target path (settleSiegeDamage: tile gone → void the hit, walk the besiegers home). Deleting those
+ *    rows instead would strand the other player's team with no return leg.
+ */
+export async function forceClearShardPresence(core: WorldCore, worldId: string, accountId: string): Promise<ShardPresenceCleared> {
+  const { cols } = core.deps;
+  const marches = await cols.marches.find({ worldId, ownerId: accountId }).toArray();
+  if (marches.length > 0) {
+    await cols.marches.deleteMany({ worldId, ownerId: accountId });
+    for (const m of marches) {
+      const cur = m.path && m.stepIndex != null ? m.path[m.stepIndex] : undefined;
+      if (cur) await core.clearOccupancy(worldId, tileId(worldId, cur.x, cur.y), m._id);
+    }
+  }
+  const occ = await cols.occupations.deleteMany({ worldId, ownerId: accountId });
+  const stationedDocs = await cols.stationed.find({ worldId, ownerId: accountId }).toArray();
+  if (stationedDocs.length > 0) {
+    await cols.stationed.deleteMany({ worldId, ownerId: accountId });
+    for (const sd of stationedDocs) {
+      await core.clearOccupancy(worldId, sd.tile, sd.tile);
+      if (sd.mode === 'garrison') await core.removeCover(worldId, sd.x, sd.y, sd.tile);
+    }
+  }
+  const towerTiles = await cols.tiles.find({ worldId, ownerId: accountId, 'structure.kind': 'arrowTower' }).toArray();
+  for (const tt of towerTiles) await core.removeCover(worldId, tt.x, tt.y, tt._id);
+  const contested = await cols.tiles.updateMany(
+    { worldId, contestedBy: accountId },
+    { $unset: { contestedBy: '', contestedUntil: '', contestedGarrison: '', contestedFamilyId: '' } },
+  );
+  const hits = await cols.siegeDamage.deleteMany({ worldId, attackerId: accountId });
+  return {
+    marches: marches.length,
+    occupations: occ.deletedCount,
+    stationed: stationedDocs.length,
+    contestedTiles: contested.modifiedCount,
+    siegeDamage: hits.deletedCount,
+  };
+}
+
+/**
+ * Shared "leave this shard entirely" step: purge tiles/playerWorld (existing helper) + free the population
+ * slot it was holding. The decrement only fires when this call actually deleted the playerWorld doc, so a
+ * re-run after a partial failure (the account purge is retried until it reports done) cannot free the same
+ * slot twice; the `$gt: 0` guard still keeps a drifted counter from going negative.
+ */
+export async function vacateShard(core: WorldCore, worldId: string, accountId: string): Promise<{ tiles: number; playerWorld: boolean }> {
+  const purged = await core.purgePlayerWorld(worldId, accountId);
+  if (purged.playerWorld) {
+    await core.deps.cols.worlds.updateOne(
       { _id: worldId, population: { $gt: 0 } },
       { $inc: { population: -1 } },
     );
   }
+  return purged;
 }

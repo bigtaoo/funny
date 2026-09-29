@@ -139,6 +139,26 @@ export function startHttpApi(
         })));
       }
 
+      // ── Internal (account-deletion purge job, metaserver): X-Internal-Key, no player JWT ──
+      // Answers done:false while a trade involving the account is still settling; the job calls again later.
+      {
+        const m = /^\/internal\/accounts\/([^/]+)\/purge$/.exec(path);
+        if (m) {
+          if (!internalAuth.verify(req.headers).ok) {
+            return sendErr(res, ErrorCode.UNAUTHENTICATED, 'internal endpoint requires X-Internal-Key');
+          }
+          if (method !== 'POST') return sendErr(res, ErrorCode.NOT_FOUND, 'not found');
+          try {
+            return send(res, 200, ok(await auctionSvc.purgeAccount(decodeURIComponent(m[1]!))));
+          } catch (e) {
+            // The job retries on any non-2xx, and every purge write is idempotent, so a bare 500 is enough —
+            // but the cause must reach the log, since nobody watches the job's responses.
+            log.error('account purge failed', { err: e instanceof Error ? e : String(e) });
+            return send(res, 500, err(ErrorCode.INTERNAL, 'internal server error'));
+          }
+        }
+      }
+
       // ── JWT verification (extract accountId only, no DB connection) ──
       const token = extractBearer(req.headers['authorization']);
       let accountId: string;

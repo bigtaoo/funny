@@ -56,6 +56,14 @@ export interface WorldSocialsvcClient {
   getFamiliesByIds(familyIds: string[]): Promise<FamilySummary[]>;
   /** Internal: all families currently pointing at the given sectId. */
   getFamiliesBySect(sectId: string): Promise<FamilySummary[]>;
+  /**
+   * Internal: like getFamiliesBySect, but always asks socialsvc (bypasses the membership cache) and THROWS on a
+   * failed call instead of returning `[]`. For callers that act destructively on the answer — the account purge
+   * dissolves a sect whose member list comes back empty, so "socialsvc was unreachable" must never read as
+   * "this sect has no families left". Optional so in-process test fakes (which have no cache and never fail)
+   * need not implement it; callers fall back to getFamiliesBySect.
+   */
+  getFamiliesBySectFresh?(sectId: string): Promise<FamilySummary[]>;
   /** Internal: set/clear the sect a family belongs to (worldsvc is authoritative; best-effort mirror write). */
   setSect(familyId: string, sectId: string | null, sectName?: string | null): Promise<void>;
   /** Internal: increment a family's season activity score (occupation / battle). */
@@ -242,6 +250,22 @@ export class HttpWorldSocialsvcClient implements WorldSocialsvcClient {
     // has no members" for the whole TTL, which silently breaks ADR-039 connectivity for everyone in it.
     if (!res.ok) return [];
     const families = res.body?.data?.families ?? [];
+    this.bySectCache.set(sectId, { at: now, value: families });
+    for (const f of families) this.byIdCache.set(f.familyId, { at: now, value: f });
+    return families;
+  }
+
+  async getFamiliesBySectFresh(sectId: string): Promise<FamilySummary[]> {
+    if (!this.baseUrl) throw new Error('socialsvc not configured');
+    const now = Date.now();
+    const res = await fetchInternalJson<{ data?: { families?: FamilySummary[] } }>(
+      `${this.baseUrl}/internal/family/by-sect/${encodeURIComponent(sectId)}`,
+      this.opts('/internal/family/by-sect'),
+    );
+    if (!res.ok) throw new Error(`socialsvc by-sect ${res.status}${res.error ? ` (${res.error})` : ''}`);
+    const families = res.body?.data?.families ?? [];
+    // The answer is the freshest this process has, so refresh the cache with it rather than leave a stale
+    // pre-purge roster (the TTL would bound that anyway; this just makes it immediate for this process).
     this.bySectCache.set(sectId, { at: now, value: families });
     for (const f of families) this.byIdCache.set(f.familyId, { at: now, value: f });
     return families;

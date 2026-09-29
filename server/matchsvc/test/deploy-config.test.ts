@@ -266,6 +266,7 @@ describe('deploy config — every service passes through what its source reads (
       NW_OAUTH_GOOGLE_CLIENT_SECRET: 'see NW_OAUTH_GOOGLE_CLIENT_ID',
       NW_GATEWAY_PUBLIC_WS_URL:
         'Caddy serves /api and /gw from one origin, so the client derivation in net/config.ts (http->ws, /api->/gw) already produces the right address; sending it explicitly would only add a second place to get it wrong. The var exists for split-origin stacks like CI (meta :18080, gateway :8086/gw).',
+      NW_ACCOUNT_PURGE_INTERVAL_MS: 'tuning knob; code default 1h is the production value (0 disables, for tests)',
       NW_ACHIEVEMENT_AUDIT_INTERVAL_MS: 'tuning knob; code default 60s is the production value',
       NW_ACHIEVEMENT_AUDIT_SAMPLE_LIMIT: 'tuning knob; code default 5 is the production value',
       NW_AUTH_RATE_LIMIT: 'tuning knob; code default 20 per 15min sliding window is the production value',

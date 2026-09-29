@@ -250,7 +250,7 @@ DELETE /account   (JWT)   → { ok, data:{ confirmToken } }
 
 > 订正 2026-08-10：宽限期内「重新登录恢复」曾经只是文案/隐私政策的承诺，代码里从未实现——`authWx`/`authDevice`/`authLogin`/`authOAuth` 在签 token 前就用 `rejectIfBanned` 拒绝了已删除账号，真正能恢复的 `POST /account/cancel-deletion` 又要求已登录的 token，形成死锁，删除即永久锁死。已修复：四个 auth 入口新增 `restoreIfWithinGrace`，宽限期内重新登录会自动清除 `deletedAt`/`deletionConfirmToken` 后正常签发 token；过期则维持 410。详见 `ACCOUNT_DESIGN §C5-b 订正`。
 
-- meta 编排：删/匿名化 `saves` + `accounts`（移除 `openid`/`deviceId`/`loginId`/`displayName` 等 PII）+ 通知 commercial 处理钱包/交易留存（交易记录依税务/审计义务可保留必要最小集，但与身份解绑）+ analyticsvc 按 `user_id` 批删事件 + social 解好友关系/清私聊。
+- meta 编排（2026-09-29 落地，此前只有软删）：宽限期满后 metaserver 清除任务（`accountPurge.ts`，每小时）依次调用 socialsvc / worldsvc / auctionsvc / commercial / analyticsvc 的 `POST /internal/accounts/:id/purge`（内部契约见 `SERVER_API_INTERNAL.md §14`），再删 meta 本地数据，最后把 `accounts` 行替换为墓碑 `{ _id, createdAt, deletedAt, purgedAt }`（凭证/昵称/publicId 全部移除）。交易记录依税务/审计义务保留必要最小集，但与身份解绑。已清除账号的旧 JWT 在 metaserver 任何鉴权接口上返回 410 `ACCOUNT_DELETED`，且不再续期。完整清单见 `ACCOUNT_DESIGN.md`「C5-b 账号清除」。
 - **二次确认**在客户端（`SettingsScene`），服务端要求 `confirm:true`；删除不可逆（或给短宽限 `scheduledPurgeAt` 后清除，按法务定）。
 - GDPR 数据导出（DSAR）测试期走人工，正式期再做自助导出端点（占位，未建）。
 

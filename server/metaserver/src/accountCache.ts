@@ -19,6 +19,8 @@ interface BanStatus {
   deletedAt: number | undefined;
   /** CONTENT_MODERATION_DESIGN.md CM6: epoch ms until which auth is rejected (temp ban); undefined/past = not currently temp-banned. */
   bannedUntil: number | undefined;
+  /** C5-b: the account was purged (row is a tombstone) — bearerAuth refuses its tokens outright. */
+  purgedAt: number | undefined;
 }
 
 // Safety net only: the known mutation sites (ban/unban/deleteAccount) invalidate explicitly on write, so a
@@ -79,11 +81,12 @@ export class AccountCache {
   async getBanStatus(cols: Collections, accountId: string): Promise<BanStatus> {
     const cached = this.banStatus.get(accountId);
     if (cached) return cached;
-    const doc = await cols.accounts.findOne({ _id: accountId }, { projection: { flags: 1, deletedAt: 1 } });
+    const doc = await cols.accounts.findOne({ _id: accountId }, { projection: { flags: 1, deletedAt: 1, purgedAt: 1 } });
     const status: BanStatus = {
       banned: !!doc?.flags?.banned,
       deletedAt: doc?.deletedAt,
       bannedUntil: doc?.flags?.bannedUntil,
+      purgedAt: doc?.purgedAt,
     };
     this.banStatus.set(accountId, status);
     return status;

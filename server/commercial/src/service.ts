@@ -29,6 +29,7 @@ import { OrdersService } from './service/orders';
 import { AuditService } from './service/audit';
 import { AppleNotificationService } from './service/appleNotifications';
 import { AppleAccountService } from './service/appleAccount';
+import { AccountPurgeService } from './service/accountPurge';
 
 export type { ServiceErr, WalletView, Result, CommercialDeps, Rarity } from './service/base';
 export type { CoinGainRow } from './service/audit';
@@ -51,6 +52,7 @@ export class CommercialService {
   private readonly audit: AuditService;
   private readonly appleNotifications: AppleNotificationService;
   private readonly appleAccount: AppleAccountService;
+  private readonly accountPurge: AccountPurgeService;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   constructor(...args: any[]) {
@@ -68,6 +70,7 @@ export class CommercialService {
     this.audit = new AuditService(this.core);
     this.appleNotifications = new AppleNotificationService(this.core);
     this.appleAccount = new AppleAccountService(this.core);
+    this.accountPurge = new AccountPurgeService(this.core);
   }
 
   /** GET /internal/wallet — the one WalletCore method called directly (not through a domain). */
@@ -125,6 +128,9 @@ export class CommercialService {
   // ── orders ──
   orderDelivered(...args: Parameters<OrdersService['orderDelivered']>) { return this.orders.orderDelivered(...args); }
   undeliveredOrders(...args: Parameters<OrdersService['undeliveredOrders']>) { return this.orders.undeliveredOrders(...args); }
+
+  // ── account deletion (metaserver purge job) ──
+  purgeAccount(...args: Parameters<AccountPurgeService['purgeAccount']>) { return this.accountPurge.purgeAccount(...args); }
 
   // ── audit ──
   auditCoinGains(...args: Parameters<AuditService['auditCoinGains']>) { return this.audit.auditCoinGains(...args); }

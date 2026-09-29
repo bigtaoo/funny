@@ -308,9 +308,12 @@ export class SpawnService {
    * playerWorld doc. Used to discard a corrupt/legacy capital so the next joinWorld re-places the
    * player as a brand-new user with a proper 3×3 (ADR-025). Marches/sieges are left to expire
    * naturally (they reference tiles by id and no-op once the tiles are gone).
+   * Returns what was actually deleted, so callers that also release a population slot (transfer.ts
+   * vacateShard) can do so only when this call removed the playerWorld doc — a re-run is then a no-op.
    */
-  async purgePlayerWorld(worldId: string, accountId: string): Promise<void> {
-    await this.core.deps.cols.tiles.deleteMany({ worldId, ownerId: accountId });
-    await this.core.deps.cols.playerWorld.deleteOne({ _id: playerWorldId(worldId, accountId) });
+  async purgePlayerWorld(worldId: string, accountId: string): Promise<{ tiles: number; playerWorld: boolean }> {
+    const tiles = await this.core.deps.cols.tiles.deleteMany({ worldId, ownerId: accountId });
+    const pw = await this.core.deps.cols.playerWorld.deleteOne({ _id: playerWorldId(worldId, accountId) });
+    return { tiles: tiles.deletedCount, playerWorld: pw.deletedCount > 0 };
   }
 }

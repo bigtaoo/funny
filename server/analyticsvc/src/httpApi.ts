@@ -4,6 +4,7 @@
 //   GET  /analytics/config    no auth (pulled by anonymous users at session start)
 //   POST /analytics/events    optional JWT (attaches user_id if token present, otherwise anonymous)
 //   GET  /internal/query      X-Internal-Key (aggregation queries from ops back-end)
+//   POST /internal/accounts/:accountId/purge  X-Internal-Key (account-deletion purge job, metaserver)
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'http';
 import geoip from 'geoip-lite';
 import {
@@ -34,6 +35,9 @@ function resolveGeo(ip: string | undefined): ResolvedGeo | undefined {
   const hit = geoip.lookup(ip);
   return { ip, country: hit?.country || undefined, region: hit?.region || undefined, city: hit?.city || undefined };
 }
+
+/** Upper bound on `deviceIds` in a purge request (a real account has a handful of devices). */
+const MAX_PURGE_DEVICE_IDS = 20;
 
 /** Build targets the launch counter accepts. Anything else is bucketed rather than stored verbatim. */
 const BOOT_PLATFORMS = new Set(['web', 'wechat', 'crazygames']);
@@ -300,6 +304,42 @@ export function startHttpApi(
           return send(res, 200, ok({ type, churn_scene_dist }));
         }
         return sendErr(res, ErrorCode.BAD_REQUEST, `unknown query type: ${type}`);
+      }
+
+      // ─── POST /internal/accounts/:accountId/purge (X-Internal-Key, metaserver purge job) ──────
+      // Body `{ deviceIds?: string[] }`: the account's known device ids, because pre-login events are
+      // keyed by nothing else (see service/accountPurge.ts). Capped — a real account has a handful of
+      // devices, and the list goes straight into an `$in`.
+      {
+        const m = /^\/internal\/accounts\/([^/]+)\/purge$/.exec(url);
+        if (m) {
+          if (!opts.internalAuth.verify(req.headers).ok) {
+            return sendErr(res, ErrorCode.UNAUTHENTICATED, 'invalid internal key');
+          }
+          if (method !== 'POST') return sendErr(res, ErrorCode.NOT_FOUND, 'not found');
+          let body: Record<string, unknown>;
+          try {
+            body = await readJson(req);
+          } catch {
+            return sendErr(res, ErrorCode.BAD_REQUEST, 'invalid JSON');
+          }
+          const deviceIds = body.deviceIds ?? [];
+          if (
+            !Array.isArray(deviceIds) ||
+            deviceIds.length > MAX_PURGE_DEVICE_IDS ||
+            !deviceIds.every((d) => typeof d === 'string' && d !== '')
+          ) {
+            return sendErr(res, ErrorCode.BAD_REQUEST, `deviceIds must be an array of at most ${MAX_PURGE_DEVICE_IDS} non-empty strings`);
+          }
+          try {
+            return send(res, 200, ok(await svc.purgeAccount(decodeURIComponent(m[1]!), deviceIds as string[])));
+          } catch (e) {
+            // The job retries on any non-2xx and the purge is idempotent, so a 500 is all it needs — but
+            // the cause has to reach the log, since nobody reads the job's responses.
+            console.error('[analyticsvc] account purge failed', e);
+            return sendErr(res, ErrorCode.INTERNAL, 'internal server error');
+          }
+        }
       }
 
       return sendErr(res, ErrorCode.NOT_FOUND, 'not found');

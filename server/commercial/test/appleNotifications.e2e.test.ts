@@ -20,6 +20,8 @@ import jwt from 'jsonwebtoken';
 import { Environment, SignedDataVerifier } from '@apple/app-store-server-library';
 import { createCommercialMongo, type CommercialMongo } from '../src/db';
 import { CommercialService } from '../src/service';
+import { WalletCore } from '../src/service/base';
+import { linkAppleSubscription } from '../src/service/appleAccount';
 import { makeAppleServerApi, type AppleApiClientLike } from '../src/iap/appleServerApi';
 import type { RandInt } from '../src/gacha';
 
@@ -188,6 +190,27 @@ describe.skipIf(!mongo)('App Store Server Notifications V2 (e2e)', () => {
     await svc.appleNotification({ signedPayload: signedNotification('DID_RENEW', { uuid: 'u2' }) });
     const second = (await m.collections.wallets.findOne({ _id: 'player-1' }))!.subscription!.expiry;
     expect(second).toBe(first);
+  });
+
+  it('a renewal for a purged account is recorded as unlinked and does not re-create its wallet', async () => {
+    // Account deletion keeps the link row (payment audit trail) but stamps it; granting through it would
+    // resurrect a wallet for an account that no longer exists.
+    await link('player-gone');
+    await svc.purgeAccount('player-gone');
+    const res = await svc.appleNotification({ signedPayload: signedNotification('DID_RENEW', { uuid: 'gone' }) });
+    expect(res).toMatchObject({ ok: true, outcome: 'unlinked' });
+    expect(await m.collections.wallets.findOne({ _id: 'player-gone' })).toBeNull();
+    expect(await logOf('gone')).not.toHaveProperty('accountId');
+  });
+
+  it("a live account re-linking a purged account's subscription takes the routing over", async () => {
+    // Restore Purchases on the same Apple ID from a new account: the re-link must clear the purge stamp.
+    await link('player-gone');
+    await svc.purgeAccount('player-gone');
+    await linkAppleSubscription(new WalletCore({ cols: m.collections, now }), 'player-new', 'orig-1', 'monthly_card');
+    const res = await svc.appleNotification({ signedPayload: signedNotification('DID_RENEW') });
+    expect(res).toMatchObject({ ok: true, outcome: 'granted' });
+    expect(await m.collections.wallets.findOne({ _id: 'player-new' })).not.toBeNull();
   });
 
   it('records — rather than drops — a renewal it cannot route to an account', async () => {

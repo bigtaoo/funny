@@ -64,6 +64,10 @@ module.exports = {
         // topology) meta fell back to nullMetaSocialsvcClient — every /social/* route 503s and system
         // mail throws 'socialsvc not configured'. cloud compose had it; these two paths never did.
         NW_SOCIALSVC_INTERNAL_URL: SOCIAL_INTERNAL,
+        // C5-b account purge targets (accountPurge.ts; unset → that purge step fails closed).
+        NW_WORLD_INTERNAL_URL: WORLD_INTERNAL,
+        NW_AUCTION_INTERNAL_URL: AUCTION_INTERNAL,
+        NW_ANALYTICS_INTERNAL_URL: process.env.NW_ANALYTICS_INTERNAL_URL || ANALYTICS_BASE,
         // Rewarded-video signature verification (C2, metaserver/src/ads.ts) + process alert webhook
         // (S4-3). All four live in .env.example and none was ever passed through — the NW_APPLE_PASSWORD
         // shape. Presence, not truthiness: undefined unless the environment provides them.

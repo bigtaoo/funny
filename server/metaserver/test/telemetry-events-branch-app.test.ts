@@ -31,7 +31,8 @@ class FakeCol {
 function fakeCols(): { cols: Collections; saves: FakeCol } {
   const saves = new FakeCol();
   saves.docs.set(ACC, { _id: ACC, save: { accountId: ACC, rev: 1 }, rev: 1 });
-  return { cols: { saves, cardInstances: new FakeCol() } as unknown as Collections, saves };
+  // bearerAuth reads accounts once per account (C5-b purged-token check); empty = no account is purged.
+  return { cols: { saves, cardInstances: new FakeCol(), accounts: new FakeCol() } as unknown as Collections, saves };
 }
 
 describe('app.ts access log + error handler branches', () => {
