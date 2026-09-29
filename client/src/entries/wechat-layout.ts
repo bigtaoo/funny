@@ -10,7 +10,7 @@ import '@pixi/unsafe-eval';
  * (`npm run build:wechat-layout`, **never shipped**).
  *
  * ── Why an entry, and not automation ────────────────────────────────────────────────────────────
- * `test/browser/portraitLayout.spec.ts` walks 40 stops on ten viewports and judges the real display
+ * `test/browser/portraitLayout.spec.ts` walks 48 stops on eleven viewports and judges the real display
  * tree, and every number in it was measured on Chromium. The whole reason to repeat it here is that
  * the two runtimes disagree about the one input the judgement rests on: every text style in this
  * repo asks for `fontFamily: 'monospace'`, `fitFont` divides once to find "the size that fits" on
@@ -39,7 +39,7 @@ import '@pixi/unsafe-eval';
  *    package can reach a database. This sweep therefore walks a FRESH account, and the stops whose
  *    content the seed supplies will report thin. Read it as "does the WeChat runtime lay out what
  *    it does paint differently", not as a replacement for the browser matrix.
- *  · **One shape.** The browser sweep's power is ten viewports; a simulator run is whatever device
+ *  · **One shape.** The browser sweep's power is eleven viewports; a simulator run is whatever device
  *    the IDE is set to. Change it in DevTools and run again.
  *  · **One locale.** `WechatPlatform.supportedLocales` is `['zh']`. Chinese is the interesting one
  *    here anyway — full-width glyphs and no spaces for word-wrap to break at.

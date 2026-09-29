@@ -274,4 +274,26 @@ export const STOPS: Stop[] = [
     via: ['onOpenWorld', 'onOpenCity', { tap: 'city.bld.desk' }], gated: true, settleMs: 2500 },
   { screen: 'city',        as: 'city+trainModal',
     via: ['onOpenWorld', 'onOpenCity', { tap: 'city.bld.trainTroops' }], gated: true, settleMs: 2500 },
+
+  // ── Added 2026-09-29, after a font-floor audit found defects on three screens this table had
+  //    never reached (UI_DESIGN_LOG_2026-09 §70/§71) ────────────────────────────────────────────
+  //
+  // The formation editor in ATTACK mode. The `defenseEditor` stop above opens it on the base tile,
+  // i.e. defense mode, which has no toolbar pills, no troop readout and no roster of heroes; attack
+  // mode has all three, and all three were drawn under the floor on a German phone while every
+  // sweep called the screen clean. Reached the way a player reaches it, the city's team row; `t1`
+  // is the first team the seed writes (lib/seed.ts), with its seeded name as the title.
+  { screen: 'defenseEditor', as: 'defenseEditor+attack',
+    via: ['onOpenWorld', 'onOpenCity', { fn: 'onEditTeam', args: ['t1', '破晓先锋营'] }],
+    gated: true, settleMs: 1500 },
+  // The equipment detail modal: affixes, enhance rate and cost, the protect and demote lines, and
+  // (on a cell too narrow for all its buttons) the actions moved behind "More". Opened by tapping a
+  // cell's body; the rarity tag is the one label every inventory cell carries, and 'epic' is the
+  // rarity the seed gives the most items.
+  { screen: 'equipment', as: 'equipment+detail',
+    via: ['onOpenCampaign', 'onOpenEquipment', { tap: 'equip.rarity.epic' }], settleMs: 1500 },
+  // The card roster's wardrobe tab: one tile per hero skin, with the per-tile status line. The seed
+  // owns every skin and wears one, so all three tile states (default, owned, worn) draw.
+  { screen: 'cardRoster', as: 'cardRoster+skins',
+    via: ['onOpenCards', { tap: 'roster.tab.skins' }], settleMs: 1500 },
 ];
