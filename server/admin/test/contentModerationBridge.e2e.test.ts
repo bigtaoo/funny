@@ -11,6 +11,7 @@ import { seedSuperAdmin } from '../src/seed';
 import type {
   MailDispatcher, MailSendReq, MailSendRes, MailPreviewReq, MailPreviewRes, PlayerClient, PlayerProfile, StatsClient,
   ReportsClient, ReportRow, AppealsClient, AppealRow, EnforcementClient, PenaltyResult,
+  ModerationClient, SocialPurgeResult, WorldPurgeResult,
 } from '../src/clients';
 import type { LiveStats } from '@nw/shared';
 
@@ -133,7 +134,6 @@ describe.skipIf(!mongo)('admin content-moderation report/appeal bridge e2e', () 
 
   afterAll(async () => {
     await m.db.dropDatabase();
-    await m.close();
   });
 
   it('listReports proxies the reports client and audits report.review', async () => {
@@ -273,4 +273,108 @@ describe.skipIf(!mongo)('admin content-moderation report/appeal bridge e2e', () 
     expect(roleHasCapability('viewer', 'appeals.action')).toBe(false);
     expect(roleHasCapability('viewer', 'appeals.view')).toBe(true);
   });
+});
+
+// ── Staff content removal (App Store Review Guideline 1.2) ──────────────────────────────────────────
+class FakeModeration implements ModerationClient {
+  socialAvailable = true;
+  worldAvailable = true;
+  calls: unknown[][] = [];
+  worldDown = false;
+  async deleteSocialContent(channel: 'dm' | 'family' | 'announcement', ref: { messageId?: string; targetId?: string }) {
+    this.calls.push(['social.delete', channel, ref]);
+    return { deleted: true };
+  }
+  async deleteWorldMessage(channel: 'world' | 'sect', messageId: string) {
+    this.calls.push(['world.delete', channel, messageId]);
+    return { deleted: false };
+  }
+  async purgeSocialAuthor(accountId: string): Promise<SocialPurgeResult> {
+    this.calls.push(['social.purge', accountId]);
+    return { dmMessages: 2, familyMessages: 1, announcements: 0, mails: 0, friendRequestMessages: 0 };
+  }
+  async purgeWorldAuthor(accountId: string): Promise<WorldPurgeResult> {
+    this.calls.push(['world.purge', accountId]);
+    if (this.worldDown) throw new Error('worldsvc not configured');
+    return { worldMessages: 3, sectMessages: 0 };
+  }
+}
+
+describe.skipIf(!mongo)('admin staff content removal (Guideline 1.2)', () => {
+  const m = mongo!;
+  let svc: AdminService;
+  let root: Actor;
+  let reports: FakeReports;
+  let moderation: FakeModeration;
+
+  beforeEach(async () => {
+    await m.db.dropDatabase();
+    await m.ensureIndexes(3600);
+    reports = new FakeReports();
+    reports.rows = [
+      { _id: 'dm1', reporterId: 'a', targetId: 'b', reason: '', ts: 1, status: 'open', contentRef: { kind: 'content', channel: 'dm', messageId: 'm-1' } },
+      { _id: 'w1', reporterId: 'a', targetId: 'b', reason: '', ts: 2, status: 'upheld', contentRef: { kind: 'content', channel: 'world', messageId: 'nm:1' } },
+      { _id: 'an1', reporterId: 'a', targetId: 'b', reason: '', ts: 3, status: 'open', contentRef: { kind: 'content', channel: 'announcement' } },
+      { _id: 'nm1', reporterId: 'a', targetId: 'b', reason: '', ts: 4, status: 'open', contentRef: { kind: 'content', channel: 'name', snapshot: 'X' } },
+      { _id: 'noid', reporterId: 'a', targetId: 'b', reason: '', ts: 5, status: 'open', contentRef: { kind: 'content', channel: 'sect' } },
+      { _id: 'bare', reporterId: 'a', targetId: 'b', reason: 'x', ts: 6, status: 'open' },
+    ];
+    moderation = new FakeModeration();
+    svc = new AdminService({
+      cols: m.collections, stats: stubStats, players: stubPlayer, mail: new FakeMail(),
+      reports, enforcement: new FakeEnforcement(), appeals: new FakeAppeals(), moderation, now,
+    } as unknown as ConstructorParameters<typeof AdminService>[0]);
+    await seedSuperAdmin(m.collections, 'root', 'rootpass', now);
+    root = await actorOf(svc, 'root');
+  });
+
+  it('deleteReportedContent routes by channel (dm -> socialsvc, world -> worldsvc, announcement -> by target) and audits', async () => {
+    expect(await svc.deleteReportedContent(root, 'dm1')).toEqual({ deleted: true, channel: 'dm' });
+    expect(await svc.deleteReportedContent(root, 'w1')).toEqual({ deleted: false, channel: 'world' }); // found in 'upheld' too
+    expect(await svc.deleteReportedContent(root, 'an1')).toEqual({ deleted: true, channel: 'announcement' });
+    expect(moderation.calls).toEqual([
+      ['social.delete', 'dm', { messageId: 'm-1' }],
+      ['world.delete', 'world', 'nm:1'],
+      ['social.delete', 'announcement', { targetId: 'b' }],
+    ]);
+    const audit = await m.collections.auditLog.find({ action: 'report.content.remove' }).toArray();
+    expect(audit).toHaveLength(3);
+    expect(audit.every((a) => a.target === 'b')).toBe(true);
+  });
+
+  it('deleteReportedContent rejects reports with nothing single to delete (400) and unknown ids (404)', async () => {
+    await expect(svc.deleteReportedContent(root, 'nm1')).rejects.toMatchObject({ status: 400 });
+    await expect(svc.deleteReportedContent(root, 'noid')).rejects.toMatchObject({ status: 400 });
+    await expect(svc.deleteReportedContent(root, 'bare')).rejects.toMatchObject({ status: 400 });
+    await expect(svc.deleteReportedContent(root, 'nope')).rejects.toMatchObject({ status: 404 });
+    expect(moderation.calls).toEqual([]);
+  });
+
+  it('purgeAuthorContent hits both backends; one failing half is reported, not fatal', async () => {
+    expect(await svc.purgeAuthorContent(root, 'b')).toEqual({
+      social: { dmMessages: 2, familyMessages: 1, announcements: 0, mails: 0, friendRequestMessages: 0 },
+      world: { worldMessages: 3, sectMessages: 0 },
+    });
+    moderation.worldDown = true;
+    const partial = await svc.purgeAuthorContent(root, 'b');
+    expect(partial.world).toEqual({ error: 'worldsvc not configured' });
+    expect(partial.social).toMatchObject({ dmMessages: 2 });
+    expect(await m.collections.auditLog.countDocuments({ action: 'report.content.remove', target: 'b' })).toBe(2);
+    await expect(svc.purgeAuthorContent(root, '')).rejects.toMatchObject({ status: 400 });
+  });
+
+  it('without a moderation client configured, removal fails loudly (502), never a silent no-op', async () => {
+    const bare = new AdminService({
+      cols: m.collections, stats: stubStats, players: stubPlayer, mail: new FakeMail(),
+      reports, enforcement: new FakeEnforcement(), appeals: new FakeAppeals(), now,
+    } as unknown as ConstructorParameters<typeof AdminService>[0]);
+    await expect(bare.deleteReportedContent(root, 'dm1')).rejects.toMatchObject({ status: 502 });
+    const res = await bare.purgeAuthorContent(root, 'b');
+    expect(res).toEqual({ social: { error: 'socialsvc not configured' }, world: { error: 'worldsvc not configured' } });
+  });
+});
+
+// One connection shared by both suites above; closed once, after the last of them.
+afterAll(async () => {
+  await mongo?.close();
 });

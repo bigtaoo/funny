@@ -266,6 +266,8 @@ module.exports = {
         // Moderation word-list overlay polling (CONTENT_MODERATION_DESIGN.md §3.2). Missing → WordlistCache
         // never starts, so only the built-in REGION_WORDLISTS apply and every ops word-list edit is inert.
         NW_ADMIN_INTERNAL_URL: ADMIN_INTERNAL,
+        // UGC report alerts (App Review 1.2) — same webhook as nw-meta's crash alerts; undefined = queue only.
+        NW_ALERT_WEBHOOK_URL: process.env.NW_ALERT_WEBHOOK_URL,
       },
     },
     {

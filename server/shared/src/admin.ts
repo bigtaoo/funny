@@ -368,6 +368,7 @@ export type AuditAction =
   | 'promo.create'
   | 'moderation.wordlist.update'
   | 'report.review'
+  | 'report.content.remove' // staff removal of reported chat content / an author's messages (Guideline 1.2)
   | 'account.penalty'
   | 'appeal.review'
   | 'feedback.review';

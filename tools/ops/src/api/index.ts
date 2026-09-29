@@ -40,6 +40,7 @@ import type {
   PromoCodeView,
   PvpCardStatRow,
   ReportView,
+  PurgeAuthorView,
   Session,
   SlgAllocateResult,
   SlgShopItemOverrideDoc,
@@ -165,6 +166,14 @@ export class Api extends ApiTransport {
   /** Resolve a report: dismiss (no action) or uphold (applies the -20 reputation penalty via the metaserver enforcement path). */
   async resolveReport(id: string, accountId: string, resolution: 'dismissed' | 'upheld'): Promise<{ reputationScore?: number; action?: string }> {
     return this.req('POST', `/admin/reports/${encodeURIComponent(id)}/resolve`, { accountId, resolution });
+  }
+  /** Delete the one message a report points at (reports.action, Guideline 1.2). */
+  async deleteReportContent(id: string): Promise<{ deleted: boolean; channel: string }> {
+    return this.req('POST', `/admin/reports/${encodeURIComponent(id)}/delete-content`);
+  }
+  /** Delete every chat message / announcement / mail an account wrote, in socialsvc + worldsvc (reports.action). */
+  async purgeAuthor(accountId: string): Promise<PurgeAuthorView> {
+    return this.req('POST', '/admin/reports/purge-author', { accountId });
   }
 
   // —— Player appeal review queue (CONTENT_MODERATION_DESIGN.md CM10/CM11) ——

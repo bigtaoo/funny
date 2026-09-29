@@ -17,13 +17,13 @@
  * decision still uses the uuid accountId, never publicId.
  */
 import * as PIXI from 'pixi.js-legacy';
-import { makeText } from '../../render/pixiText';
+import { makeText, monospaceWidth } from '../../render/pixiText';
 import { buildAvatar } from '../../render/avatar';
 import { palette } from '../../render/theme';
 import { t, type TranslationKey } from '../../i18n/index';
 import { getTitleKeys, formatLadderTitle } from '../../game/meta/titles';
 import { tearDownChildren } from '../../render/sketchUi';
-import { snapFont } from '../../render/fontScale';
+import { snapFont, fitFont } from '../../render/fontScale';
 import { drawHudButton, hudButtonText } from '../widgets/hudButton';
 import { buildEmblemIcon, loadEmblemAtlas, type EmblemKey } from '../../render/emblemIcon';
 import { dispatchHit, tapHandler, type Hit } from '../hits';
@@ -101,6 +101,9 @@ export class ProfilePopup {
   // Bumped on every show()/hide() so a slow in-flight extras fetch can tell it's gone stale (popup
   // closed, or reopened for someone else) and skip its patch-in re-render.
   private showToken = 0;
+
+  /** Fired from every hide() — lets a stage-level host (ui/dialogs/moderationHost.ts) release its modal gate. */
+  onHide: (() => void) | null = null;
 
   constructor(
     private readonly w: number,
@@ -297,15 +300,23 @@ export class ProfilePopup {
 
     let cursorY = yBottom + gapY;
 
-    // Optional action row (Send Message / Block).
-    const actions = data.actions ?? [];
-    if (actions.length > 0) {
-      const gap = Math.round(cardW * 0.04);
-      const aW = Math.round((cardW * 0.84 - gap * (actions.length - 1)) / actions.length);
+    // Optional action rows (Send Message / Add Friend, then Report / Block). At most two buttons per
+    // row: with the safety actions added to every player card (App Review 1.2) a single row of three
+    // or four squeezed "Nachricht"/"Blockieren" below the legible width on a phone. Plain actions
+    // get their own row(s) above the danger ones, so Report/Block always sit together.
+    const all = data.actions ?? [];
+    const rows: ProfileAction[][] = [];
+    for (const group of [all.filter((a) => !a.danger), all.filter((a) => a.danger)]) {
+      for (let i = 0; i < group.length; i += 2) rows.push(group.slice(i, i + 2));
+    }
+    const gap = Math.round(cardW * 0.04);
+    const rowGap = Math.round(gapY * 0.6);
+    for (const row of rows) {
+      const aW = Math.round((cardW * 0.84 - gap * (row.length - 1)) / row.length);
       const aH = bH;
       const aY = cursorY;
-      const aX0 = (cardW - (aW * actions.length + gap * (actions.length - 1))) / 2;
-      actions.forEach((act, i) => {
+      const aX0 = (cardW - (aW * row.length + gap * (row.length - 1))) / 2;
+      row.forEach((act, i) => {
         const ax = aX0 + i * (aW + gap);
         const actVariant = act.danger ? 'danger' : 'secondary';
         const ab = new PIXI.Graphics();
@@ -315,8 +326,10 @@ export class ProfilePopup {
         ab.cursor = 'pointer';
         ab.on('pointertap', tapHandler(() => { this.hide(); act.fn(); }));
         this.card.addChild(ab);
-        const al = makeText(t(act.labelKey), {
-          fontSize: snapFont(Math.round(aH * 0.4)), fill: hudButtonText(actVariant),
+        const label = t(act.labelKey);
+        const labelSize = snapFont(Math.round(aH * 0.4));
+        const al = makeText(label, {
+          fontSize: fitFont(labelSize, monospaceWidth(label, labelSize), aW * 0.9), fill: hudButtonText(actVariant),
           fontWeight: 'bold', fontFamily: 'monospace',
         });
         al.anchor.set(0.5, 0.5);
@@ -325,8 +338,9 @@ export class ProfilePopup {
         // y is card-local here; offset to container space once the final cardY is known below.
         this.tapRects.push({ rect: { x: cardX + ax, y: aY, w: aW, h: aH }, fn: () => { this.hide(); act.fn(); } });
       });
-      cursorY = aY + aH + gapY;
+      cursorY = aY + aH + rowGap;
     }
+    if (rows.length > 0) cursorY += gapY - rowGap;
 
     // Close button.
     const bW = Math.round(cardW * 0.5);
@@ -402,6 +416,7 @@ export class ProfilePopup {
     this.tapRects = [];
     tearDownChildren(this.card);
     ++this.showToken; // invalidate any in-flight extras fetch for the card just closed
+    this.onHide?.();
   }
 
   destroy(): void {

@@ -288,3 +288,34 @@ interface AppealDoc {
 - **`POST /internal/appeals/:id/resolve` 的 check-then-act**：原实现是 `findOne({status:'open'})` 判断存在性后**无条件** `updateOne`，两个管理员并发解决同一条申诉时都能通过读检查，最终 status/resolvedBy 由写入顺序决定且都返回 `{ok:true}`，没有任何一方能感知"已被别人处理过"。改为 CAS：写操作本身带 `status:'open'` 过滤条件 + `matchedCount` 判定，落败方返回既有的 404"already resolved"文案，与 socialsvc `resolveReport` 同款写法看齐。`submitAppeal` 的"同账号仅一条 open 申诉"检查同理也是 check-then-act（`findOne` 判重后 `insertOne`），改为 `appeals` 集合新增 `{accountId:1}` 唯一部分索引（`partialFilterExpression:{status:'open'}`，`shared/mongo.ts`）作为原子后盾，`insertOne` 捕获 `E11000` 转译为既有的 409（同 `equipEquipment` 捕获 `gearInstanceIds` 唯一索引冲突的手法）。回归测试：`metaserver/test/appeal.e2e.test.ts` 新增 2 例（5 路并发 resolve 仅 1 赢 4 输 404；2 路并发 submitAppeal 仅 1 赢 1 落 409）——2 路并发 resolve 的竞态复现不稳定（timing-dependent），改成 5 路并发后稳定触发。
 - **`applyPenalty`/`decayReputationOnce` 的 reputationScore 读-改-写**：两者都是"读当前 flags → 在 JS 里算新值 → `$set` 写回"，互相之间（两次并发处罚、或一次处罚撞上每日衰减扫描）没有任何原子性保护，后写者会用基于旧值算出的结果覆盖先写者的结果，静默丢失一次 `-20`/`+10`。设计文档 §4.2 原文描述的算法本身就是这个非原子版本（见上方 CM7 小节的更新说明），不是编码疏忽。修复：`AccountDoc.flags` 新增乐观锁计数器 `moderationRev`（镜像 `SaveDoc.rev`），`applyPenalty`/`decayReputationOnce` 都改成"读→算→`updateOne({_id, moderationRev:读到的值})`守卫写入 + `moderationRev+1`，`matchedCount===0` 则重读重算重试"的标准 CAS 重试循环（`REV_RETRIES=3`，与 `equipment.ts`/`cards.ts` 既有的 rev 重试循环同一手法）；重试耗尽抛 `ModerationConflictError`，`POST /internal/accounts/:id/penalty` 捕获后返回 409（而不是误判成"账号不存在"）。`decayReputationOnce` 额外处理了一个衍生场景：CAS 冲突后重读若发现 `reputationDecayAt` 已不再到期（说明并发的一次新处罚已经把衰减时钟重置到 30 天后），直接放弃这次衰减而不是继续重试——这是"到期"这个前提本身可能被并发写作废的正确处理，不只是简单重试。
 
+
+### 9.6 App Review 1.2 对齐：EULA、全频道举报/屏蔽、24h 处置（ios-review-ugc，2026-09-29）
+
+build 12 被 1.2 拒（UGC 五项：EULA + 零容忍、过滤、举报、屏蔽且通知开发者并立即从 feed 消失、24h 内处置）。
+逐项落点如下，iOS 侧的提审动作见 `IOS_RELEASE.md §9.3`。
+
+- **EULA / 零容忍**：`terms.html` 新增 §7「User-Generated Content & Conduct — Zero Tolerance」（三语
+  `terms-of-service.*.md §4` 同步）。同意闸（`EntryGateDialog`）正文点明 Terms of Use (EULA)、零容忍、可举报/屏蔽；
+  标志位升到 `termsAccepted.v2`，老用户下次启动会看到一页「条款已更新」重新同意（不动分析授权选择）。
+  登录页表单下加一行「登录即同意 Terms of Use」+ 链接。
+- **过滤**：`censorChat` 覆盖面补上家族公告、玩家邮件标题与正文、好友申请附言；附言超
+  `FRIEND_REQUEST_MESSAGE_MAX` 直接 400。
+- **举报**（`POST /friends/report`）：body 加 `category`（harassment/hate/sexual/spam/cheating/offensive_name/other）
+  与 `content{channel, messageId?, text?}`；channel = dm/family/sect/world/mail/announcement/name。
+  dm/family/announcement/name 由服务端自己取原文存证，不信客户端快照；客户端快照在 ops 页上标明「client-supplied」。
+  入口：好友弹窗、私聊头部、世界/家族/宗门聊天行点开的玩家卡、家族公告、邮件。统一由 `ui/moderation.ts` +
+  `ModerationDialogs`（分类选择 → 确认）承载。
+- **屏蔽**（`POST /friends/block`，同 body）：首次屏蔽自动落一条 `source:"block"` 的举报并触发告警——这就是「通知开发者」。
+  服务端：私聊会话从列表消失、历史剔除、未读清零；家族频道历史过滤 + 不再推送。宗门/世界频道由客户端按
+  `GET /friends/blocked` 在渲染时过滤（乐观屏蔽，立即重画）。家族/宗门消息带 `senderPublicId`（历史+发送响应；
+  推送沿用 `fromPublicId`）。已屏蔽列表：好友页「Blocked」按钮 / 设置 → 帮助 → Blocked players，可解除。
+- **24h 处置**：每条新举报/屏蔽经 `NW_ALERT_WEBHOOK_URL`（socialsvc 新读此变量，compose/pm2/.env.example 已透传；
+  Slack/Discord/企业微信三种格式，5s 超时、不影响玩家请求）推一条带「act within 24h」的消息。
+  ops 举报页新增 Kind / Content 列与「Delete message」「Purge user's messages」「Ban」按钮；后端是 admin
+  `POST /admin/reports/:id/delete-content`、`POST /admin/reports/purge-author`（权限 `reports.action`，审计
+  `report.content.remove`），分别打到 socialsvc `/internal/moderation/*` 与 worldsvc `/admin/world/moderation/*`。
+  家族公告的按作者清理只覆盖从本次起写入的公告（作者字段今天才开始落）。
+- **顺手修的旧 bug**：admin `HttpReportsClient.listReports` 读的是 `body.reports`，而 socialsvc 返回
+  `{ok, data:{reports}}`——**生产上 ops 举报页一直是空的**。已改读 `body.data.reports`。
+- **宗门/世界频道发送者名**：不再信客户端传的名字，解析不到资料时用 `"Player"`；宗门频道补上禁言检查（`ACCOUNT_MUTED`）。
+- **仍未做**：gateway 层不校验封禁（O-CM4，旧账）；「24h 内有人处理」是运营承诺，代码只保证告警必达。

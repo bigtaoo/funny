@@ -76,6 +76,9 @@ export interface SectMessageDoc {
   sectId: string;
   senderId: string;
   senderName: string;
+  /** Sender's 9-digit publicId snapshot at send time (Guideline 1.2: the client hides blocked senders and offers
+   *  Report/Block per row by it). Absent on docs written before 2026-09-29 — backfilled from meta at read time. */
+  senderPublicId?: string;
   /** Sender's equipped title snapshot at send time (称号); absent if the sender had none. */
   title?: string;
   /** Sender's sect name snapshot at send time (宗门 — the sect itself, since the channel is sect-scoped). */
@@ -134,9 +137,12 @@ export async function ensureSocialIndexes(
   await sects.createIndex({ worldId: 1 });
   await sectMessages.createIndex({ sectId: 1, ts: -1 });
   await sectMessages.createIndex({ ts: 1 }, { expireAfterSeconds: FAMILY_MSG_RETENTION_SEC });
+  // Staff purge by author (Guideline 1.2) — deleteMany({ senderId }) would otherwise COLLSCAN.
+  await sectMessages.createIndex({ senderId: 1 });
   // Nation/world public channel (B7): paginated by worldId + time descending; same 7-day TTL as family/sect channels.
   await nationMessages.createIndex({ worldId: 1, ts: -1 });
   await nationMessages.createIndex({ ts: 1 }, { expireAfterSeconds: FAMILY_MSG_RETENTION_SEC });
+  await nationMessages.createIndex({ senderId: 1 });
   // Nation: unique by capital index within worldId
   await nations.createIndex({ worldId: 1, capitalIdx: 1 }, { unique: true });
   await nations.createIndex({ ownerId: 1 });

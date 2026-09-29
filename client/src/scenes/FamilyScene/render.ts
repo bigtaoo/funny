@@ -19,6 +19,7 @@ import type { ActionsHandlers } from './actions';
 import type { InputHandlers } from './input';
 import { renderMembers as renderMembersImpl, renderChannel as renderChannelImpl, MUTED } from './lists';
 import { truncateToWidth } from '../../ui/widgets/truncateText';
+import { requestReport } from '../../ui/moderation';
 
 /** Largest font size ≤ `size` (down to 11px) at which `label` fits within `maxW`. Portrait pins
  *  the width axis while h-relative sizing scales off the (much taller) height, so a fixed-box label
@@ -294,11 +295,7 @@ export class RenderPanel {
     // Landscape: the identity (name/prosperity/count) now lives in the header — here we only
     // surface the announcement, if any, on a slim band below the bar.
     if (core.landscape) {
-      if (fam.announcement) {
-        const annLbl = truncateToWidth(fam.announcement, FS.label, MUTED, w - (left + 12) - 12);
-        annLbl.x = left + 12; annLbl.y = y0 + 4;
-        core.bodyLayer.addChild(annLbl);
-      }
+      if (fam.announcement) this.drawAnnouncement(fam.announcement, left + 12, y0 + 4, w - 12);
       return;
     }
 
@@ -345,11 +342,32 @@ export class RenderPanel {
     prosLbl.x = left + 12 + starSize + 6; prosLbl.y = prosY - 2;
     core.bodyLayer.addChild(prosLbl);
 
-    if (fam.announcement) {
-      const annLbl = truncateToWidth(fam.announcement, FS.label, MUTED, w - (left + 12) - 12);
-      annLbl.x = left + 12; annLbl.y = y0 + Math.round(B * 0.78);
-      core.bodyLayer.addChild(annLbl);
+    if (fam.announcement) this.drawAnnouncement(fam.announcement, left + 12, y0 + Math.round(B * 0.78), w - 12);
+  }
+
+  /**
+   * The announcement line, with a "Report" link at its right end whenever it was written by someone
+   * else (App Review 1.2 — the announcement is family-wide UGC with the leader as its author; see
+   * core.announcementAuthor). Report only: there is no feed of theirs here to hide.
+   */
+  private drawAnnouncement(text: string, x: number, y: number, right: number): void {
+    const core = this.core;
+    const author = core.announcementAuthor();
+    let maxW = right - x;
+    if (author) {
+      const link = txt(t('moderation.reportAnnouncement'), FS.label, C.red, true);
+      link.anchor.set(1, 0); link.x = right; link.y = y;
+      core.bodyLayer.addChild(link);
+      const pad = 8;
+      core.hitRects.push({
+        rect: { x: right - link.width - pad, y: y - pad, w: link.width + pad * 2, h: link.height + pad * 2 },
+        fn: () => requestReport(author),
+      });
+      maxW -= link.width + 16;
     }
+    const annLbl = truncateToWidth(text, FS.label, MUTED, Math.max(40, maxW));
+    annLbl.x = x; annLbl.y = y;
+    core.bodyLayer.addChild(annLbl);
   }
 
   /** Roster column. `x0`/`colW` let this render either full-width (portrait tab) or as the

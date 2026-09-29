@@ -52,6 +52,7 @@ import type {
 } from '../../net/proto/transport';
 import type { WorldChatMessage, FamilyView, FamilyDetailView } from '../../net/WorldApiClient';
 import { serverNow } from '../../net/serverClock';
+import { isBlocked } from '../../ui/moderation';
 import type { NetworkHandlers } from './network';
 import type { FriendsSceneCallbacks, Hit, Tab, View, SLGSocialStatus } from './types';
 import type { ITextInput } from '../../platform/IPlatform';
@@ -79,8 +80,6 @@ const NOOP_NETWORK: NetworkHandlers = {
   doAdd: async () => {},
   doRespond: async () => {},
   doRemove: async () => {},
-  doBlock: async () => {},
-  doReport: async () => {},
   doDuel: () => {},
   doDuelRespond: () => {},
   doCreateFamily: async () => {},
@@ -348,7 +347,7 @@ export class FriendsSceneCore {
   /** Total unread chat across all conversations — feeds the Friends rail-tab dot so the
    *  bottom-nav Social badge (which includes unread chat) is explained once Social opens. */
   get totalUnreadChat(): number {
-    return this.conversations.reduce((s, c) => s + (c.unread > 0 ? c.unread : 0), 0);
+    return this.conversations.reduce((s, c) => s + (c.unread > 0 && !isBlocked(c.peer.publicId) ? c.unread : 0), 0);
   }
 
 

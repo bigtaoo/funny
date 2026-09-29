@@ -231,6 +231,40 @@ describe.skipIf(!mongo)('social service handlers (src import, coverage backfill)
       expect(social.proxyCalls[0]!.path).toBe('/social/friends/report');
     });
 
+    it('POST /friends/report forwards category + content untouched (Guideline 1.2 content reports)', async () => {
+      social.nextProxyResponse = okData({ ok: true });
+      const payload = {
+        publicId: '123456789',
+        category: 'harassment',
+        content: { channel: 'family', messageId: 'fm:fam:X:1:1', text: 'you suck' },
+      };
+      const r = await app.inject({ method: 'POST', url: '/friends/report', headers: auth(), payload });
+      expect(r.statusCode).toBe(200);
+      expect(social.proxyCalls[0]!.body).toEqual(payload);
+    });
+
+    it('POST /friends/report rejects an unknown category at the contract layer (never reaches socialsvc)', async () => {
+      const r = await app.inject({ method: 'POST', url: '/friends/report', headers: auth(), payload: { publicId: '1', category: 'meh' } });
+      expect(r.statusCode).toBe(400);
+      expect(social.proxyCalls).toHaveLength(0);
+    });
+
+    it('POST /friends/block forwards category + content (block doubles as a report)', async () => {
+      social.nextProxyResponse = okData({ ok: true });
+      const payload = { publicId: '123456789', category: 'spam', content: { channel: 'world', messageId: 'nm:w1:1:1:ab', text: 'buy gold' } };
+      const r = await app.inject({ method: 'POST', url: '/friends/block', headers: auth(), payload });
+      expect(r.statusCode).toBe(200);
+      expect(social.proxyCalls[0]!.body).toEqual(payload);
+    });
+
+    it('GET /friends/blocked forwards to /social/friends/blocked and keeps the row shape', async () => {
+      social.nextProxyResponse = okData({ blocked: [{ publicId: '111', displayName: 'Troll', ts: 5 }] });
+      const r = await app.inject({ method: 'GET', url: '/friends/blocked', headers: auth() });
+      expect(r.statusCode).toBe(200);
+      expect(social.proxyCalls[0]).toMatchObject({ method: 'GET', path: '/social/friends/blocked' });
+      expect(r.json().data.blocked).toEqual([{ publicId: '111', displayName: 'Troll', ts: 5 }]);
+    });
+
     it('GET /chat/conversations forwards to /social/chat/conversations', async () => {
       social.nextProxyResponse = okData({ conversations: [] });
       const r = await app.inject({ method: 'GET', url: '/chat/conversations', headers: auth() });

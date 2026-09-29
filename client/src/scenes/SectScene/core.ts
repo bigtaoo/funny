@@ -22,6 +22,7 @@
 // the composition-priority rule's "only the specific cross-domain methods needed" guidance.
 
 import * as PIXI from 'pixi.js-legacy';
+import { onBlockedChange } from '../../ui/moderation';
 import type { ILayout } from '../../layout/ILayout';
 import type { InputManager } from '../../inputSystem/InputManager';
 import { t } from '../../i18n';
@@ -227,6 +228,8 @@ export class SectSceneCore {
     this.unsubs.push(input.onUp((x, y) => this.handleUp(x, y)));
     this.unsubs.push(input.onWheel((x, y, deltaY) => this.handleWheel(x, y, deltaY)));
     if (cb.onSaveChanged) this.unsubs.push(cb.onSaveChanged(() => { if (!this.destroyed) this.render(); }));
+    // A block hides the player's channel messages at once (App Review 1.2; lists.ts filters them).
+    this.unsubs.push(onBlockedChange(() => { if (!this.destroyed) this.render(); }));
   }
 
   /** Width of the social hub rail left of the notebook binding line (matches every other left-edge tab

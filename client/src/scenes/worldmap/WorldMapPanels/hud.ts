@@ -22,6 +22,7 @@ import { HUD_H } from '../logic/constants';
 import type { IconKind } from '../../../render/icons';
 import type { WorldMapPanelsCore } from './core';
 import { renderHeaderHud } from './headerHud';
+import { isBlocked } from '../../../ui/moderation';
 
 export interface HudHandlers {
   renderHud(): void;
@@ -47,7 +48,9 @@ export class HudPanel implements HudHandlers {
     hud.addChild(chatPanel);
     // Platform "chat off" (ui/chatPolicy.ts): the bar still opens the social hub, but shows no chat.
     const chatOff = isChatDisabled();
-    const latest = chatOff ? null : this.core.ctx.worldChatLatest;
+    // A sender blocked after the line was cached drops out on the next HUD rebuild (App Review 1.2).
+    const cached = this.core.ctx.worldChatLatest;
+    const latest = chatOff || isBlocked(cached?.senderPublicId) ? null : cached;
     const chatLbl = txt(
       latest ? `${latest.senderName}: ${latest.body.slice(0, 28)}` : t(chatOff ? 'world.social' : 'world.chat'),
       FS.tiny,

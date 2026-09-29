@@ -1,13 +1,14 @@
 // Friends tab: the friend/request list (drawList) + its rows + the friend profile popup entry.
 //
 // FriendsListPanel depends on NetworkPanel (via NetworkHandlers — doRespond/doDuelRespond/doDuel/
-// doReport/doBlock/doRemove) and needs the Search tab's entry point (openSearch), but neither
+// doRemove) and needs the Search tab's entry point (openSearch), but neither
 // depends back on it: one-way, so a plain independent class over `core` + `network` + `openSearch`
 // (2026-08-11 converted from the former `XMixin(Base)` inheritance chain, per
 // claudedocs/client-modules.md's split-form priority note).
 import * as PIXI from 'pixi.js-legacy';
 import { t, TranslationKey } from '../../i18n';
 import { isChatDisabled } from '../../ui/chatPolicy';
+import { isBlocked, moderationAvailable, openBlockedPlayers, safetyActions } from '../../ui/moderation';
 import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor } from '../../render/sketchUi';
 import { FS, snapFont, fitFont } from '../../render/fontScale';
 import type { FriendView, FriendRequestView } from '../../net/ApiClient';
@@ -38,12 +39,19 @@ export class FriendsListPanel {
     const aY = core.bodyTop + Math.round(h * 0.01);
     const aH = Math.round(h * 0.075);
     const aGap = Math.round(w * 0.02);
-    const aW = Math.round((core.cW - aGap) / 2);
+    // Third button: the blocked-players list (App Review 1.2 — where a block is undone).
+    const withBlocked = moderationAvailable();
+    const nBtn = withBlocked ? 3 : 2;
+    const aW = Math.round((core.cW - aGap * (nBtn - 1)) / nBtn);
     const aX0 = core.cX;
     addButton(core, t('friends.search'), aX0, aY, aW, aH, C.dark, C.accent, () => this.search.openSearch(),
       0xffffff, undefined, undefined, 'zoom');
     addButton(core, t('friends.room'), aX0 + aW + aGap, aY, aW, aH, C.dark, C.gold, () => core.cb.onOpenRoom(),
       0xffffff, undefined, undefined, 'roomTabIcon');
+    if (withBlocked) {
+      addButton(core, t('moderation.blockedShort'), aX0 + 2 * (aW + aGap), aY, aW, aH, C.paper, C.red, () => openBlockedPlayers(),
+        C.red, undefined, undefined, 'close');
+    }
 
     core.regionTop = aY + aH + Math.round(h * 0.02);
     core.regionBottom = core.bodyBottom;
@@ -80,10 +88,14 @@ export class FriendsListPanel {
       cy += dh + rowGap + Math.round(h * 0.01);
     }
 
-    if (core.incoming.length > 0) {
-      sectionLabel('friends.requests', core.incoming.length);
+    // A blocked player's requests and friendship vanish the moment the block is confirmed; the server
+    // drops both too, and the next refresh() agrees.
+    const incoming = core.incoming.filter((r) => !isBlocked(r.fromPublicId));
+    const friends = core.friends.filter((f) => !isBlocked(f.publicId));
+    if (incoming.length > 0) {
+      sectionLabel('friends.requests', incoming.length);
       const reqH = Math.round(h * 0.09);
-      for (const r of core.incoming) {
+      for (const r of incoming) {
         const sy = screenY(cy);
         if (core.rowVisible(sy, reqH)) this.drawRequestRow(layer, r, cy, sy);
         cy += reqH + rowGap;
@@ -91,14 +103,14 @@ export class FriendsListPanel {
       cy += Math.round(h * 0.01);
     }
 
-    sectionLabel('friends.sectionFriends', core.friends.length);
-    if (core.friends.length === 0) {
+    sectionLabel('friends.sectionFriends', friends.length);
+    if (friends.length === 0) {
       const empty = txt(t('friends.empty'), FS.heading, C.mid);
       empty.anchor.set(0.5, 0); empty.x = core.cCX; empty.y = screenY(cy + Math.round(h * 0.02));
       layer.addChild(empty);
       cy += Math.round(h * 0.08);
     } else {
-      const sorted = [...core.friends].sort(
+      const sorted = [...friends].sort(
         (a, b) => (a.online === b.online ? a.displayName.localeCompare(b.displayName) : a.online ? -1 : 1),
       );
       const fH = Math.round(h * 0.10);
@@ -293,8 +305,8 @@ export class FriendsListPanel {
       ...(f.avatarId ? { avatarId: f.avatarId } : {}),
       actions: [
         ...(isChatDisabled() ? [] : [{ labelKey: 'friends.message' as const, fn: () => core.cb.openChat(f.publicId, f.alias || f.displayName) }]),
-        { labelKey: 'friends.report', fn: () => void this.network.doReport(f.publicId), danger: true },
-        { labelKey: 'friends.block', fn: () => void this.network.doBlock(f.publicId), danger: true },
+        // Report (category picker) + Block (confirm) — ui/moderation.ts, App Review 1.2.
+        ...safetyActions({ publicId: f.publicId, name: f.alias || f.displayName, ...(f.avatarId ? { avatarId: f.avatarId } : {}) }),
       ],
     });
   }

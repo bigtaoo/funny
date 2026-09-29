@@ -511,6 +511,14 @@ describe.skipIf(!mongo)('economy service handlers (src import, coverage backfill
       expect(r.statusCode).toBe(400);
       expect(body(r).error.message).toBe('PROMO_EXHAUSTED');
     });
+
+    it('iOS client -> 403 and the code is not consumed (App Review 3.1.1)', async () => {
+      comm.promoCodes.set('IOS-TRY', { coins: 50, usedBy: new Set() });
+      const r = await app.inject({ method: 'POST', url: '/promo/redeem', headers: { ...auth(), 'x-nw-platform': 'ios' }, payload: { code: 'IOS-TRY' } });
+      expect(r.statusCode).toBe(403);
+      expect(body(r).error.message).toBe('PROMO_UNAVAILABLE_ON_PLATFORM');
+      expect(comm.promoCodes.get('IOS-TRY')!.usedBy.size).toBe(0);
+    });
   });
 
   // ── gacha.ts: getGachaPoolsHandler ────────────────────────────────────────────────────────────

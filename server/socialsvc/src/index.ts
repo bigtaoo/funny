@@ -11,6 +11,7 @@ import { HttpSocialGatewayClient, nullSocialGatewayClient } from './gatewayClien
 import { HttpSocialMetaClient, nullSocialMetaClient } from './metaClient';
 import { startHttpApi } from './httpApi';
 import { AccountPurgeService } from './accountPurge';
+import { createReportAlerter } from './reportAlert';
 
 async function main(): Promise<void> {
   const env = loadSocialsvcEnv();
@@ -50,6 +51,7 @@ async function main(): Promise<void> {
     gateway,
     meta,
     wordlists,
+    alerts: createReportAlerter({ webhookUrl: env.alertWebhookUrl }),
     now: () => Date.now(),
   });
 
@@ -57,6 +59,7 @@ async function main(): Promise<void> {
     cols: mongo.collections,
     gateway,
     meta,
+    wordlists,
     now: () => Date.now(),
   });
 
@@ -89,7 +92,8 @@ async function main(): Promise<void> {
 
   console.log(
     `socialsvc public REST on :${env.port}; db=${env.socialMongoDb}; ` +
-      `gateway=${gateway.available ? 'on' : 'off'}; meta=${meta.available ? 'on' : 'off'}`,
+      `gateway=${gateway.available ? 'on' : 'off'}; meta=${meta.available ? 'on' : 'off'}; ` +
+      `reportAlerts=${env.alertWebhookUrl ? 'on' : 'off'}`,
   );
   startHeartbeat(createLogger('socialsvc'));
 }

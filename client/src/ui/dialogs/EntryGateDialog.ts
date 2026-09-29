@@ -31,8 +31,12 @@ import { legalUrl, type ConsentMode } from './ConsentDialog';
 export interface EntryGateMode {
   /** 'ask' shows the birth-year stepper; 'ok' means age is already known — only consent is asked. */
   age: 'ask' | 'ok';
-  /** null when consent is already known too — only the age stepper (+ its own button) is shown. */
-  consent: ConsentMode | null;
+  /**
+   * null when consent is already known too — only the age stepper (+ its own button) is shown.
+   * 'terms': analytics consent is already answered but the current Terms of Use (EULA) are not
+   * (the App Review 1.2 re-accept, see TERMS_ACCEPTED_FLAG) — one Accept button, terms copy.
+   */
+  consent: ConsentMode | 'terms' | null;
 }
 
 export interface EntryGateAnswer {
@@ -289,12 +293,14 @@ export class EntryGateDialog implements Scene {
     const titleKey = confirming ? 'ageGate.confirmTitle'
       : this.mode.age === 'ask' && this.mode.consent !== null ? 'entryGate.title'
       : this.mode.age === 'ask' ? 'ageGate.title'
+      : this.mode.consent === 'terms' ? 'consent.termsUpdateTitle'
       : 'consent.title';
     const bodyKey = confirming ? 'ageGate.confirmBody'
       : this.mode.age === 'ask' && this.mode.consent === 'choice' ? 'entryGate.bodyChoice'
-      : this.mode.age === 'ask' && this.mode.consent === 'accept-only' ? 'entryGate.body'
+      : this.mode.age === 'ask' && (this.mode.consent === 'accept-only' || this.mode.consent === 'terms') ? 'entryGate.body'
       : this.mode.age === 'ask' ? 'ageGate.body'
       : this.mode.consent === 'choice' ? 'consent.bodyChoice'
+      : this.mode.consent === 'terms' ? 'consent.termsUpdateBody'
       : 'consent.body';
 
     const titleLabel = t(titleKey as Parameters<typeof t>[0]);

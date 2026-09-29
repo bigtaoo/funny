@@ -168,7 +168,6 @@ describe('header title follows the active tab — rails that contain other pages
         addFriend: async () => {},
         respond: async () => {},
         removeFriend: async () => {},
-        blockUser: async () => {}, reportUser: async () => {},
         duelInvite: () => {}, duelRespond: () => {},
         loadConversations: async () => [],
         openChat() {},

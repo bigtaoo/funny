@@ -22,6 +22,7 @@ import { HttpFeedbackClient } from '../src/clients/feedback';
 import { HttpAppealsClient } from '../src/clients/appeals';
 import { HttpReportsClient } from '../src/clients/reports';
 import { HttpEnforcementClient } from '../src/clients/enforcement';
+import { HttpModerationClient } from '../src/clients/moderation';
 
 const fetchMock = fetchInternalJson as unknown as Mock;
 
@@ -183,7 +184,9 @@ describe('HttpReportsClient', () => {
     expect(await new HttpReportsClient(null, 'k').listReports()).toEqual([]);
     fetchMock.mockResolvedValue({ ok: false, status: 500, body: null });
     expect(await new HttpReportsClient('http://social', 'k').listReports()).toEqual([]);
-    fetchMock.mockResolvedValue({ ok: true, status: 200, body: { reports: [{ _id: 'rp1' }] } });
+    // socialsvc's real reply shape is the ApiResp envelope — the pre-2026-09-29 client read a bare
+    // `{ reports }` and so always returned [] against the real service.
+    fetchMock.mockResolvedValue({ ok: true, status: 200, body: { ok: true, data: { reports: [{ _id: 'rp1' }] } } });
     expect(await new HttpReportsClient('http://social', 'k').listReports({ status: 'open', limit: 20 })).toEqual([{ _id: 'rp1' }]);
     expect(fetchMock.mock.calls.at(-1)?.[0]).toBe('http://social/internal/reports?status=open&limit=20');
   });
@@ -208,5 +211,35 @@ describe('HttpEnforcementClient', () => {
     const res = await new HttpEnforcementClient('http://meta', 'k').applyPenalty('a1', -5);
     expect(res).toEqual({ ok: true, result: { reputationScore: 42, action: 'warn' } });
     expect(fetchMock.mock.calls.at(-1)?.[1]).toMatchObject({ body: { delta: -5 } });
+  });
+});
+
+describe('HttpModerationClient (Guideline 1.2 staff removal)', () => {
+  it('routes social vs world calls to the right service + path, unwrapping the ApiResp envelope', async () => {
+    const c = new HttpModerationClient('http://social', 'http://world', 'k');
+    fetchMock.mockResolvedValue({ ok: true, status: 200, body: { ok: true, data: { deleted: true } } });
+    expect(await c.deleteSocialContent('dm', { messageId: 'm1' })).toEqual({ deleted: true });
+    expect(fetchMock.mock.calls.at(-1)?.[0]).toBe('http://social/internal/moderation/delete-content');
+    expect(fetchMock.mock.calls.at(-1)?.[1]).toMatchObject({ method: 'POST', body: { channel: 'dm', messageId: 'm1' } });
+    await c.deleteWorldMessage('sect', 'sm:1');
+    expect(fetchMock.mock.calls.at(-1)?.[0]).toBe('http://world/admin/world/moderation/delete-message');
+    expect(fetchMock.mock.calls.at(-1)?.[1]).toMatchObject({ body: { channel: 'sect', messageId: 'sm:1' } });
+    fetchMock.mockResolvedValue({ ok: true, status: 200, body: { ok: true, data: { worldMessages: 1, sectMessages: 2 } } });
+    expect(await c.purgeWorldAuthor('acc')).toEqual({ worldMessages: 1, sectMessages: 2 });
+    expect(fetchMock.mock.calls.at(-1)?.[0]).toBe('http://world/admin/world/moderation/purge-author');
+    await c.purgeSocialAuthor('acc');
+    expect(fetchMock.mock.calls.at(-1)?.[0]).toBe('http://social/internal/moderation/purge-author');
+  });
+
+  it('throws (never a silent success) when unconfigured or the backend errors', async () => {
+    const none = new HttpModerationClient(null, null, 'k');
+    expect(none.socialAvailable).toBe(false);
+    expect(none.worldAvailable).toBe(false);
+    await expect(none.purgeSocialAuthor('a')).rejects.toThrow('socialsvc not configured');
+    await expect(none.deleteWorldMessage('world', 'x')).rejects.toThrow('worldsvc not configured');
+    fetchMock.mockResolvedValue({ ok: false, status: 400, body: { ok: false, error: { message: 'messageId required' } } });
+    await expect(new HttpModerationClient('http://social', null, 'k').deleteSocialContent('dm', {})).rejects.toThrow('messageId required');
+    fetchMock.mockResolvedValue({ ok: false, status: 0, body: null, error: 'timeout' });
+    await expect(new HttpModerationClient('http://social', null, 'k').purgeSocialAuthor('a')).rejects.toThrow('timeout');
   });
 });

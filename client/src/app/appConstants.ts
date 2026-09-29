@@ -12,6 +12,13 @@ export const TUTORIAL_DONE_FLAG = 'tutorial_done';
 /** flags key — set after the player accepts the GDPR / privacy consent (C5-c, L1-1). Mirrors server `flags.gdprConsent`. */
 export const GDPR_CONSENT_FLAG = 'gdprConsent';
 /**
+ * flags key — set once the player has accepted the CURRENT Terms of Use (EULA). Versioned in the key
+ * itself: bumping the suffix (v2 = the App Review 1.2 zero-tolerance / report / block terms,
+ * 2026-09-29) makes every player who accepted an older text see the entry gate again, without
+ * touching `gdprConsent` (their analytics answer is kept). Absent = not accepted (gate shows).
+ */
+export const TERMS_ACCEPTED_FLAG = 'termsAccepted.v2';
+/**
  * flags key — the neutral age gate's recorded answer (AgeGateDialog): true = declared at least
  * {@link MIN_AGE_YEARS}, false = declared younger, and absent = never asked. That third state is
  * why the gate reads `save.flags` directly instead of `SaveManager.getFlag`, which returns

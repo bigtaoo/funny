@@ -5,6 +5,7 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createWorldMongo, type WorldMongo, type NationMessageDoc } from '../src/db';
 import { NationChannelService } from '../src/nationChannelService';
+import { UNRESOLVED_SENDER_NAME } from '@nw/shared';
 import { nullWorldCommercialClient, type WorldCommercialClient } from '../src/commercialClient';
 import type { WorldGatewayClient } from '../src/gatewayClient';
 import type { WorldMetaClient } from '../src/metaClient';
@@ -349,7 +350,7 @@ describe.skipIf(!mongo)('NationChannelService e2e', () => {
       expect(history[0]!.senderName).toBe('RealNickname');
     });
 
-    it('sendMessage() falls back to the client-supplied senderName when meta has no profile for the account', async () => {
+    it('sendMessage() falls back to UNRESOLVED_SENDER_NAME (never the client-supplied name) when meta has no profile for the account', async () => {
       const fakeMeta: WorldMetaClient = {
         available: true,
         async getProfile() { return null; },
@@ -366,10 +367,10 @@ describe.skipIf(!mongo)('NationChannelService e2e', () => {
         now: () => 8000,
       });
       const result = await svc.sendMessage(W, 'alice', 'ClientFallback', 'hi');
-      expect(result.senderName).toBe('ClientFallback');
+      expect(result.senderName).toBe(UNRESOLVED_SENDER_NAME);
     });
 
-    it('sendMessage() falls back to the client-supplied senderName when meta is not configured', async () => {
+    it('sendMessage() falls back to UNRESOLVED_SENDER_NAME (never the client-supplied name) when meta is not configured', async () => {
       const svc = new NationChannelService({
         cols: mongo!.collections,
         gateway: fakeGateway,
@@ -377,7 +378,7 @@ describe.skipIf(!mongo)('NationChannelService e2e', () => {
         now: () => 9000,
       });
       const result = await svc.sendMessage(W, 'alice', 'ClientFallback', 'hi');
-      expect(result.senderName).toBe('ClientFallback');
+      expect(result.senderName).toBe(UNRESOLVED_SENDER_NAME);
     });
   });
 

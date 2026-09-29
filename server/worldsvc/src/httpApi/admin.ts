@@ -22,7 +22,7 @@ export async function handleAdminRoutes(
   internalAuth: InternalAuthVerifier,
   deps: RouteDeps,
 ): Promise<void> {
-  const { svc, mapTemplateSvc } = deps;
+  const { svc, mapTemplateSvc, nationChannelSvc } = deps;
   if (!internalAuth.verify(req.headers).ok) {
     return sendErr(res, ErrorCode.UNAUTHENTICATED, 'internal endpoint requires X-Internal-Key');
   }
@@ -136,6 +136,31 @@ export async function handleAdminRoutes(
   } catch (e) {
     log.error('unhandled error (readJson)', { err: e instanceof Error ? e : String(e) });
     return sendErr(res, ErrorCode.BAD_REQUEST, 'invalid request body');
+  }
+  // ── Staff chat moderation (App Store Review Guideline 1.2): admin removes a reported world/sect message, or
+  // every world/sect message an account wrote. socialsvc has the twin endpoints for DM/family content. ──
+  if (aurl.pathname === '/admin/world/moderation/delete-message') {
+    const channel = body.channel;
+    const messageId = typeof body.messageId === 'string' ? body.messageId : '';
+    if ((channel !== 'world' && channel !== 'sect') || !messageId) {
+      return sendErr(res, ErrorCode.BAD_REQUEST, 'channel (world|sect) + messageId required');
+    }
+    try {
+      return send(res, 200, ok({ deleted: await nationChannelSvc.deleteMessage(channel, messageId) }));
+    } catch (e) {
+      log.error('unhandled error (moderation delete)', { err: e instanceof Error ? e : String(e) });
+      return send(res, 500, err(ErrorCode.INTERNAL, 'internal server error'));
+    }
+  }
+  if (aurl.pathname === '/admin/world/moderation/purge-author') {
+    const accountId = typeof body.accountId === 'string' ? body.accountId : '';
+    if (!accountId) return sendErr(res, ErrorCode.BAD_REQUEST, 'accountId required');
+    try {
+      return send(res, 200, ok(await nationChannelSvc.purgeAuthor(accountId)));
+    } catch (e) {
+      log.error('unhandled error (moderation purge)', { err: e instanceof Error ? e : String(e) });
+      return send(res, 500, err(ErrorCode.INTERNAL, 'internal server error'));
+    }
   }
   // New-season region allocation (G6/§20): open N regions using snake-draft balancing based on last season's sect strength, no worldId required (checked before the worldId gate).
   if (aurl.pathname === '/admin/world/allocate') {

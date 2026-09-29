@@ -103,6 +103,8 @@
 | metaserver | `NW_ADMOB_CLIENT_KEY`·`NW_WECHAT_ADS_CLIENT_KEY` | fail open（不配就放行，只靠 token 唯一性 + 每日上限兜底）。所以缺口的后果是**客户端 adToken 验签永远开不起来**，运营在 `.env` 里怎么填都没用 |
 | metaserver | `NW_ALERT_WEBHOOK_URL` | `uncaughtException`/`unhandledRejection` 的告警 POST 静默发不出去 |
 
+2026-09-29 补记：socialsvc 现在也读 `NW_ALERT_WEBHOOK_URL`——每条新举报 / 拉黑都往这个 webhook 推一条（App Store 审核 1.2「24 小时内处理」），和 metaserver 共用同一个地址；两份 compose 与 `nw-social` 的 pm2 条目已同步下发，`deploy-config.test.ts` 的扫描自动覆盖。
+
 后四条和 `NW_APPLE_PASSWORD` 是**一模一样的形状**：`.env.example` 里明明白白列着一行、运营照着填了、
 没有任何一条部署路径转发它。
 

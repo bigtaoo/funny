@@ -324,6 +324,9 @@ services:
       # never starts (index.ts gates on it), so socialsvc only ever uses the built-in REGION_WORDLISTS and
       # every ops word-list edit is inert. Degrades quietly: no error, just a permanently stale list.
       NW_ADMIN_INTERNAL_URL: http://admin:8083
+      # UGC report alerts (App Review 1.2): every new player report / block POSTs here so ops can act
+      # within 24h. Same webhook as metaserver's crash alerts; empty = reports only land in the admin queue.
+      NW_ALERT_WEBHOOK_URL: ${NW_ALERT_WEBHOOK_URL:-}
     depends_on:
       - gateway
     restart: unless-stopped

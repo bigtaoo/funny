@@ -9,6 +9,7 @@ import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { snapFont } from '../../render/fontScale';
 import { drawChatLine } from '../../ui/widgets/chatRow';
+import { isBlocked, messageContent, safetyActions } from '../../ui/moderation';
 import type { WorldChatMessage } from '../../net/WorldApiClient';
 import type { FriendsSceneCore } from './core';
 import { addButton, caretText, centerLabel, centerLabelFixed, openHiddenInput, scrollRegion } from './chrome';
@@ -115,7 +116,9 @@ export class WorldChatPanel {
       core.maxScroll = 0;
       return;
     }
-    if (core.worldMessages.length === 0) {
+    // Blocked senders are skipped at render time, so a block (or a live push from one) never shows.
+    const messages = core.worldMessages.filter((m) => !isBlocked(m.senderPublicId));
+    if (messages.length === 0) {
       centerLabel(core, layer, 'social.world.empty', regionH);
       core.maxScroll = 0;
       return;
@@ -127,7 +130,7 @@ export class WorldChatPanel {
 
     // Settle the scroll BEFORE placing rows (all rows are fixed-height, so the content height is
     // known up front): pin to the latest message unless the user scrolled up to read history.
-    core.maxScroll = Math.max(0, startCy + core.worldMessages.length * (rh + rowGap) - regionH);
+    core.maxScroll = Math.max(0, startCy + messages.length * (rh + rowGap) - regionH);
     if (core.worldStick) core.scrollY = core.maxScroll;
     else if (core.scrollY > core.maxScroll) core.scrollY = core.maxScroll;
     // scrollRegion() above baselined the layer at the pre-settle scrollY; rows below are placed at
@@ -136,7 +139,7 @@ export class WorldChatPanel {
 
     let cy = startCy;
     const screenY = (c: number) => core.regionTop + c - core.scrollY;
-    for (const m of core.worldMessages) {
+    for (const m of messages) {
       const sy = screenY(cy);
       if (core.rowVisible(sy, rh)) this.drawWorldMsgRow(layer, m, sy);
       cy += rh + rowGap;
@@ -175,9 +178,13 @@ export class WorldChatPanel {
       isSelf,
       ...(m.title ? { equippedTitle: m.title } : {}),
       ...(!isSelf ? {
-        actions: alreadyFriend
-          ? [{ labelKey: 'friends.message', fn: () => core.cb.openChat(m.senderPublicId, m.senderName) }]
-          : [{ labelKey: 'friends.add', fn: () => void this.network.doAdd(m.senderPublicId) }],
+        actions: [
+          alreadyFriend
+            ? { labelKey: 'friends.message', fn: () => core.cb.openChat(m.senderPublicId, m.senderName) }
+            : { labelKey: 'friends.add', fn: () => void this.network.doAdd(m.senderPublicId) },
+          // Report carries this exact message; Block hides every message of theirs (App Review 1.2).
+          ...safetyActions({ publicId: m.senderPublicId, name: m.senderName, content: messageContent('world', m.body, m.id) }),
+        ],
       } : {}),
     });
   }

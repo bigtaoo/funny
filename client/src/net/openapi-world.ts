@@ -1181,6 +1181,8 @@ export interface components {
             id: string;
             senderId: string;
             senderName: string;
+            /** @description Always sent by the server (optional in the schema only so client-built optimistic rows type-check). Sender's publicId ('' when unresolvable); the client hides blocked senders and offers Report/Block by it. */
+            senderPublicId?: string;
             /** @description Sender's equipped title (称号), if any. */
             title?: string;
             /** @description Sender's sect name (宗门), if any. */

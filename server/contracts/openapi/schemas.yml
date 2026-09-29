@@ -473,6 +473,31 @@ schemas:
       alias: { type: string, description: owner's private alias }
       avatarId: { type: string, description: "Equipped avatar id, composite \"<category>:<key>\" (empty string = no avatar)" }
 
+  ReportCategory:
+    type: string
+    enum: [harassment, hate, sexual, spam, cheating, offensive_name, other]
+    description: 'UGC report category (App Store Review Guideline 1.2)'
+
+  ReportContent:
+    type: object
+    description: >
+      The piece of content being flagged. `text` is the client-side snapshot (capped server-side to 500 chars);
+      for socialsvc-owned channels (dm, family, announcement, name) the server stores its own copy of the text
+      instead when `messageId` resolves to a message by the reported player.
+    required: [channel]
+    properties:
+      channel: { type: string, enum: [dm, family, sect, world, mail, announcement, name] }
+      messageId: { type: string, description: 'Message id as returned by the channel history/push (dm/family/sect/world)' }
+      text: { type: string, description: 'Client snapshot of the content' }
+
+  BlockedUser:
+    type: object
+    required: [publicId, displayName, ts]
+    properties:
+      publicId: { type: string }
+      displayName: { type: string }
+      ts: { type: integer, description: 'Epoch ms the block was placed' }
+
   FriendRequestView:
     type: object
     required: [requestId, fromPublicId, fromName, toPublicId, createdAt]

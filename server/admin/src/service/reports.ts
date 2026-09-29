@@ -2,7 +2,7 @@
 // resolves the report itself (socialsvc) and, on 'upheld', separately calls the metaserver penalty
 // endpoint (CM7's single enforcement path) in the same operation. Two calls, best-effort (no distributed
 // transaction, same pragmatic choice as TradeAuditTicketView's auto-ban — see slgAudit.ts).
-import type { ReportRow } from '../clients';
+import type { ReportRow, SocialPurgeResult, WorldPurgeResult } from '../clients';
 import type { Actor, AdminCore } from './base';
 import { AdminError } from './errors';
 
@@ -17,6 +17,14 @@ export interface ReportsHandlers {
     accountId: string,
     resolution: 'dismissed' | 'upheld',
   ): Promise<{ reputationScore?: number; action?: string }>;
+  deleteReportedContent(actor: Actor, id: string): Promise<{ deleted: boolean; channel: string }>;
+  purgeAuthorContent(actor: Actor, accountId: string): Promise<PurgeAuthorContentResult>;
+}
+
+/** Per-backend outcome of a purge: counts on success, an error string when that backend failed or is absent. */
+export interface PurgeAuthorContentResult {
+  social: SocialPurgeResult | { error: string };
+  world: WorldPurgeResult | { error: string };
 }
 
 export class ReportsService {
@@ -81,5 +89,77 @@ export class ReportsService {
         summary: `report ${id} → ${resolution}` + (penalty.action ? ` (${penalty.action}, score=${penalty.reputationScore})` : ''),
       });
       return penalty;
+    }
+
+    /** Find a report in any status (content removal is also useful after a report was upheld). */
+    private async findReport(id: string): Promise<ReportRow | undefined> {
+      for (const status of ['open', 'upheld', 'dismissed'] as const) {
+        const row = (await this.core.reports.listReports({ status, limit: 1000 })).find((r) => r._id === id);
+        if (row) return row;
+      }
+      return undefined;
+    }
+
+    /**
+     * Remove the one piece of content a report points at (reports.action; App Store Review Guideline 1.2 —
+     * "remove the content within 24 hours"). Routed by the report's own `contentRef.channel`: DM/family/
+     * announcement to socialsvc, sect/world to worldsvc. `name` and `mail` have no single removable message —
+     * rename/ban the player or purge the author instead; those are rejected with a 400 that says so.
+     */
+    async deleteReportedContent(actor: Actor, id: string): Promise<{ deleted: boolean; channel: string }> {
+      if (!this.core.reports.available) throw new AdminError(503, 'unavailable', 'social backend unavailable');
+      const row = await this.findReport(id);
+      if (!row) throw new AdminError(404, 'not_found', 'report not found');
+      const ref = row.contentRef;
+      if (!ref || ref.kind !== 'content') throw new AdminError(400, 'no_content', 'report does not point at a message');
+      const { channel } = ref;
+      let deleted: boolean;
+      try {
+        if (channel === 'announcement') {
+          deleted = (await this.core.moderation.deleteSocialContent('announcement', { targetId: row.targetId })).deleted;
+        } else if (channel === 'dm' || channel === 'family' || channel === 'sect' || channel === 'world') {
+          if (!ref.messageId) throw new AdminError(400, 'no_message_id', 'report has no messageId — purge the author instead');
+          deleted =
+            channel === 'dm' || channel === 'family'
+              ? (await this.core.moderation.deleteSocialContent(channel, { messageId: ref.messageId })).deleted
+              : (await this.core.moderation.deleteWorldMessage(channel, ref.messageId)).deleted;
+        } else {
+          throw new AdminError(400, 'unsupported_channel', `${channel} content has no single message to delete — purge the author or ban/rename instead`);
+        }
+      } catch (e) {
+        if (e instanceof AdminError) throw e;
+        throw new AdminError(502, 'moderation_failed', (e as Error).message);
+      }
+      await this.core.audit(actor.adminId, 'report.content.remove', {
+        target: row.targetId,
+        summary: `report ${id}: ${channel} message ${ref.messageId ?? '(announcement)'} → ${deleted ? 'deleted' : 'already gone'}`,
+      });
+      return { deleted, channel };
+    }
+
+    /**
+     * Remove every chat message / announcement / mail an account authored, across socialsvc and worldsvc
+     * (reports.action; Guideline 1.2 — pairs with the existing ban for "eject the user"). The two backends
+     * are independent: one failing doesn't stop the other, and each side's outcome is reported separately
+     * so the operator can retry exactly the half that failed (both purges are idempotent).
+     */
+    async purgeAuthorContent(actor: Actor, accountId: string): Promise<PurgeAuthorContentResult> {
+      if (!accountId) throw new AdminError(400, 'bad_request', 'accountId required');
+      const settle = async <T>(fn: () => Promise<T>): Promise<T | { error: string }> => {
+        try {
+          return await fn();
+        } catch (e) {
+          return { error: (e as Error).message };
+        }
+      };
+      const [social, world] = await Promise.all([
+        settle(() => this.core.moderation.purgeSocialAuthor(accountId)),
+        settle(() => this.core.moderation.purgeWorldAuthor(accountId)),
+      ]);
+      await this.core.audit(actor.adminId, 'report.content.remove', {
+        target: accountId,
+        summary: `purge author: social=${JSON.stringify(social)} world=${JSON.stringify(world)}`,
+      });
+      return { social, world };
     }
 }

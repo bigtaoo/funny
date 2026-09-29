@@ -297,13 +297,18 @@ export class FamilyMembershipService {
     await cols.families.deleteOne({ _id: fid });
   }
 
-  /** Update the family announcement (leader / elder). */
-  async setAnnouncement(requesterId: string, announcement: string): Promise<void> {
+  /**
+   * Update the family announcement (leader / elder). Shown to every member, so it is masked like chat
+   * (Guideline 1.2 / CONTENT_MODERATION_DESIGN CM5: mask on hit, never reject), and the author is stamped so a
+   * staff purge of that account can clear it.
+   */
+  async setAnnouncement(requesterId: string, announcement: string, region: ChatRegion = 'global'): Promise<void> {
     if (announcement.length > 200) throw new SlgError('BAD_REQUEST');
     const mem = await this.deps.cols.familyMembers.findOne({ _id: requesterId });
     if (!mem) throw new SlgError('NOT_IN_FAMILY');
     if (mem.role === 'member') throw new SlgError('NO_PERMISSION');
-    await this.deps.cols.families.updateOne({ _id: mem.familyId }, { $set: { announcement } });
+    const masked = censorChat(announcement, region, this.deps.wordlists).text;
+    await this.deps.cols.families.updateOne({ _id: mem.familyId }, { $set: { announcement: masked, announcementBy: requesterId } });
   }
 
   /**

@@ -5,6 +5,7 @@ import type { AuthOutcome } from '../../scenes/LoginScene';
 import type { RenameOutcome } from '../../scenes/SettingsScene';
 import { t, type TranslationKey } from '../../i18n';
 import { showToastMessage } from '../../net/log';
+import { resetBlockedPlayers } from '../../ui/moderation';
 import type { AppCtx, Nav } from '../appCtx';
 import {
   SEEN_INTRO_FLAG, TOKEN_KEY, PLAYER_NAME_KEY, PLAYER_PUBLIC_ID_KEY, PLAYER_AVATAR_KEY, RENAME_COST,
@@ -162,6 +163,7 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
     if (!api) return { ok: false };
     try {
       await api.deleteAccount();
+      resetBlockedPlayers();
       analytics.track('account_delete', {});
       platform.storage.removeItem(TOKEN_KEY);
       platform.storage.removeItem(PLAYER_NAME_KEY);
@@ -254,6 +256,8 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
     try {
       const res = await call();
       platform.storage.setItem(TOKEN_KEY, res.token);
+      // A different account may be signing in: drop the previous one's blocked list (reloaded on its first /save).
+      resetBlockedPlayers();
       applyGatewayUrl(res.gatewayUrl);
       // applyGatewayUrl only recycles the NetSession when the gateway URL string itself
       // changes; switching accounts on the same gateway leaves the old gateway WS open,
@@ -300,6 +304,7 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
 
   function doLogout(opts?: { notice?: TranslationKey }): void {
     platform.storage.removeItem(TOKEN_KEY);
+    resetBlockedPlayers(); // the blocked list is per account (ui/moderation.ts)
     platform.storage.removeItem(PLAYER_NAME_KEY);
     platform.storage.removeItem(PLAYER_PUBLIC_ID_KEY);
     // Pre-sync-era fallback key (see avatarId()'s comment in createAppCore.ts) — not account-scoped,

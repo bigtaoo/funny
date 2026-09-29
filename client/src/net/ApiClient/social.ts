@@ -7,8 +7,21 @@ import type {
   ProfileView,
   ConversationView,
   ChatMessageView,
+  ReportCategory,
+  ReportContent,
+  BlockedUserView,
 } from './types';
 import { currentChatRegion } from '../chatRegion';
+
+export type { ReportCategory, ReportContent, BlockedUserView };
+/** Which UGC surface a reported/blocked piece of content came from. */
+export type UgcChannel = ReportContent['channel'];
+/** Optional context sent with a report or a block (the server files a report for both). */
+export interface ModerationContext {
+  reason?: string;
+  category?: ReportCategory;
+  content?: ReportContent;
+}
 
 export interface SocialApi {
   getFriends(): Promise<FriendView[]>;
@@ -18,9 +31,10 @@ export interface SocialApi {
   requestFriend(publicId: string, message?: string): Promise<string>;
   respondFriend(requestId: string, accept: boolean): Promise<void>;
   removeFriend(publicId: string): Promise<void>;
-  blockUser(publicId: string): Promise<void>;
+  blockUser(publicId: string, ctx?: ModerationContext): Promise<void>;
   unblockUser(publicId: string): Promise<void>;
-  reportUser(publicId: string, reason: string): Promise<void>;
+  getBlockedUsers(): Promise<BlockedUserView[]>;
+  reportUser(publicId: string, ctx?: ModerationContext): Promise<void>;
   getConversations(): Promise<ConversationView[]>;
   getMessages(convId: string, before?: number, limit?: number): Promise<ChatMessageView[]>;
   sendChat(toPublicId: string, body: string): Promise<{ messageId: string; ts: number }>;
@@ -82,9 +96,13 @@ export class SocialService implements SocialApi {
     await this.core.request<{ ok: boolean }>('DELETE', `/friends/${encodeURIComponent(publicId)}`);
   }
 
-  /** Block a user (removes friendship + blocks friend requests / private messages). */
-  async blockUser(publicId: string): Promise<void> {
-    await this.core.post<{ ok: boolean }>('/friends/block', { publicId });
+  /**
+   * Block a user (removes friendship + blocks friend requests / private messages). The server also
+   * files a report and notifies the moderation team (App Review 1.2), so `ctx` carries the message
+   * the block was triggered from, when there was one.
+   */
+  async blockUser(publicId: string, ctx?: ModerationContext): Promise<void> {
+    await this.core.post<{ ok: boolean }>('/friends/block', { publicId, ...moderationBody(ctx) });
   }
 
   /** Unblock a user. */
@@ -96,8 +114,14 @@ export class SocialService implements SocialApi {
   }
 
   /** File a UGC report against another player (design-doc-audit-2026-07, COMPLIANCE_GLOBAL.md §7). Admin-review-only; does not block/unfriend. */
-  async reportUser(publicId: string, reason: string): Promise<void> {
-    await this.core.post<{ ok: boolean }>('/friends/report', { publicId, reason });
+  async reportUser(publicId: string, ctx?: ModerationContext): Promise<void> {
+    await this.core.post<{ ok: boolean }>('/friends/report', { publicId, ...moderationBody(ctx) });
+  }
+
+  /** Players this account has blocked (hidden from every chat feed client-side, see ui/moderation.ts). */
+  async getBlockedUsers(): Promise<BlockedUserView[]> {
+    const data = await this.core.request<{ blocked?: BlockedUserView[] }>('GET', '/friends/blocked');
+    return data.blocked ?? [];
   }
 
   // ── Social: private chat (S6-2, requires login token). Send via REST; receive messages via gateway push (NetSession). ──
@@ -133,4 +157,14 @@ export class SocialService implements SocialApi {
   async readChat(convId: string): Promise<void> {
     await this.core.post<{ ok: boolean }>('/chat/read', { convId });
   }
+}
+
+/** Only the fields that are actually set, so an absent category/content never goes on the wire as null. */
+function moderationBody(ctx?: ModerationContext): ModerationContext {
+  if (!ctx) return {};
+  return {
+    ...(ctx.reason ? { reason: ctx.reason } : {}),
+    ...(ctx.category ? { category: ctx.category } : {}),
+    ...(ctx.content ? { content: ctx.content } : {}),
+  };
 }

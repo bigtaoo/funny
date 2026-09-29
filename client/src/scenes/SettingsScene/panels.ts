@@ -13,6 +13,7 @@ import { buildAvatar } from '../../render/avatar';
 import type { SettingsSceneCallbacks } from './types';
 import { isDataSaverEnabled, setDataSaverEnabled } from '../../assets/prefetchPolicy';
 import { legalUrl } from '../../ui/dialogs/ConsentDialog';
+import { moderationAvailable, openBlockedPlayers } from '../../ui/moderation';
 import { clientPlatformName } from '../../app/appConstants';
 import { formatViewportGeometry } from '../../layout/viewportGeometry';
 import {
@@ -177,9 +178,12 @@ function canOpenLegalLinks(): boolean {
 export function drawHelp(host: PanelHost, page: Page, col: Column): void {
   const { cb } = host;
   const legal = canOpenLegalLinks();
-  if (!cb.onReplayTutorial && !legal) return;
+  // Blocked players (App Review 1.2): where a block made anywhere in the social hub is undone.
+  const blocked = !cb.offline && moderationAvailable();
+  if (!cb.onReplayTutorial && !legal && !blocked) return;
   section(page, col, t('settings.help'), (sec) => {
     if (cb.onReplayTutorial) sec.linkRow({ label: t('settings.replayTutorial'), icon: 'replay', onTap: () => cb.onReplayTutorial!() });
+    if (blocked) sec.linkRow({ label: t('moderation.blockedTitle'), icon: 'close', onTap: () => openBlockedPlayers() });
     if (!legal) return;
     const links: ReadonlyArray<readonly [TranslationKey, '/privacy' | '/terms']> = [
       ['consent.privacyPolicy', '/privacy'],

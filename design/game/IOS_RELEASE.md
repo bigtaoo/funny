@@ -486,6 +486,30 @@ Windows 上可做的验证仅限 `tsc --noEmit` + `webpack --env TARGET=mobile`�
   会把「金币」或半句话甩到单独一行，加 `breakWords` 又会把 `Apple I|D` 劈开。
   **headless UI 测试量不出这类问题**（每字符固定 7px），四种尺寸 × 三语是用 Playwright 在 dpr 3 下实拍核过的。
 
+### 9.2 兑换码在 iOS 上下线（3.1.1，2026-09-29）
+
+- **拒审原文要点**：build 12 人工审核（iPad Air 11" M3）判定「用 promo code 解锁付费内容」违反 3.1.1。
+  此前（2026-09-24）的判断是「码只由运营免费发、只换免费池金币，被问到再解释」——Apple 不接受这个区分：
+  **金币就是 IAP 卖的东西，任何非 IAP 途径拿到它都算。**
+- **客户端**：`app/nav/shop/nav.ts` 在 `iapKind() === 'apple'` 时不注入 `redeemPromo`，`ShopScene` 的兑换行随之不画
+  （`coins.ts` 的 `promoH` 为 0）。Web / 微信 / CrazyGames / Android 不变。
+- **服务端**：`/promo/redeem` 收到 `x-nw-platform: ios` 直接 403 `PROMO_UNAVAILABLE_ON_PLATFORM`——堵住 build ≤ 12
+  这些还画着兑换行的旧包。header 是客户端自报的，这只是纵深防御，不是安全边界。
+- **以后要给 iOS 玩家发福利**：用 ASC 的 **Offer Codes**（挂在 IAP 商品上），或者走邮件附件 / 活动奖励这类游戏内机制；
+  **不要**再做任何「输入一串字符 → 拿到可购买货币」的入口。
+
+### 9.3 UGC 审核要求（1.2，2026-09-29）
+
+- **拒审原文要点**：同一次审核（build 12）按 1.2 要求 UGC 应用具备：登录前同意 EULA 且写明零容忍、内容过滤、
+  举报、屏蔽（通知开发者 + 立即从 feed 消失）、24 小时内处置。我们在隐私标签里自报了 User Content、年龄分级填了
+  「用户互动」，聊天/昵称/家族公告/邮件都算 UGC——**不是录像引起的**。
+- **实现**：见 `CONTENT_MODERATION_DESIGN.md §9.6`。大部分是 JS + 服务端，但**必须出新包（build 13）**：
+  审核看的是二进制本身，OTA 改不了已提交的 build。
+- **提审前**：服务端先部署并在 VPS 配好 socialsvc 的 `NW_ALERT_WEBHOOK_URL`；真机录一段屏：首启 EULA 闸 →
+  登录页 EULA 行 → 私聊/世界聊天举报（选分类）→ 屏蔽（消息立刻消失）→ Blocked players 列表；
+  录屏链接写进 ASC「App Review Information → Notes」，以后每次提审都保留。
+- **运营承诺**：告警进群后 24h 内在 ops 举报页处理（删消息 / 清该用户消息 / 封号）。
+
 ## 10. 支付渠道隔离（2026-09-03 审计 + 修复）
 
 > 起因：提审前复查「网页支付有没有混进 iOS 包」。客户端的**路由**一直是对的（`WebPlatform.iapKind()` 探到 `window.NWBilling` 就走 Apple），
@@ -660,6 +684,9 @@ OTA 管线**不需要 macOS runner**（无原生编译），`ubuntu-latest` 即�
 > **硬性上传要求**。两件事合成一件做，且有了截止日期。
 
 ## 12. 待办 checklist
+
+- [ ] **build 12 拒审（3.1.1 兑换码 + 1.2 UGC）的返工**（2026-09-29，§9.2 / §9.3）：代码已合；剩部署服务端 +
+      VPS 配 socialsvc `NW_ALERT_WEBHOOK_URL`、出 build 13、真机录屏写进 Review Notes、回复 Apple 后重新提交
 
 - [x] Apple Developer：建 App ID（勾 IAP）+ ASC App 记录
 - [x] 生成 Distribution 证书 `.p12` / App Store 描述文件 / ASC API Key `.p8`

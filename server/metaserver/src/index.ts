@@ -1,6 +1,6 @@
 // metaserver process bootstrap: connect Mongo → buildApp → listen.
 // Reverse proxy forwards /api/* to this process (SERVER_API.md §0).
-import { createMongo, createLogger, startHeartbeat, FeatureFlagCache, WordlistCache, fetchInternalJson, connectActiveMatchRedis, type JwtConfig } from '@nw/shared';
+import { createMongo, createLogger, startHeartbeat, FeatureFlagCache, WordlistCache, fetchInternalJson, connectActiveMatchRedis, postAlertWebhook, type JwtConfig } from '@nw/shared';
 import { loadMetaEnv } from './config.js';
 import { buildApp, SPEC_PATH } from './app.js';
 import { HttpGatewayClient } from './gatewayClient.js';
@@ -24,11 +24,8 @@ function setupAlerts(): void {
   const webhook = process.env.NW_ALERT_WEBHOOK_URL;
   const sendAlert = webhook
     ? (text: string) => {
-        void fetch(webhook, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: `[NW metaserver] ${text}` }),
-        }).catch(() => {/* ignore webhook delivery failures */});
+        // Shared helper picks the Slack/Discord vs WeCom body shape and swallows delivery failures.
+        void postAlertWebhook(webhook, `[NW metaserver] ${text}`);
       }
     : null;
 

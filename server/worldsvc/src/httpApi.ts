@@ -13,7 +13,7 @@
 // JWT verification and always sends a response once its path prefix matches, so `admin.ts`
 // exports a void handler rather than a chain link.
 //   httpApi/helpers.ts     wire helpers (readJson/send/sendErr/numQ/sanitizeSenderNameFallback) + RouteDeps/RouteCtx types
-//   httpApi/admin.ts       /admin/world/* (map-templates, list, patrol, allocate/open/settle/reset/close/merge) — C4/§17.7
+//   httpApi/admin.ts       /admin/world/* (map-templates, list, patrol, allocate/open/settle/reset/close/merge, moderation/*) — C4/§17.7
 //   httpApi/internalRoutes.ts /internal/* service-to-service calls (account-deletion purge) — X-Internal-Key, like admin.ts
 //   httpApi/mapRoutes.ts   map/tile reads, march/occupations/stationed/territories lists
 //   httpApi/seasonRoutes.ts season resolve/join/transfer, world join/enter

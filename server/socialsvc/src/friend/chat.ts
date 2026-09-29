@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import type { ConversationView, ChatMessageView } from '@nw/shared';
 import { CHAT_BODY_MAX, CHAT_HISTORY_PAGE_MAX, censorChat, conversationId, type ChatRegion } from '@nw/shared';
 import type { FriendServiceDeps, SocialError } from './types';
-import { hasBlock, isFriend } from './shared';
+import { hasBlock, isFriend, blockedTargets } from './shared';
 
 export class FriendChatService {
   /** Per-minute message send rate limiter (in-process sliding window). */
@@ -91,7 +91,12 @@ export class FriendChatService {
   }
 
   async getConversations(accountId: string): Promise<ConversationView[]> {
-    const docs = await this.deps.cols.conversations.find({ members: accountId }).sort({ lastTs: -1 }).toArray();
+    const all = await this.deps.cols.conversations.find({ members: accountId }).sort({ lastTs: -1 }).toArray();
+    if (all.length === 0) return [];
+    // Guideline 1.2: a blocked player's conversation drops out of the blocker's list at once (unblocking
+    // brings it back — nothing is deleted, the history is still there for a report).
+    const blocked = await blockedTargets(this.deps.cols, accountId);
+    const docs = blocked.size === 0 ? all : all.filter((d) => !blocked.has(d.members[0] === accountId ? d.members[1] : d.members[0]));
     if (docs.length === 0) return [];
     const peerIds = docs.map((d) => (d.members[0] === accountId ? d.members[1] : d.members[0]));
     const allIds = [...new Set([accountId, ...peerIds])];
@@ -122,6 +127,9 @@ export class FriendChatService {
     const lim = Math.min(CHAT_HISTORY_PAGE_MAX, Math.max(1, Math.floor(limit) || 30));
     const q: Record<string, unknown> = { convId };
     if (before !== undefined && Number.isFinite(before)) q.ts = { $lt: new Date(before) };
+    // Guideline 1.2: once the caller blocks the peer, the peer's messages leave the caller's history view.
+    const peer = conv.members[0] === accountId ? conv.members[1] : conv.members[0];
+    if (await hasBlock(this.deps.cols, accountId, peer)) q.from = accountId;
     const docs = await this.deps.cols.chatMessages.find(q).sort({ ts: -1 }).limit(lim).toArray();
     const profiles = await this.deps.meta.batchProfiles([...conv.members]);
     const pid = new Map<string, string>();

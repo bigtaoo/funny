@@ -10,7 +10,7 @@ import { createAdminMongo } from './db';
 import { AdminService } from './service';
 import { startHttpApi } from './httpApi';
 import { seedSuperAdmin } from './seed';
-import { HttpAnalyticsClient, HttpAntiCheatClient, HttpAuctionClient, HttpEventsClient, HttpGachaPoolsClient, HttpLadderClient, HttpMailDispatcher, HttpMismatchClient, HttpPaddleEventsClient, HttpPlayerClient, HttpPromoClient, HttpPvpCardStatsClient, HttpStatsClient, HttpSuspiciousPveClient, HttpWorldClient, HttpReportsClient, HttpAppealsClient, HttpEnforcementClient, HttpFeedbackClient } from './clients';
+import { HttpAnalyticsClient, HttpAntiCheatClient, HttpAuctionClient, HttpEventsClient, HttpGachaPoolsClient, HttpLadderClient, HttpMailDispatcher, HttpMismatchClient, HttpPaddleEventsClient, HttpPlayerClient, HttpPromoClient, HttpPvpCardStatsClient, HttpStatsClient, HttpSuspiciousPveClient, HttpWorldClient, HttpReportsClient, HttpAppealsClient, HttpEnforcementClient, HttpFeedbackClient, HttpModerationClient } from './clients';
 
 const log = createLogger('admin');
 
@@ -41,7 +41,9 @@ async function main(): Promise<void> {
   const enforcement = new HttpEnforcementClient(env.metaBaseUrl, env.internalKey);
   const feedback = new HttpFeedbackClient(env.metaBaseUrl, env.internalKey);
 
-  const svc = new AdminService({ cols: mongo.collections, stats, players, antiCheat, mismatches, pvpCardStats, suspiciousPve, mail, analytics, world, auction, ladder, events, gachaPools, promo, paddleEvents, reports, appeals, enforcement, feedback, now: () => Date.now() });
+  // Staff content removal (Guideline 1.2): socialsvc (DM/family/announcement/mail) + worldsvc (sect/world chat).
+  const moderation = new HttpModerationClient(env.socialInternalUrl, env.worldInternalUrl, env.internalKey);
+  const svc = new AdminService({ cols: mongo.collections, stats, players, antiCheat, mismatches, pvpCardStats, suspiciousPve, mail, analytics, world, auction, ladder, events, gachaPools, promo, paddleEvents, reports, appeals, enforcement, feedback, moderation, now: () => Date.now() });
 
   const jwt: JwtConfig = { secret: env.adminJwtSecret, expiresIn: env.adminJwtTtl };
   const server = startHttpApi(

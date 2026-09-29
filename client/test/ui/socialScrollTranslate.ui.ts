@@ -62,7 +62,7 @@ function build(overrides: Partial<FriendsSceneCallbacks> = {}) {
     loadRequests: async () => ({ incoming: [], outgoing: [] }),
     search: async () => ({ publicId: '123456789', displayName: 'Bob' }),
     addFriend: async () => {}, respond: async () => {}, removeFriend: async () => {},
-    blockUser: async () => {}, reportUser: async () => {}, duelInvite: () => {}, duelRespond: () => {},
+    duelInvite: () => {}, duelRespond: () => {},
     loadConversations: async () => [], openChat() {},
     loadMail: async () => ({ mail: [], unread: 0 }), markMailRead: async () => {},
     claimMail: async () => true, deleteMail: async () => {},

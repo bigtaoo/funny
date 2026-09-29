@@ -5,12 +5,13 @@ import { randomUUID } from 'node:crypto';
 import type { SocialCollections } from './db';
 import type { SocialGatewayClient } from './gatewayClient';
 import type { SocialMetaClient } from './metaClient';
-import type { MailDoc, MailView, MailAttachmentDoc, ProfileView } from '@nw/shared';
+import type { MailDoc, MailView, MailAttachmentDoc, ProfileView, ChatRegion, WordlistCache } from '@nw/shared';
 import {
   MAIL_DEFAULT_TTL_SEC,
   MAIL_SUBJECT_MAX,
   MAIL_BODY_MAX,
   friendEdgeId,
+  censorChat,
 } from '@nw/shared';
 
 export function toMailView(d: MailDoc): MailView {
@@ -35,6 +36,8 @@ interface Deps {
   gateway: SocialGatewayClient;
   meta: SocialMetaClient;
   now: () => number;
+  /** Content-moderation word list overlay cache (CONTENT_MODERATION_DESIGN.md §3.2); omit = built-in REGION_WORDLISTS only. */
+  wordlists?: WordlistCache;
 }
 
 export class MailService {
@@ -42,12 +45,14 @@ export class MailService {
   private readonly gateway: SocialGatewayClient;
   private readonly meta: SocialMetaClient;
   private readonly now: () => number;
+  private readonly wordlists: WordlistCache | undefined;
 
   constructor(deps: Deps) {
     this.cols = deps.cols;
     this.gateway = deps.gateway;
     this.meta = deps.meta;
     this.now = deps.now;
+    this.wordlists = deps.wordlists;
   }
 
   async getMail(accountId: string): Promise<{ mail: MailView[]; unread: number }> {
@@ -125,6 +130,7 @@ export class MailService {
     toPublicId: string,
     subject: string,
     body: string,
+    region: ChatRegion = 'global',
   ): Promise<{ kind: 'ok'; mailId: string } | { kind: 'error'; error: 'NOT_FOUND' | 'NOT_FRIEND' | 'BAD_REQUEST' }> {
     const target = await this.meta.resolveByPublicId(toPublicId);
     if (!target) return { kind: 'error', error: 'NOT_FOUND' };
@@ -148,8 +154,9 @@ export class MailService {
       to,
       from: fromProfile.publicId,
       fromName: fromProfile.displayName,
-      subject: subj,
-      body: bd,
+      // Player-to-player text (Guideline 1.2): masked like chat — mask on hit, never reject (CM5).
+      subject: censorChat(subj, region, this.wordlists).text,
+      body: censorChat(bd, region, this.wordlists).text,
       createdAt: now,
       expireAt: new Date(now + MAIL_DEFAULT_TTL_SEC * 1000),
     });

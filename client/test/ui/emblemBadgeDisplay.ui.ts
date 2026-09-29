@@ -222,7 +222,7 @@ function makeFriendsCb(overrides: Record<string, unknown> = {}): any {
     getProfileExtra: async () => ({}),
     loadFriends: async () => [], loadRequests: async () => ({ incoming: [], outgoing: [] }),
     search: async () => null, addFriend: async () => {}, respond: async () => {}, removeFriend: async () => {},
-    blockUser: async () => {}, reportUser: async () => {}, duelInvite: () => {}, duelRespond: () => {},
+    duelInvite: () => {}, duelRespond: () => {},
     openChat() {}, loadMail: async () => ({ mail: [], unread: 0 }),
     markMailRead: async () => {}, claimMail: async () => true, deleteMail: async () => {},
     loadSLGStatus: async () => ({ worldId: 'w1', isLeader: false }),
