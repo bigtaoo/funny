@@ -253,6 +253,11 @@ describe('the mobile bundle carries no web payment surface', () => {
     expect(moduleReplacements('web').map((r) => r.to)).not.toContain('src/platform/stubs/paddleCheckout.ts');
   });
 
+  // The dynamic import below pulls ConsentDialog's whole graph (PIXI, sketchUi, the locale tables)
+  // cold: ~0.5s alone, but it timed out at vitest's 5s default in a full `npm test` on 2026-09-29.
+  // Same budget and reason as crazyGamesPortalIsolation.test.ts — it is about the import only.
+  const IMPORT_BUDGET_MS = 30_000;
+
   it('the consent gate links somewhere the shell can actually open', async () => {
     // The pages are gone from the bundle, so a relative link would 404 — and even when they were
     // bundled, `window.open('capacitor://localhost/privacy.html')` silently did nothing on iOS:
@@ -266,7 +271,7 @@ describe('the mobile bundle carries no web payment surface', () => {
     cap.platform = 'web';
     expect(legalUrl('/privacy')).toBe('/privacy.html');
     expect(legalUrl('/terms')).toBe('/terms.html');
-  });
+  }, IMPORT_BUDGET_MS);
 });
 
 describe('the Paddle stub is a stand-in for the real module, not a smaller thing', () => {

@@ -120,6 +120,10 @@ export interface AuditResult {
  *    Each box is deflated by 10% of its height before intersecting (≈ that padding).
  */
 export function auditLayout(opts: AuditOptions): AuditResult {
+  // Length of the local x axis in world space. Reading `a` alone mistook rotation for shrinking:
+  // the shop's "expiring soon" stamp, tilted -0.3 rad, read as scale cos(0.3) = 0.96 and its
+  // floor-sized label as under the floor (2026-09-29).
+  const axisScale = (m: { a: number; b?: number } | undefined): number => (m ? Math.hypot(m.a, m.b ?? 0) : 1);
   interface NodeLike {
     visible: boolean;
     renderable: boolean;
@@ -134,8 +138,8 @@ export function auditLayout(opts: AuditOptions): AuditResult {
     fsPx?: unknown;
     /** Stamped by render/iconTag.ts on every hand-drawn icon - the size it was asked for. */
     iconPx?: unknown;
-    /** Populated by `getBounds()`; `a` is the horizontal world scale. */
-    worldTransform?: { a: number };
+    /** Populated by `getBounds()`. `(a, b)` is where the local x axis lands in world space. */
+    worldTransform?: { a: number; b?: number };
     /** Present on `PIXI.Graphics` only — what it was actually told to draw. */
     geometry?: { graphicsData?: Array<{ shape?: { type?: number }; fillStyle?: { visible?: boolean; alpha?: number } }> };
     getBounds(skipUpdate?: boolean): { x: number; y: number; width: number; height: number };
@@ -272,7 +276,7 @@ export function auditLayout(opts: AuditOptions): AuditResult {
         if (icon !== null) {
           const asked = Number(n.iconPx);
           if (Number.isFinite(asked) && asked > 0) {
-            icons.push({ id: icon, askedPx: asked, rect: box, worldScale: n.worldTransform?.a ?? 1 });
+            icons.push({ id: icon, askedPx: asked, rect: box, worldScale: axisScale(n.worldTransform) });
           }
         }
         const label = labelOf(n);
@@ -281,7 +285,7 @@ export function auditLayout(opts: AuditOptions): AuditResult {
           labels.push({
             order: mine, label, rect: box, overlay,
             fontPx: Number.isFinite(own) && own > 0 ? own : null,
-            worldScale: n.worldTransform?.a ?? 1,
+            worldScale: axisScale(n.worldTransform),
           });
         } else if (!n.children?.length) {
           const area = box.w * box.h;
@@ -301,6 +305,10 @@ export function auditLayout(opts: AuditOptions): AuditResult {
   walk(app.stage, null, 1, false);
 
   const visible = labels.filter((l) => !covers.some((c) => c.order > l.order && contains(c.rect, l.rect)));
+  // Frames go through the same rule. A panel of the scene UNDER a full-screen editor is as invisible
+  // as that scene's labels, but it stayed in the list and got accused: the attack-team editor's troop
+  // readout was reported as escaping a City HUD panel two layers down (layout sweep, 2026-09-29).
+  const seenFrames = frames.filter((f) => !covers.some((c) => c.order > f.order && contains(c.rect, f.rect)));
 
   const findings: AuditFinding[] = [];
   const empty: AuditRect = { x: 0, y: 0, w: 0, h: 0 };
@@ -360,7 +368,9 @@ export function auditLayout(opts: AuditOptions): AuditResult {
     // No font size to read (a `PIXI.Text` subclass with a non-numeric style, say): fall back to the
     // ink box and the loosest of the two box-to-font ratios, so the fallback cannot cry wolf.
     const effective = l.fontPx !== null ? l.fontPx * local : (box.h / scale) / 0.77;
-    if (effective < opts.minInkDesignPx) {
+    // The epsilon absorbs float noise, not a real shrink: `hypot` of a rotated matrix gives the
+    // scale back as 0.9999999999999998 of itself, which put a label sized exactly at the floor under it.
+    if (effective < opts.minInkDesignPx - 1e-6) {
       findings.push({
         kind: 'tiny', a: l.label,
         b: `font=${l.fontPx ?? '?'} scale=${local.toFixed(2)}`,
@@ -378,7 +388,7 @@ export function auditLayout(opts: AuditOptions): AuditResult {
     let covered = boxArea * 0.5;   // a candidate must hold at least half the ink to count as its box
     const cx = box.x + box.w / 2;
     const cy = box.y + box.h / 2;
-    for (const f of frames) {
+    for (const f of seenFrames) {
       if (f.order > l.order || f.overlay !== l.overlay || f.rect.w * f.rect.h < boxArea * 1.2) continue;
       // "Fits something" is answered by ANY box under the label — a decorative panel the label sits
       // comfortably inside is exactly as good an answer as a button fill.
@@ -449,7 +459,7 @@ export function auditLayout(opts: AuditOptions): AuditResult {
   for (const ic of icons) {
     const local = scale > 0 ? ic.worldScale / scale : 1;
     const effective = ic.askedPx * local;
-    if (effective < opts.minIconDesignPx) {
+    if (effective < opts.minIconDesignPx - 1e-6) {
       findings.push({
         kind: 'icon', a: ic.id,
         b: `icon=${Math.round(ic.askedPx)} scale=${local.toFixed(2)}`,

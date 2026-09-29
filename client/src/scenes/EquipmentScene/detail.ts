@@ -81,9 +81,9 @@ export class DetailPanel {
     const affixCount = inst.affixes.length;
     const protectCount = save.inventory?.items?.[PROTECT_ENHANCE_ITEM_ID] ?? 0;
     const demoteChance = maxed ? 0 : enhanceDemoteChance(inst.level);
-    // 44 = top(12) + title(26) + affix-gap(6); enhance section is 58 (rate+cost+protect) + 40
+    // 44 = top(12) + title(26) + affix-gap(6); enhance section is two text rows (rate, cost — `rowH` below) + 22 (protect) + 40
     // (gap+confirm button, 2026-07-22b — enhance now requires opening this modal to set the
-    // protect toggle first, see instanceActions) + 18 (demote-risk warning line, +7/+8 only,
+    // protect toggle first, see instanceActions) + one more row (demote-risk warning line, +7/+8 only,
     // ADR-063) or 24 (maxed); +12 bottom pad.
     // Actions the grid cell had no room for (cells.ts splitCellActions) get a full-width button
     // each below the enhance section. Enhance itself never needs one: this modal is its UI.
@@ -104,7 +104,11 @@ export class DetailPanel {
     const oneLineH = wrappedHeight('X', textW);
     const protectExtra = maxed ? 0 : Math.max(0, wrappedHeight(protectText, textW - boxSz - 4) - oneLineH);
     const demoteExtra = demoteChance > 0 ? Math.max(0, wrappedHeight(demoteText, textW) - oneLineH) : 0;
-    const mh = 44 + affixCount * 20 + (maxed ? 24 : 58 + 40 + protectExtra + (demoteChance > 0 ? 18 + demoteExtra : 0)) + actionsH + 12;
+    // One text row of the enhance section. A fixed 18 held FS.micro until the floor raised it: at
+    // the 360/844 German floor a line is ~27 tall, and the cost row (centred on its row) rose into
+    // the success-rate line above it (layout sweep, 2026-09-29).
+    const rowH = Math.max(18, Math.ceil(oneLineH));
+    const mh = 44 + affixCount * 20 + (maxed ? 24 : rowH * 2 + 22 + 40 + protectExtra + (demoteChance > 0 ? rowH + demoteExtra : 0)) + actionsH + 12;
     const mx = 0;
     const my = 0;
 
@@ -185,22 +189,22 @@ export class DetailPanel {
       const rateLbl = core.stxt(t('equip.enhanceRate').replace('{rate}', String(rate)), FS.micro, C.dark);
       rateLbl.x = mx + 12; rateLbl.y = cy;
       panelRoot.addChild(rateLbl);
-      cy += 18;
+      cy += rowH;
       if (demoteChance > 0) {
         // Demote-risk warning (ADR-063): only +7/+8 attempts carry this, so it's easy to miss —
         // called out in red rather than folded into the success-rate line above.
         const demoteLbl = core.stxt(demoteText, FS.micro, C.red, false, textW);
         demoteLbl.x = mx + 12; demoteLbl.y = cy;
         panelRoot.addChild(demoteLbl);
-        cy += 18 + demoteExtra;
+        cy += rowH + demoteExtra;
       }
       const affordable = canAffordEnhance(save, cost);
       const costColor = affordable ? C.mid : C.red;
       const costLbl = core.stxt(`${t('equip.cost')}:`, FS.micro, costColor);
-      costLbl.anchor.set(0, 0.5); costLbl.x = mx + 12; costLbl.y = cy + 7;
+      costLbl.anchor.set(0, 0.5); costLbl.x = mx + 12; costLbl.y = cy + rowH / 2;
       panelRoot.addChild(costLbl);
-      core.drawCostChips(panelRoot, costLbl.x + costLbl.width + 8, cy + 7, cost.materials, cost.coins, costColor, 13);
-      cy += 18;
+      core.drawCostChips(panelRoot, costLbl.x + costLbl.width + 8, cy + rowH / 2, cost.materials, cost.coins, costColor, 13);
+      cy += rowH;
       // Protect-item row (E7): show quantity held + toggle switch.
       const canToggle = protectCount > 0;
       const protecting = core.useProtectEnhance && canToggle;
