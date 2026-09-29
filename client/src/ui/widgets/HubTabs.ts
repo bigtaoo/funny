@@ -28,7 +28,7 @@
  *   // lay body out below barH + stripH
  */
 import * as PIXI from 'pixi.js-legacy';
-import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
+import { ui as C, txt, sketchPanel, seedFor, fitOrWrap } from '../../render/sketchUi';
 import { buildIcon, type IconKind } from '../../render/icons';
 import { drawButtonLabel } from './buttonLabel';
 import { snapFont } from '../../render/fontScale';
@@ -222,21 +222,11 @@ export function drawSidebarTabs(
     lbl.anchor.set(0.5, 0.5);
     lbl.x = indent + cellW / 2;
     // Never let a long label ("Hero Roster") spill past the cell and clip off the
-    // screen edge: shrink it to fit the cell width (with a small horizontal pad).
+    // screen edge: shrink it to fit the cell width (with a small horizontal pad) — down to the
+    // legibility floor, and past that onto a second line (see fitOrWrap).
     const maxLblW = cellW - Math.round(cellW * 0.14);
-    if (lbl.width > maxLblW) lbl.scale.set(maxLblW / lbl.width);
-
-    if (tab.icon) {
-      const iconSize = Math.round(itemH * 0.34);
-      const icon = buildIcon(tab.icon, iconSize, fg);
-      icon.x = indent + cellW / 2 - iconSize / 2;
-      icon.y = cy + itemH * 0.2;
-      container.addChild(icon);
-      lbl.y = cy + itemH * 0.72;
-    } else {
-      lbl.y = cy + itemH / 2;
-    }
-    container.addChild(lbl);
+    const wrapped = fitOrWrap(lbl, maxLblW);
+    placeCellContent(container, tab.icon, fg, lbl, wrapped, indent + cellW / 2, cy, itemH);
 
     if (tab.badge) {
       const r = Math.round(itemH * 0.1);
@@ -255,6 +245,39 @@ export function drawSidebarTabs(
   });
 
   return { hits, bottom: cy - gap };
+}
+
+/**
+ * Icon over label inside one rail / bottom-bar cell of height `cellH` whose top is `top`, centred
+ * on `cx`. The one-line layout is the long-standing one (icon at 0.2, label centred at 0.72). A
+ * label {@link fitOrWrap} had to put on two lines ("Wöchentliche Truhe" in the landscape Daily
+ * rail, 2026-09-29) does not fit under a full-size icon, so the icon gives up the height instead:
+ * it shrinks to what is left and the two lines sit below it.
+ */
+function placeCellContent(
+  container: PIXI.Container, iconKind: IconKind | undefined, fg: number,
+  lbl: PIXI.Text, wrapped: boolean, cx: number, top: number, cellH: number,
+): void {
+  if (!iconKind) {
+    lbl.y = top + cellH / 2;
+    container.addChild(lbl);
+    return;
+  }
+  let iconSize = Math.round(cellH * 0.34);
+  let iconY = top + cellH * 0.2;
+  if (wrapped) {
+    const padY = cellH * 0.06;
+    iconSize = Math.round(Math.max(cellH * 0.18, Math.min(iconSize, cellH - lbl.height - padY * 3)));
+    iconY = top + padY;
+    lbl.y = iconY + iconSize + padY + lbl.height / 2;
+  } else {
+    lbl.y = top + cellH * 0.72;
+  }
+  const icon = buildIcon(iconKind, iconSize, fg);
+  icon.x = cx - iconSize / 2;
+  icon.y = iconY;
+  container.addChild(icon);
+  container.addChild(lbl);
 }
 
 /**
@@ -316,19 +339,8 @@ export function drawBottomNavTabs(
     lbl.anchor.set(0.5, 0.5);
     lbl.x = x + cellW / 2;
     const maxLblW = cellW - Math.round(cellW * 0.14);
-    if (lbl.width > maxLblW) lbl.scale.set(maxLblW / lbl.width);
-
-    if (tab.icon) {
-      const iconSize = Math.round(barH * 0.34);
-      const icon = buildIcon(tab.icon, iconSize, fg);
-      icon.x = x + cellW / 2 - iconSize / 2;
-      icon.y = y + barH * 0.2;
-      container.addChild(icon);
-      lbl.y = y + barH * 0.72;
-    } else {
-      lbl.y = y + barH / 2;
-    }
-    container.addChild(lbl);
+    const wrapped = fitOrWrap(lbl, maxLblW);
+    placeCellContent(container, tab.icon, fg, lbl, wrapped, x + cellW / 2, y, barH);
 
     if (tab.badge) {
       const r = Math.round(barH * 0.1);

@@ -8,7 +8,7 @@ import { BuildingView } from '../render/BuildingView';
 import { VFXSystem } from '../render/VFXSystem';
 import { Side, UnitType, UnitState, BuildingType, ownerToSide, type OwnerId } from '../game';
 import { t } from '../i18n';
-import { ui, sketchPanel, seedFor } from '../render/sketchUi';
+import { ui, sketchPanel, seedFor, fitOrWrap } from '../render/sketchUi';
 import { buildIcon } from '../render/icons';
 import { FS, snapFont } from '../render/fontScale';
 import { stateRecorder } from '../game/replay/StateRecorder';
@@ -344,8 +344,11 @@ export class StatePlayerScene implements Scene {
     // (13 chars in English, 21 in German, 4 CJK glyphs in Chinese), so the cap above is necessary but
     // not sufficient. The headless text mock measures a flat 7px/char, so only the real renderer
     // exercises this — see test/browser/shareReplay.spec.ts.
+    // Too wide even at the legibility floor, it wraps ("Geteilte Wiederholung" was drawn at 0.65,
+    // under the floor, 2026-09-29). The second line has room: the button row below is
+    // centred and starts right of barX, so the strip under the tag is empty.
     const tagAvail = this.barX - tag.x - 8;
-    if (tag.width > tagAvail) tag.scale.set(tagAvail / tag.width);
+    fitOrWrap(tag, tagAvail, 'left');
     this.overlay.addChild(tag);
 
     const rowY = this.barY + 18;
