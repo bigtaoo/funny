@@ -274,8 +274,11 @@ export function renderAds(ctx: DailyPanelCtx, areaX: number, top: number, areaW:
   if (capReached) btnLabelText = t('daily.ads.capReached');
   else if (cooling) btnLabelText = t('daily.ads.cooldown', { time: formatCooldown(nextAvailableAt - nowMs) });
   else btnLabelText = t('daily.ads.watch');
+  // The font follows the (tall) button's height, so in English the [icon][label] group is as wide
+  // as the button; the default 10 px inset left "Watch Ad" touching both borders on a 390-wide
+  // portrait (2026-09-29). Reserve a margin that scales with the button like the other callers do.
   drawButtonLabel(container, btnX, btnY, btnW, btnH, btnLabelText, 'adsTabIcon', 0xffffff,
-    snapFont(Math.round(btnH * 0.32)), { bold: false });
+    snapFont(Math.round(btnH * 0.32)), { bold: false, inset: Math.round(btnW * 0.14) });
 
   if (available && ctx.cb.onWatchAd) {
     hits.push({ rect: { x: btnX, y: btnY, w: btnW, h: btnH }, fn: () => ctx.doWatchAd() });
