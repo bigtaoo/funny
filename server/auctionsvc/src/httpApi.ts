@@ -8,7 +8,9 @@ import {
   ok,
   err,
   extractBearer,
-  verifyToken,
+  verifyUnrevokedToken,
+  TokenRevokedError,
+  type TokenRevocationList,
   loadInternalAuth,
   SlgError,
   createLogger,
@@ -73,7 +75,7 @@ const numQ = (v: string | null, d: number): number => {
 };
 
 export function startHttpApi(
-  opts: { host: string; port: number; jwtSecret: string; internalKey: string },
+  opts: { host: string; port: number; jwtSecret: string; internalKey: string; tokenRevocations?: TokenRevocationList | null },
   auctionSvc: AuctionService,
 ): Server {
   const internalAuth = loadInternalAuth(opts.internalKey);
@@ -164,8 +166,9 @@ export function startHttpApi(
       let accountId: string;
       try {
         if (!token) throw new Error('no bearer');
-        accountId = verifyToken(token, { secret: opts.jwtSecret });
-      } catch {
+        accountId = verifyUnrevokedToken(token, { secret: opts.jwtSecret }, opts.tokenRevocations);
+      } catch (e) {
+        if (e instanceof TokenRevokedError) return sendErr(res, ErrorCode.ACCOUNT_DELETED, 'account deleted');
         return sendErr(res, ErrorCode.UNAUTHENTICATED, 'authentication required');
       }
       // X-NW-Platform (ADR-020, comm-audit-internal-2026-07-28 P0-7): which recharged-pool bucket a

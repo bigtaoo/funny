@@ -94,6 +94,19 @@ export interface AccountDoc {
   purgedAt?: number;
 }
 
+/**
+ * Token revocation row (shared/src/tokenRevocation.ts). _id = accountId: one row per account, the newest
+ * revocation wins. Written by the C5-b purge when it claims an account; every JWT-verifying process polls
+ * metaserver's /internal/auth/token-revocations and rejects tokens with iat <= revokedAt. The row TTLs out
+ * at `expireAt` (revokedAt + TOKEN_REVOCATION_RETENTION_MS), by which time every such token has expired.
+ */
+export interface TokenRevocationDoc {
+  _id: string;
+  revokedAt: number;
+  reason: 'account_purged';
+  expireAt: Date;
+}
+
 /** Service steps of the account purge, in execution order (see metaserver accountPurge.ts for why this order). */
 export const ACCOUNT_PURGE_STEPS = ['social', 'world', 'auction', 'commercial', 'analytics', 'meta'] as const;
 export type AccountPurgeStep = (typeof ACCOUNT_PURGE_STEPS)[number];
@@ -134,6 +147,7 @@ export interface StaminaDoc {
 export async function ensureAccountIndexes(
   saves: Collection<SaveDoc>,
   accounts: Collection<AccountDoc>,
+  tokenRevocations: Collection<TokenRevocationDoc>,
 ): Promise<void> {
   await accounts.createIndex({ openid: 1 }, { sparse: true, unique: true });
   await accounts.createIndex({ deviceId: 1 }, { sparse: true, unique: true });
@@ -156,6 +170,9 @@ export async function ensureAccountIndexes(
     { deletedAt: 1 },
     { partialFilterExpression: { deletedAt: { $exists: true } } },
   );
+  // token revocation list: incremental poll by revokedAt (every verifying process, once a minute) + TTL.
+  await tokenRevocations.createIndex({ revokedAt: 1 });
+  await tokenRevocations.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
   // ladder leaderboard: server-wide Top100 + my rank count (S11-SE-5).
   // filter by pvp.seasonNo for the current season, then take the top 100 sorted by elo descending.
   await saves.createIndex({ 'save.pvp.seasonNo': 1, 'save.pvp.elo': -1 }, { name: 'pvp_season_elo' });

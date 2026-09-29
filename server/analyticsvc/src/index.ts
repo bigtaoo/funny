@@ -4,7 +4,7 @@ import { createAnalyticsMongo } from './db';
 import { AnalyticsService } from './service';
 import { startHttpApi } from './httpApi';
 import { startEtlScheduler } from './scheduler';
-import { loadInternalAuth, createLogger, startHeartbeat } from '@nw/shared';
+import { loadInternalAuth, createLogger, startHeartbeat, startTokenRevocationList } from '@nw/shared';
 
 async function main(): Promise<void> {
   const env = loadAnalyticssvcEnv();
@@ -13,18 +13,26 @@ async function main(): Promise<void> {
 
   const svc = new AnalyticsService(mongo.collections);
   const stopEtl = startEtlScheduler(svc);
+  // C5-b: a purged account's leaked token must not re-attach its user_id to new events.
+  const tokenRevocations = startTokenRevocationList(env.metaInternalUrl, {
+    caller: 'analyticsvc',
+    key: env.internalKey,
+    log: createLogger('analyticsvc:token-revocations'),
+  });
   const server = startHttpApi(
     {
       host: env.host,
       port: env.port,
       jwtSecret: env.jwtSecret,
       internalAuth: loadInternalAuth(env.internalKey),
+      tokenRevocations,
     },
     svc,
   );
 
   const shutdown = async (): Promise<void> => {
     stopEtl();
+    tokenRevocations?.stop();
     server.close();
     await mongo.close();
     process.exit(0);

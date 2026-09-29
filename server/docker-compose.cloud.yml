@@ -368,6 +368,8 @@ services:
       NW_ANALYTICS_HOST: 0.0.0.0
       NW_ANALYTICS_MONGO_URI: ${NW_ANALYTICS_MONGO_URI:?set NW_ANALYTICS_MONGO_URI in .env — analyticsvc's own login, from scripts/provisionMongoUsers.mjs}
       NW_ANALYTICS_MONGO_DB: ${NW_ANALYTICS_MONGO_DB:-notebook_wars_analytics}
+      # C5-b token revocation list only (purged accounts' tokens must not re-attach a user_id).
+      NW_META_INTERNAL_URL: http://metaserver:8080
     restart: unless-stopped
 
   # botsvc: bot-player fleet keeping ~300 bots permanently online (BOTSVC_DESIGN §2/§8).

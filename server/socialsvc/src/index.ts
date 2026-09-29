@@ -1,7 +1,7 @@
 // socialsvc process bootstrap (SOCIAL_SVC_DESIGN §7).
 // Fifth public face: /social/*, port 8085. nw_social dedicated database; auth reuses the meta JWT.
 // P1: family  P2: friends / private-chat / mail  P3: presence events
-import { createLogger, startHeartbeat, WordlistCache, fetchInternalJson } from '@nw/shared';
+import { createLogger, startHeartbeat, startTokenRevocationList, WordlistCache, fetchInternalJson } from '@nw/shared';
 import { loadSocialsvcEnv } from './config';
 import { createSocialMongo } from './db';
 import { FamilyService } from './familyService';
@@ -69,8 +69,15 @@ async function main(): Promise<void> {
     now: () => Date.now(),
   });
 
+  // C5-b: tokens of purged accounts, polled from metaserver (shared/src/tokenRevocation.ts).
+  const tokenRevocations = startTokenRevocationList(env.metaInternalUrl, {
+    caller: 'socialsvc',
+    key: env.internalKey,
+    log: createLogger('socialsvc:token-revocations'),
+  });
+
   const server = startHttpApi(
-    { host: env.host, port: env.port, jwtSecret: env.jwtSecret, internalKey: env.internalKey },
+    { host: env.host, port: env.port, jwtSecret: env.jwtSecret, internalKey: env.internalKey, tokenRevocations },
     familySvc,
     friendSvc,
     mailSvc,
@@ -80,6 +87,7 @@ async function main(): Promise<void> {
   );
 
   const shutdown = async (): Promise<void> => {
+    tokenRevocations?.stop();
     server.close();
     await mongo.close();
     process.exit(0);

@@ -4,7 +4,7 @@
 // mechanism now — these tests cover both endpoints end-to-end, no Mongo (FakeCollection + fastify inject,
 // same style as titles.test.ts).
 import { describe, it, expect } from 'vitest';
-import { makeNewSave, signToken, type Collections, type SaveData } from '@nw/shared';
+import { TokenRevocationList, makeNewSave, signToken, type Collections, type SaveData } from '@nw/shared';
 import { buildApp } from '../src/app.js';
 import { FakeCollection } from './helpers/fakeCollection.js';
 import type { FastifyInstance } from 'fastify';
@@ -23,13 +23,19 @@ interface SaveDocRow { _id: string; save: SaveData; rev: number }
 
 let clock = 1_700_000_000_000;
 
-function build(seedAccount?: AccountDoc): { app: Promise<FastifyInstance>; accounts: FakeCollection<AccountDoc> } {
+function build(
+  seedAccount?: AccountDoc,
+  tokenRevocations?: TokenRevocationList,
+): { app: Promise<FastifyInstance>; accounts: FakeCollection<AccountDoc> } {
   const accounts = new FakeCollection<AccountDoc>();
   if (seedAccount) accounts.seed(seedAccount);
   const save = makeNewSave(ACC, clock);
   const saves = new FakeCollection<SaveDocRow>().seed({ _id: ACC, save, rev: save.rev });
   const cols = { accounts, saves } as unknown as Collections;
-  const app = buildApp({ cols, jwt, internalKey: 'k', commercialUrl: null, gatewayUrl: null, authRateLimit: 0, now: () => clock });
+  const app = buildApp({
+    cols, jwt, internalKey: 'k', commercialUrl: null, gatewayUrl: null, authRateLimit: 0, now: () => clock,
+    ...(tokenRevocations ? { tokenRevocations } : {}),
+  });
   return { app, accounts };
 }
 
@@ -129,6 +135,30 @@ describe('POST /account/cancel-deletion (P0-13)', () => {
 });
 
 describe('purged account (C5-b purge tombstone)', () => {
+  it('a token on the revocation list is refused with 410 (purge in progress, row not tombstoned yet); a newer one is not', async () => {
+    const revokedAt = Date.now();
+    const list = new TokenRevocationList(async () => ({ asOf: revokedAt, revocations: [{ accountId: ACC, revokedAt }] }));
+    await list.refresh();
+    const old = { authorization: `Bearer ${signToken(ACC, jwt)}` };
+    const { app } = build({ _id: ACC, deletedAt: clock - 8 * 24 * 3600 * 1000 }, list);
+    const a = await app;
+    const res = await a.inject({ method: 'GET', url: '/save', headers: old });
+    expect(res.statusCode).toBe(410);
+    expect(res.json().error.code).toBe('ACCOUNT_DELETED');
+    expect(res.headers['x-nw-token']).toBeUndefined();
+    // A token whose iat is after revokedAt (a future "sign out everywhere" re-login) passes the check.
+    const later = new TokenRevocationList(async () => ({ asOf: revokedAt, revocations: [{ accountId: ACC, revokedAt: revokedAt - 5000 }] }));
+    await later.refresh();
+    const { app: app2 } = build({ _id: ACC, deletedAt: clock, deletionConfirmToken: 'tok-abc' }, later);
+    const b = await app2;
+    const ok = await b.inject({
+      method: 'POST', url: '/account/cancel-deletion', headers: old, payload: { confirmToken: 'tok-abc' },
+    });
+    expect(ok.statusCode).toBe(200);
+    await a.close();
+    await b.close();
+  });
+
   it('a still-valid JWT for a purged account is refused with 410 before any handler runs', async () => {
     const { app } = build({ _id: ACC, deletedAt: clock - 8 * 24 * 3600 * 1000, purgedAt: clock });
     const a = await app;

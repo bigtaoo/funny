@@ -24,7 +24,15 @@
 //   httpApi/chatRoutes.ts          /social/chat/* direct messages (P2)
 //   httpApi/mailRoutes.ts          /social/mail/* player mail (P2)
 import { createServer, type Server } from 'http';
-import { ErrorCode, extractBearer, verifyToken, loadInternalAuth, SlgError } from '@nw/shared';
+import {
+  ErrorCode,
+  extractBearer,
+  verifyUnrevokedToken,
+  TokenRevokedError,
+  loadInternalAuth,
+  SlgError,
+  type TokenRevocationList,
+} from '@nw/shared';
 import type { FamilyService } from './familyService';
 import type { FriendService } from './friendService';
 import type { MailService } from './mailService';
@@ -44,7 +52,7 @@ import { handleChatRoutes } from './httpApi/chatRoutes';
 import { handleMailRoutes } from './httpApi/mailRoutes';
 
 export function startHttpApi(
-  opts: { host: string; port: number; jwtSecret: string; internalKey: string },
+  opts: { host: string; port: number; jwtSecret: string; internalKey: string; tokenRevocations?: TokenRevocationList | null },
   familySvc: FamilyService,
   friendSvc: FriendService,
   mailSvc: MailService,
@@ -100,8 +108,9 @@ export function startHttpApi(
       if (!token) return sendErr(res, ErrorCode.UNAUTHENTICATED, 'missing Authorization header');
       let accountId: string;
       try {
-        accountId = verifyToken(token, { secret: opts.jwtSecret });
-      } catch {
+        accountId = verifyUnrevokedToken(token, { secret: opts.jwtSecret }, opts.tokenRevocations);
+      } catch (e) {
+        if (e instanceof TokenRevokedError) return sendErr(res, ErrorCode.ACCOUNT_DELETED, 'account deleted');
         return sendErr(res, ErrorCode.UNAUTHENTICATED, 'invalid token');
       }
 

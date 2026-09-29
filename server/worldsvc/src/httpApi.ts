@@ -23,7 +23,18 @@
 //   httpApi/sectRoutes.ts   sect create/join/leave/dissolve/ally/unally/vote/message/channel (S8-4b)
 //   httpApi/nationRoutes.ts nation/world public channel + nation naming (B7/§6.4, S8-6.5)
 import { createServer, type Server } from 'http';
-import { ErrorCode, ok, err, extractBearer, verifyToken, loadInternalAuth, SlgError, createLogger } from '@nw/shared';
+import {
+  ErrorCode,
+  ok,
+  err,
+  extractBearer,
+  verifyUnrevokedToken,
+  TokenRevokedError,
+  loadInternalAuth,
+  SlgError,
+  createLogger,
+  type TokenRevocationList,
+} from '@nw/shared';
 import type { WorldService } from './service';
 import type { SectService } from './sectService';
 import type { NationChannelService } from './nationChannelService';
@@ -63,7 +74,7 @@ const ROUTE_CHAIN: readonly ((ctx: RouteCtx) => Promise<boolean>)[] = [
 ];
 
 export function startHttpApi(
-  opts: { host: string; port: number; jwtSecret: string; internalKey: string },
+  opts: { host: string; port: number; jwtSecret: string; internalKey: string; tokenRevocations?: TokenRevocationList | null },
   svc: WorldService,
   sectSvc: SectService,
   nationChannelSvc: NationChannelService,
@@ -117,8 +128,9 @@ export function startHttpApi(
       let accountId: string;
       try {
         if (!token) throw new Error('no bearer');
-        accountId = verifyToken(token, { secret: opts.jwtSecret });
-      } catch {
+        accountId = verifyUnrevokedToken(token, { secret: opts.jwtSecret }, opts.tokenRevocations);
+      } catch (e) {
+        if (e instanceof TokenRevokedError) return sendErr(res, ErrorCode.ACCOUNT_DELETED, 'account deleted');
         return sendErr(res, ErrorCode.UNAUTHENTICATED, 'authentication required');
       }
 

@@ -5,7 +5,13 @@
 // that's preserved inside each domain function).
 import { MongoClient, type MongoClientOptions } from 'mongodb';
 import type { Collections, MongoHandle } from './collections';
-import { type SaveDoc, type AccountDoc, type StaminaDoc, ensureAccountIndexes } from './accountDocs';
+import {
+  type SaveDoc,
+  type AccountDoc,
+  type StaminaDoc,
+  type TokenRevocationDoc,
+  ensureAccountIndexes,
+} from './accountDocs';
 import {
   type MatchDoc,
   type ReplayBlobDoc,
@@ -61,6 +67,7 @@ export async function createMongo(
   const collections: Collections = {
     saves: db.collection<SaveDoc>('saves'),
     accounts: db.collection<AccountDoc>('accounts'),
+    tokenRevocations: db.collection<TokenRevocationDoc>('tokenRevocations'),
     matches: db.collection<MatchDoc>('matches'),
     replayBlobs: db.collection<ReplayBlobDoc>('replayBlobs'),
     pveVerifications: db.collection<PveVerificationDoc>('pveVerifications'),
@@ -89,7 +96,7 @@ export async function createMongo(
   };
 
   async function ensureIndexes(): Promise<void> {
-    await ensureAccountIndexes(collections.saves, collections.accounts);
+    await ensureAccountIndexes(collections.saves, collections.accounts, collections.tokenRevocations);
     await ensureMatchIndexes(
       collections.matches,
       collections.replayBlobs,

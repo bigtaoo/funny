@@ -3,6 +3,7 @@ export * from './types';
 export * from './equipment';
 export * from './api';
 export * from './jwt';
+export * from './tokenRevocation';
 export * from './ticket';
 export * from './password';
 export * from './playerNames';

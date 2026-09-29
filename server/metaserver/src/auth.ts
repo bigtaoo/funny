@@ -64,21 +64,23 @@ function accountDeleted(): AuthError {
 }
 
 /**
- * `isPurged` (C5-b account purge): a JWT outlives the account it names — 30-day TTL, and the sliding
+ * `isRevoked` (C5-b account purge): a JWT outlives the account it names — 30-day TTL, and the sliding
  * renewal below would extend it forever on any request. After the purge job has tombstoned the row, every
  * handler that lazily creates per-account state (getOrCreateSave, ensurePublicId, ...) would otherwise
  * resurrect data for an erased account, so the token is refused here, before any handler runs and before
- * a renewed token could be minted. Soft-deleted-but-not-yet-purged accounts are NOT refused here: the
- * grace-period undo (POST /account/cancel-deletion) needs a working token. Omitted in unit tests that
- * build the handlers without a database.
+ * a renewed token could be minted. It answers true for a tombstoned row and for a token on the revocation
+ * list (written when the purge claims the account, i.e. before the tombstone), so a revoked token is never
+ * renewed and the list's 31-day row TTL really outlasts every token it covers. Soft-deleted-but-not-yet-
+ * purged accounts are NOT refused: the grace-period undo (POST /account/cancel-deletion) needs a working
+ * token. Omitted in unit tests that build the handlers without a database.
  */
 export function makeSecurityHandlers(
   jwt: JwtConfig,
   now: () => number = () => Date.now(),
-  isPurged?: (accountId: string) => Promise<boolean>,
+  isRevoked?: (payload: TokenPayload) => Promise<boolean>,
 ) {
   return {
-    // Synchronous unless an isPurged check is wired in (glue awaits either form).
+    // Synchronous unless an isRevoked check is wired in (glue awaits either form).
     bearerAuth(req: FastifyRequest, reply?: FastifyReply): void | Promise<void> {
       const token = extractBearer(req.headers['authorization']);
       if (!token) throw unauthenticated('missing bearer token');
@@ -92,9 +94,9 @@ export function makeSecurityHandlers(
         req.accountId = payload.sub;
         maybeRenewToken(payload, jwt, reply, now);
       };
-      if (!isPurged) return accept();
-      return isPurged(payload.sub).then((purged) => {
-        if (purged) throw accountDeleted();
+      if (!isRevoked) return accept();
+      return isRevoked(payload).then((revoked) => {
+        if (revoked) throw accountDeleted();
         accept();
       });
     },

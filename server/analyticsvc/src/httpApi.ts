@@ -9,7 +9,8 @@ import { createServer, type Server, type IncomingMessage, type ServerResponse } 
 import geoip from 'geoip-lite';
 import {
   extractBearer,
-  verifyToken,
+  verifyUnrevokedToken,
+  type TokenRevocationList,
   ErrorCode,
   ERROR_HTTP_STATUS,
   ok,
@@ -126,7 +127,13 @@ function sendErr(res: ServerResponse, code: ErrorCode, message: string): void {
 }
 
 export function startHttpApi(
-  opts: { host: string; port: number; jwtSecret: string; internalAuth: InternalAuthVerifier },
+  opts: {
+    host: string;
+    port: number;
+    jwtSecret: string;
+    internalAuth: InternalAuthVerifier;
+    tokenRevocations?: TokenRevocationList | null;
+  },
   svc: AnalyticsService,
 ): Server {
   const server = createServer((req, res) => {
@@ -169,9 +176,10 @@ export function startHttpApi(
         const token = extractBearer(req.headers['authorization']);
         if (token) {
           try {
-            userId = verifyToken(token, { secret: opts.jwtSecret });
+            userId = verifyUnrevokedToken(token, { secret: opts.jwtSecret }, opts.tokenRevocations);
           } catch {
-            // Invalid JWT: continue as anonymous — do not reject the request (analytics data is lenient)
+            // Invalid or revoked JWT: continue as anonymous — do not reject the request (analytics data is
+            // lenient). A revoked token (purged account) must not tie new events to the erased user_id.
           }
         }
 

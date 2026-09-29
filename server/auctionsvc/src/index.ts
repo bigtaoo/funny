@@ -1,6 +1,6 @@
 // auctionsvc process bootstrap (auction task 4): connect dedicated DB → services → public REST listen → expiry scheduler.
 // AUCTION_DESIGN §9: standalone auction house service, decoupled from worldsvc/worldId.
-import { createLogger, startHeartbeat } from '@nw/shared';
+import { createLogger, startHeartbeat, startTokenRevocationList } from '@nw/shared';
 import { loadAuctionsvcEnv } from './config';
 import { createAuctionMongo } from './db';
 import { AuctionService } from './auctionService';
@@ -42,13 +42,21 @@ async function main(): Promise<void> {
 
   const scheduler = startScheduler(auctionSvc);
 
+  // C5-b: tokens of purged accounts, polled from metaserver (shared/src/tokenRevocation.ts).
+  const tokenRevocations = startTokenRevocationList(env.metaInternalUrl, {
+    caller: 'auctionsvc',
+    key: env.internalKey,
+    log: createLogger('auctionsvc:token-revocations'),
+  });
+
   const server = startHttpApi(
-    { host: env.host, port: env.port, jwtSecret: env.jwtSecret, internalKey: env.internalKey },
+    { host: env.host, port: env.port, jwtSecret: env.jwtSecret, internalKey: env.internalKey, tokenRevocations },
     auctionSvc,
   );
 
   const shutdown = async (): Promise<void> => {
     scheduler.stop();
+    tokenRevocations?.stop();
     server.close();
     await mongo.close();
     process.exit(0);

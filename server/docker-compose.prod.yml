@@ -381,6 +381,8 @@ services:
       NW_ANALYTICS_HOST: 0.0.0.0
       NW_ANALYTICS_MONGO_URI: ${NW_ANALYTICS_MONGO_URI:-mongodb://mongo:27017/?replicaSet=rs0}
       NW_ANALYTICS_MONGO_DB: ${NW_ANALYTICS_MONGO_DB:-notebook_wars_analytics}
+      # C5-b token revocation list only (purged accounts' tokens must not re-attach a user_id).
+      NW_META_INTERNAL_URL: http://metaserver:8080
     depends_on:
       mongo:
         condition: service_healthy

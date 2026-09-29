@@ -2,7 +2,7 @@
 // shape). Pure interface declarations: the `Collections` handle bag (one property per Mongo collection,
 // typed by the domain files) + `MongoHandle` (client/db/collections/ensureIndexes/close), no logic here.
 import type { MongoClient, Db, Collection } from 'mongodb';
-import type { SaveDoc, AccountDoc, StaminaDoc } from './accountDocs';
+import type { SaveDoc, AccountDoc, StaminaDoc, TokenRevocationDoc } from './accountDocs';
 import type { MatchDoc, ReplayBlobDoc, ReplayShareDoc, StateReplayShareDoc } from './matchDocs';
 import type { PveVerificationDoc, AntiCheatReviewDoc, PveRejectDoc, AppealDoc } from './integrityDocs';
 import type { FeedbackDoc, MailDoc } from './commsDocs';
@@ -22,6 +22,8 @@ import type { LadderSeasonDoc, LadderSeasonSnapshotDoc } from '../season';
 export interface Collections {
   saves: Collection<SaveDoc>;
   accounts: Collection<AccountDoc>;
+  // JWT revocation list (C5-b purge; shared/src/tokenRevocation.ts), polled by every verifying process
+  tokenRevocations: Collection<TokenRevocationDoc>;
   matches: Collection<MatchDoc>;
   replayBlobs: Collection<ReplayBlobDoc>;
   pveVerifications: Collection<PveVerificationDoc>;
