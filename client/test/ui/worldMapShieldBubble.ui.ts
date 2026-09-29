@@ -509,3 +509,61 @@ describe('WorldMap shield bubble — measured where it lands on screen (2026-09-
     expect(c.ctx.shieldGeom.get('750:750')!.rx).toBeCloseTo(rxAtL1, 6);
   });
 });
+
+// Node-count pass (2026-09-29). A base's container carries four effect layers (HP bar, dome, glow
+// subtree, break pop) — 10 of its 13 nodes — and on almost every base all four are empty. They stay
+// in the tree for reuse but are hidden while empty, so the renderer and the idle change detector
+// skip them; these pin that each one is shown exactly while it has something to draw.
+describe('WorldMap base effect layers are hidden while empty (2026-09-29)', () => {
+  const layers = (ctx: WorldMapContext, key: string) => {
+    const c = ctx.citySprites.get(key)!;
+    return {
+      hp: c.getChildByName('hpbar') as PIXI.Graphics,
+      dome: c.getChildByName('shieldFx') as PIXI.Graphics,
+      glow: c.getChildByName('shieldGlowFx') as PIXI.Container,
+      pop: c.getChildByName('shieldBreakFx') as PIXI.Graphics,
+    };
+  };
+  const show = (ctx: WorldMapContext, cx: number, cy: number) => { ctx.view.centerAt(cx, cy); ctx.view.invalidatePool(); };
+
+  it('a plain base (full HP, unprotected) shows none of them', () => {
+    const ctx = buildScene();
+    placeBase(ctx, 600, 600, { mine: false });
+    show(ctx, 600, 600);
+    const l = layers(ctx, '600:600');
+    expect([l.hp.visible, l.dome.visible, l.glow.visible, l.pop.visible]).toEqual([false, false, false, false]);
+    expect((ctx.citySprites.get('600:600')!.getChildByName('img') as PIXI.Sprite).visible).toBe(true);
+  });
+
+  it('the HP bar shows while damaged and hides again once repaired', () => {
+    const ctx = buildScene();
+    const key = '610:610';
+    placeBase(ctx, 610, 610, { mine: false, hp: 40, maxHp: 100 });
+    show(ctx, 610, 610);
+    expect(layers(ctx, key).hp.visible).toBe(true);
+    ctx.tileCache.set(key, { ...ctx.tileCache.get(key)!, hp: 100 });
+    ctx.view.invalidatePool();
+    expect(layers(ctx, key).hp.visible).toBe(false);
+  });
+
+  it('dome + glow show while protected; the pop shows for its lifetime once protection lapses', () => {
+    const ctx = buildScene();
+    const key = '620:620';
+    placeBase(ctx, 620, 620, { mine: false, protectedUntil: Date.now() + 3_600_000 });
+    show(ctx, 620, 620);
+    let l = layers(ctx, key);
+    expect([l.dome.visible, l.glow.visible, l.pop.visible]).toEqual([true, true, false]);
+
+    ctx.tileCache.set(key, { ...ctx.tileCache.get(key)!, protectedUntil: Date.now() - 1000 });
+    ctx.view.invalidatePool();
+    l = layers(ctx, key);
+    expect([l.dome.visible, l.glow.visible, l.pop.visible]).toEqual([false, false, true]);
+
+    ctx.view.update(SHIELD_BREAK_LIFE / 2);
+    expect(l.pop.visible).toBe(true);
+    expect(l.pop.geometry.graphicsData.length).toBeGreaterThan(0);
+    ctx.view.update(SHIELD_BREAK_LIFE);
+    expect(l.pop.visible).toBe(false);
+  });
+
+});

@@ -104,6 +104,8 @@ describe('WorldMap wild-city durability bar (ADR-074 P1)', () => {
   it('draws nothing at full durability — 64 permanently-full bars would be pure clutter', () => {
     const { bar } = renderCity(served());
     expect(barRects(bar)).toHaveLength(0);
+    // Empty AND hidden: hidden keeps the renderer / idle change detector off it (2026-09-29).
+    expect(bar.visible).toBe(false);
   });
 
   it('draws nothing when the server sent no siege state at all (pre-P1 world, or the seed fallback)', () => {
@@ -118,6 +120,7 @@ describe('WorldMap wild-city durability bar (ADR-074 P1)', () => {
     const { bar } = renderCity(served({ durability: Math.round(max * 0.4) }));
     const rects = barRects(bar);
     expect(rects).toHaveLength(2);
+    expect(bar.visible).toBe(true);
     const [track, fill] = rects;
     expect(fill!.width / track!.width).toBeCloseTo(0.4, 1);
     expect(fill!.y).toBe(track!.y);

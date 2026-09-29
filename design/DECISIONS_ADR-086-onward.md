@@ -458,3 +458,12 @@ docker compose -f docker-compose.cloud.yml --env-file .env config | grep MONGO_U
   - **订正（2026-09-29 当天复核）**：当初这里写「剩下的节点大头是 `Lv.N` BitmapText 的每字形 Sprite」，**不对**。Pixi 7.4 的 BitmapText 是一个容器加每个字体页一个 Mesh（这张字体只有一页），一个标签 2 个节点，不是每字一个 Sprite；种子账号上屏幕内可见的标签只有 13–24 个。按节点类型数（可见节点，三轮）：格子 Graphics 213–352、格子上的母题/建筑 Sprite 153–210、格子池之外的 Sprite 226–258（城池层、雾、护盾、HUD 等）、Container 55–77、Graphics 46–100、Text 28–34，标签连容器带 Mesh 只有 26–48。把标签换成「每种文案一张共享纹理 + 一个 Sprite」试做过、A/B 三轮：每屏只省约 20 个节点，耗时差异完全淹没在种子账号之间的波动里（同版本不同轮能差一倍），**没有合进来**。
 - **不改的**：`Lv.N` 标签（见上面的订正：不是节点大头，改了也量不出来），L3 批量 Graphics 路径（本来就不走格子池）。再往下降要先弄清格子池之外那 ~250 个 Sprite 分别属于哪一层。
 - **影响**：`client/src/scenes/worldmap/WorldMapRenderer/pool.ts`、`logic/zoom.ts`；测试新增 `test/ui/worldMapPoolCulling.ui.ts`（在多个平移位置、两档缩放和竖屏下断言「每个菱形碰到可见带的格子都有一个显示着、且最后一次画的正是它的格子」，并用包装 `drawTileSlot` 独立记录每个格子实际画了谁；去掉裁剪 / 回来不恢复可见 / 横向或向下边距归零 / 被裁时只记坐标不重画 / 池尺寸退回 +2，五处变异均验红），`test/ui/worldMapPoolDepthOrder.ui.ts`（zIndex 只比对显示着的格子），`test/worldmapZoom.test.ts`（+3）。
+
+## ADR-103 世界地图城池层：空的特效层隐藏，不留在可见树上 — Accepted — 2026-09-29
+
+- **问题**：ADR-102 之后格子池之外还有 ~250 个 Sprite 没拆开。按「场景层 + 构造器名」数可见节点（种子账号，1366×768，同一轮两次一致）：纸面背景横线 76 个 Sprite、行军小人 70 个 Sprite + 15 个容器、底部 HUD 62、顶栏产量 43、主城横幅 2——这些都是画面上真有的东西。真正的空转在**城池层**：每座玩家城一个容器 13 个节点（建筑图、名字、血条、护盾罩、护盾光环子树（虚线环 + 装闪光点的容器 + 4 个闪光点）、破盾闪光），17 座城 221 个节点，其中 136 个 Graphics 里 110 个是空的——没受损就没有血条，没护盾就没有罩子和光环，破盾闪光只活 0.4 秒。空 Graphics 照样被渲染器和变化检测（ADR-101）逐个走一遍。
+- **决策**：四个特效层（`hpbar`、`shieldFx`、`shieldGlowFx`、`shieldBreakFx`）建出来就 `visible = false`；画的地方才显示：血条在「受损」分支里、护盾罩和光环跟 `protectedUntil` 同步、破盾闪光在入队时显示、`lifecycle.update` 里过期清掉时再隐藏。NPC 城的耐久条同样处理。节点不销毁（容器是跨刷新复用的，同一座城可能再次上护盾）。
+- **实测**：没护盾、没受损的城从 13 个可见节点降到 3 个（容器、建筑图、名字）。这一轮种子 9 座城（3 座带护盾、2 座受损）：城池层 117 → 53 个可见节点；17 座城那一轮按同样算法约 221 → 70–90。耗时没做 A/B——ADR-102 订正里说过，这个探针对几十到一百多个节点的差异量不出来。claude-in-chrome 看过：护盾罩、虚线环、闪光点、受损城的血条都在。
+- **不改的**：纸面背景的 76 条横线（所有场景共用 `buildPaperBackground`，静态、同一张纹理能合批；要降就得烘成一张图，影响面是全部场景，单独立项）；行军小人（动画本身，每个 ~14 个节点）；HUD / 顶栏（都是真控件）。
+- **影响**：`client/src/scenes/worldmap/WorldMapRenderer/city.ts`、`lifecycle.ts`；测试 `test/ui/worldMapShieldBubble.ui.ts` 新增一组（普通城四层都隐藏 / 血条随受损显隐 / 护盾罩与光环随护盾显隐、破盾闪光活到寿命结束再隐藏；去掉破盾隐藏、去掉光环同步两处变异均验红），`test/ui/worldMapCityDurabilityBar.ui.ts` 补 `visible` 断言。
+
