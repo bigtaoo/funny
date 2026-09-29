@@ -13,6 +13,15 @@ import logoUrl from '../../assets/logo.png';
 import { C, TIER_COLORS, txt, fmtCoins, sketchPanel, type LobbySceneCore } from './core';
 import { headerMetrics } from './format';
 import { FS, snapFont } from '../../render/fontScale';
+import { fitToWidth } from '../../ui/widgets/truncateText';
+import { measuredWidth } from '../../render/pixiText';
+
+/**
+ * How far the profile name may shrink before it is cut with an ellipsis instead. Shrinking alone
+ * took a ten-glyph CJK name next to a seven-digit coin chip down to ~0.6x (about 7 CSS px on a
+ * 390-wide phone); past this floor the rest of the name is dropped rather than made unreadable.
+ */
+const NAME_MIN_SCALE = 0.8;
 
 /**
  * Draws the full header band (logo/title/subtitle lockup, boiling underline, profile chip, and the
@@ -71,21 +80,40 @@ export function drawHeaderChrome(core: LobbySceneCore): void {
   core.container.addChild(avatar);
 
   const nameGap = Math.round(w * 0.02);
-  const nameLabel = txt(core.cb.playerName, snapFont(Math.round(chipBandH * 0.24)), 0xffffff, true);
+  const nameSize = snapFont(Math.round(chipBandH * 0.24));
+  const nameLabel = txt(core.cb.playerName, nameSize, 0xffffff, true);
   nameLabel.anchor.set(0, 0.5);
   nameLabel.x = avX + av + nameGap;
   nameLabel.y = chipMidY;
-  // Keep the profile chip clear of the brand lockup (portrait: half the band;
-  // landscape: leave room for the centered lockup).
-  const nameMax = w * nameMaxFactor - (av + nameGap);
-  if (nameLabel.width > nameMax) nameLabel.scale.set(nameMax / nameLabel.width);
   core.container.addChild(nameLabel);
 
   const pad = Math.round(chipBandH * 0.12);
-  core.profileChipRect = {
-    x: avX - pad, y: avY - pad,
-    w: av + nameGap + nameLabel.width + 2 * pad, h: av + 2 * pad,
+  // Fits the name into `maxW` (shrink, then cut past NAME_MIN_SCALE) and sizes the profile chip's
+  // tap rect to what is actually drawn. Called again by the portrait branch once the coin/rank chips
+  // on the same row have been measured — their width depends on the balance, which the fixed
+  // `nameMaxFactor` cannot know.
+  const fitName = (maxW: number): void => {
+    nameLabel.text = core.cb.playerName;
+    nameLabel.scale.set(1);
+    const fullW = measuredWidth(nameLabel);
+    if (fullW > maxW) {
+      const scale = maxW / fullW;
+      if (scale >= NAME_MIN_SCALE) {
+        nameLabel.scale.set(scale);
+      } else {
+        nameLabel.text = fitToWidth(core.cb.playerName, nameSize, maxW / NAME_MIN_SCALE, true);
+        nameLabel.scale.set(NAME_MIN_SCALE);
+      }
+    }
+    core.profileChipRect = {
+      x: avX - pad, y: avY - pad,
+      w: av + nameGap + nameLabel.width + 2 * pad, h: av + 2 * pad,
+    };
   };
+  // Keep the profile chip clear of the brand lockup (portrait: half the band;
+  // landscape: leave room for the centered lockup).
+  const nameMax = w * nameMaxFactor - (av + nameGap);
+  fitName(nameMax);
 
   // Boiling-line title underline (art-direction §5.4) — a hand-drawn marker
   // stroke that subtly wobbles ~8fps. Cycles baked variants; near-zero cost.
@@ -182,6 +210,10 @@ export function drawHeaderChrome(core: LobbySceneCore): void {
         coinLbl.x = coinChipX + chipPad + iconSz + iconGap; coinLbl.y = chipMidY;
         core.container.addChild(coinLbl);
       }
+      // Same row as the name: stop it short of whichever chip is leftmost, by the profile chip's own
+      // padding, so its tap rect (which extends `pad` past the text) ends at that chip's edge.
+      const rowLeft = coinLbl ? rankChipX - chipGap - (iconSz + iconGap + coinLbl.width + 2 * chipPad) : rankChipX;
+      fitName(Math.min(nameMax, rowLeft - pad - nameLabel.x));
     } else {
       // Landscape: two stacked chips in the header's right column: coins · ladder rank.
       // Pulled further apart (was 0.26/0.58 of chipBandH) so the two chip

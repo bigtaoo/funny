@@ -59,6 +59,10 @@ const DB_META = 'notebook_wars';
 const DB_SOCIAL = 'nw_social';
 const DB_WORLD = 'notebook_wars_world';
 const DB_AUCTION = 'notebook_wars_auction';
+/** commercial's own database — the only writer of coin balances (COMMERCIAL_DESIGN §0 K1). */
+const DB_COMMERCIAL = 'notebook_wars_commercial';
+/** Seven digits: the lobby/shop/auction coin chip is the single most reused number in the UI. */
+const SEED_COINS = 9876543;
 
 /** How many other accounts the seed dresses up as roster/leaderboard/market population. */
 const BOTS = 120;
@@ -173,6 +177,7 @@ export async function seedAccount(page: Page): Promise<SeedTarget> {
     equipment: inv.equipment,
     mails,
     now,
+    coins: SEED_COINS,
     // The server's own period keys, computed with the server's own functions: retention state is
     // matched against `makeDayKey(now)` / `makeWeekKey(now)` on read and lazily zeroed when it does
     // not agree (shared/src/retention.ts resetStaleRetention), so a hand-rolled key here would seed
@@ -183,6 +188,7 @@ export async function seedAccount(page: Page): Promise<SeedTarget> {
 const meta    = db.getSiblingDB('${DB_META}');
 const social  = db.getSiblingDB('${DB_SOCIAL}');
 const auction = db.getSiblingDB('${DB_AUCTION}');
+const comm    = db.getSiblingDB('${DB_COMMERCIAL}');
 
 // Population: the first N other accounts by _id, so a re-run dresses up the SAME accounts rather
 // than renaming a fresh batch every time and leaving a trail of them behind.
@@ -226,8 +232,8 @@ meta.saves.bulkWrite(saveOps);
 // ── The account itself ────────────────────────────────────────────────────────────────────────
 meta.accounts.updateOne({ _id: P.me }, { $set: { displayName: ${JSON.stringify(LONG_NAMES[0])} } });
 meta.saves.updateOne({ _id: P.me }, { $set: {
-  // Seven-digit coins: the lobby/shop/auction coin chip is the single most reused number in the UI.
-  'save.wallet.coins': 9876543,
+  // Only the offline-display mirror; the balance itself is seeded into commercial below.
+  'save.wallet.coins': P.coins,
   'save.materials': { scrap: 482300, lead: 96420, binding: 27180 },
   'save.inventory.items': { gacha_ticket: 1288, gacha_ticket_premium: 366 },
   'save.pvp.elo': 2960,
@@ -281,6 +287,22 @@ meta.saves.updateOne({ _id: P.me }, { $set: {
     'ach.cast.meteor': { claimedTiers: [1] },
   },
 } });
+
+// ── Coins ─────────────────────────────────────────────────────────────────────────────────────
+// meta's save.wallet.coins is a mirror: every GET /save re-reads commercial's wallet and writes the
+// mirror over whatever is there (metaserver economy/delivery.ts mirrorWalletFrom). Seeding only the
+// mirror, as this file did until 2026-09-29, showed 0 on every coin chip in the matrix. So the
+// balance goes where commercial's credit() puts it: the free coins pool plus one ledger entry.
+const walletBefore = comm.wallets.findOne({ _id: P.me });
+comm.wallets.updateOne(
+  { _id: P.me },
+  { $set: { coins: P.coins, updatedAt: P.now }, $inc: { rev: 1 }, $setOnInsert: { gacha: { pity: {} } } },
+  { upsert: true },
+);
+comm.ledger.insertOne({
+  accountId: P.me, delta: P.coins - ((walletBefore && walletBefore.coins) || 0),
+  balanceAfter: P.coins, reason: 'grant', ts: P.now,
+});
 
 // ── Inventory ─────────────────────────────────────────────────────────────────────────────────
 meta.cardInstances.deleteMany({ accountId: P.me, _id: /^seedcard/ });
