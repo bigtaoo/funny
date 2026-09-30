@@ -509,6 +509,7 @@ Windows 上可做的验证仅限 `tsc --noEmit` + `webpack --env TARGET=mobile`�
   登录页 EULA 行 → 私聊/世界聊天举报（选分类）→ 屏蔽（消息立刻消失）→ Blocked players 列表；
   录屏链接写进 ASC「App Review Information → Notes」，以后每次提审都保留。
 - **运营承诺**：告警进群后 24h 内在 ops 举报页处理（删消息 / 清该用户消息 / 封号）。
+- **回复草稿**：`APP_REVIEW_REPLY_BUILD13.md`（含发送前检查与录屏脚本），核对后再发。
 
 ## 10. 支付渠道隔离（2026-09-03 审计 + 修复）
 
