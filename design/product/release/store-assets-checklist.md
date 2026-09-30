@@ -316,9 +316,10 @@ iOS/web 拿不到 token 就 `goLogin()`，落在 `LoginScene` 的三个按钮上
 抵御暴力猜测靠的不是口令强度，而是另外两件事：服务端的 `allowAuthAttempt` 认证限流（`429 RATE_LIMITED`），
 以及**过审后轮换或停用这个账号**（loginId 在 ASC 里对 Apple 可见，别让它长期挂着一个弱口令）。
 
-**存放**：只在会话里交给用户，**不进 git**。要长期存就放加密凭证库
-（`D:\secrets`，`github.com/bigtaoo/secrets`，`sops`+`age`，见记忆 `credential-store-sops-age-2026-09-05`），
-别写进本文件或任何 `.env`。要改口令：`POST /auth/password/change` 需要 bearer token（先登进去，
+**存放**：**不进 git**。2026-09-30 起存在加密凭证库 `D:\secrets`（`github.com/bigtaoo/secrets`）的
+`secrets/infra/access.yaml`，键 `funny-appstore-review`，用 `sops -d secrets/infra/access.yaml` 查看。
+`infra` 只有 admin 密钥能解；故意不放 `funny/prod.yaml`，因为那份会被 `sops exec-env` 注入服务容器的环境变量。
+改了口令要同步这里和 ASC 两处。要改口令：`POST /auth/password/change` 需要 bearer token（先登进去，
 知道旧口令时可用，2026-09-08 就是这么换的），彻底忘了则走 admin 的账号管理重设
 （`server/admin/src/service/accounts.ts`）。
 
@@ -337,8 +338,10 @@ FIRST LAUNCH — two gates before the lobby
 Then you land on the lobby; the bottom tab bar reaches everything.
 
 WHERE TO FIND WHAT YOU USUALLY CHECK
-- Privacy Policy / Terms: tap your name at the top of the lobby to open Profile -> "Legal"
-  (also in the first-launch consent dialog).
+- Privacy Policy / Terms: tap your name at the top of the lobby to open Settings -> "Help"
+  -> Privacy Policy / Terms of Use (EULA). Also on the first-launch consent screen and below
+  the login form. All of them open in Safari.
+- Blocked players: Settings -> "Help" -> Blocked players (unblock from there).
   https://nivara.gamestao.com/privacy and /terms
 - Account deletion (5.1.1(v)): Profile -> Account -> "Delete Account" (red), with a second
   confirmation. 7-day grace period, then permanent.

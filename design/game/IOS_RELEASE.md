@@ -560,6 +560,18 @@ Windows 上可做的验证仅限 `tsc --noEmit` + `webpack --env TARGET=mobile`�
 修法：原生壳下改指向线上绝对地址 `https://nivara.gamestao.com/privacy` / `/terms`（实测 200；`/privacy.html` 会 307 到无后缀形式，所以直接用无后缀）。
 网页端行为不变，仍是相对路径。
 
+**第二层（2026-09-30，build 13 真机发现）：换成 https 绝对地址后，链接照样没反应。**
+`window.open` 在 WKWebView 里只有被 WebKit 认作用户手势触发时，才会走到 `createWebViewWith`。
+我们的点击全是 PIXI 在 `pointerup` 里派发的 `pointertap` 或命中表回调，iOS 的 WebKit 不把它当作允许弹窗的手势，调用被静默吞掉。
+桌面 Chrome 和设备模拟都放行，所以只有真机能看到。
+
+修法：[`client/src/platform/externalLink.ts`](../../client/src/platform/externalLink.ts) 的 `openExternalUrl()`，在原生壳里改为 `window.location.href = url`，顶层导航不需要手势。
+Capacitor 6 的 `decidePolicyFor` 看到主框架导航到的地址既不是 `capacitor://localhost`、也不在 `server.allowNavigation` 里，就会调 `UIApplication.open` 交给 Safari，并**取消**这次导航，游戏页面原地不动。
+**因此绝不能把 `nivara.gamestao.com` 加进 `allowNavigation`**，否则 WebView 会把游戏本身导航走，回不来。
+网页端仍用 `window.open` 开新标签。全部 5 处外链（EULA 门、同意弹窗、登录页、设置页 Help、订阅披露）都走这个函数。
+
+这是纯 JS 改动，可以走 OTA。但 OTA 包要到**下次冷启动**才生效，审核员第一次打开跑的是内置包，所以提审必须出新二进制（build 14）。
+
 ### 10.4 四个非币商品的 product ID 两边对不上（会导致 2.1 拒审）
 
 月卡 / 年卡 / 两个新手包走的是**同一个** `window.NWBilling.purchase()`，只是传的是商品键而不是档位 ID
