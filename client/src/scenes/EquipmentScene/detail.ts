@@ -29,25 +29,7 @@ import type { EquipmentSceneCore } from './core';
 import { renderHeaderCurrency, renderMaterialsBand } from './headerRow';
 import type { AssignPanel } from './assign';
 import type { ReforgePanel } from './reforge';
-
-/** Affix id (strip m_/s_/k_ prefix) → stat icon kind; returns null for unknown affixes. */
-function affixIconKind(affixId: string): IconKind | null {
-  const stat = affixId.replace(/^[a-z]_/, '');
-  if (stat === 'atk' || stat === 'hp' || stat === 'armor' || stat === 'spd' || stat === 'atkspd') return stat;
-  // Batch 8: the three that used to fall through to null and draw a bare text line next to five
-  // iconned ones (design/product/tab-icon-art-prompts-batch8.md). `s_critmult` strips to
-  // `critmult`, matching its art's kind name.
-  if (stat === 'siege' || stat === 'crit' || stat === 'critmult') return stat;
-  return null;
-}
-
-/** Height `label` takes at the modal's fine-print size when wrapped to `width` (layout-only probe). */
-function wrappedHeight(label: string, width: number): number {
-  const probe = txt(label, FS.micro, C.dark, false, width);
-  const hh = probe.height;
-  probe.destroy(true);
-  return hh;
-}
+import { affixIconKind, wrappedHeight } from './detailHelpers';
 
 export class DetailPanel {
   constructor(
@@ -441,16 +423,17 @@ export class DetailPanel {
       .replace('{name}', itemName(inst.defId))
       .replace('{count}', String(stackCount))
       .replace('{refund}', materialsStr(refund) || t('equip.nothing'));
-    core.showConfirm(msg, () => void this.doSalvage(inst.id));
+    core.showConfirm(msg, () => void this.runSalvage([inst.id], t('equip.salvaged')));
   }
 
-  private async doSalvage(instanceId: string): Promise<void> {
+  /** Salvage `ids` in one batch call; `okMsg` is the success toast. */
+  private async runSalvage(ids: string[], okMsg: string): Promise<void> {
     const core = this.core;
     if (core.bt.busy) return;
     core.bt.start();
     try {
-      const res = await withTimeout(core.cb.salvage([instanceId]));
-      if (res.ok) { core.showToast(t('equip.salvaged'), C.green); core.detailId = null; }
+      const res = await withTimeout(core.cb.salvage(ids));
+      if (res.ok) { core.showToast(okMsg, C.green); core.detailId = null; }
       else core.showToast(t(res.key), C.red);
     } catch (e) {
       core.showToast(t(e instanceof TimeoutError ? 'common.networkTimeout' : 'equip.err.generic'), C.red);
@@ -470,23 +453,7 @@ export class DetailPanel {
       .replace('{name}', itemName(inst.defId))
       .replace('{count}', String(ids.length))
       .replace('{refund}', materialsStr(total) || t('equip.nothing'));
-    core.showConfirm(msg, () => void this.doSalvageAll(ids));
-  }
-
-  private async doSalvageAll(instanceIds: string[]): Promise<void> {
-    const core = this.core;
-    if (core.bt.busy) return;
-    core.bt.start();
-    try {
-      const res = await withTimeout(core.cb.salvage(instanceIds));
-      if (res.ok) { core.showToast(t('equip.salvagedAll').replace('{count}', String(instanceIds.length)), C.green); core.detailId = null; }
-      else core.showToast(t(res.key), C.red);
-    } catch (e) {
-      core.showToast(t(e instanceof TimeoutError ? 'common.networkTimeout' : 'equip.err.generic'), C.red);
-    } finally {
-      core.bt.stop();
-      core.render();
-    }
+    core.showConfirm(msg, () => void this.runSalvage(ids, t('equip.salvagedAll').replace('{count}', String(ids.length))));
   }
 
   async doEquip(slot: EquipSlot, instanceId: string | null, cardId: string): Promise<void> {

@@ -22,22 +22,7 @@ import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { scrollRegionLayer } from '../ui/widgets/scrollRegionLayer';
 import { drawButtonLabel, buttonLabelIconW } from '../ui/widgets/buttonLabel';
 import { measuredWidth } from '../render/pixiText';
-
-// collection/progression moved off 'brush'/'trophy' to their own AI icons (AI art batch 2 dedupe,
-// design/product/tab-icon-art-prompts.md §batch2) — 'brush' meant "皮肤" elsewhere (now skinIcon), not
-// "收藏进度", and 'trophy' stays reserved for Career's Achievements tab (the parent of this category strip).
-// pve/pvp moved off 'book'/'swords' to their own AI icons too (AI art batch 3): batch 2's judgment
-// table missed that 'book' had a 3rd usage here (Career's "stats" tab reuses statsTabIcon instead, see
-// CareerTabs.ts, so 'book' was never actually free) — pve gets a treasure-map scroll, distinct from the
-// book/stats-chart glyphs elsewhere in this same Career hub; pvp gets a crossed-swords AI icon as a pure
-// recognizability upgrade (no reuse conflict — 'swords' elsewhere is only ever a content badge/action icon).
-/** Category → hand-drawn tab glyph (pve = treasure map, pvp = crossed swords, collection = jigsaw puzzle piece, progression = stacked chevrons). */
-const CATEGORY_ICON: Record<Achievement['category'], IconKind> = {
-  pve: 'pveTabIcon',
-  pvp: 'pvpTabIcon',
-  collection: 'collectionTabIcon',
-  progression: 'progressTabIcon',
-};
+import { CATEGORY_ICON, CATEGORY_ORDER, TIER_LABELS, widestTierLabelW } from './AchievementScene/tiers';
 
 // ── AchievementScene — achievement wall (personal view, ACHIEVEMENT_DESIGN §7) ──────────────────────
 //
@@ -46,27 +31,6 @@ const CATEGORY_ICON: Record<Achievement['category'], IconKind> = {
 // + red dots (tab/card). Personal view only — not shown to others (public bragging goes through the title system).
 // defs/stats/progress are served by GET /achievements; the client computes the tier state locally (§4.1).
 // Landscape: cards laid out in two columns to make full use of the wide screen.
-
-/** Category tab order (categories with no achievements are auto-hidden). */
-const CATEGORY_ORDER: Achievement['category'][] = ['pve', 'pvp', 'collection', 'progression'];
-
-const TIER_LABELS = ['I', 'II', 'III'];
-
-/** Width of the widest tier label at `fontSize`, cached per size (every row of every card asks). */
-const tierLabelW = new Map<number, number>();
-function widestTierLabelW(fontSize: number): number {
-  let w = tierLabelW.get(fontSize);
-  if (w === undefined) {
-    w = 0;
-    for (const lbl of TIER_LABELS) {
-      const probe = txt(lbl, fontSize, C.dark, true);
-      w = Math.max(w, measuredWidth(probe));
-      probe.destroy({ texture: true, baseTexture: true });
-    }
-    tierLabelW.set(fontSize, w);
-  }
-  return w;
-}
 
 export interface AchievementCallbacks {
   onBack(): void;
