@@ -13,6 +13,7 @@ import { FS, snapFont } from '../../render/fontScale';
 import { MIN_PASSWORD_LEN, MIN_LOGIN_ID_LEN, type LoginSceneCallbacks, type Field, type View } from './types';
 import type { Hit } from '../../ui/hits';
 import { legalUrl } from '../../ui/dialogs/ConsentDialog';
+import { openExternalUrl } from '../../platform/externalLink';
 
 /** Quick tap-grow-then-fire press animation, shared by every button this scene draws.
  *  PRESS_DUR is also read by LoginScene.update() to know when to fire the deferred action. */
@@ -107,7 +108,7 @@ function drawTermsNotice(host: FormHost, minY: number): void {
   const pad = Math.round(h * 0.012);
   host.hits.push({
     rect: { x: w / 2 - link.width / 2 - pad, y: link.y - pad, w: link.width + pad * 2, h: link.height + pad * 2 },
-    fn: () => { if (typeof window !== 'undefined') window.open(legalUrl('/terms'), '_blank', 'noopener'); },
+    fn: () => { openExternalUrl(legalUrl('/terms')); },
   });
 }
 

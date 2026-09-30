@@ -13,6 +13,7 @@ import { buildAvatar } from '../../render/avatar';
 import type { SettingsSceneCallbacks } from './types';
 import { isDataSaverEnabled, setDataSaverEnabled } from '../../assets/prefetchPolicy';
 import { legalUrl } from '../../ui/dialogs/ConsentDialog';
+import { openExternalUrl } from '../../platform/externalLink';
 import { moderationAvailable, openBlockedPlayers } from '../../ui/moderation';
 import { clientPlatformName } from '../../app/appConstants';
 import { formatViewportGeometry } from '../../layout/viewportGeometry';
@@ -161,7 +162,8 @@ export function drawGeneral(host: PanelHost, page: Page, col: Column): void {
 }
 
 /**
- * Whether this build can open the legal pages at all. They open through `window.open`, which the
+ * Whether this build can open the legal pages at all. Outside the native shell they open through
+ * `window.open` (platform/externalLink.ts), which the
  * WeChat runtime does not have — a link there would do nothing when tapped, so it is not drawn.
  * WeChat's own privacy agreement goes through the platform's `wx` flow, not this screen.
  */
@@ -192,7 +194,7 @@ export function drawHelp(host: PanelHost, page: Page, col: Column): void {
     for (const [key, path] of links) {
       sec.linkRow({
         label: t(key),
-        onTap: () => { if (typeof window !== 'undefined') window.open(legalUrl(path), '_blank', 'noopener'); },
+        onTap: () => { openExternalUrl(legalUrl(path)); },
       });
     }
   });
