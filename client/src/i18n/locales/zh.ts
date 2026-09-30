@@ -645,6 +645,7 @@ export const zh = {
   'collection.equip': '装备',
   'collection.equipped': '已装备',
   'collection.default': '默认外观',
+  'collection.defaultShort': '默认',
   'collection.cardType.unit': '士兵',
   'collection.cardType.building': '建筑',
   'collection.cardType.spell': '法术',

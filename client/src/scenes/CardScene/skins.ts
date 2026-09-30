@@ -8,7 +8,7 @@
 // instead of the old single-column "one row per character" list that left most of the screen width empty.
 import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
-import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor, marginLineX } from '../../render/sketchUi';
+import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor, marginLineX, fitOrWrap } from '../../render/sketchUi';
 import { FS, snapFont } from '../../render/fontScale';
 import { buildIcon } from '../../render/icons';
 import { FACTION_COLOR } from '../../render/factionIcon';
@@ -16,7 +16,7 @@ import { unitPortraitUrl } from '../../render/cardArt';
 import { sidebarNavW, bottomNavH } from '../../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { CARD_DEFS, type CardDef } from '../../game/meta/cardDefs';
-import { skinsForUnitType, skinDisplayName } from '../../game/meta/skinDefs';
+import { skinsForUnitType } from '../../game/meta/skinDefs';
 import type { UnitType } from '@nw/engine/types';
 import { CardSceneCore, CELL_GAP } from './core';
 
@@ -32,6 +32,28 @@ const PORTRAIT_RATIO = 0.72; // matches the roster cell's tall-portrait framing 
 const PORTRAIT_TILE_GAP = 14;
 const HEADER_H = 44;
 const TILE_W = 108, TILE_H = 108, TILE_GAP = 10;
+
+/**
+ * Tile width: {@link TILE_W}, or wider when a label a tile can show needs it — the look name, and
+ * the status line under it. German's "Ausgerüstet" (~121 design px at the floor against 100 inside
+ * a 108 tile) ran out of both sides (2026-09-29); it is "Getragen" now — a look is worn, not
+ * equipped — and every shipped locale fits 108. Widening is the backstop, and a costly one: a
+ * portrait card's tile area holds two tiles only up to ~120 wide, past that one per row.
+ */
+function skinTileW(): number {
+  const nameSize = snapFont(Math.round(TILE_H * 0.13));
+  const statusSize = snapFont(Math.round(TILE_H * 0.11));
+  const widest = [
+    [t('collection.defaultShort'), nameSize], [t('shop.skinLabel'), nameSize],
+    [t('collection.equipped'), statusSize], [t('collection.equip'), statusSize],
+  ].reduce((max, [label, size]) => {
+    const probe = txt(label as string, size as number, C.dark, true);
+    const pw = probe.width;
+    probe.destroy({ texture: true, baseTexture: true });
+    return Math.max(max, pw);
+  }, 0);
+  return Math.max(TILE_W, Math.ceil(widest) + 8);
+}
 
 /** Skins wardrobe domain (see ../CardScene.ts assembly + ./core.ts for the shared state). */
 export class SkinsPanel {
@@ -103,21 +125,26 @@ export class SkinsPanel {
     portraitW: number;
     tileAreaW: number;
     tilesPerRow: number;
+    tileW: number;
     cardH: number;
   } {
     const unitType = def.unitType as UnitType;
     const skins = skinsForUnitType(unitType, owned);
+    // Short names: the card's header already names the character, so a tile only says which look it
+    // is. "Chen Shou·Skin" / "Standard-Look" in a 108-wide tile ran to 0.65-0.76 of the font floor
+    // (2026-09-29); the skin picker in the card detail, which has the width, keeps the full names.
     const tiles: Array<{ id: string | null; label: string }> = [
-      { id: null, label: t('collection.default') },
-      ...skins.map((id) => ({ id, label: skinDisplayName(id) })),
+      { id: null, label: t('collection.defaultShort') },
+      ...skins.map((id) => ({ id, label: t('shop.skinLabel') })),
     ];
     const portraitW = Math.round(PORTRAIT_MAX_H * PORTRAIT_RATIO);
     const tileAreaW = cardW - CARD_PAD * 2 - portraitW - PORTRAIT_TILE_GAP;
-    const tilesPerRow = Math.max(1, Math.floor((tileAreaW + TILE_GAP) / (TILE_W + TILE_GAP)));
+    const tileW = skinTileW();
+    const tilesPerRow = Math.max(1, Math.floor((tileAreaW + TILE_GAP) / (tileW + TILE_GAP)));
     const rows = Math.ceil(tiles.length / tilesPerRow);
     const tileAreaH = rows * (TILE_H + TILE_GAP) - TILE_GAP;
     const cardH = Math.max(PORTRAIT_MAX_H, HEADER_H + tileAreaH) + CARD_PAD * 2;
-    return { tiles, portraitW, tileAreaW, tilesPerRow, cardH };
+    return { tiles, portraitW, tileAreaW, tilesPerRow, tileW, cardH };
   }
 
   /** One character's wardrobe card: portrait + name on the left header, skin tiles wrapped to the right. */
@@ -134,7 +161,7 @@ export class SkinsPanel {
     const core = this.core;
     const unitType = def.unitType as UnitType;
     const equipped = core.cb.getEquippedSkin(unitType);
-    const { tiles, portraitW, tileAreaW, tilesPerRow } = this.cardMetrics(def, cardW, owned);
+    const { tiles, portraitW, tileAreaW, tilesPerRow, tileW } = this.cardMetrics(def, cardW, owned);
     const tileAreaX = x + CARD_PAD + portraitW + PORTRAIT_TILE_GAP;
 
     const y = yUnscrolled - core.scrollY;
@@ -173,9 +200,9 @@ export class SkinsPanel {
       const row = Math.floor(i / tilesPerRow);
       this.renderSkinTile(
         tile,
-        tileAreaX + col * (TILE_W + TILE_GAP),
+        tileAreaX + col * (tileW + TILE_GAP),
         tileTop + row * (TILE_H + TILE_GAP),
-        TILE_W, TILE_H,
+        tileW, TILE_H,
         tile.id === equipped,
         unitType,
       );
@@ -206,7 +233,8 @@ export class SkinsPanel {
 
     const name = txt(tile.label, snapFont(Math.round(h * 0.13)), C.dark, true);
     name.anchor.set(0.5, 0.5); name.x = x + w / 2; name.y = y + h * 0.62;
-    if (name.width > w - 8) name.scale.set((w - 8) / name.width);
+    fitOrWrap(name, w - 8);
+    name.name = `skinTile:${tile.id ?? 'default'}`; // test hook: tiles no longer carry unique labels
     core.bodyLayer.addChild(name);
 
     const status = txt(isEquipped ? t('collection.equipped') : t('collection.equip'),

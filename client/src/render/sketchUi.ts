@@ -16,7 +16,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { SketchPen } from './sketch';
 import { palette } from './theme';
-import { FS, fitFont } from './fontScale';
+import { FS, fitFont, currentFontFloor } from './fontScale';
 import { makeText, measuredWidth, cjkPadding } from './pixiText';
 import { addPanelFrame } from './panelFrame';
 import { addPaperRules } from './paperRules';
@@ -100,6 +100,36 @@ export function txtFit(
   const keep = Math.max(1, Math.floor(label.length * (maxW / w1)) - 1);
   t.text = `${label.slice(0, keep)}…`;
   return t;
+}
+
+/**
+ * Fit `t` into `maxW` without ever drawing it under the legibility floor: shrink it (`scale`) as
+ * far as the floor allows, and if it still does not fit, wrap it at that scale instead. Returns
+ * whether it wrapped — the caller then owes the extra line its height (read `t.height`).
+ *
+ * For short fixed labels in a box with height to spare — a stamp, a tab cell, a tag. The old
+ * `if (w > maxW) t.scale.set(maxW / w)` drew German under the floor there (see
+ * design/game/UI_DESIGN_LOG_2026-09.md §70), while every label it shrank by less than the floor
+ * allows comes out of this exactly as before. Content that can run to any length (names, mail
+ * subjects) belongs in {@link txtFit}, which cuts with an ellipsis instead.
+ *
+ * The floor is in design px, so a label inside a panel that is itself scaled up (an equipment
+ * modal) is held to more than it needs to be — it wraps early, never late.
+ */
+export function fitOrWrap(t: PIXI.Text, maxW: number, align: 'left' | 'center' = 'center'): boolean {
+  t.scale.set(1);
+  const w0 = measuredWidth(t);
+  if (maxW <= 0 || w0 <= maxW) return false;
+  const size = Number(t.style.fontSize);
+  const minScale = size > 0 ? Math.min(1, currentFontFloor() / size) : 1;
+  const need = maxW / w0;
+  if (need >= minScale) { t.scale.set(need); return false; }
+  t.scale.set(minScale);
+  t.style.wordWrap = true;
+  t.style.wordWrapWidth = maxW / minScale;
+  t.style.breakWords = true;
+  t.style.align = align;
+  return true;
 }
 
 /**

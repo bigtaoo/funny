@@ -89,11 +89,20 @@ export function drawUnit(
   cap?: number,
   isLeader = false
 ): void {
-  const cx = px + cw / 2,
-    cy = py + ch / 2;
-  const size = Math.min(cw, ch) * 0.72;
+  // Attack mode stacks a troop bar (4 px) above the icon and the troop count under it. All three
+  // are fitted into the cell together: centring the icon alone left ~6 px under it for an ~11 px
+  // count, which then hung past the grid's bottom edge on the last row (sweep, 2026-09-29). The
+  // icon gives up room only down to 55% of the cell; in cells too small even for that (360 px
+  // wide phones) the count rides up over the icon's lower edge instead of leaving the cell.
+  const countLbl = hp !== undefined && core.mode === 'attack' ? txt(String(hp), FS.micro, 0x222222, true) : null;
+  const above = countLbl ? 4 : 0,
+    below = countLbl ? countLbl.height + 1 : 0;
+  const cell = Math.min(cw, ch);
+  const size = Math.max(cell * 0.55, Math.min(cell * 0.72, ch - above - below - 2));
+  const cx = px + cw / 2;
   const bx = cx - size / 2,
-    by = cy - size / 2;
+    by = py + (ch - (above + size + below)) / 2 + above;
+  const cy = by + size / 2;
   const artUrl = unitPortraitUrl(type, equippedSkinIdFor(type, core.cb.getSave?.()?.equipped));
   if (artUrl) {
     const frame = sketchPanel(size, size, {
@@ -160,12 +169,11 @@ export function drawUnit(
 
   // Live troop count under the icon — a card's cardState ledger, not a blueprint-relative HP fraction
   // (a card's troop count isn't bounded by the unit's base HP stat).
-  if (hp !== undefined && core.mode === 'attack') {
-    const label = txt(String(hp), FS.micro, 0x222222, true);
-    label.anchor.set(0.5, 0);
-    label.x = cx;
-    label.y = by + size + 1;
-    core.bodyLayer.addChild(label);
+  if (countLbl) {
+    countLbl.anchor.set(0.5, 0);
+    countLbl.x = cx;
+    countLbl.y = Math.min(by + size + 1, py + ch - countLbl.height);
+    core.bodyLayer.addChild(countLbl);
   }
 }
 

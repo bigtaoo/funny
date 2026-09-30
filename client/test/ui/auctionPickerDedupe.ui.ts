@@ -330,3 +330,38 @@ describe('AuctionScene picker — unknown/orphaned skin ids are never listable (
     scene.destroy();
   });
 });
+
+// 2026-09-29: the pick card no longer prints "name ★★★ ×N" on one line — that ran to 0.75 of the
+// font floor in German/English. The name stands alone, the stars are an icon row, ×N a corner badge.
+describe('item picker card — name alone, stars and count drawn beside it', () => {
+  it('draws the bare card name, a separate ×N badge, and no ★ text', () => {
+    const save = saveWith({}, {
+      c1: card('c1', { level: 9 }), c2: card('c2', { level: 9 }), c3: card('c3', { level: 9 }),
+    });
+    const scene = buildScene({ getSave: () => save });
+    openItemPicker(scene.core);
+    const texts: string[] = [];
+    const walk = (n: { children?: unknown[]; text?: unknown }): void => {
+      if (typeof n.text === 'string') texts.push(n.text);
+      for (const c of (n.children ?? []) as { children?: unknown[] }[]) walk(c);
+    };
+    walk(scene.core.bodyLayer);
+    expect(texts).toContain(cardName('suyuan'));
+    expect(texts).toContain('×3');
+    expect(texts.some((x) => x.includes('★'))).toBe(false);
+    // The star row is centred under the glyph, on the name's axis (9 stars of 12 + 2px gaps).
+    let stars: { x: number } | null = null;
+    let nameX = NaN;
+    const find = (n: { children?: unknown[]; name?: string | null; text?: unknown; x?: number }): void => {
+      if (n.name === 'pickStars') stars = n as { x: number };
+      if (n.text === cardName('suyuan')) nameX = n.x!;
+      for (const c of (n.children ?? []) as { children?: unknown[] }[]) find(c);
+    };
+    find(scene.core.bodyLayer);
+    expect(stars).not.toBeNull();
+    expect(stars!.x + (9 * 12 + 8 * 2) / 2).toBeCloseTo(nameX, 0);
+    const entry = buildPickEntries(scene.core).find((e: PickEntry & { stars?: number }) => e.cls === 'card')!;
+    expect((entry as unknown as { stars: number }).stars).toBe(9);
+    scene.destroy();
+  });
+});

@@ -9,7 +9,7 @@
 // these own pixels, and neither needs the other's locals beyond explicit params.
 import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
-import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
+import { ui as C, txt, sketchPanel, seedFor, fitOrWrap } from '../../render/sketchUi';
 import { snapFont } from '../../render/fontScale';
 import { drawButtonLabel, buttonLabelIconW } from '../../ui/widgets/buttonLabel';
 import { FACTION_COLOR } from '../../render/factionIcon';
@@ -150,7 +150,10 @@ export function drawGapNotice(
     const startX = x + (w - totalW) / 2;
     cost.x = startX;
     cost.y = subY + btnH / 2;
-    if (cost.width > totalW - btnW - 6 * S) cost.scale.set((totalW - btnW - 6 * S) / cost.width);
+    // Down to the legibility floor, then onto a second line: the landscape chain line ran to 0.61 of
+    // the floor beside the button (2026-09-29). Two lines at the floor are ~16S tall, centred on the
+    // 15S button row — still inside GAP_U.
+    fitOrWrap(cost, totalW - btnW - 6 * S, 'left');
     ml.addChild(cost);
 
     const btnX = startX + totalW - btnW;
@@ -178,7 +181,8 @@ export function drawGapNotice(
   hintLbl.anchor.set(0.5, 0);
   hintLbl.x = x + w / 2;
   hintLbl.y = subY;
-  if (hintLbl.width > w - 12 * S) hintLbl.scale.set((w - 12 * S) / hintLbl.width);
+  // Same rule as the cost line (0.85 of the floor's slack left in English, 2026-09-29 audit).
+  fitOrWrap(hintLbl, w - 12 * S);
   ml.addChild(hintLbl);
 }
 

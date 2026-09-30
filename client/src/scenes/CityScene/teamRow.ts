@@ -5,6 +5,7 @@
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
+import { buttonLabelIconW } from '../../ui/widgets/buttonLabel';
 import {
   teamSlotId,
   teamSlotName,
@@ -58,14 +59,23 @@ export function renderTeamsRow(core: CitySceneCore): number {
   // Portrait also widens it: the label is 14 characters, and inside 200 design px
   // `drawButtonLabel` had to scale the whole group to 0.94 to fit — which shrinks the text back
   // under the legibility floor the font scale just lifted it to (render/fontScale.ts).
-  const fillBtnW = core.portrait ? 268 : 200;
+  //
+  // And it grows to its label: German "Alle Teams auffüllen" is ~280 design px at the floor, and in
+  // the fixed 200 of landscape it ran past both ends of the button and off the right of the screen
+  // (layout sweep, landscape 844x390 de, 2026-09-29). Capped at what the row leaves beside "Teams".
+  const fillLabel = t('city.military.fillAllTeams');
+  const probe = txt(fillLabel, FS.body, C.dark, true);
+  const fillNeedW = Math.ceil(probe.width) + buttonLabelIconW(FS.body) + 24;
+  probe.destroy({ texture: true, baseTexture: true });
+  const fillMaxW = w - GRID_PAD * 2 - Math.ceil(sectionLbl.width) - 16;
+  const fillBtnW = Math.min(fillMaxW, Math.max(core.portrait ? 268 : 200, fillNeedW));
   const fillBtnH = core.portrait ? TEAM_ROW_LABEL_H + 8 : TEAM_ROW_LABEL_H;
   core.addBtn(
     cx0 + w - GRID_PAD - fillBtnW,
     bandTop,
     fillBtnW,
     fillBtnH,
-    t('city.military.fillAllTeams'),
+    fillLabel,
     0xffffff,
     C.accent,
     () => void core.doFillAllTeams(),

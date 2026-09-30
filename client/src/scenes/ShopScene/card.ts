@@ -5,7 +5,7 @@
 // explicitly instead of becoming their own domain class.
 import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
-import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor } from '../../render/sketchUi';
+import { ui as C, txt, fitOrWrap, sketchPanel, sketchAccentBar, seedFor } from '../../render/sketchUi';
 import { buildIcon } from '../../render/icons';
 import { buildMaterialIcon } from '../../render/atlas/materialAtlas';
 import { getArtTexture, containScale } from '../../render/cardArt';
@@ -88,15 +88,18 @@ export function drawCard(
   if (spec.expiringSoonStamp) {
     const stamp = new PIXI.Container();
     const stampW = Math.round(imgSize * 0.92);
-    const stampH = Math.round(imgSize * 0.26);
     const ink = 0xaf2430;
-    const border = new PIXI.Graphics();
-    border.lineStyle(Math.max(2, Math.round(imgSize * 0.02)), ink, 0.9);
-    border.drawRoundedRect(-stampW / 2, -stampH / 2, stampW, stampH, stampH * 0.3);
-    stamp.addChild(border);
+    // Two lines rather than shrunk past the floor when the words do not fit ("LÄUFT BALD AB" /
+    // "EXPIRING SOON" on the 137px art were drawn at 0.78 of it, 2026-09-29); the stamp grows to
+    // hold them.
     const label = txt(t('shop.expiringSoonStamp'), snapFont(Math.round(imgSize * 0.13)), ink, true);
     label.anchor.set(0.5, 0.5);
-    if (label.width > stampW * 0.88) label.scale.set((stampW * 0.88) / label.width);
+    fitOrWrap(label, stampW * 0.88);
+    const stampH = Math.max(Math.round(imgSize * 0.26), Math.ceil(label.height + imgSize * 0.06));
+    const border = new PIXI.Graphics();
+    border.lineStyle(Math.max(2, Math.round(imgSize * 0.02)), ink, 0.9);
+    border.drawRoundedRect(-stampW / 2, -stampH / 2, stampW, stampH, Math.round(imgSize * 0.26) * 0.3);
+    stamp.addChild(border);
     stamp.addChild(label);
     stamp.rotation = -0.3;
     stamp.alpha = 0.88;

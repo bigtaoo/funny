@@ -117,14 +117,15 @@ export class DefenseEditorScene implements Scene {
     // Attack mode: the troop readout (top-left) + Fill/Clear/Save (top-right) live in the header's
     // free space instead of a bottom footer, so the whole footer band goes to the grid + roster
     // (2026-07-22, user request "move these two up top").
-    if (core.mode === 'attack') this.renderPanel.renderAttackHeaderControls(hdr.headerH);
+    // In portrait the readout does not fit beside the title and takes a row under the header instead.
+    const countsBandH = core.mode === 'attack' ? this.renderPanel.renderAttackHeaderControls(hdr.headerH) : 0;
 
     // Attack mode has no bottom footer (controls moved into the header); defense keeps it.
     const footerH = core.mode === 'attack' ? 0 : FOOTER_H;
     const gridBottom = h - footerH - 4;
     if (core.mode === 'attack') {
       // Left half = formation grid, right half = scrollable card roster (布阵/选卡 split).
-      this.renderPanel.renderAttackBody(hdr.headerH + 4, gridBottom);
+      this.renderPanel.renderAttackBody(hdr.headerH + 4 + countsBandH, gridBottom);
     } else {
       const paletteH = this.renderPanel.renderPalette(hdr.headerH + 4);
       const gridTop = hdr.headerH + 4 + paletteH + 4;
