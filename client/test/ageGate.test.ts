@@ -12,7 +12,7 @@
 //     lets in a whole birth year.
 import { describe, it, expect, afterEach } from 'vitest';
 import { createAppCore } from '../src/app/createAppCore';
-import { AGE_DECLARED_FLAG, MIN_AGE_YEARS, SEEN_INTRO_FLAG, GDPR_CONSENT_FLAG, TOKEN_KEY } from '../src/app/appConstants';
+import { AGE_DECLARED_FLAG, MIN_AGE_YEARS, SEEN_INTRO_FLAG, GDPR_CONSENT_FLAG, TERMS_ACCEPTED_FLAG, TOKEN_KEY } from '../src/app/appConstants';
 import { HeadlessPlatform } from './harness/HeadlessPlatform';
 import { HeadlessAppViews } from './harness/HeadlessAppViews';
 import { fetchTransport, setNetTransport, type NetRequest } from '../src/net/transport';
@@ -76,7 +76,7 @@ describe('age gate', () => {
   });
 
   it('asks nothing once age and consent are both on record', () => {
-    const { views } = launch({ [AGE_DECLARED_FLAG]: true, [GDPR_CONSENT_FLAG]: true });
+    const { views } = launch({ [AGE_DECLARED_FLAG]: true, [GDPR_CONSENT_FLAG]: true, [TERMS_ACCEPTED_FLAG]: true });
     expect(views.screen).not.toBe('ageGate');
     expect(views.screen).not.toBe('consent');
   });

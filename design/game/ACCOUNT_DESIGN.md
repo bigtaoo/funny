@@ -248,6 +248,52 @@ initI18n
 > 实现备注（C4 PvE 反作弊 + C5 合规接口，2026-06-22 落地）：
 > - **C4 + S4-4（2026-06-29 完整落地；2026-07-18 取消自动封号，改人工审核见 PVE_INTEGRITY_PLAN.md §8.6）**：`AccountDoc.flags.pveWarnings`（可疑次数，纯展示/审核信号，不再是封号条件）+ `flags.banned`（账号封号，现在**只能**由运营人工裁定写入）；pveVerify rejected 路径原子递增 `$inc flags.pveWarnings`，每次都写警告系统邮件（`insertSystemMail`）+ 在 `antiCheatReviews` 写一条 `kind:'pve_reject'` 审核记录（reject 次数达旧阈值 `PVE_REJECT_BAN_THRESHOLD` 只标 `severity:'high'` 供运营优先处理，不再自动设 `flags.banned`/`antiCheat.pveBanned`）；**pveClear** 先执行 `rejectIfBanned`（`accounts.flags.banned`）再检查 `antiCheat.pveBanned`——管理员手动封号即时生效；**pveVerify** 开头读 save 层 `pveBanned`，命中则 403；auth 层（authWx/authDevice/authLogin/authOAuth）在签 token 前执行 `rejectIfBanned`；`GET /internal/suspicious-pve` + `POST /internal/accounts/:id/ban` + `POST /internal/accounts/:id/unban`（管理员手动封/解封，同步清除 save 层 `pveBanned`）→ admin 层 `POST /admin/accounts/:id/ban` + `unban`（需 `anticheat.action` 权限，super/ops 拥有）+ `GET /admin/suspicious-pve`（前端入口）；`POST /admin/anticheat/reviews/:id/resolve`（`anticheat.action`，dismiss 或 ban，ban 时内部调用同一条 `/internal/accounts/:id/ban` 路径）；AuditAction 补 `account.ban`/`account.unban`/`anticheat.review.resolve` 留痕。
 > - **C5-a**：`GET /gacha/pools` 返回的每个 entry 新增 `probability = weight/totalWeight`（Apple 3.1.1 概率公示要求）。
-> - **C5-b**：`DELETE /account` → 软删除 `accounts.deletedAt = now()`（Apple 5.1.1(v) 要求）；`rejectIfBanned` 同时检查 `deletedAt`，命中返 410 `ACCOUNT_DELETED`；7 天后由 admin/cron 异步清理数据。`rejectIfBanned` 2026-07-27 起经 `metaserver/src/accountCache.ts` 缓存（60s TTL 兜底 + ban/unban/deleteAccount 三处写入点显式失效，立即生效不等 TTL）。
+> - **C5-b**：`DELETE /account` → 软删除 `accounts.deletedAt = now()`（Apple 5.1.1(v) 要求）；`rejectIfBanned` 同时检查 `deletedAt`，命中返 410 `ACCOUNT_DELETED`；宽限期满后由 metaserver 清除任务跨服务清除（见下「C5-b 账号清除」）。`rejectIfBanned` 2026-07-27 起经 `metaserver/src/accountCache.ts` 缓存（60s TTL 兜底 + ban/unban/deleteAccount 三处写入点显式失效，立即生效不等 TTL）。
 > - **C5-b 订正（2026-08-10，真实用户被锁死账号后发现）**：删除确认文案（`settings.deleteAccount.confirmBody`）、隐私政策 §7、`DELETE /account` 的实现备注三处一直承诺"7 天宽限期内重新登录可恢复"，但 `authWx`/`authDevice`/`authLogin`/`authOAuth` 都在签 token **之前**调用 `rejectIfBanned`，deletedAt 命中直接 410——真正能撤销的 `POST /account/cancel-deletion`（P0-13/B14）又需要 bearer token，删除后永远拿不到，等于承诺的恢复路径**从未生效**，账号一旦删除即永久锁死。修复：四个 auth 入口在 `rejectIfBanned` 之前新增 `restoreIfWithinGrace(accountId)`（`auth.ts`）——deletedAt 在 7 天宽限内则原子清除 `deletedAt`/`deletionConfirmToken`（同步 `accountCache.invalidateBanStatus`），让"重新登录"真正等于恢复；过期则不动，仍然 410。`cancel-deletion` 保留作为**同一会话内**的即时撤销（不必登出重进）。
 > - **C5-c**：`POST /account/gdpr-consent` → 设 `accounts.flags.gdprConsent=true/false`；analyticsvc POST /analytics/events：已识别用户（有 JWT）且 `batch.consent !== true` 时静默丢弃（无 PII 的匿名请求不受约束）。
+> - **C5-b 清除任务（2026-09-29 落地）**：此前「7 天后异步清理」只是文档/隐私政策/`AccountDoc` 注释里的承诺，**全仓库没有任何清除代码**——软删过了宽限期的账号数据在所有服务里原样留存。现在由 metaserver `accountPurge.ts` 执行，下面「C5-b 账号清除」一节是权威描述。
+
+#### C5-b 账号清除（post-grace purge，2026-09-29）
+
+**触发与调度**：metaserver 内 `purgeDeletedAccountsOnce`（`metaserver/src/accountPurge.ts`），`index.ts` 里 `setInterval` 每小时一轮（`NW_ACCOUNT_PURGE_INTERVAL_MS`，默认 1h，0 = 关）+ 开机 60s 后先跑一轮。沿用 reputationDecay / coinAnomalyAudit 的「有界批次 + 幂等 + 可重跑」形态；没用每日定时器——metaserver 一天部署不止一次时，每日 `setInterval` 永远等不到触发。
+
+**选取**：`deletedAt <= now − ACCOUNT_DELETE_GRACE_MS` 且无 `purgedAt`，按 `deletedAt` 升序，每轮最多 50 个（`accounts.deletedAt` 有 partial 索引）。与 `restoreIfWithinGrace` 的 `now − deletedAt < GRACE` 严格互斥——被清除任务认领的账号不可能再被「重新登录恢复」。
+
+**认领 / 续跑**：`findOneAndUpdate` 写 `purge.lockedUntil = now + 15min`（租约）+ `$inc purge.attempts`。每个服务确认完成后写 `purge.steps.<step> = ts`；重跑时跳过已确认的步骤。某步失败或返回 `done:false` → 立即停止（后面的步骤依赖前面的），`purge.lastError` 记原因，`lockedUntil = now + 30min` 作为退避，下一轮再试。**失败永不跳过**：某服务的内部 URL 没配置 = 该步失败，账号一直挂起（fail-closed，宁可卡住也不谎报「已清除」）。
+
+**步骤顺序**（`ACCOUNT_PURGE_STEPS`，shared `accountDocs.ts`）与原因：
+
+| 步 | 服务 | 做什么 | 为什么在这个位置 |
+|---|---|---|---|
+| social | socialsvc | 退出家族（族长→自动传位 / 独自一人→解散）、好友边（释放对方好友位）、好友申请、黑名单、私聊会话+消息、收件箱、自己发出的玩家邮件、家族消息、入族申请；**被举报的**举报单删除、**自己提交的**举报单保留但 `reporterId='deleted-account'` | worldsvc 要按 socialsvc 清除后的家族状态修门派 |
+| world | worldsvc | 所有分服：行军/占领/驻军强制清空（含 Redis occ/cover）、被其争夺的地块解除争夺、其发起的攻城伤害、国家槽位 `$unset` 归属、门派/国家/旧家族频道消息、赛季榜单昵称置空、转服记录；门派对账（见下）；最后删地块+`playerWorld`、分服人口 −1 | 依赖 social 的家族结果；自身的 `playerWorld` 放最后删，重试时还能找到门派镜像 |
+| auction | auctionsvc | 其无人出价的在售拍品直接关闭（`cancelled`+`settledAt`，物品不退回——退回也是退进一个即将被删的库存）；无挂起后删每日额度、出价记录、其已结算的历史挂单 | 可能返回 `done:false`：其挂单已有人出价、其是当前最高出价者、有未终结的交易日志行、有未结算的已关闭挂单——**对手方的币和物品绝不因此损失**，等正常到期结算后再清。必须在钱包删除前完成 |
+| commercial | commercial | 删 `wallets`（月卡/年卡/首充/里程碑都在钱包文档上）、`gachaHistory`、`promoRedemptions`、`appleAccountTokens`、`appleConsumptionConsents`；**保留**交易记录（见下「留存」） | 等拍卖结算完成后才能删钱包 |
+| analytics | analyticsvc | 删 `events`/`sessions`：`user_id` = 该账号；同设备上无 `user_id` 的登录前记录（设备号由 meta 传入，最多 20 个）；以及事件里带该账号的会话的匿名行 | 设备号只存在 meta 账号行上，必须在 meta 步骤之前 |
+| meta | 本地 | 删 saves、pveStamina、卡牌/装备/皮肤/材料实例、各类幂等账本、replayShares、stateReplayShares、adsTokens、活动参与、天梯赛季快照、反馈、申诉、PvE 校验/拒绝、反作弊审核、旧 `mail`；`matches.players[]` 里该账号的 `displayName`/`publicId` 快照置空（对手的对局历史保留） | 账号行持有租约和设备号，最后处理 |
+
+之后，每轮对本轮所有走完 meta 步骤的账号**统一扫一遍回放冷存档**（`replayArchive.ts scrubArchivedPlayers`）：抹掉 `<roomId>.meta.json` 里这些账号的昵称/publicId，保留 accountId（对手查看自己回放的鉴权还要用），并**恢复文件原 mtime**——365 天保留期按 mtime 计，直接改写会让清除反而把保留期重置。扫描失败则本轮不写墓碑，下一轮直接从这里续。
+
+**墓碑**：`replaceOne` 成 `{ _id, createdAt, deletedAt, purgedAt }`——一次写入丢掉所有凭证（deviceId/openid/password/oauth）、昵称、publicId、flags；唯一稀疏索引随之释放，同一设备/邮箱可以注册新账号。保留墓碑而不是删行：JWT 有效期 30 天且会滑动续期，行被删掉时 `getOrCreateSave`/`ensurePublicId` 会为一个已清除的账号重新建出存档和 publicId。现在 `bearerAuth`（`metaserver/src/auth.ts`）对 `purgedAt` 已设的账号直接 410 `ACCOUNT_DELETED`（走 `accountCache` 的封禁状态缓存，热路径只是一次 Map 查询），且不再签发续期 token；**仅软删、未清除**的账号不拦——宽限期内 `POST /account/cancel-deletion` 需要可用的 token。
+
+**领导角色**：
+- **家族**（socialsvc）：普通成员直接退出。族长且还有其他成员 → 自动传位：优先已存在的 leader 行（崩溃重试时不会立第二个族长），其次长老，再次普通成员；同级按 `joinedAt` 最早、再按 `_id`。族长且独自一人 → 按 `dissolveFamily` 解散，并额外删入族申请（`dissolveFamily` 本身漏了这项）。理由：被删账号无法主动交接，`leaveFamily` 禁止族长退出，且系统里没有转让端点。
+- **门派**（worldsvc）：候选门派 = 其 `playerWorld.sectId` 镜像 ∪ `leaderId` 为该账号的门派；一律以 socialsvc 为准重新计算（读 socialsvc 时绕过 10s 缓存，读失败直接报错重试——返回空列表会被误判为「门派已无家族」而解散）。门主家族仍在 → `leaderId` 更新为该家族现任族长（social 步骤可能刚传过位）；门主家族已解散 → 转给剩余家族中成员最多的（同数按 familyId 升序），无剩余家族 → 按 `dissolveSect` 解散（拆出公用 `tearDownSect`）。`memberFamilyCount` 每次按实际剩余家族数重算；换门主家族时丢弃 `removalVote`，否则只剔除已不在门派内的投票家族。
+
+**留存（不删的部分）**：
+- commercial `ledger`/`orders`/`recharges`/`paddleEvents`/`appleTransactionLinks`/`appleNotifications`：交易记录按税务/退款争议义务保留最小集。与身份解绑的方式：accountId 此时只是墓碑上的不透明 id，墓碑不含任何个人数据；`recharges.rawReceipt`、`paddleEvents.rawEvent` 置为空串（前者从无读取方，后者只给运维 Paddle 事件详情页用）。`appleTransactionLinks` 打 `accountPurgedAt` 标记：之后 Apple 的续订通知照常记录但不再发货（否则 `DID_RENEW` 会把已删的钱包重新建出来）；同一 Apple ID 的新账号恢复购买时清除该标记。**保留期限 = 10 个完整日历年，之后删除**（2026-09-29 拍板，对所有账号生效，不限已删除账号）：commercial `transactionRetention.ts` 每 6 小时清理创建时间早于「当前年 − 10 年的 1 月 1 日（UTC）」的记录——从记录所在年的年末起算，与 §147 AO / §257 HGB 的计法一致，而不是滚动的 now − 10y（后者最多会早删将近一年）。`appleTransactionLinks` 按 `updatedAt` 计，且该订阅在截止日之后没有任何 Apple 通知才删（`updatedAt` 只在购买/恢复购买时刷新，续订了十年以上的活跃订阅否则会丢路由）。
+- worldsvc `sieges`（战报，30 天 TTL，只有 id）、对手针对其地块的攻城伤害行（地块没了之后由结算的失效目标分支取消并让对方部队返回）；meta 里他人反作弊记录中的 `judgeAccountId`；auctionsvc 已终结的交易日志（30 天 `purgeAt` TTL）、其仅作为买家出现的挂单；admin 库的审计日志/补偿单/交易审核单（运维问责记录，publicId 已随墓碑失效）。
+- 其余本就有 TTL 的数据按原 TTL 过期；Mongo 备份最多保留 `NW_BACKUP_KEEP_DAYS`（默认 7 天，S3 副本的生命周期由存储桶策略决定）。
+
+**令牌吊销表（2026-09-29，同日第二轮）**：worldsvc/socialsvc/auctionsvc/analyticsvc/gateway 只做无状态 JWT 验签、不连账号库，墓碑只挡得住 metaserver——一个在删除前泄露、还没过期的 token，原本能在这些服务里继续用最多 30 天，还能把刚清掉的数据重新建出来（新的 `playerWorld`、好友申请、带 `user_id` 的埋点）。现在：
+
+- **表**：meta 库 `tokenRevocations`，`{ _id: accountId, revokedAt, reason: 'account_purged', expireAt }`，一个账号一行。清除任务**认领账号时、第一步之前**写入（`$setOnInsert`：重试不改 `revokedAt`，也不顺延过期）——不是等墓碑，因为各服务的清除步骤跑完之后、墓碑写下之前，泄露的 token 仍能往已清过的服务里写。
+- **语义**：拒绝该账号 `iat × 1000 ≤ revokedAt` 的 token（秒精度，同一秒按「已吊销」算）；之后签发的不受影响，所以同一张表以后可以直接承载「退出所有设备」。
+- **分发**：meta 内部端点 `GET /internal/auth/token-revocations?since=`（`SERVER_API_INTERNAL §15`）；各服务进程内的 `TokenRevocationList`（`shared/src/tokenRevocation.ts`）每 60 秒增量拉一次（`since` = 上次 `asOf` − 5 分钟重叠，吸收写入提交延迟和多实例时钟差），验签后查内存 Map，热路径零 I/O。meta 自己用同一个类，数据源直接读本库。选拉不选推：表很小，拉取方断线后下一轮自愈，不需要补发。
+- **命中后**：metaserver/worldsvc/socialsvc/auctionsvc → 410 `ACCOUNT_DELETED`（shared `ERROR_HTTP_STATUS` 补了这个映射）；gateway WS 握手 → 4401（与过期 token 同码，客户端已把它当「重新登录」处理）；analyticsvc 不拒请求，按匿名入库、不挂 `user_id`。meta 对已吊销 token **不续期**，所以 token 最多比吊销晚 30 天失效。
+- **过期**：`expireAt = revokedAt + 31 天`（token TTL 30 天，`signToken` 没有环境变量可改，+1 天余量），Mongo TTL 索引删行；各进程的内存表按同一窗口自行修剪。
+- **失败模式**：进程启动后首次拉取成功前 fail-open（meta 暂时不可达时服务照常对外，而不是每个请求都硬依赖 meta）；之后拉取失败沿用上次的表。没配 meta 内部地址 → 启动时打一条 warn、不做检查（analyticsvc 为此新增 `NW_META_INTERNAL_URL`，gateway 复用 `NW_META_BASE_URL`）。
+- **剩余窗口**：写入吊销行到各服务拉到它之间最多约 60 秒；清除任务的远程步骤就在同一轮紧接着执行，这 60 秒里泄露 token 的零星写入不会被回收。接受——前提是 token 已泄露**且**恰好落在这一分钟。
+
+**测试**：metaserver `test/account-purge.e2e.test.ts`（宽限期边界、步骤顺序与参数、失败/挂起后从断点续跑、墓碑形态、冷存档 mtime、幂等、认领即写吊销行、内部端点）+ `test/account-deletion.test.ts`（已清除账号 / 已吊销 token → 410）；各服务 `test/accountPurge.e2e.test.ts`；吊销表：shared `test/tokenRevocation.test.ts`（iat 语义、fail-open、增量 since、修剪、HTTP 源）+ worldsvc/socialsvc/auctionsvc/analyticsvc `test/tokenRevocationHttp.test.ts` + gateway `test/tokenRevocation.test.ts`。
+

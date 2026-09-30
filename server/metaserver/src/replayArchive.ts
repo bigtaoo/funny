@@ -115,3 +115,52 @@ export async function sweepArchive(now: () => number = Date.now): Promise<void> 
     }
   }
 }
+
+/**
+ * C5-b account purge: blank the display-name/publicId snapshots of the given accounts in every archived
+ * `<roomId>.meta.json`. The accountId itself stays — it is an opaque id once the account row is a
+ * tombstone, and the surviving opponent's own replay authorization (readArchivedMeta → players.some)
+ * still needs the entry. The replay bytes carry no player identity, so `.replay.gz` is left alone.
+ *
+ * The original atime/mtime are restored after each rewrite: {@link sweepArchive}'s 365-day retention is
+ * mtime-based, and a plain rewrite would silently restart that clock for every scrubbed match.
+ *
+ * One directory pass per call (not per account) — the purge tick batches every account it finished.
+ * `dir` is injectable for tests; defaults to NW_REPLAY_ARCHIVE_DIR (no-op when unset). Returns the number
+ * of meta files rewritten.
+ */
+export async function scrubArchivedPlayers(
+  accountIds: ReadonlySet<string>,
+  dir: string | null = ARCHIVE_DIR,
+): Promise<number> {
+  if (!dir || accountIds.size === 0) return 0;
+  // Unlike the sweep, a failure here must propagate: the caller only tombstones the accounts once the
+  // archive no longer names them.
+  const entries = await fs.readdir(dir);
+  let rewritten = 0;
+  for (const name of entries) {
+    if (!name.endsWith('.meta.json')) continue;
+    const path = join(dir, name);
+    const raw = await fs.readFile(path, 'utf8');
+    let meta: { players?: MatchDoc['players'] };
+    try {
+      meta = JSON.parse(raw);
+    } catch {
+      continue; // a torn/corrupt sidecar names nobody we can find; not this purge's problem
+    }
+    let touched = false;
+    for (const p of meta.players ?? []) {
+      if (!accountIds.has(p.accountId)) continue;
+      if (p.displayName === undefined && p.publicId === undefined) continue;
+      delete p.displayName;
+      delete p.publicId;
+      touched = true;
+    }
+    if (!touched) continue;
+    const st = await fs.stat(path);
+    await fs.writeFile(path, JSON.stringify(meta), 'utf8');
+    await fs.utimes(path, st.atime, st.mtime);
+    rewritten++;
+  }
+  return rewritten;
+}

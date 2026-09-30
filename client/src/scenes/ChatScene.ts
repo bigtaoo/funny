@@ -9,13 +9,16 @@ import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader, sceneHeaderHeight } from '../ui/widgets/SceneHeader';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { caretDisplay } from '../ui/inputDisplay';
-import { FS, snapFont } from '../render/fontScale';
+import { FS, snapFont, fitFont } from '../render/fontScale';
 import type { ChatMessageView } from '../net/ApiClient';
 import type { ChatMessagePush } from '../net/proto/transport';
 import { wheelScrollY } from '../ui/wheelScroll';
 import { measureRows, buildBubble } from './ChatScene/thread';
 import { runHit, type Hit as BaseHit } from '../ui/hits';
 import type { IPlatform, ITextInput } from '../platform/IPlatform';
+import { canModerate, isBlocked, messageContent, onBlockedChange, openBlockedPlayers, openPlayerCard } from '../ui/moderation';
+import { drawHudButton, hudButtonText } from '../ui/widgets/hudButton';
+import { monospaceWidth } from '../render/pixiText';
 
 /** This scene has a single scrollable region, so `scroll` degrades to a boolean (see ui/hits.ts). */
 type Hit = BaseHit<boolean>;
@@ -122,6 +125,8 @@ export class ChatScene implements Scene {
         this.scrollDirty = true;
       }
     }));
+    // Blocking the peer (from the header's Report/Block card) hides their side of the thread at once.
+    this.unsubs.push(onBlockedChange(() => this.render()));
     this.render();
     void this.load();
   }
@@ -146,6 +151,7 @@ export class ChatScene implements Scene {
     // Only messages from this peer (or this conv) belong here.
     if (this.convId && m.convId !== this.convId) return;
     if (!this.convId && m.fromPublicId !== this.cb.peerPublicId) return;
+    if (isBlocked(m.fromPublicId)) return; // a blocked player's push never shows (App Review 1.2)
     if (!this.convId) this.convId = m.convId;
     this.messages.push({
       messageId: `push-${m.ts}-${this.messages.length}`,
@@ -288,8 +294,37 @@ export class ChatScene implements Scene {
     const { w, h } = this;
     // Title is the PEER's name, so the glyph stands in for "a conversation", not for a page concept —
     // the same speech bubble the family/sect channel tabs use (batch 5).
-    const hdr = drawSceneHeader(this.container, w, h, this.cb.peerName || `#${this.cb.peerPublicId}`, { icon: 'channelTabIcon' });
+    // Right side: "Report / Block" for the peer (App Review 1.2) — opens their card with both actions.
+    const safety = canModerate(this.cb.peerPublicId);
+    const tbH = sceneHeaderHeight(h);
+    const sLabel = t('moderation.safetyMenu');
+    const sH = Math.round(tbH * 0.52);
+    const sSize = snapFont(Math.round(sH * 0.42));
+    const sW = Math.min(Math.round(w * 0.3), Math.round(monospaceWidth(sLabel, sSize) + sH * 0.8));
+    const hdr = drawSceneHeader(this.container, w, h, this.cb.peerName || `#${this.cb.peerPublicId}`, {
+      icon: 'channelTabIcon', ...(safety ? { rightReserve: sW + Math.round(w * 0.03) } : {}),
+    });
     this.hits.push({ rect: hdr.backRect, sound: 'sfx.ui.back', fn: () => this.cb.onBack() });
+    if (!safety) return;
+    const sx = w - Math.round(w * 0.03) - sW;
+    const sy = Math.round((tbH - sH) / 2);
+    const g = new PIXI.Graphics();
+    drawHudButton(g, sW, sH, 'danger', { radius: 8 });
+    g.x = sx; g.y = sy;
+    this.container.addChild(g);
+    const sl = txt(sLabel, fitFont(sSize, monospaceWidth(sLabel, sSize), sW * 0.9), hudButtonText('danger'), true);
+    sl.anchor.set(0.5, 0.5); sl.x = sx + sW / 2; sl.y = sy + sH / 2;
+    this.container.addChild(sl);
+    this.hits.push({ rect: { x: sx, y: sy, w: sW, h: sH }, fn: () => this.openPeerCard() });
+  }
+
+  /** The peer's card with Report / Block; `msg` (a tapped bubble) makes the report about that message. */
+  private openPeerCard(msg?: ChatMessageView): void {
+    openPlayerCard({
+      publicId: this.cb.peerPublicId,
+      name: this.cb.peerName || `#${this.cb.peerPublicId}`,
+      ...(msg ? { content: messageContent('dm', msg.body, msg.messageId.startsWith('push-') ? undefined : msg.messageId) } : {}),
+    });
   }
 
   private drawThread(): void {
@@ -319,7 +354,10 @@ export class ChatScene implements Scene {
     // unbounded message list — see ChatScene/thread.ts's header comment for why building all of
     // it unconditionally (the pre-2026-08-12 behaviour) was the same GPU-object-spike bug that
     // crashed BattlePassScene/LeaderboardScene on mobile, just triggered by chat history growth.
-    const { rows, totalH } = measureRows(this.messages, this.hasMore, this.failedMessageIds, w, h);
+    // Once the peer is blocked their side of the thread is hidden (App Review 1.2); mine stays.
+    const peerBlocked = isBlocked(this.cb.peerPublicId);
+    const visible = peerBlocked ? this.messages.filter((m) => m.fromPublicId !== this.cb.peerPublicId) : this.messages;
+    const { rows, totalH } = measureRows(visible, this.hasMore, this.failedMessageIds, w, h);
     this.maxScroll = Math.max(0, totalH - regionH);
     if (this.stickBottom) this.scrollY = this.maxScroll;
     else if (this.scrollY > this.maxScroll) this.scrollY = this.maxScroll;
@@ -346,9 +384,14 @@ export class ChatScene implements Scene {
         layer.addChild(e);
       } else if (row.msg) {
         const failed = this.failedMessageIds.has(row.msg.messageId);
-        const { node } = buildBubble(row.msg, w, h, this.cb.myPublicId, failed);
+        const { node, height } = buildBubble(row.msg, w, h, this.cb.myPublicId, failed);
         node.y = sy;
         layer.addChild(node);
+        // Tapping a peer bubble opens their card, reporting that exact message.
+        const m = row.msg;
+        if (m.fromPublicId === this.cb.peerPublicId && m.kind !== 'system' && canModerate(m.fromPublicId)) {
+          this.hits.push({ rect: { x: node.x, y: sy, w: node.width, h: height }, scroll: true, fn: () => this.openPeerCard(m) });
+        }
       }
     }
 
@@ -362,6 +405,16 @@ export class ChatScene implements Scene {
     const bg = new PIXI.Graphics();
     bg.beginFill(C.dark, 0.08); bg.drawRect(0, cy, w, composeH); bg.endFill();
     this.container.addChild(bg);
+
+    // Blocked peer: no compose box (the server refuses the send anyway) — say why, and where to undo it.
+    if (isBlocked(this.cb.peerPublicId)) {
+      const note = txt(t('moderation.dmBlockedNotice'), FS.heading, C.mid, false, Math.round(w * 0.9));
+      note.style.align = 'center';
+      note.anchor.set(0.5, 0.5); note.x = w / 2; note.y = cy + composeH / 2;
+      this.container.addChild(note);
+      this.hits.push({ rect: { x: 0, y: cy, w, h: composeH }, fn: () => openBlockedPlayers() });
+      return;
+    }
 
     const sendW = Math.round(w * 0.2);
     const gap = Math.round(w * 0.03);

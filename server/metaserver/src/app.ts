@@ -17,6 +17,8 @@ import { registerAppleWebhookRoute } from './apple/webhookRoute.js';
 const log = createLogger('meta');
 import { makeSecurityHandlers } from './auth.js';
 import { extractBearer, verifyToken } from '@nw/shared';
+import { TokenRevocationList, disabledTokenRevocationList } from '@nw/shared';
+import { localTokenRevocationSource } from './tokenRevocations.js';
 import { registerInternalRoutes } from './internal.js';
 import { AccountCache } from './accountCache.js';
 import { HttpCommercialClient, type CommercialClient } from './commercialClient.js';
@@ -73,6 +75,11 @@ export interface BuildAppOpts {
   gateway?: GatewayClient;
   /** gateway public WS URL, sent to the client in auth/save responses (null = not sent). */
   gatewayPublicUrl?: string | null;
+  /**
+   * JWT revocation list checked by bearerAuth (tokenRevocations.ts). Default: one polling this database's
+   * `tokenRevocations` collection, started here and stopped on app close. Injectable for tests.
+   */
+  tokenRevocations?: TokenRevocationList;
   now?: () => number;
   logger?: boolean;
   /** Maximum auth attempts per IP within 15 minutes (0 = disabled, for tests). Default 20. */
@@ -201,7 +208,7 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
   app.setErrorHandler((error: Error & { statusCode?: number }, req, reply) => {
     const status = error.statusCode ?? 500;
     const code =
-      status === 401 ? 'UNAUTHENTICATED' : status === 400 ? 'BAD_REQUEST' : 'INTERNAL';
+      status === 401 ? 'UNAUTHENTICATED' : status === 400 ? 'BAD_REQUEST' : status === 410 ? 'ACCOUNT_DELETED' : 'INTERNAL';
     // 5xx = real problem (include stack), 4xx = expected validation failure (single line only).
     // Body included (2026-07-28, redacted/size-capped — see redactedBodyForLog): this is the thrown-
     // exception path (schema validation, security-handler throws), a different code path from the
@@ -226,6 +233,17 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
   // Shared with registerInternalRoutes below so an admin ban/unban (internal API) invalidates the same
   // cache rejectIfBanned (public API) reads — one instance per buildApp call, see accountCache.ts.
   const accountCache = new AccountCache();
+  // Test fixtures that fake `cols` without the collection get a list that never revokes (fail-open is the
+  // list's documented pre-first-load behaviour anyway) instead of a poll that throws every minute.
+  const tokenRevocations =
+    opts.tokenRevocations ??
+    (opts.cols.tokenRevocations
+      ? new TokenRevocationList(localTokenRevocationSource(opts.cols, now), { now, log: createLogger('meta:token-revocations') })
+      : disabledTokenRevocationList());
+  if (!opts.tokenRevocations) {
+    tokenRevocations.start();
+    app.addHook('onClose', async () => tokenRevocations.stop());
+  }
   // botsvc presents its internal key on /pve/verify (see ServiceDeps.isBotsvcRequest). Strict mode names
   // the caller; the shared-key fallback can't, but any holder of that key is a trusted service anyway.
   const internalKeys = opts.internalKeys ?? internalKeysFromEnv();
@@ -290,7 +308,18 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
 
   // Public REST routes — generated from openapi.yml at build time (ADR-023).
   // MetaService is structurally checked against MetaHandlers at compile time (missing method = tsc error).
-  await registerRoutes(app, service, makeSecurityHandlers(opts.jwt, now));
+  // isRevoked: the in-memory revocation list first (a Map lookup), then the same cached ban-status read
+  // rejectIfBanned uses for tombstones (one Mongo read per account per 60s at most).
+  await registerRoutes(
+    app,
+    service,
+    makeSecurityHandlers(
+      opts.jwt,
+      now,
+      async (p) =>
+        tokenRevocations.isRevoked(p.sub, p.iat) || !!(await accountCache.getBanStatus(opts.cols, p.sub)).purgedAt,
+    ),
+  );
 
   return app;
 }

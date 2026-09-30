@@ -5,6 +5,7 @@ import type { FriendsView, ChatView } from '../AppViews';
 import type { AppCtx, Nav } from '../appCtx';
 import { FALLBACK_SEASON, PLAYER_PUBLIC_ID_KEY } from '../appConstants';
 import { isChatDisabled } from '../../ui/chatPolicy';
+import { syncBlockedForSession } from '../blockedSync';
 
 export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' | 'goChat'> {
   const { api, saveManager, platform, state, views, nav, getNetSession, playerName, resolvePvpDeck } = ctx;
@@ -13,6 +14,7 @@ export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' |
     // Social needs a server account; offline / no API → bounce to login.
     if (!api) { analytics.track('login_gate_hit', { scene: 'FriendsScene' }); nav.goLogin(); return; }
     analytics.track('screen_view', { scene: 'FriendsScene' });
+    syncBlockedForSession(api, platform.storage);
     const client = api;
     state.inLobby = false;
     const session = getNetSession();
@@ -74,10 +76,6 @@ export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' |
         return r;
       },
       removeFriend: (publicId) => client.removeFriend(publicId),
-      blockUser: (publicId) => client.blockUser(publicId),
-      // Reason is admin-review-only (never shown to other players), so a plain literal is fine here —
-      // no need to route it through i18n like player-facing text.
-      reportUser: (publicId) => client.reportUser(publicId, 'reported from profile popup'),
       duelInvite: (publicId) => session?.duelInvite(publicId, resolvePvpDeck()),
       duelRespond: (inviteId, accept) => session?.duelRespond(inviteId, accept, resolvePvpDeck()),
       // Direct messages (entry point is the friend profile popup)
@@ -200,6 +198,7 @@ export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' |
   function goChat(peerPublicId: string, peerName: string, opts?: { overlay?: boolean; onBack?: () => void }): void {
     if (!api) { nav.goLogin(); return; }
     if (isChatDisabled()) return; // platform "chat off": every entry is hidden; this is the backstop
+    syncBlockedForSession(api, platform.storage);
     const client = api;
     state.inLobby = false;
     const session = getNetSession();

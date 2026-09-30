@@ -30,6 +30,7 @@ import { SeasonService } from './season';
 import { CityService } from './city';
 import { CombatService } from './combat';
 import { TransferService, type ShardSummary } from './transfer';
+import { AccountPurgeService, type AccountPurgeResult } from './accountPurge';
 import type { PlayerWorldView, WorldTileView, MarchView, OccupationView, SiegeHoldView, StationedView, WorldMapView, WorldMapSparseView, WorldServiceDeps } from './worldTypes';
 import type { SLG_SHOP_ITEMS, BuildingKey, MarchKind, ChatRegion } from '@nw/shared';
 import type { TeamTemplate, NationDoc } from './db';
@@ -46,6 +47,7 @@ export class WorldService {
   private readonly city: CityService;
   private readonly combat: CombatService;
   private readonly transfer: TransferService;
+  private readonly accountPurge: AccountPurgeService;
 
   constructor(deps: WorldServiceDeps) {
     // Field initializers run before this body under ES2022 class-fields semantics (useDefineForClassFields)
@@ -59,6 +61,7 @@ export class WorldService {
     this.city = new CityService(this.core);
     this.combat = new CombatService(this.core);
     this.transfer = new TransferService(this.core, this.territory);
+    this.accountPurge = new AccountPurgeService(this.core);
   }
 
   // ── WorldCore surface reached directly by external callers (httpApi/index/scheduler/e2e tests) ─
@@ -253,6 +256,11 @@ export class WorldService {
   }
   mergeShard(sourceWorldId: string, targetWorldId: string): ReturnType<TransferService['mergeShard']> {
     return this.transfer.mergeShard(sourceWorldId, targetWorldId);
+  }
+
+  // ── account-deletion purge (accountPurge.ts; X-Internal-Key, called by metaserver's purge job) ──
+  purgeAccount(accountId: string): Promise<AccountPurgeResult> {
+    return this.accountPurge.purgeAccount(accountId);
   }
 
   // ── territory (territory.ts) ─────────────────────────────────

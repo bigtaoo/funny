@@ -2,7 +2,7 @@
 // (2026-08-11, 独立类+组合 form, familyService.ts's sibling — see ../sectService.ts for the composing
 // facade). Zero cross-domain calls into query.ts/membership.ts.
 import { randomBytes } from 'node:crypto';
-import { FAMILY_MSG_BODY_MAX, SlgError, censorChat, type ChatRegion } from '@nw/shared';
+import { FAMILY_MSG_BODY_MAX, SlgError, censorChat, UNRESOLVED_SENDER_NAME, type ChatRegion } from '@nw/shared';
 import type { SectMessageDoc } from '../db';
 import { nullWorldGatewayClient, type WorldGatewayClient } from '../gatewayClient';
 import { nullWorldSocialsvcClient, type WorldSocialsvcClient } from '../socialsvcClient';
@@ -33,7 +33,7 @@ export class SectChatService {
   async sendMessage(
     worldId: string,
     accountId: string,
-    senderName: string,
+    _clientSenderName: string,
     body: string,
     region: ChatRegion = 'global',
   ): Promise<SectMessageView> {
@@ -42,6 +42,12 @@ export class SectChatService {
     if (!mem) throw new SlgError('NOT_IN_SECT');
     if (!mem.sectId) throw new SlgError('NOT_IN_SECT');
     if (!body || body.length > FAMILY_MSG_BODY_MAX) throw new SlgError('BAD_REQUEST');
+
+    // Resolve display name + title from meta (source of truth for renames). Fetched before censoring the body
+    // (mirrors family/world chat, CONTENT_MODERATION_DESIGN.md CM7.1): profile.mutedUntil is the mute check,
+    // which sect chat was missing until Guideline 1.2 — a muted player could keep posting here.
+    const profile = this.meta.available ? await this.meta.getProfile(accountId).catch(() => null) : null;
+    if (profile?.mutedUntil && profile.mutedUntil > this.deps.now()) throw new SlgError('ACCOUNT_MUTED');
 
     // CONTENT_MODERATION_DESIGN.md CM5: sect chat is ephemeral like DM/family/world chat —
     // mask on hit, never reject delivery (mirrors nationChannelService.ts's sendMessage).
@@ -56,11 +62,9 @@ export class SectChatService {
     // astronomically unlikely without needing cross-instance coordination.
     const msgId = `sm:${sectId}:${ts}:${seq}:${randomBytes(4).toString('hex')}`;
 
-    // Resolve display name + title from meta (source of truth for renames); best-effort, falls back
-    // to the client-supplied senderName if meta is unavailable or profile not found — a stale/incorrect
-    // client-side cache must never be preferred over the account's real name.
-    const profile = this.meta.available ? await this.meta.getProfile(accountId).catch(() => null) : null;
-    const resolvedSenderName = profile?.displayName ?? senderName;
+    // Meta unavailable / profile missing → a neutral placeholder, never the client-supplied name: that string
+    // bypasses the display-name filter and lets a client post under any name it likes (Guideline 1.2).
+    const resolvedSenderName = profile?.displayName ?? UNRESOLVED_SENDER_NAME;
     const title = profile?.equippedTitle;
     // Family + sect name are already resolved above (mem.name / the sect this channel belongs to) — no extra lookups.
     const familyName = mem.name;
@@ -73,6 +77,7 @@ export class SectChatService {
       sectId,
       senderId: accountId,
       senderName: resolvedSenderName,
+      ...(profile?.publicId ? { senderPublicId: profile.publicId } : {}),
       ...(title ? { title } : {}),
       ...(sectDocName ? { sectName: sectDocName } : {}),
       ...(familyName ? { familyName } : {}),
@@ -91,7 +96,7 @@ export class SectChatService {
       void this.gateway.broadcast(recipients, { kind: 'sect_msg', ...payload });
     }
 
-    return { id: msgId, senderId: accountId, senderName: resolvedSenderName, title, sectName: sectDocName, familyName, body, ts };
+    return { id: msgId, senderId: accountId, senderName: resolvedSenderName, senderPublicId: profile?.publicId ?? '', title, sectName: sectDocName, familyName, body, ts };
   }
 
   /** Collects all member accountIds within the sect who are joined to this world (spread across member families, via PlayerWorldDoc.familyId); optionally excludes one account (e.g., the sender). */
@@ -125,10 +130,16 @@ export class SectChatService {
     if (before != null) query['ts'] = { $lt: new Date(before) };
 
     const docs = await cols.sectMessages.find(query).sort({ ts: -1 }).limit(realLimit).toArray();
+    // Backfill senderPublicId for docs written before it was stored (one batched meta call, ≤50 ids).
+    const missing = [...new Set(docs.filter((d) => !d.senderPublicId).map((d) => d.senderId))];
+    const backfill = missing.length > 0 && this.meta.available
+      ? await Promise.resolve().then(() => this.meta.batchProfiles(missing)).catch(() => new Map<string, { publicId: string }>())
+      : new Map<string, { publicId: string }>();
     return docs.map((d) => ({
       id: d._id,
       senderId: d.senderId,
       senderName: d.senderName,
+      senderPublicId: d.senderPublicId ?? backfill.get(d.senderId)?.publicId ?? '',
       title: d.title,
       sectName: d.sectName,
       familyName: d.familyName,

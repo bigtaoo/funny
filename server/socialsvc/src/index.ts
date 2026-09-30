@@ -1,7 +1,7 @@
 // socialsvc process bootstrap (SOCIAL_SVC_DESIGN §7).
 // Fifth public face: /social/*, port 8085. nw_social dedicated database; auth reuses the meta JWT.
 // P1: family  P2: friends / private-chat / mail  P3: presence events
-import { createLogger, startHeartbeat, WordlistCache, fetchInternalJson } from '@nw/shared';
+import { createLogger, startHeartbeat, startTokenRevocationList, WordlistCache, fetchInternalJson } from '@nw/shared';
 import { loadSocialsvcEnv } from './config';
 import { createSocialMongo } from './db';
 import { FamilyService } from './familyService';
@@ -10,6 +10,8 @@ import { MailService } from './mailService';
 import { HttpSocialGatewayClient, nullSocialGatewayClient } from './gatewayClient';
 import { HttpSocialMetaClient, nullSocialMetaClient } from './metaClient';
 import { startHttpApi } from './httpApi';
+import { AccountPurgeService } from './accountPurge';
+import { createReportAlerter } from './reportAlert';
 
 async function main(): Promise<void> {
   const env = loadSocialsvcEnv();
@@ -49,6 +51,7 @@ async function main(): Promise<void> {
     gateway,
     meta,
     wordlists,
+    alerts: createReportAlerter({ webhookUrl: env.alertWebhookUrl }),
     now: () => Date.now(),
   });
 
@@ -56,6 +59,7 @@ async function main(): Promise<void> {
     cols: mongo.collections,
     gateway,
     meta,
+    wordlists,
     now: () => Date.now(),
   });
 
@@ -68,16 +72,25 @@ async function main(): Promise<void> {
     now: () => Date.now(),
   });
 
+  // C5-b: tokens of purged accounts, polled from metaserver (shared/src/tokenRevocation.ts).
+  const tokenRevocations = startTokenRevocationList(env.metaInternalUrl, {
+    caller: 'socialsvc',
+    key: env.internalKey,
+    log: createLogger('socialsvc:token-revocations'),
+  });
+
   const server = startHttpApi(
-    { host: env.host, port: env.port, jwtSecret: env.jwtSecret, internalKey: env.internalKey },
+    { host: env.host, port: env.port, jwtSecret: env.jwtSecret, internalKey: env.internalKey, tokenRevocations },
     familySvc,
     friendSvc,
     mailSvc,
     gateway,
     meta,
+    new AccountPurgeService({ cols: mongo.collections, gateway, meta, now: () => Date.now() }),
   );
 
   const shutdown = async (): Promise<void> => {
+    tokenRevocations?.stop();
     server.close();
     await mongo.close();
     process.exit(0);
@@ -87,7 +100,8 @@ async function main(): Promise<void> {
 
   console.log(
     `socialsvc public REST on :${env.port}; db=${env.socialMongoDb}; ` +
-      `gateway=${gateway.available ? 'on' : 'off'}; meta=${meta.available ? 'on' : 'off'}`,
+      `gateway=${gateway.available ? 'on' : 'off'}; meta=${meta.available ? 'on' : 'off'}; ` +
+      `reportAlerts=${env.alertWebhookUrl ? 'on' : 'off'}`,
   );
   startHeartbeat(createLogger('socialsvc'));
 }

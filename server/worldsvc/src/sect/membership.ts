@@ -18,9 +18,9 @@ import {
   type ChatRegion,
   type EmblemKey,
 } from '@nw/shared';
-import type { SectDoc } from '../db';
+import type { SectDoc, WorldCollections } from '../db';
 import { nullWorldCommercialClient, type WorldCommercialClient } from '../commercialClient';
-import { nullWorldSocialsvcClient, type WorldSocialsvcClient, type FamilyMembership } from '../socialsvcClient';
+import { nullWorldSocialsvcClient, type WorldSocialsvcClient, type FamilyMembership, type FamilySummary } from '../socialsvcClient';
 import { mirrorSectMembership } from '../core/citySiege';
 import { docToView } from './shared';
 import type { SectDetailView, SectServiceDeps } from './types';
@@ -154,18 +154,8 @@ export class SectMembershipService {
     if (!sect) throw new SlgError('NOT_FOUND');
     if (sect.leaderId !== requesterId) throw new SlgError('NO_PERMISSION', 'Only the sect leader can dissolve the sect');
 
-    const sid = sect._id;
-    const memberFams = await this.socialsvc.getFamiliesBySect(sid);
-    await Promise.all(memberFams.map((f) => this.socialsvc.setSect(f.familyId, null)));
-    // Every member family loses the sect at once, so every mirror has to go with it (ADR-074 P3).
-    const dissolvedAt = this.deps.now();
-    await Promise.all(memberFams.map((f) => mirrorSectMembership(this.deps.cols, worldId, f.familyId, null, dissolvedAt)));
-    // Remove this sect from all allies' allySectIds.
-    for (const ally of sect.allySectIds) {
-      await cols.sects.updateOne({ _id: ally }, { $pull: { allySectIds: sid } });
-    }
-    await cols.sectMessages.deleteMany({ sectId: sid });
-    await cols.sects.deleteOne({ _id: sid });
+    const memberFams = await this.socialsvc.getFamiliesBySect(sect._id);
+    await tearDownSect(this.deps.cols, this.socialsvc, worldId, sect, memberFams, this.deps.now());
   }
 
   /** Form an alliance (initiated by the sect leader; bidirectional). Each side capped at ≤ SECT_ALLY_CAP; cannot ally with self or an already-allied sect. */
@@ -280,4 +270,36 @@ export class SectMembershipService {
     if (sect.leaderId !== requesterId) throw new SlgError('NO_PERMISSION', 'Only the sect leader can change the sect emblem');
     await this.deps.cols.sects.updateOne({ _id: sect._id }, { $set: { emblemKey, emblemColor } });
   }
+}
+
+/**
+ * The data half of dissolving a sect, shared by the player-initiated dissolveSect above and the account-deletion
+ * purge (accountPurge.ts, which dissolves a sect whose last family vanished with the deleted account). Clears
+ * the sectId mirror on every listed member family (socialsvc + playerWorld), removes this sect from all allies'
+ * allySectIds, deletes its channel, then the sect itself.
+ *
+ * The sect doc is deleted LAST on purpose: every earlier step is idempotent, so a run that dies half-way leaves
+ * the sect in place and a re-run (the purge job retries until done) finds it and finishes the job — deleting it
+ * first would orphan whatever ally links / messages were not yet cleaned, with nothing left to find them by.
+ * Returns the number of channel messages removed (the purge reports it).
+ */
+export async function tearDownSect(
+  cols: WorldCollections,
+  socialsvc: WorldSocialsvcClient,
+  worldId: string,
+  sect: SectDoc,
+  memberFams: readonly FamilySummary[],
+  t: number,
+): Promise<{ messages: number }> {
+  const sid = sect._id;
+  await Promise.all(memberFams.map((f) => socialsvc.setSect(f.familyId, null)));
+  // Every member family loses the sect at once, so every mirror has to go with it (ADR-074 P3).
+  await Promise.all(memberFams.map((f) => mirrorSectMembership(cols, worldId, f.familyId, null, t)));
+  // Remove this sect from all allies' allySectIds.
+  for (const ally of sect.allySectIds) {
+    await cols.sects.updateOne({ _id: ally }, { $pull: { allySectIds: sid } });
+  }
+  const msgs = await cols.sectMessages.deleteMany({ sectId: sid });
+  await cols.sects.deleteOne({ _id: sid });
+  return { messages: msgs.deletedCount };
 }

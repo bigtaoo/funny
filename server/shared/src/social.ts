@@ -32,6 +32,35 @@ export const MAIL_BODY_MAX = 2000;
  */
 export const REPORT_REASON_MAX = 500;
 
+/**
+ * UGC report taxonomy (App Store Review Guideline 1.2 — "a mechanism to flag objectionable content"). Optional on
+ * both POST /friends/report and POST /friends/block; absent = the pre-1.2 player-level report shape.
+ */
+export const REPORT_CATEGORIES = ['harassment', 'hate', 'sexual', 'spam', 'cheating', 'offensive_name', 'other'] as const;
+export type ReportCategory = (typeof REPORT_CATEGORIES)[number];
+
+/** Where the reported content lives. `dm`/`family`/`mail`/`announcement` are socialsvc-owned; `sect`/`world` live in worldsvc. */
+export const REPORT_CHANNELS = ['dm', 'family', 'sect', 'world', 'mail', 'announcement', 'name'] as const;
+export type ReportChannel = (typeof REPORT_CHANNELS)[number];
+
+/**
+ * Sender name stamped on a chat message when meta can't resolve the sender's profile. Deliberately NOT the
+ * client-supplied name: that string never passed the display-name filter and would let a client post under
+ * any name (App Store Review Guideline 1.2 — found in sect/world chat).
+ */
+export const UNRESOLVED_SENDER_NAME = 'Player';
+
+/** Server-side cap on a report's content snapshot (client-supplied or server-resolved message text). */
+export const REPORT_SNAPSHOT_MAX = 500;
+
+export function isReportCategory(v: unknown): v is ReportCategory {
+  return typeof v === 'string' && (REPORT_CATEGORIES as readonly string[]).includes(v);
+}
+
+export function isReportChannel(v: unknown): v is ReportChannel {
+  return typeof v === 'string' && (REPORT_CHANNELS as readonly string[]).includes(v);
+}
+
 /** Maximum length of a player's free-text appeal reason (CONTENT_MODERATION_DESIGN.md CM10). Admin-review-only text, not run through censorChat (same rationale as REPORT_REASON_MAX). */
 export const APPEAL_REASON_MAX = 500;
 

@@ -7,7 +7,7 @@
 import { randomUUID } from 'crypto';
 import type { IncomingMessage } from 'http';
 import { WebSocketServer, type WebSocket } from 'ws';
-import { verifyToken, createLogger, type JwtConfig } from '@nw/shared';
+import { verifyUnrevokedToken, TokenRevokedError, createLogger, type JwtConfig, type TokenRevocationList } from '@nw/shared';
 import { decodeClient, encodeServer, type ServerMsg } from '../proto';
 import type { PushMsg } from '../matchsvcClient';
 import type { GatewaySubscriber } from '../redis';
@@ -55,6 +55,12 @@ function sourceOf(req: IncomingMessage): string {
 
 export interface ConnRegistryDeps {
   jwt: JwtConfig;
+  /**
+   * C5-b: tokens of purged accounts (shared/src/tokenRevocation.ts). A revoked token is refused at the
+   * handshake with the same 4401 as an expired one — the client already treats that as "log in again".
+   * Absent/null = no check.
+   */
+  tokenRevocations?: TokenRevocationList | null;
   matchsvc: { connected(accountId: string): void; disconnected(accountId: string): void };
   /** Friend online-status broadcast (SOC9) on connect — fire-and-forget, composed in Gateway.ts. */
   onOnline(accountId: string): void;
@@ -233,9 +239,9 @@ export class ConnRegistry {
     const token = u.searchParams.get('token');
     let accountId: string;
     try {
-      accountId = verifyToken(token ?? '', this.deps.jwt);
+      accountId = verifyUnrevokedToken(token ?? '', this.deps.jwt, this.deps.tokenRevocations);
     } catch (e) {
-      this.noteHandshakeReject(source, !!token, (e as Error).message);
+      this.noteHandshakeReject(source, !!token, e instanceof TokenRevokedError ? 'token revoked' : (e as Error).message);
       ws.close(4401, 'unauthenticated');
       return;
     }

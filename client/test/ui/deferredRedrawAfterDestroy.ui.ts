@@ -108,7 +108,7 @@ function buildFriends(): FriendsScene {
     addFriend: async () => {},
     respond: async () => {},
     removeFriend: async () => {},
-    blockUser: async () => {}, reportUser: async () => {}, duelInvite: () => {}, duelRespond: () => {},
+    duelInvite: () => {}, duelRespond: () => {},
     loadConversations: async () => [],
     openChat() {},
     loadMail: async () => ({ mail: [unreadMail('m1')], unread: 1 }),

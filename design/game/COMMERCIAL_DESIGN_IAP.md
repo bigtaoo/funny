@@ -94,7 +94,7 @@ metaserver /paddle/webhook（HMAC 校验后）
 
 - **存储**：commercial 库新增 `paddleEvents` 集合（`_id = transactionId:eventType` 天然幂等，Paddle 的 at-least-once
   重投不会重复记录），字段：`transactionId`/`eventType`/`status?`/`accountId?`/`rawEvent`（原始 JSON）/`ts`。索引
-  `{accountId,ts↓}` + `{transactionId}`。无 TTL（比照 `recharges`/`orders`/`ledger`，财务类记录长期保留）。
+  `{accountId,ts↓}` + `{transactionId}`。无 TTL（比照 `recharges`/`orders`/`ledger`，财务类记录）；**订正 2026-09-29**：财务类记录保留 10 个完整日历年后由 `transactionRetention.ts` 删除（新增 `{ts:1}` 索引），见 `COMPLIANCE_GLOBAL.md §3.5`。
 - **查询链路**：与 promo 码管理同一条内部调用链（`admin → metaserver /admin/paddle/events → commercial /internal/paddle/events`），
   两层鉴权：服务间 `X-Internal-Key` + ops 前端的 session+能力位 `paddle.events.view`（`super`/`ops`/`support` 三个角色都有，
   客服排查场景不需要 `ops`/`super`）。

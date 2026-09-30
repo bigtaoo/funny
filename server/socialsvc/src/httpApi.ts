@@ -16,24 +16,35 @@
 //   httpApi/internalFamilyRoutes.ts   /internal/family/* (by-account, member, batch, by-sect, sect, prosperity/refresh, activity(-and-prosperity), slg-reset)
 //   httpApi/internalMailRoutes.ts     /internal/mail/* (atomic claim/unclaim, system mail single + bulk)
 //   httpApi/internalPushRoutes.ts     /internal/push (generic delegated push) + /internal/presence/{online,offline} (friend presence fan-out)
-//   httpApi/internalReportsRoutes.ts  /internal/reports (UGC review queue list + resolve)
+//   httpApi/internalReportsRoutes.ts  /internal/reports (UGC review queue list + resolve) + /internal/moderation/* (staff content removal)
+//   httpApi/internalAccountRoutes.ts  /internal/accounts/:accountId/purge (account-deletion purge, see accountPurge.ts)
 //   httpApi/familyRoutes.ts        /social/family/* (create/search/browse/join/leave/kick/role/disband/announcement/channel)
 //   httpApi/profileRoutes.ts       /social/profile/:publicId/extra (unified profile-popup rank/family/sect extras)
 //   httpApi/friendRoutes.ts        /social/friends/* + /social/badges (P2)
 //   httpApi/chatRoutes.ts          /social/chat/* direct messages (P2)
 //   httpApi/mailRoutes.ts          /social/mail/* player mail (P2)
 import { createServer, type Server } from 'http';
-import { ErrorCode, extractBearer, verifyToken, loadInternalAuth, SlgError } from '@nw/shared';
+import {
+  ErrorCode,
+  extractBearer,
+  verifyUnrevokedToken,
+  TokenRevokedError,
+  loadInternalAuth,
+  SlgError,
+  type TokenRevocationList,
+} from '@nw/shared';
 import type { FamilyService } from './familyService';
 import type { FriendService } from './friendService';
 import type { MailService } from './mailService';
 import type { SocialMetaClient } from './metaClient';
 import type { SocialGatewayClient } from './gatewayClient';
+import type { AccountPurgeService } from './accountPurge';
 import { send, sendErr, type BaseCtx, type RouteCtx } from './httpApi/helpers';
 import { handleInternalFamilyRoutes } from './httpApi/internalFamilyRoutes';
 import { handleInternalMailRoutes } from './httpApi/internalMailRoutes';
 import { handleInternalPushRoutes } from './httpApi/internalPushRoutes';
 import { handleInternalReportsRoutes } from './httpApi/internalReportsRoutes';
+import { handleInternalAccountRoutes } from './httpApi/internalAccountRoutes';
 import { handleFamilyRoutes } from './httpApi/familyRoutes';
 import { handleProfileRoutes } from './httpApi/profileRoutes';
 import { handleFriendRoutes } from './httpApi/friendRoutes';
@@ -41,12 +52,13 @@ import { handleChatRoutes } from './httpApi/chatRoutes';
 import { handleMailRoutes } from './httpApi/mailRoutes';
 
 export function startHttpApi(
-  opts: { host: string; port: number; jwtSecret: string; internalKey: string },
+  opts: { host: string; port: number; jwtSecret: string; internalKey: string; tokenRevocations?: TokenRevocationList | null },
   familySvc: FamilyService,
   friendSvc: FriendService,
   mailSvc: MailService,
   gateway: SocialGatewayClient,
   meta: SocialMetaClient,
+  accountPurge?: AccountPurgeService,
 ): Server {
   const internalAuth = loadInternalAuth(opts.internalKey);
 
@@ -64,18 +76,30 @@ export function startHttpApi(
       const url = new URL(req.url ?? '', `http://${req.headers.host ?? 'social'}`);
       const path = url.pathname;
       const q = url.searchParams;
-      const base: BaseCtx = { req, res, method, path, url, q, familySvc, friendSvc, mailSvc, gateway, meta };
+      const base: BaseCtx = { req, res, method, path, url, q, familySvc, friendSvc, mailSvc, gateway, meta, accountPurge };
 
       // ── Internal endpoints (/internal/*) ─────────────────────────────
       if (path.startsWith('/internal/')) {
         if (!internalAuth.verify(req.headers).ok) {
           return sendErr(res, ErrorCode.UNAUTHENTICATED, 'internal endpoint requires X-Internal-Key');
         }
-        if (await handleInternalFamilyRoutes(base)) return;
-        if (await handleInternalMailRoutes(base)) return;
-        if (await handleInternalPushRoutes(base)) return;
-        if (await handleInternalReportsRoutes(base)) return;
-        return sendErr(res, ErrorCode.NOT_FOUND, 'internal endpoint not found');
+        // Same error mapping as the public chain below. Before the account-purge route this branch had no
+        // catch at all: a thrown Mongo error became an unhandled rejection and the caller got no response
+        // until its own timeout — the purge job needs a prompt 500 to schedule its retry.
+        try {
+          if (await handleInternalFamilyRoutes(base)) return;
+          if (await handleInternalMailRoutes(base)) return;
+          if (await handleInternalPushRoutes(base)) return;
+          if (await handleInternalReportsRoutes(base)) return;
+          if (await handleInternalAccountRoutes(base)) return;
+          return sendErr(res, ErrorCode.NOT_FOUND, 'internal endpoint not found');
+        } catch (e) {
+          if (e instanceof SlgError) {
+            return sendErr(res, e.code as ErrorCode, e.message);
+          }
+          console.error('[socialsvc] unhandled internal error:', e);
+          return sendErr(res, ErrorCode.INTERNAL, 'internal server error');
+        }
       }
 
       // ── Public endpoints (/social/*) ─────────────────────────────────
@@ -84,8 +108,9 @@ export function startHttpApi(
       if (!token) return sendErr(res, ErrorCode.UNAUTHENTICATED, 'missing Authorization header');
       let accountId: string;
       try {
-        accountId = verifyToken(token, { secret: opts.jwtSecret });
-      } catch {
+        accountId = verifyUnrevokedToken(token, { secret: opts.jwtSecret }, opts.tokenRevocations);
+      } catch (e) {
+        if (e instanceof TokenRevokedError) return sendErr(res, ErrorCode.ACCOUNT_DELETED, 'account deleted');
         return sendErr(res, ErrorCode.UNAUTHENTICATED, 'invalid token');
       }
 

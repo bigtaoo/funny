@@ -89,7 +89,7 @@ export interface RechargeDoc {
   platform: string;
   coinsGranted: number;
   status: 'granted';
-  rawReceipt: string;
+  rawReceipt: string; // '' once the account was purged (never read back — see service/accountPurge.ts)
   ts: number;
   /**
    * usdCents credited to totalRechargeCents for this recharge (GACHA_DESIGN §13). Stored so a later Paddle
@@ -111,6 +111,8 @@ export interface RechargeDoc {
    * expected product, so a monthly-card receipt can't later be replayed as a year-card/starter claim.
    */
   product?: 'monthly_card' | 'year_card' | 'starter_draw' | 'starter_growth';
+  /** Set by the account-deletion purge (service/accountPurge.ts) when this row was minimized; see there. */
+  accountPurgedAt?: number;
 }
 
 /**
@@ -125,8 +127,10 @@ export interface PaddleEventDoc {
   eventType: string;
   status?: string;
   accountId?: string;
-  rawEvent: string; // JSON.stringify(event) — full payload for support diagnosis
+  rawEvent: string; // JSON.stringify(event) — full payload for support diagnosis ('' once the account was purged)
   ts: number;
+  /** Set by the account-deletion purge (service/accountPurge.ts) when this row was minimized; see there. */
+  accountPurgedAt?: number;
 }
 
 /**
@@ -153,6 +157,12 @@ export interface AppleTransactionLinkDoc {
   appTransactionId?: string;
   linkedAt: number;
   updatedAt: number;
+  /**
+   * Set by the account-deletion purge: the linked account no longer exists, so a notification about this
+   * subscription must be recorded as unroutable rather than granted (which would re-create the purged
+   * wallet). Cleared when a live account re-links the subscription (Restore Purchases on the same Apple ID).
+   */
+  accountPurgedAt?: number;
 }
 
 /**
@@ -368,6 +378,13 @@ export async function createCommercialMongo(
     await collections.appleTransactionLinks.createIndex({ accountId: 1 });
     await collections.appleNotifications.createIndex({ accountId: 1, ts: -1 });
     await collections.appleNotifications.createIndex({ originalTransactionId: 1 });
+    // Ten-year retention sweep (transactionRetention.ts): deletes by creation-time range. ledger already has
+    // {ts:1} above; orders' {status,ts} and the {accountId,ts} indexes can't serve a bare ts range.
+    await collections.orders.createIndex({ ts: 1 });
+    await collections.recharges.createIndex({ ts: 1 });
+    await collections.paddleEvents.createIndex({ ts: 1 });
+    await collections.appleNotifications.createIndex({ ts: 1 });
+    await collections.appleTransactionLinks.createIndex({ updatedAt: 1 });
     // appleAccountTokens._id = the token; the unique index the other way round is what makes allocation
     // idempotent -- two concurrent /bootstrap calls for the same account cannot end up with two
     // tokens, which would split one player's purchases across two identities Apple reports.

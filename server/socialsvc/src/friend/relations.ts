@@ -4,10 +4,19 @@
 // goes through SocialMetaClient (no direct connection to the accounts database).
 import { randomUUID } from 'node:crypto';
 import type { ReportDoc } from '../db';
-import type { ProfileView, FriendView, FriendRequestView, SocialBadges } from '@nw/shared';
-import { FRIEND_CAP, friendEdgeId, blockId, REPORT_REASON_MAX } from '@nw/shared';
-import type { FriendServiceDeps, SocialError } from './types';
-import { hasBlock, isFriend } from './shared';
+import type { ProfileView, FriendView, FriendRequestView, SocialBadges, ChatRegion } from '@nw/shared';
+import {
+  FRIEND_CAP,
+  FRIEND_REQUEST_MESSAGE_MAX,
+  REPORT_SNAPSHOT_MAX,
+  friendEdgeId,
+  blockId,
+  conversationId,
+  censorChat,
+  REPORT_REASON_MAX,
+} from '@nw/shared';
+import type { FriendServiceDeps, SocialError, ReportInput, BlockedView } from './types';
+import { hasBlock, isFriend, releaseFriendSlot } from './shared';
 
 export class FriendRelationsService {
   constructor(private readonly deps: FriendServiceDeps) {}
@@ -61,7 +70,7 @@ export class FriendRelationsService {
    *  failed). No-op if the counter row doesn't exist yet or is already at 0 — a future ensureFriendCounter
    *  bootstrap recomputes the correct count from scratch regardless, so there's nothing to under-flow. */
   private async releaseFriendSlot(accountId: string): Promise<void> {
-    await this.deps.cols.friendCounts.updateOne({ _id: accountId, count: { $gt: 0 } }, { $inc: { count: -1 } });
+    await releaseFriendSlot(this.deps.cols, accountId);
   }
 
   /** Fetch only the accountId list (for presence fan-out; no profile data needed). */
@@ -156,8 +165,14 @@ export class FriendRelationsService {
   async requestFriend(
     accountId: string,
     publicId: string,
-    message: string | undefined,
+    messageRaw: string | undefined,
+    region: ChatRegion = 'global',
   ): Promise<{ kind: 'ok'; requestId: string; to: string; fromProfile: ProfileView; message?: string } | { kind: 'error'; error: SocialError }> {
+    // The request message is shown to the recipient (UGC, Guideline 1.2): enforce the long-declared cap and
+    // mask it like every other player-to-player text — mask on hit, never reject (CONTENT_MODERATION_DESIGN CM5).
+    const trimmedMsg = (messageRaw ?? '').trim();
+    if (trimmedMsg.length > FRIEND_REQUEST_MESSAGE_MAX) return { kind: 'error', error: 'BAD_REQUEST' };
+    const message = trimmedMsg ? censorChat(trimmedMsg, region, this.deps.wordlists).text : undefined;
     const target = await this.deps.meta.resolveByPublicId(publicId);
     if (!target) return { kind: 'error', error: 'NOT_FOUND' };
     const to = target.accountId;
@@ -283,12 +298,18 @@ export class FriendRelationsService {
     return true;
   }
 
-  async blockUser(accountId: string, publicId: string): Promise<boolean> {
+  /**
+   * Block a player. Since App Store Review Guideline 1.2 a block also counts as a flag to the developer: the
+   * FIRST block of a pair files a ReportDoc (`source: 'block'`, with the optional category/content the client
+   * passes for the message that triggered it) and fires the ops webhook. Re-blocking an already-blocked
+   * player is a no-op for reporting, so a double tap never files two reports.
+   */
+  async blockUser(accountId: string, publicId: string, input: ReportInput = {}): Promise<boolean> {
     const target = await this.deps.meta.resolveByPublicId(publicId);
     if (!target || target.accountId === accountId) return false;
     const other = target.accountId;
     const now = this.deps.now();
-    await Promise.all([
+    const [, , , blockRes] = await Promise.all([
       this.deps.cols.friendEdges.deleteOne({ _id: friendEdgeId(accountId, other) }),
       this.deps.cols.friendEdges.deleteOne({ _id: friendEdgeId(other, accountId) }),
       this.deps.cols.friendRequests.updateMany(
@@ -300,7 +321,12 @@ export class FriendRelationsService {
         { $setOnInsert: { _id: blockId(accountId, other), owner: accountId, target: other, ts: now } },
         { upsert: true },
       ),
+      // The conversation leaves the blocker's list (getConversations), so its unread count must leave the badge too.
+      this.deps.cols.conversations.updateOne({ _id: conversationId(accountId, other) }, { $set: { [`unread.${accountId}`]: 0 } }),
     ]);
+    if (blockRes.upsertedCount > 0) {
+      await this.fileReport(accountId, target, { ...input, reason: input.reason ?? 'blocked by user' }, 'block');
+    }
     void this.deps.gateway.invalidateFriends(accountId);
     void this.deps.gateway.invalidateFriends(other);
     const meProfile = await this.deps.meta.batchProfiles([accountId]).then((m) => m.get(accountId));
@@ -308,6 +334,24 @@ export class FriendRelationsService {
       void this.deps.gateway.push(other, { kind: 'friend_update', publicId: meProfile.publicId, added: false });
     }
     return true;
+  }
+
+  /**
+   * The caller's block list, newest first (Guideline 1.2: the client hides these senders from every chat feed
+   * the instant a block lands, including the worldsvc-owned sect/world channels this service can't filter).
+   * Rows whose profile no longer resolves are dropped — there is nothing to show or match them against.
+   */
+  async listBlocked(accountId: string): Promise<BlockedView[]> {
+    const docs = await this.deps.cols.blockList.find({ owner: accountId }).sort({ ts: -1 }).limit(500).toArray();
+    if (docs.length === 0) return [];
+    const profiles = await this.deps.meta.batchProfiles(docs.map((d) => d.target));
+    const out: BlockedView[] = [];
+    for (const d of docs) {
+      const p = profiles.get(d.target);
+      if (!p) continue;
+      out.push({ publicId: p.publicId, displayName: p.displayName, ts: d.ts });
+    }
+    return out;
   }
 
   async unblockUser(accountId: string, publicId: string): Promise<boolean> {
@@ -318,24 +362,82 @@ export class FriendRelationsService {
   }
 
   /**
-   * File a UGC report against another player (design-doc-audit-2026-07, COMPLIANCE_GLOBAL.md §7 "测试期最低线"
-   * — pairs with the existing blockUser above). Deliberately minimal: just captures the report for later admin
-   * review (`status` stays 'open'; no auto-block, no notification pipeline — those are follow-ups, not part of
-   * the pre-launch minimum bar). Reporting yourself is rejected the same way blocking yourself would be.
+   * File a UGC report against another player (design-doc-audit-2026-07, COMPLIANCE_GLOBAL.md §7; category/content
+   * + ops alert added for App Store Review Guideline 1.2). Captures the report for admin review (`status` stays
+   * 'open'; no auto-block) and pings the ops webhook. Reporting yourself is rejected the same way blocking
+   * yourself would be. A bare string is the pre-1.2 `reason`-only call shape.
    */
-  async reportUser(accountId: string, publicId: string, reason: string): Promise<boolean> {
+  async reportUser(accountId: string, publicId: string, input: ReportInput | string = {}): Promise<boolean> {
     const target = await this.deps.meta.resolveByPublicId(publicId);
     if (!target || target.accountId === accountId) return false;
-    const trimmed = reason.trim().slice(0, REPORT_REASON_MAX);
-    await this.deps.cols.reports.insertOne({
+    await this.fileReport(accountId, target, typeof input === 'string' ? { reason: input } : input, 'report');
+    return true;
+  }
+
+  /** Insert one ReportDoc (shared by reportUser and the first blockUser of a pair) and fire the ops alert. */
+  private async fileReport(
+    reporterId: string,
+    target: { accountId: string; profile: ProfileView },
+    input: ReportInput,
+    source: 'report' | 'block',
+  ): Promise<ReportDoc> {
+    const contentRef = input.content ? await this.resolveContentRef(reporterId, target, input.content) : undefined;
+    const doc: ReportDoc = {
       _id: randomUUID(),
-      reporterId: accountId,
+      reporterId,
       targetId: target.accountId,
-      reason: trimmed,
+      reason: (input.reason ?? '').trim().slice(0, REPORT_REASON_MAX),
       ts: this.deps.now(),
       status: 'open',
-    });
-    return true;
+      source,
+      ...(input.category ? { category: input.category } : {}),
+      ...(contentRef ? { contentRef } : {}),
+    };
+    await this.deps.cols.reports.insertOne(doc);
+    this.deps.alerts?.notify({ report: doc, targetPublicId: target.profile.publicId, targetName: target.profile.displayName });
+    return doc;
+  }
+
+  /**
+   * Build the report's content pointer. Where socialsvc owns the text (DM, family chat, family announcement,
+   * display name) the snapshot is read from its own store rather than trusted from the client — but only when
+   * the stored message really is the reported player's (and, for a DM, in the reporter's own conversation with
+   * them), so a report can't pull arbitrary messages into the admin queue under someone else's name. Any miss
+   * or lookup error falls back to the client snapshot (best effort — a report must never fail on this).
+   */
+  private async resolveContentRef(
+    reporterId: string,
+    target: { accountId: string; profile: ProfileView },
+    content: NonNullable<ReportInput['content']>,
+  ): Promise<NonNullable<ReportDoc['contentRef']>> {
+    const cap = (t: string | undefined) => (t ?? '').trim().slice(0, REPORT_SNAPSHOT_MAX);
+    const messageId = content.messageId ? content.messageId.slice(0, 200) : undefined;
+    let serverText: string | undefined;
+    try {
+      const cols = this.deps.cols;
+      if (content.channel === 'dm' && messageId) {
+        const m = await cols.chatMessages.findOne({ _id: messageId });
+        if (m && m.from === target.accountId && m.convId === conversationId(reporterId, target.accountId)) serverText = m.body;
+      } else if (content.channel === 'family' && messageId) {
+        const m = await cols.familyMessages.findOne({ _id: messageId });
+        if (m && m.senderId === target.accountId) serverText = m.body;
+      } else if (content.channel === 'announcement') {
+        const mem = await cols.familyMembers.findOne({ _id: target.accountId });
+        const fam = mem ? await cols.families.findOne({ _id: mem.familyId }) : null;
+        if (fam?.announcement) serverText = fam.announcement;
+      } else if (content.channel === 'name') {
+        serverText = target.profile.displayName;
+      }
+    } catch {
+      serverText = undefined;
+    }
+    const snapshot = serverText !== undefined ? cap(serverText) : cap(content.text);
+    return {
+      kind: 'content',
+      channel: content.channel,
+      ...(messageId ? { messageId } : {}),
+      ...(snapshot ? { snapshot, snapshotSource: serverText !== undefined ? ('server' as const) : ('client' as const) } : {}),
+    };
   }
 
   /** Reports queue for ops/admin review (CONTENT_MODERATION_DESIGN.md CM11), oldest first. Defaults to 'open'. */

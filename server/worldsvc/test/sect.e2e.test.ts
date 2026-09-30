@@ -15,6 +15,7 @@ import {
   EMBLEM_KEYS,
   EMBLEM_COLORS,
   cityDocId,
+  UNRESOLVED_SENDER_NAME,
   type FamilyRole,
 } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
@@ -505,11 +506,55 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     const msgs = await sectWithMeta.getChannel(W, 'alice');
     expect(msgs[0]!.senderName).toBe('RealNickname');
 
-    // Meta not configured → falls back to the client-supplied senderName.
+    // Meta not configured → a neutral placeholder, never the client-supplied name (Guideline 1.2: that
+    // string skips the display-name filter and would let a client post under any name).
     broadcasts.length = 0;
     const sectNoMeta = new SectService({ cols: mongo!.collections, commercial, gateway: fakeGateway, socialsvc, now: () => Date.now() });
     const fallback = await sectNoMeta.sendMessage(W, 'alice', 'ClientFallback', 'hi again');
-    expect(fallback.senderName).toBe('ClientFallback');
+    expect(fallback.senderName).toBe(UNRESOLVED_SENDER_NAME);
+  });
+
+  // Guideline 1.2: the client hides blocked senders / offers Report+Block per row by senderPublicId.
+  it('channel: senderPublicId stored at write time and backfilled from meta for older docs', async () => {
+    await makeFamily('alice', 'A', 'AA');
+    await sect.createSect(W, 'alice', 'Sky', 'SKY');
+    const pidMeta: WorldMetaClient = {
+      available: true,
+      async getProfile(id) { return { publicId: `pid-${id}`, displayName: id }; },
+      async grantMaterial() { /* no-op */ },
+      async getSaveFields() { return null; },
+      async grantTitle() { /* no-op */ },
+      async batchProfiles(ids) { return new Map(ids.map((id) => [id, { publicId: `pid-${id}`, displayName: id }])); },
+    };
+    const s2 = new SectService({ cols: mongo!.collections, commercial, gateway: fakeGateway, socialsvc, meta: pidMeta, now: () => Date.now() });
+    const sent = await s2.sendMessage(W, 'alice', 'x', 'hi');
+    expect(sent.senderPublicId).toBe('pid-alice');
+    expect((await mongo!.collections.sectMessages.findOne({ _id: sent.id }))!.senderPublicId).toBe('pid-alice');
+    const sectIdOf = (await mongo!.collections.sectMessages.findOne({ _id: sent.id }))!.sectId;
+    await mongo!.collections.sectMessages.insertOne({ _id: 'sm:legacy', worldId: W, sectId: sectIdOf, senderId: 'bob', senderName: 'Bob', body: 'old', ts: new Date(1) });
+    const hist = await s2.getChannel(W, 'alice');
+    expect(hist.map((m) => [m.body, m.senderPublicId])).toEqual([['hi', 'pid-alice'], ['old', 'pid-bob']]);
+    // No meta → '' rather than a missing field.
+    const noMeta = new SectService({ cols: mongo!.collections, commercial, gateway: fakeGateway, socialsvc, now: () => Date.now() });
+    expect((await noMeta.getChannel(W, 'alice')).find((m) => m.id === 'sm:legacy')!.senderPublicId).toBe('');
+  });
+
+  // Guideline 1.2: sect chat used to skip the mute check family/world chat already enforced.
+  it('channel: a muted sender is rejected with ACCOUNT_MUTED and nothing is persisted', async () => {
+    await makeFamily('alice', 'A', 'AA');
+    await sect.createSect(W, 'alice', 'Sky', 'SKY');
+    const now = 1_000_000;
+    const mutedMeta: WorldMetaClient = {
+      available: true,
+      async getProfile() { return { publicId: 'alice#1234', displayName: 'Alice', mutedUntil: now + 60_000 }; },
+      async grantMaterial() { /* no-op */ },
+      async getSaveFields() { return null; },
+      async grantTitle() { /* no-op */ },
+      batchProfiles: () => { throw new Error('not stubbed'); },
+    };
+    const sectMuted = new SectService({ cols: mongo!.collections, commercial, gateway: fakeGateway, socialsvc, meta: mutedMeta, now: () => now });
+    await expect(sectMuted.sendMessage(W, 'alice', 'Alice', 'still talking')).rejects.toMatchObject({ code: 'ACCOUNT_MUTED' });
+    expect(await mongo!.collections.sectMessages.countDocuments({ senderId: 'alice', body: 'still talking' })).toBe(0);
   });
 
   // Sect chat is already scoped to one sect, so title/familyName/sectName are cheap to resolve

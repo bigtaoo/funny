@@ -31,6 +31,7 @@
 //   auctionService/create.ts      AuctionServiceCreate   createAuction (+ cap-reject rollback) — depends on pricing AND journal
 //   auctionService/trade.ts       AuctionServiceTrade    buyAuction/placeBid/settleAuctionWin/cancelAuction/processExpiredAuctions — depends on pricing AND journal
 //   auctionService/audit.ts       AuctionServiceAudit    D/G7 anomaly audit scan (scanAnomalies) — depends on nothing
+//   auctionService/accountPurge.ts AuctionServiceAccountPurge account-deletion purge (purgeAccount) — depends on nothing
 //
 // 2026-08-24 (U13 close-out): the four journal files above are new, and `delivery.ts` moved from "called
 // by trade.ts" to "called only by journalSteps.ts". See journal.ts for why a journal rather than a Mongo
@@ -49,6 +50,7 @@ import { AuctionServiceJournalAudit } from './auctionService/journalAudit';
 import { AuctionServiceCreate } from './auctionService/create';
 import { AuctionServiceTrade } from './auctionService/trade';
 import { AuctionServiceAudit } from './auctionService/audit';
+import { AuctionServiceAccountPurge } from './auctionService/accountPurge';
 
 /** The full service, composed from the six concern layers above. */
 export class AuctionService {
@@ -60,6 +62,7 @@ export class AuctionService {
   private readonly create: AuctionServiceCreate;
   private readonly trade: AuctionServiceTrade;
   private readonly audit: AuctionServiceAudit;
+  private readonly accountPurge: AuctionServiceAccountPurge;
 
   constructor(deps: AuctionServiceDeps) {
     this.pricing = new AuctionServicePricing(deps);
@@ -70,6 +73,7 @@ export class AuctionService {
     this.create = new AuctionServiceCreate(deps, this.pricing, this.journal);
     this.trade = new AuctionServiceTrade(deps, this.pricing, this.journal);
     this.audit = new AuctionServiceAudit(deps);
+    this.accountPurge = new AuctionServiceAccountPurge(deps);
   }
 
   // ── pricing ──
@@ -99,4 +103,8 @@ export class AuctionService {
 
   // ── audit ──
   scanAnomalies(...args: Parameters<AuctionServiceAudit['scanAnomalies']>) { return this.audit.scanAnomalies(...args); }
+
+  // ── account deletion ──
+  /** Purge a deleted account's auction data once no trade involving it is still in flight (metaserver purge job). */
+  purgeAccount(...args: Parameters<AuctionServiceAccountPurge['purgeAccount']>) { return this.accountPurge.purgeAccount(...args); }
 }

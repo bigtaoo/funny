@@ -1,7 +1,7 @@
 # Nivara Datenschutzerklärung
 
 > **Datum des Inkrafttretens**: {{EFFECTIVE_DATE}} (vor Veröffentlichung rechtlich zu bestätigen)
-> **Zuletzt aktualisiert**: 23.06.2026 (Entwurf)
+> **Zuletzt aktualisiert**: 29.09.2026 (Entwurf)
 > **Gilt für**: Nivara (Entwicklungs-Codename *Notebook Wars*; das „Spiel"), einschließlich Webversion, iOS-/Android-Clients, WeChat-Mini-Game sowie Aggregator-Plattformen wie CrazyGames.
 >
 > ⚠️ **Dies ist ein Produkt-/Engineering-Entwurf, kein endgültiger Rechtstext.** Er ist vor der Veröffentlichung von Rechtsbeiständen zu prüfen und freizugeben sowie mit jedem Vertriebskanal (App Store / Google Play / WeChat / CrazyGames) und dem anwendbaren regionalen Recht (DSGVO / UK GDPR / PIPL / CCPA usw.) abzugleichen. Platzhalter (URLs, juristische Einheit, Kontakt-E-Mail, Datum, Liste der Drittanbieter-SDKs) sind vor dem Start durch echte Werte zu ersetzen.
@@ -93,10 +93,12 @@ Wir führen **kein app-übergreifendes Werbe-Tracking** durch. Belohnte Videos i
 
 ## 7. Aufbewahrung & Löschung
 
-- **Konto & Spielstände**: gespeichert, solange das Konto besteht; nach Kontolöschung gilt eine **7-tägige Karenzfrist** (Wiederherstellung durch erneutes Anmelden), danach asynchrone Löschung oder Anonymisierung.
-- **Transaktionsdaten**: ein minimaler Satz wird gesetzlich/plattformbedingt aufbewahrt (Steuern, Erstattungsstreitigkeiten) und kann auch nach Kontolöschung bestehen bleiben.
-- **Analyse-Ereignisse**: für einen begrenzten Betriebszeitraum gespeichert; bei Kontolöschung per pseudonymer user_id gebündelt gelöscht.
-- **Chat/Meldungen**: für einen begrenzten Zeitraum zu Moderations- und Sicherheitszwecken gespeichert.
+- **Konto & Spielstände**: gespeichert, solange das Konto besteht; nach Kontolöschung gilt eine **7-tägige Karenzfrist** (Wiederherstellung durch erneutes Anmelden). Danach löscht ein automatischer Vorgang Ihre Daten in allen unseren Diensten, in der Regel innerhalb weniger Stunden: Zugangsdaten, Profil, Spielstände, Inventar, Wallet, Freunde, private Nachrichten, Post und Ihre Präsenz in der Spielwelt. Ihr Kontodatensatz wird auf eine interne Kennung ohne personenbezogene Daten reduziert. Läuft noch ein Auktionsgeschäft (auf Ihr Angebot wurde geboten oder Sie sind Höchstbietender), wartet die Löschung, bis es abgewickelt ist, damit der andere Spieler keinen Schaden erleidet.
+- **Gemeinsame Bereiche**: Ihre Nachrichten in Familien-/Sekten-/Weltkanälen werden gelöscht. Hatten Sie eine Familie oder Sekte geleitet, geht die Leitung automatisch an ein anderes Mitglied über (oder sie wird aufgelöst, wenn niemand übrig ist). Spielverläufe und Kampfberichte anderer Spieler bleiben erhalten, Ihr Name wird daraus entfernt.
+- **Transaktionsdaten**: ein minimaler Satz wird gesetzlich/plattformbedingt (Steuern, Erstattungsstreitigkeiten) **10 volle Kalenderjahre** aufbewahrt (ab Ende des Jahres der Transaktion) und danach gelöscht. Er kann für diesen Zeitraum auch nach Kontolöschung bestehen bleiben; er ist dann nicht mehr mit Ihrer Identität verknüpft, Rohbelege und Zahlungsanbieter-Rohdaten werden entfernt.
+- **Analyse-Ereignisse**: für einen begrenzten Betriebszeitraum gespeichert; bei Kontolöschung gebündelt gelöscht, sowohl per pseudonymer user_id als auch per Gerätekennung für Ereignisse vor der Anmeldung.
+- **Chat/Meldungen**: für einen begrenzten Zeitraum zu Moderations- und Sicherheitszwecken gespeichert. Bei Kontolöschung werden Meldungen gegen Sie entfernt; Ihre Meldungen über andere Spieler bleiben ohne Ihre Identität zur Prüfung erhalten.
+- **Sicherungen**: gelöschte Daten verschwinden aus unseren rollierenden Datenbanksicherungen, sobald diese ablaufen (standardmäßig 7 Tage).
 
 ### In-App-Kontolöschung
 Wie von Apple App Store 5.1.1(v) und vergleichbaren Regeln gefordert, bietet das Spiel einen **In-App-Eintrag zur Kontolöschung** in den **Einstellungen** (ohne E-Mail). Ablauf: Einstellungen → Konto löschen → zweite Bestätigung → serverseitige Soft-Löschung (`deletedAt`) → lokale Zugangsdaten & Spielstände gelöscht → innerhalb der 7-tägigen Karenzfrist durch Anmelden wiederherstellbar, danach gelöscht.

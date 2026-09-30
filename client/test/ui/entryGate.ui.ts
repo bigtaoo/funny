@@ -73,6 +73,8 @@ const MODES: Array<[string, EntryGateMode]> = [
   ['ask + accept-only', { age: 'ask', consent: 'accept-only' }],
   ['ask only (age-only edge case)', { age: 'ask', consent: null }],
   ['ok + choice (consent-only edge case)', { age: 'ok', consent: 'choice' }],
+  ['ok + terms (Terms of Use re-accept, App Review 1.2)', { age: 'ok', consent: 'terms' }],
+  ['ask + terms', { age: 'ask', consent: 'terms' }],
 ];
 
 describe('EntryGateDialog — fits every mode, in all three locales, both orientations', () => {
@@ -127,6 +129,33 @@ describe('EntryGateDialog — ask + choice (combined tap answers both)', () => {
     // Confirming an underage year never carries a consent answer — the core blocks before
     // consent would ever be asked (createAppCore.gateConsent).
     expect(answers).toEqual([{ birthYear: NOW - MIN_AGE + 1 }]);
+  });
+});
+
+describe('EntryGateDialog — Terms of Use (EULA) re-accept (App Review 1.2)', () => {
+  it('shows the updated-terms copy, the zero-tolerance sentence and the terms link, with one Accept button', () => {
+    const { dlg, answers } = build({ age: 'ok', consent: 'terms' });
+    const all = texts(dlg.container).map((n) => n.text);
+    expect(all).toContain(t('consent.termsUpdateTitle'));
+    expect(all).toContain(t('consent.termsUpdateBody'));
+    expect(t('consent.termsUpdateBody')).toMatch(/zero tolerance/);
+    expect(all).toContain('· ' + t('consent.terms'));
+    expect(all).not.toContain(t('consent.essentialOnly'));
+    tap(dlg, t('consent.accept'));
+    expect(answers).toEqual([{ granted: true }]);
+  });
+
+  it('the first-launch copy names the Terms of Use (EULA) and the zero-tolerance policy in every locale', () => {
+    for (const locale of ['zh', 'en', 'de'] as Locale[]) {
+      setLocale(locale);
+      try {
+        for (const key of ['consent.body', 'consent.bodyChoice', 'entryGate.body', 'entryGate.bodyChoice'] as const) {
+          expect(t(key), `${locale} ${key}`).toContain('EULA');
+        }
+      } finally {
+        setLocale('en');
+      }
+    }
   });
 });
 

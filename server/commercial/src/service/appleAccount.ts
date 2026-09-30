@@ -60,7 +60,9 @@ export async function linkAppleSubscription(
   try {
     await core.cols.appleTransactionLinks.updateOne(
       { _id: originalTransactionId },
-      { $set: { accountId, product, updatedAt: now }, $setOnInsert: { linkedAt: now } },
+      // $unset accountPurgedAt: a live account re-linking a subscription whose previous owner was deleted
+      // (Restore Purchases on the same Apple ID) takes the routing over — see AppleTransactionLinkDoc.
+      { $set: { accountId, product, updatedAt: now }, $setOnInsert: { linkedAt: now }, $unset: { accountPurgedAt: '' } },
       { upsert: true },
     );
   } catch {

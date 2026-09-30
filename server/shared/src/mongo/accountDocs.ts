@@ -70,14 +70,58 @@ export interface AccountDoc {
      */
     moderationRev?: number;
   };
-  /** C5-b soft-delete timestamp; once set, auth returns ACCOUNT_DELETED and data is asynchronously purged after 7 days. */
+  /**
+   * C5-b soft-delete timestamp; once set, auth returns ACCOUNT_DELETED. Once the 7-day grace period has
+   * elapsed, metaserver's account purge job (accountPurge.ts) erases the account's data in every service
+   * and reduces this row to a tombstone — deletedAt itself is kept on the tombstone so a still-valid JWT
+   * for the account keeps getting 410.
+   */
   deletedAt?: number;
   /**
    * C5-b cancellation token, minted alongside deletedAt and required by POST /account/cancel-deletion
    * to undo a soft-delete within the 7-day grace period. Cleared (along with deletedAt) on successful
-   * cancellation, or once the grace period elapses (the eventual purge job clears the whole account).
+   * cancellation, or dropped with everything else when the purge job tombstones the row.
    */
   deletionConfirmToken?: string;
+  /**
+   * Progress of the post-grace purge (ACCOUNT_DESIGN §C5-b purge). `steps` records the epoch ms at which
+   * each service confirmed its part, so a crashed or partially failed run resumes at the first unconfirmed
+   * step instead of starting over; `lockedUntil` doubles as the claim lease (one worker per account) and as
+   * the retry back-off after a failed or still-pending step. Gone once the row is tombstoned.
+   */
+  purge?: AccountPurgeState;
+  /** Set when the purge finished: the row is now a tombstone `{ _id, createdAt, deletedAt, purgedAt }`. */
+  purgedAt?: number;
+}
+
+/**
+ * Token revocation row (shared/src/tokenRevocation.ts). _id = accountId: one row per account, the newest
+ * revocation wins. Written by the C5-b purge when it claims an account; every JWT-verifying process polls
+ * metaserver's /internal/auth/token-revocations and rejects tokens with iat <= revokedAt. The row TTLs out
+ * at `expireAt` (revokedAt + TOKEN_REVOCATION_RETENTION_MS), by which time every such token has expired.
+ */
+export interface TokenRevocationDoc {
+  _id: string;
+  revokedAt: number;
+  reason: 'account_purged';
+  expireAt: Date;
+}
+
+/** Service steps of the account purge, in execution order (see metaserver accountPurge.ts for why this order). */
+export const ACCOUNT_PURGE_STEPS = ['social', 'world', 'auction', 'commercial', 'analytics', 'meta'] as const;
+export type AccountPurgeStep = (typeof ACCOUNT_PURGE_STEPS)[number];
+
+export interface AccountPurgeState {
+  /** Epoch ms of the first claim. */
+  startedAt: number;
+  /** Claims so far (first run included). */
+  attempts: number;
+  /** Claim lease / retry back-off: no worker picks the account up again before this. */
+  lockedUntil: number;
+  /** Per-step completion time; absent = not confirmed yet. */
+  steps?: Partial<Record<AccountPurgeStep, number>>;
+  /** Last failure or pending reason, for ops (cleared on the next successful step). */
+  lastError?: string;
 }
 
 /**
@@ -103,6 +147,7 @@ export interface StaminaDoc {
 export async function ensureAccountIndexes(
   saves: Collection<SaveDoc>,
   accounts: Collection<AccountDoc>,
+  tokenRevocations: Collection<TokenRevocationDoc>,
 ): Promise<void> {
   await accounts.createIndex({ openid: 1 }, { sparse: true, unique: true });
   await accounts.createIndex({ deviceId: 1 }, { sparse: true, unique: true });
@@ -119,6 +164,15 @@ export async function ensureAccountIndexes(
     { 'flags.reputationDecayAt': 1 },
     { partialFilterExpression: { 'flags.reputationDecayAt': { $exists: true } } },
   );
+  // C5-b account purge: the hourly scan looks for soft-deleted rows past the grace period. Partial so only
+  // the handful of pending-deletion rows (plus tombstones) are in the index, not every live account.
+  await accounts.createIndex(
+    { deletedAt: 1 },
+    { partialFilterExpression: { deletedAt: { $exists: true } } },
+  );
+  // token revocation list: incremental poll by revokedAt (every verifying process, once a minute) + TTL.
+  await tokenRevocations.createIndex({ revokedAt: 1 });
+  await tokenRevocations.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
   // ladder leaderboard: server-wide Top100 + my rank count (S11-SE-5).
   // filter by pvp.seasonNo for the current season, then take the top 100 sorted by elo descending.
   await saves.createIndex({ 'save.pvp.seasonNo': 1, 'save.pvp.elo': -1 }, { name: 'pvp_season_elo' });

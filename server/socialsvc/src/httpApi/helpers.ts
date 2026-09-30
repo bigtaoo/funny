@@ -8,6 +8,7 @@ import type { FriendService } from '../friendService';
 import type { MailService } from '../mailService';
 import type { SocialMetaClient } from '../metaClient';
 import type { SocialGatewayClient } from '../gatewayClient';
+import type { AccountPurgeService } from '../accountPurge';
 
 export function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
@@ -81,6 +82,9 @@ export interface RouteDeps {
   mailSvc: MailService;
   gateway: SocialGatewayClient;
   meta: SocialMetaClient;
+  /** Account-deletion purge (/internal/accounts/:id/purge). Optional so callers that never exercise
+   *  that route (most tests) needn't build one; the route answers INTERNAL when it's absent. */
+  accountPurge?: AccountPurgeService;
 }
 
 /** Context shared by every /internal/* handler (X-Internal-Key auth, no player JWT/accountId). */

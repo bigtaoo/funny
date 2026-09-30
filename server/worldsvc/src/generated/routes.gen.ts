@@ -8561,6 +8561,10 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "senderName": {
                   "type": "string"
                 },
+                "senderPublicId": {
+                  "type": "string",
+                  "description": "Always sent by the server (optional in the schema only so client-built optimistic rows type-check). Sender's publicId ('' when unresolvable); the client hides blocked senders and offers Report/Block by it."
+                },
                 "title": {
                   "type": "string",
                   "description": "Sender's equipped title (称号), if any."
@@ -8626,6 +8630,10 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                   },
                   "senderName": {
                     "type": "string"
+                  },
+                  "senderPublicId": {
+                    "type": "string",
+                    "description": "Always sent by the server (optional in the schema only so client-built optimistic rows type-check). Sender's publicId ('' when unresolvable); the client hides blocked senders and offers Report/Block by it."
                   },
                   "title": {
                     "type": "string",

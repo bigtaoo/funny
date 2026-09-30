@@ -10,6 +10,7 @@ import type { MarchUpdate, TileUpdate, UnderAttack, SiegeResult, NationMsg } fro
 import type { WorldMapContext } from '../WorldMapContext';
 import { loadMapViewport, refreshMarches, refreshMe } from './loaders';
 import { formatDuration } from '../logic/formatDuration';
+import { isBlocked } from '../../../ui/moderation';
 
 /**
  * How long a `marching` push waits for the HTTP response of the order that caused it. worldsvc fires
@@ -51,6 +52,7 @@ function describesCachedMarch(ctx: WorldMapContext, m: MarchUpdate): boolean {
  */
 export function applyNationMsg(ctx: WorldMapContext, n: NationMsg): void {
   if (ctx.destroyed) return;
+  if (isBlocked(n.fromPublicId)) return; // a blocked sender's message never reaches the bar (App Review 1.2)
   ctx.worldChatLatest = { id: `push:${n.ts}:${n.fromPublicId}`, senderId: n.fromPublicId, senderPublicId: n.fromPublicId, senderName: n.fromName, body: n.text, ts: n.ts };
   if (n.ts > ctx.getWorldChatSeenTs()) ctx.worldChatUnread += 1;
   if (!ctx.destroyed) ctx.panels.renderHud();

@@ -745,11 +745,7 @@ export const zh = {
   'friends.tab.world': '世界',
   'friends.tab.mail': '邮件',
   'friends.message': '发消息',
-  'friends.report': '举报',
-  'friends.reportedDone': '已举报',
-  'friends.block': '拉黑',
-  'friends.blockedDone': '已拉黑',
-  // Duel invite ("切磋")
+  'friends.report': '举报',  'friends.block': '拉黑',  // Duel invite ("切磋")
   'friends.duel': '切磋',
   'friends.duelSent': '已发送',
   'friends.duelInviteBanner': '{name} 邀请你切磋（{secs}s）',
@@ -1573,12 +1569,12 @@ export const zh = {
   'event.rewards.claimFailed': '兑换失败，请重试',
 
   // ── GDPR first-time consent (C5-c, L1-1) ─────────────────────────────────
-  'consent.title': '隐私与数据使用',
-  'consent.body': '我们重视你的隐私。继续游戏前，请阅读并同意我们的隐私政策与用户协议。仅在你同意后，我们才会收集匿名游玩数据用于改进游戏；你可随时在设置中删除账号。',
+  'consent.title': '用户协议与隐私',
+  'consent.body': '继续游戏前，请阅读并同意我们的用户协议（EULA）与隐私政策。我们对不良内容和辱骂他人的玩家零容忍——你可以在游戏内随时举报或拉黑任何玩家。仅在你同意后，我们才会收集匿名游玩数据用于改进游戏；你可随时在设置中删除账号。',
   'consent.privacyPolicy': '隐私政策',
-  'consent.terms': '用户协议',
+  'consent.terms': '用户协议（EULA）',
   'consent.accept': '同意并继续',
-  'consent.bodyChoice': '我们重视你的隐私。继续游戏前，请阅读并同意我们的隐私政策与用户协议。你可以另外选择是否让我们收集匿名游玩数据来改进游戏——选「仅必要」同样可以正常游戏，随时可在设置里改。',
+  'consent.bodyChoice': '继续游戏前，请阅读并同意我们的用户协议（EULA）与隐私政策。我们对不良内容和辱骂他人的玩家零容忍——你可以在游戏内随时举报或拉黑任何玩家。你可以另外选择是否让我们收集匿名游玩数据来改进游戏——选「仅必要」同样可以正常游戏，随时可在设置里改。',
   'consent.acceptAll': '全部接受',
   'consent.essentialOnly': '仅必要',
   'ageGate.title': '出生年份',
@@ -1594,8 +1590,8 @@ export const zh = {
   // Merged age-gate + consent screen (RETENTION_LAUNCH_PLAN.md §3.1) — only used when both are
   // still unanswered; the standalone ageGate.*/consent.* copy above covers every other case.
   'entryGate.title': '开始之前',
-  'entryGate.body': '请选择你的出生年份，并接受我们的隐私政策与用户协议以继续——我们会用匿名游玩数据改进游戏。',
-  'entryGate.bodyChoice': '请选择你的出生年份，并阅读同意我们的隐私政策与用户协议。你可以另外选择是否让我们收集匿名游玩数据——选「仅必要」同样可以正常游戏，随时可在设置里改。',
+  'entryGate.body': '请选择你的出生年份，并同意我们的用户协议（EULA）与隐私政策以继续。我们对不良内容和辱骂他人的玩家零容忍，并会用匿名游玩数据改进游戏。',
+  'entryGate.bodyChoice': '请选择你的出生年份，并阅读同意我们的用户协议（EULA）与隐私政策。我们对不良内容和辱骂他人的玩家零容忍。你可以另外选择是否让我们收集匿名游玩数据——选「仅必要」同样可以正常游戏，随时可在设置里改。',
 
   // ── 登录断线重连提示（重新登录后恢复未完成的对局） ───────────────────────────
   'reconnect.title': '未完成的对局',
@@ -1767,6 +1763,40 @@ export const zh = {
   'world.team.returning': '返回中',
   'world.team.moving': '移动中',
   'world.team.flatArmy': '散兵部队',
+  // ── Player safety: report / block / blocked list (App Review 1.2, ui/moderation.ts) ──
+  'moderation.reportTitle': '举报 {name}',
+  'moderation.reportBody': '请选择举报原因。我们的团队会在 24 小时内处理每一条举报。',
+  'moderation.cat.harassment': '骚扰 / 欺凌',
+  'moderation.cat.hate': '仇恨言论',
+  'moderation.cat.sexual': '色情内容',
+  'moderation.cat.spam': '垃圾信息 / 诈骗',
+  'moderation.cat.cheating': '作弊',
+  'moderation.cat.offensiveName': '不当昵称',
+  'moderation.cat.other': '其他',
+  'moderation.sending': '发送中…',
+  'moderation.reportSent': '举报已提交，我们的团队会在 24 小时内处理。',
+  'moderation.reportFailed': '举报发送失败，请重试。',
+  'moderation.cancel': '取消',
+  'moderation.blockTitle': '拉黑 {name}？',
+  'moderation.blockBody': '拉黑后你将看不到对方的消息，对方也无法再给你发消息。我们的团队会收到通知。',
+  'moderation.blockConfirm': '拉黑',
+  'moderation.blockDone': '已拉黑 {name}，我们的团队已收到通知。',
+  'moderation.blockFailed': '拉黑失败，请重试。',
+  'moderation.blockedTitle': '黑名单',
+  'moderation.blockedShort': '黑名单',
+  'moderation.blockedEmpty': '你还没有拉黑任何人。',
+  'moderation.unblock': '解除拉黑',
+  'moderation.unblockDone': '已解除对 {name} 的拉黑。',
+  'moderation.unblockFailed': '解除拉黑失败，请重试。',
+  'moderation.loading': '加载中…',
+  'moderation.loadFailed': '黑名单加载失败。',
+  'moderation.close': '关闭',
+  'moderation.safetyMenu': '举报/拉黑',
+  'moderation.dmBlockedNotice': '你已拉黑该玩家，对方的消息已隐藏。点此管理黑名单。',
+  'moderation.reportAnnouncement': '举报',
+  'consent.termsUpdateTitle': '用户协议已更新',
+  'consent.termsUpdateBody': '我们更新了用户协议（EULA）。继续游戏前，请阅读并同意。我们对不良内容和辱骂他人的玩家零容忍——你可以在游戏内随时举报或拉黑任何玩家。',
+  'auth.termsNotice': '登录或注册即表示你同意我们的用户协议（EULA）。我们对不良内容和辱骂他人的玩家零容忍。',
 };
 
 export type TranslationKey = keyof typeof zh;

@@ -372,6 +372,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/social/friends/blocked": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getBlockedFriends"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/social/friends/block": {
         parameters: {
             query?: never;
@@ -552,6 +568,26 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * @description UGC report category (App Store Review Guideline 1.2)
+         * @enum {string}
+         */
+        ReportCategory: "harassment" | "hate" | "sexual" | "spam" | "cheating" | "offensive_name" | "other";
+        /** @description The piece of content being flagged. `text` is the client-side snapshot (capped server-side to 500 chars); for socialsvc-owned channels (dm, family, announcement, name) the server stores its own copy of the text instead when `messageId` resolves to a message by the reported player. */
+        ReportContent: {
+            /** @enum {string} */
+            channel: "dm" | "family" | "sect" | "world" | "mail" | "announcement" | "name";
+            /** @description Message id as returned by the channel history/push (dm/family/sect/world) */
+            messageId?: string;
+            /** @description Client snapshot of the content */
+            text?: string;
+        };
+        BlockedUser: {
+            publicId: string;
+            displayName: string;
+            /** @description Epoch ms the block was placed */
+            ts: number;
+        };
         Error: {
             code: string;
             message: string;
@@ -608,6 +644,8 @@ export interface components {
             id: string;
             senderId: string;
             senderName: string;
+            /** @description Always sent by the server (optional in the schema only so client-built optimistic rows type-check). Sender's publicId ('' when unresolvable); the client hides blocked senders and offers Report/Block by it */
+            senderPublicId?: string;
             /** @description Sender's equipped title (称号), if any */
             title?: string;
             /** @description Sender's family name — the family itself, since this channel is family-scoped */
@@ -1431,6 +1469,32 @@ export interface operations {
             500: components["responses"]["ErrorResp"];
         };
     };
+    getBlockedFriends: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The caller's block list, newest first (Guideline 1.2 — client hides these senders in every chat feed) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"] & {
+                        data?: {
+                            blocked: components["schemas"]["BlockedUser"][];
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
+        };
+    };
     blockFriend: {
         parameters: {
             query?: never;
@@ -1442,11 +1506,15 @@ export interface operations {
             content: {
                 "application/json": {
                     publicId: string;
+                    /** @description Free-text reason, truncated server-side to REPORT_REASON_MAX */
+                    reason?: string;
+                    category?: components["schemas"]["ReportCategory"];
+                    content?: components["schemas"]["ReportContent"];
                 };
             };
         };
         responses: {
-            /** @description Player blocked (removes friendship, blocks requests/messages) */
+            /** @description Player blocked (removes friendship, blocks requests/messages, hides their DM/family messages from the caller). The first block of a player also files a report (source=block) and alerts ops (Guideline 1.2). 400 on an invalid category/content.channel. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1502,11 +1570,13 @@ export interface operations {
                     publicId: string;
                     /** @description Free-text reason, truncated server-side to REPORT_REASON_MAX */
                     reason?: string;
+                    category?: components["schemas"]["ReportCategory"];
+                    content?: components["schemas"]["ReportContent"];
                 };
             };
         };
         responses: {
-            /** @description Report filed for ops/admin review (COMPLIANCE_GLOBAL.md §7); 404 if publicId is unresolvable or refers to the caller themself */
+            /** @description Report filed for ops/admin review + ops webhook alert (COMPLIANCE_GLOBAL.md §7, Guideline 1.2); 400 on an invalid category/content.channel; 404 if publicId is unresolvable or refers to the caller themself */
             200: {
                 headers: {
                     [name: string]: unknown;

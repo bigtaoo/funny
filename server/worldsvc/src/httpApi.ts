@@ -13,7 +13,8 @@
 // JWT verification and always sends a response once its path prefix matches, so `admin.ts`
 // exports a void handler rather than a chain link.
 //   httpApi/helpers.ts     wire helpers (readJson/send/sendErr/numQ/sanitizeSenderNameFallback) + RouteDeps/RouteCtx types
-//   httpApi/admin.ts       /admin/world/* (map-templates, list, patrol, allocate/open/settle/reset/close/merge) — C4/§17.7
+//   httpApi/admin.ts       /admin/world/* (map-templates, list, patrol, allocate/open/settle/reset/close/merge, moderation/*) — C4/§17.7
+//   httpApi/internalRoutes.ts /internal/* service-to-service calls (account-deletion purge) — X-Internal-Key, like admin.ts
 //   httpApi/mapRoutes.ts   map/tile reads, march/occupations/stationed/territories lists
 //   httpApi/seasonRoutes.ts season resolve/join/transfer, world join/enter
 //   httpApi/actionRoutes.ts abandon/relocate/watchtower, structure build/demolish, march dispatch/recall/instant-return, team cancel/recall, sweep
@@ -22,7 +23,18 @@
 //   httpApi/sectRoutes.ts   sect create/join/leave/dissolve/ally/unally/vote/message/channel (S8-4b)
 //   httpApi/nationRoutes.ts nation/world public channel + nation naming (B7/§6.4, S8-6.5)
 import { createServer, type Server } from 'http';
-import { ErrorCode, ok, err, extractBearer, verifyToken, loadInternalAuth, SlgError, createLogger } from '@nw/shared';
+import {
+  ErrorCode,
+  ok,
+  err,
+  extractBearer,
+  verifyUnrevokedToken,
+  TokenRevokedError,
+  loadInternalAuth,
+  SlgError,
+  createLogger,
+  type TokenRevocationList,
+} from '@nw/shared';
 import type { WorldService } from './service';
 import type { SectService } from './sectService';
 import type { NationChannelService } from './nationChannelService';
@@ -35,6 +47,7 @@ import { send, sendErr, type RouteDeps, type RouteCtx } from './httpApi/helpers'
 // the table by varying URLs.
 import { routeTimings } from './metrics';
 import { handleAdminRoutes } from './httpApi/admin';
+import { handleInternalRoutes } from './httpApi/internalRoutes';
 import { handleMapRoutes } from './httpApi/mapRoutes';
 import { handleSeasonRoutes } from './httpApi/seasonRoutes';
 import { handleActionRoutes } from './httpApi/actionRoutes';
@@ -61,7 +74,7 @@ const ROUTE_CHAIN: readonly ((ctx: RouteCtx) => Promise<boolean>)[] = [
 ];
 
 export function startHttpApi(
-  opts: { host: string; port: number; jwtSecret: string; internalKey: string },
+  opts: { host: string; port: number; jwtSecret: string; internalKey: string; tokenRevocations?: TokenRevocationList | null },
   svc: WorldService,
   sectSvc: SectService,
   nationChannelSvc: NationChannelService,
@@ -103,6 +116,11 @@ export function startHttpApi(
         if (aurl.pathname.startsWith('/admin/world/')) {
           return handleAdminRoutes(req, res, method, aurl, internalAuth, deps);
         }
+        // Service-to-service calls (metaserver's account-deletion purge job) — same X-Internal-Key gate and
+        // same "before JWT" placement: the caller is a service, not a player, and has no bearer token.
+        if (aurl.pathname.startsWith('/internal/')) {
+          return handleInternalRoutes(req, res, method, aurl, internalAuth, deps);
+        }
       }
 
       // —— JWT verification (P1: extract accountId only, no DB connection) ——
@@ -110,8 +128,9 @@ export function startHttpApi(
       let accountId: string;
       try {
         if (!token) throw new Error('no bearer');
-        accountId = verifyToken(token, { secret: opts.jwtSecret });
-      } catch {
+        accountId = verifyUnrevokedToken(token, { secret: opts.jwtSecret }, opts.tokenRevocations);
+      } catch (e) {
+        if (e instanceof TokenRevokedError) return sendErr(res, ErrorCode.ACCOUNT_DELETED, 'account deleted');
         return sendErr(res, ErrorCode.UNAUTHENTICATED, 'authentication required');
       }
 

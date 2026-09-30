@@ -64,6 +64,10 @@ module.exports = {
         // topology) meta fell back to nullMetaSocialsvcClient — every /social/* route 503s and system
         // mail throws 'socialsvc not configured'. cloud compose had it; these two paths never did.
         NW_SOCIALSVC_INTERNAL_URL: SOCIAL_INTERNAL,
+        // C5-b account purge targets (accountPurge.ts; unset → that purge step fails closed).
+        NW_WORLD_INTERNAL_URL: WORLD_INTERNAL,
+        NW_AUCTION_INTERNAL_URL: AUCTION_INTERNAL,
+        NW_ANALYTICS_INTERNAL_URL: process.env.NW_ANALYTICS_INTERNAL_URL || ANALYTICS_BASE,
         // Rewarded-video signature verification (C2, metaserver/src/ads.ts) + process alert webhook
         // (S4-3). All four live in .env.example and none was ever passed through — the NW_APPLE_PASSWORD
         // shape. Presence, not truthiness: undefined unless the environment provides them.
@@ -262,6 +266,8 @@ module.exports = {
         // Moderation word-list overlay polling (CONTENT_MODERATION_DESIGN.md §3.2). Missing → WordlistCache
         // never starts, so only the built-in REGION_WORDLISTS apply and every ops word-list edit is inert.
         NW_ADMIN_INTERNAL_URL: ADMIN_INTERNAL,
+        // UGC report alerts (App Review 1.2) — same webhook as nw-meta's crash alerts; undefined = queue only.
+        NW_ALERT_WEBHOOK_URL: process.env.NW_ALERT_WEBHOOK_URL,
       },
     },
     {
@@ -301,6 +307,7 @@ module.exports = {
           process.env.NW_MONGO_URI ||
           'mongodb://127.0.0.1:27017/?replicaSet=rs0',
         NW_ANALYTICS_MONGO_DB: process.env.NW_ANALYTICS_MONGO_DB || 'notebook_wars_analytics',
+        NW_META_INTERNAL_URL: META_BASE, // C5-b token revocation list only
       },
     },
   ],

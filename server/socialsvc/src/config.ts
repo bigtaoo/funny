@@ -17,6 +17,9 @@ export interface SocialsvcEnv extends ServerEnv {
   metaInternalUrl: string | undefined;
   /** admin internal HTTP base URL (CONTENT_MODERATION_DESIGN.md §3.2: word list overlay polling); absent = built-in REGION_WORDLISTS only. */
   adminInternalUrl: string | undefined;
+  /** Slack/Discord/WeCom webhook (same one metaserver's crash alerts use); every new UGC report / block is posted
+   *  here so ops can act within 24h (App Store Review Guideline 1.2). Absent = reports only land in the admin queue. */
+  alertWebhookUrl: string | undefined;
 }
 
 export function loadSocialsvcEnv(): SocialsvcEnv {
@@ -30,5 +33,6 @@ export function loadSocialsvcEnv(): SocialsvcEnv {
     gatewayInternalUrl: process.env.NW_GATEWAY_INTERNAL_URL || undefined,
     metaInternalUrl: process.env.NW_META_INTERNAL_URL || undefined,
     adminInternalUrl: process.env.NW_ADMIN_INTERNAL_URL || undefined,
+    alertWebhookUrl: process.env.NW_ALERT_WEBHOOK_URL || undefined,
   };
 }

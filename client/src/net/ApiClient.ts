@@ -31,7 +31,7 @@ import { PveService } from './ApiClient/pve';
 import { EquipmentService, type FuseRound, type FuseBatchResponse } from './ApiClient/equipment';
 import { ShopService } from './ApiClient/shop';
 import { GachaService } from './ApiClient/gacha';
-import { SocialService } from './ApiClient/social';
+import { SocialService, type ModerationContext, type BlockedUserView } from './ApiClient/social';
 import { MailService } from './ApiClient/mail';
 import { AchievementsService } from './ApiClient/achievements';
 import { MiscService } from './ApiClient/misc';
@@ -422,16 +422,20 @@ export class ApiClient {
     return this.socialSvc.removeFriend(publicId);
   }
 
-  blockUser(publicId: string): Promise<void> {
-    return this.socialSvc.blockUser(publicId);
+  blockUser(publicId: string, ctx?: ModerationContext): Promise<void> {
+    return this.socialSvc.blockUser(publicId, ctx);
   }
 
   unblockUser(publicId: string): Promise<void> {
     return this.socialSvc.unblockUser(publicId);
   }
 
-  reportUser(publicId: string, reason: string): Promise<void> {
-    return this.socialSvc.reportUser(publicId, reason);
+  getBlockedUsers(): Promise<BlockedUserView[]> {
+    return this.socialSvc.getBlockedUsers();
+  }
+
+  reportUser(publicId: string, ctx?: ModerationContext): Promise<void> {
+    return this.socialSvc.reportUser(publicId, ctx);
   }
 
   getConversations(): Promise<ConversationView[]> {

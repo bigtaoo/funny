@@ -1,7 +1,7 @@
 # 服务器契约 — 开放问题 + 内部服务契约（§7 起）
 
 > 从 [`SERVER_API.md`](SERVER_API.md) 拆出（2026-08-17，原文件 693 行）。**小节编号沿用原文**，`SERVER_API.md §N` 引用照旧有效。
-> 本册内容：§7 已定/开放问题、§8 内部服务契约、§9 commercial、§10 worldsvc、§11 analyticsvc。总览与在先小节见 [`SERVER_API.md`](SERVER_API.md)。
+> 本册内容：§7 已定/开放问题、§8 内部服务契约、§9 commercial、§10 worldsvc、§11 analyticsvc（及其后 §12–§15）。总览与在先小节见 [`SERVER_API.md`](SERVER_API.md)。
 
 ---
 
@@ -338,3 +338,42 @@ POST /auction/{auctionId}/buy | /auction/{auctionId}/bid | /auction/{auctionId}/
 ```
 
 - 仅 coin 计价，赛季资源禁挂（`AUCTION_DESIGN` 反 RMT 闸门）；托管结算 + 异常审计走 admin。
+
+---
+
+## 14. 账号清除（C5-b，meta → 五个服务，2026-09-29）
+
+> 编排与完整清单：`ACCOUNT_DESIGN.md`「C5-b 账号清除」。本节只记线上契约。
+
+```
+POST /internal/accounts/{accountId}/purge   (X-Internal-Key, caller=meta)
+→ ok({ done: boolean, removed: { <label>: count }, ... })
+```
+
+- **幂等 + 可重跑**：全部按账号删除/改写；完成后再调一次返回 `done:true` 且全为 0。meta 对每个服务的调用 `retries: 1`、超时 30s。
+- **`done:false` = 没出错但还不能完成**，meta 30 分钟后重试。目前只有 auctionsvc 会返回（`pending` 字段列出原因：其挂单有出价 / 其是最高出价者 / 未终结交易日志 / 未结算的已关闭挂单）。
+- **调用顺序固定**：socialsvc → worldsvc → auctionsvc → commercial → analyticsvc，之后 meta 本地。前一步未确认不调后一步。
+
+| 服务 | 请求体 | 额外返回字段 |
+|---|---|---|
+| socialsvc | `{ publicId? }`（玩家邮件的 `from` 存的是 publicId） | `family?: { familyId, outcome: 'left' \| 'transferred' \| 'dissolved', newLeaderId? }` |
+| worldsvc | `{}` | `worlds`, `sects: { reassigned, dissolved }`；socialsvc 不可用时 500（避免把门派误判为无家族而解散） |
+| auctionsvc | `{}` | `pending?: { sellerListingsWithBids, sellerListingsInFlight, leadingBids, pendingSettlements, unsettledListings }` |
+| commercial | `{}` | `minimized: { recharges, paddleEvents, appleTransactionLinks }` |
+| analyticsvc | `{ deviceIds?: string[] }`（≤20 个非空字符串，否则 400） | — |
+
+- worldsvc 此前没有 `/internal/*`，本端点是第一个（与 `/admin/world/*` 一样在 JWT 校验之前分流）。
+- socialsvc 的 `/internal/*` 分支此前没有 try/catch——抛错时调用方只能等超时；现在与公开链路一样映射 SlgError / 500。
+
+## 15. 令牌吊销表（C5-b，各验签方 → meta，2026-09-29）
+
+> 设计与语义：`ACCOUNT_DESIGN.md`「令牌吊销表」。本节只记线上契约。
+
+```
+GET /internal/auth/token-revocations?since=<epoch ms>   (X-Internal-Key)
+→ { asOf: number, revocations: [{ accountId: string, revokedAt: number }] }
+```
+
+- 返回 `revokedAt >= since` 的全部行（不分页：行数 ≈ 最近 31 天清除的账号数）。`since` 缺省 = 0；非数字或负数 → 400；无/错内部密钥 → 401。
+- 调用方：worldsvc / socialsvc / auctionsvc / analyticsvc（`NW_META_INTERNAL_URL`）、gateway（`NW_META_BASE_URL`），各自每 60 秒一次，`since = 上次 asOf − 5 分钟`；首轮 `since=0`。客户端实现 `shared/src/tokenRevocation.ts`（`TokenRevocationList` / `httpTokenRevocationSource` / `startTokenRevocationList`）。
+- 调用方判定：token 的 `iat × 1000 ≤ revokedAt` 即吊销。响应：REST 410 `ACCOUNT_DELETED`，gateway WS 握手关闭码 4401，analyticsvc 按匿名处理。

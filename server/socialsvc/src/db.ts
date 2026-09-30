@@ -2,7 +2,7 @@
 // P1 collections: families / familyMembers / familyMessages (no worldId).
 // P2 collections: friendEdges / friendRequests / blockList / conversations / chatMessages / mails / reports.
 import { MongoClient, Db, Collection } from 'mongodb';
-import type { FamilyRole, MailDoc, EmblemKey } from '@nw/shared';
+import type { FamilyRole, MailDoc, EmblemKey, ReportCategory, ReportChannel } from '@nw/shared';
 import { FAMILY_MSG_RETENTION_SEC, CHAT_RETENTION_SEC } from '@nw/shared';
 
 // ── P2 document types (originally in @nw/shared, moved here locally to decouple) ─────────────────────────────
@@ -62,10 +62,18 @@ export interface ReportDoc {
   reason: string;   // free-text reason (capped, see REPORT_REASON_MAX); admin-only, not shown to other players, so not run through censorChat
   ts: number;
   status: 'open' | 'dismissed' | 'upheld';
-  /** Optional pointer back to the reported content, for admin review (CM9). Not populated by the current
-   *  reportUser() call site (player-level report only, no message/name reference yet) — reserved for a future
-   *  per-message/per-name report entry point; kept optional so today's reports remain valid without it. */
+  /** Report taxonomy (App Store Review Guideline 1.2); absent on pre-1.2 reports and when the client sent none. */
+  category?: ReportCategory;
+  /** 'block' = auto-filed by blockUser (blocking must notify the developer, Guideline 1.2); absent = an explicit report. */
+  source?: 'report' | 'block';
+  /** Optional pointer back to the reported content, for admin review (CM9) and staff removal. `content` is the
+   *  shape written since Guideline 1.2 (reportUser/blockUser with a `content` body field); the two older shapes
+   *  were never written by any call site but stay in the union so any stored doc still type-checks.
+   *  `snapshot` is the text at report time — `snapshotSource: 'server'` means it was read from socialsvc's own
+   *  message store (dm/family/announcement/name), 'client' means the reporter's client supplied it (sect/world/
+   *  mail, or a server lookup that missed); capped at REPORT_SNAPSHOT_MAX. */
   contentRef?:
+    | { kind: 'content'; channel: ReportChannel; messageId?: string; snapshot?: string; snapshotSource?: 'server' | 'client' }
     | { kind: 'message'; conversationId: string; messageId: string }
     | { kind: 'name'; snapshot: string };
   resolvedBy?: string;
@@ -102,6 +110,8 @@ export interface FamilyDoc {
   memberCount: number;
   /** Family announcement (most recent one). */
   announcement?: string;
+  /** accountId that wrote `announcement` (Guideline 1.2 staff purge clears announcements by author); absent on older docs. */
+  announcementBy?: string;
   /**
    * Family prosperity (territory count×10 + member count×50 + activity×5).
    * Score maintained by socialsvc; worldsvc reads the mirror value to check the sect-founding threshold.
@@ -163,6 +173,9 @@ export interface FamilyMessageDoc {
   familyId: string;
   senderId: string;
   senderName: string;
+  /** Sender's 9-digit publicId snapshot at send time (Guideline 1.2: the client hides blocked senders and offers
+   *  Report/Block per row by it). Absent on docs written before 2026-09-29 — backfilled from meta at read time. */
+  senderPublicId?: string;
   /** Sender's equipped title snapshot at send time (称号); absent if the sender had none. */
   title?: string;
   /** Sender's family name snapshot at send time (家族 — the family itself, since the channel is family-scoped). */
@@ -286,6 +299,12 @@ export async function createSocialMongo(uri: string, dbName: string): Promise<So
     // reports: admin review queue (open reports first, oldest first) + per-target lookup
     await reports.createIndex({ status: 1, ts: 1 });
     await reports.createIndex({ targetId: 1 });
+
+    // blockList reverse lookup: family-chat push skips members who blocked the sender (Guideline 1.2).
+    await blockList.createIndex({ target: 1 });
+    // Staff purge of one author's messages (Guideline 1.2): without these, deleteMany({from}) is a COLLSCAN.
+    await chatMessages.createIndex({ from: 1 });
+    await familyMessages.createIndex({ senderId: 1 });
   }
 
   return {

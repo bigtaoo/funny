@@ -7,6 +7,7 @@ import { nullSocialGatewayClient } from '../gatewayClient';
 import type { SocialMetaClient } from '../metaClient';
 import { nullSocialMetaClient } from '../metaClient';
 import type { FamilyServiceDeps, FamilyMessageView } from './types';
+import { blockedTargets } from '../friend/shared';
 
 /** In-process monotonic sequence number to prevent message ID collisions within the same millisecond. */
 let msgSeq = 0;
@@ -60,6 +61,7 @@ export class FamilyChatService {
       familyId: mem.familyId,
       senderId: accountId,
       senderName: resolvedSenderName,
+      ...(fromPublicId ? { senderPublicId: fromPublicId } : {}),
       ...(title ? { title } : {}),
       ...(familyName ? { familyName } : {}),
       body,
@@ -67,16 +69,22 @@ export class FamilyChatService {
     };
     await cols.familyMessages.insertOne(msgDoc);
 
-    // Push to all other members (O(n), ≤30 members)
+    // Push to all other members (O(n), ≤30 members) — except those who blocked the sender (Guideline 1.2:
+    // a block removes that player's content from the blocker's feed; getChannel below filters history too).
     const otherMembers = await cols.familyMembers
       .find({ familyId: mem.familyId, _id: { $ne: accountId } })
       .toArray();
+    const blockers = new Set(
+      (await cols.blockList
+        .find({ owner: { $in: otherMembers.map((m) => m.accountId) }, target: accountId }, { projection: { owner: 1 } })
+        .toArray()).map((b) => b.owner),
+    );
     await this.gateway.pushMany(
-      otherMembers.map((m) => m.accountId),
+      otherMembers.map((m) => m.accountId).filter((id) => !blockers.has(id)),
       { kind: 'family_msg', familyId: mem.familyId, fromPublicId, fromName: resolvedSenderName, title, familyName, body, ts },
     );
 
-    return { id: msgId, senderId: accountId, senderName: resolvedSenderName, title, familyName, body, ts };
+    return { id: msgId, senderId: accountId, senderName: resolvedSenderName, senderPublicId: fromPublicId, title, familyName, body, ts };
   }
 
   /** Get channel history (reverse-chronological pagination; `before` is a ms-epoch cursor; limit ≤50). */
@@ -93,6 +101,9 @@ export class FamilyChatService {
     const realLimit = Math.min(Math.max(limit, 1), 50);
     const query: Record<string, unknown> = { familyId: mem.familyId };
     if (before != null) query['ts'] = { $lt: new Date(before) };
+    // Guideline 1.2: messages from players the caller blocked never reach the caller's family feed.
+    const blocked = await blockedTargets(cols, accountId);
+    if (blocked.size > 0) query['senderId'] = { $nin: [...blocked] };
 
     const docs = await cols.familyMessages
       .find(query)
@@ -100,10 +111,17 @@ export class FamilyChatService {
       .limit(realLimit)
       .toArray();
 
+    // Backfill senderPublicId for docs written before it was stored (one batched meta call, ≤50 ids).
+    const missing = [...new Set(docs.filter((d) => !d.senderPublicId).map((d) => d.senderId))];
+    const backfill = missing.length > 0 && this.meta.available
+      ? await Promise.resolve().then(() => this.meta.batchProfiles(missing)).catch(() => new Map<string, { publicId: string }>())
+      : new Map<string, { publicId: string }>();
+
     return docs.map((d) => ({
       id: d._id,
       senderId: d.senderId,
       senderName: d.senderName,
+      senderPublicId: d.senderPublicId ?? backfill.get(d.senderId)?.publicId ?? '',
       title: d.title,
       familyName: d.familyName,
       body: d.body,

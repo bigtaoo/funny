@@ -10,6 +10,8 @@ export interface AnalyticssvcEnv extends ServerEnv {
   analyticsMongoUri: string;
   /** Dedicated database name (physically separate from meta/commercial/admin/world). */
   analyticsMongoDb: string;
+  /** metaserver internal base URL — token revocation list only (C5-b). Unset = no revocation check. */
+  metaInternalUrl?: string;
 }
 
 export function loadAnalyticssvcEnv(): AnalyticssvcEnv {
@@ -20,5 +22,6 @@ export function loadAnalyticssvcEnv(): AnalyticssvcEnv {
     host: process.env.NW_ANALYTICS_HOST ?? '0.0.0.0',
     analyticsMongoUri: requiredEnv('NW_ANALYTICS_MONGO_URI', DEV_MONGO_URI),
     analyticsMongoDb: process.env.NW_ANALYTICS_MONGO_DB ?? 'notebook_wars_analytics',
+    metaInternalUrl: process.env.NW_META_INTERNAL_URL || undefined,
   };
 }

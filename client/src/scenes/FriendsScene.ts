@@ -26,6 +26,7 @@ import { WorldChatPanel } from './FriendsScene/worldChat';
 import { MailPanel } from './FriendsScene/mail';
 import { beginRender, drawTabBar, endRender } from './FriendsScene/chrome';
 import { preloadRewardIconArt } from '../render/rewardIcon';
+import { onBlockedChange } from '../ui/moderation';
 
 export type { SLGSocialStatus, FriendsSceneCallbacks } from './FriendsScene/core';
 
@@ -63,6 +64,13 @@ export class FriendsScene implements Scene {
     void preloadRewardIconArt().then(() => { if (!this.core.dead) this.render(); });
     void this.network.refresh();
     this.core.triggerTabLoads(this.core.tab);
+    // A block hides that player's rows everywhere in the hub at once (App Review 1.2), and the server
+    // has dropped the friendship too — re-pull so the friend list agrees with it.
+    this.core.unsubs.push(onBlockedChange(() => {
+      if (this.core.dead) return;
+      this.render();
+      void this.network.refresh();
+    }));
   }
 
   update(dt: number): void {

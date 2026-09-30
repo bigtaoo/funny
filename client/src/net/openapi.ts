@@ -1285,6 +1285,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/friends/blocked": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller's block list, newest first (client hides these senders from every chat feed) */
+        get: operations["getBlockedUsers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/friends/block": {
         parameters: {
             query?: never;
@@ -1294,7 +1311,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Block user (removes friend + blocks requests/chat) */
+        /** Block user (removes friend + blocks requests/chat, hides their messages from the caller's DM/family feeds). The first block of a player also files a report for ops review (Guideline 1.2); the optional reason/category/content describe what triggered it. */
         post: operations["blockUser"];
         delete?: never;
         options?: never;
@@ -1328,7 +1345,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** File a UGC report against another player (admin-review-only; does not block/unfriend) */
+        /** File a UGC report against another player, optionally pointing at the offending content (admin-review-only; does not block/unfriend) */
         post: operations["reportUser"];
         delete?: never;
         options?: never;
@@ -1892,6 +1909,26 @@ export interface components {
             alias?: string;
             /** @description Equipped avatar id, composite "<category>:<key>" (empty string = no avatar) */
             avatarId?: string;
+        };
+        /**
+         * @description UGC report category (App Store Review Guideline 1.2)
+         * @enum {string}
+         */
+        ReportCategory: "harassment" | "hate" | "sexual" | "spam" | "cheating" | "offensive_name" | "other";
+        /** @description The piece of content being flagged. `text` is the client-side snapshot (capped server-side to 500 chars); for socialsvc-owned channels (dm, family, announcement, name) the server stores its own copy of the text instead when `messageId` resolves to a message by the reported player. */
+        ReportContent: {
+            /** @enum {string} */
+            channel: "dm" | "family" | "sect" | "world" | "mail" | "announcement" | "name";
+            /** @description Message id as returned by the channel history/push (dm/family/sect/world) */
+            messageId?: string;
+            /** @description Client snapshot of the content */
+            text?: string;
+        };
+        BlockedUser: {
+            publicId: string;
+            displayName: string;
+            /** @description Epoch ms the block was placed */
+            ts: number;
         };
         FriendRequestView: {
             requestId: string;
@@ -4853,6 +4890,33 @@ export interface operations {
             401: components["responses"]["ErrorResp"];
         };
     };
+    getBlockedUsers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            blocked: components["schemas"]["BlockedUser"][];
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResp"];
+        };
+    };
     blockUser: {
         parameters: {
             query?: never;
@@ -4864,6 +4928,9 @@ export interface operations {
             content: {
                 "application/json": {
                     publicId: string;
+                    reason?: string;
+                    category?: components["schemas"]["ReportCategory"];
+                    content?: components["schemas"]["ReportContent"];
                 };
             };
         };
@@ -4928,6 +4995,8 @@ export interface operations {
                 "application/json": {
                     publicId: string;
                     reason?: string;
+                    category?: components["schemas"]["ReportCategory"];
+                    content?: components["schemas"]["ReportContent"];
                 };
             };
         };

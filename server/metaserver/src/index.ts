@@ -1,12 +1,14 @@
 // metaserver process bootstrap: connect Mongo → buildApp → listen.
 // Reverse proxy forwards /api/* to this process (SERVER_API.md §0).
-import { createMongo, createLogger, startHeartbeat, FeatureFlagCache, WordlistCache, fetchInternalJson, connectActiveMatchRedis, type JwtConfig } from '@nw/shared';
+import { createMongo, createLogger, startHeartbeat, FeatureFlagCache, WordlistCache, fetchInternalJson, connectActiveMatchRedis, postAlertWebhook, type JwtConfig } from '@nw/shared';
 import { loadMetaEnv } from './config.js';
 import { buildApp, SPEC_PATH } from './app.js';
 import { HttpGatewayClient } from './gatewayClient.js';
 import { auditOnce } from './anticheatAudit.js';
 import { auditCoinAnomaliesOnce } from './coinAnomalyAudit.js';
 import { decayReputationOnce } from './reputationDecay.js';
+import { purgeDeletedAccountsOnce } from './accountPurge.js';
+import { HttpAccountPurgeClient } from './accountPurgeClient.js';
 import { HttpCommercialClient } from './commercialClient.js';
 import { ensureArchiveDir, sweepArchive } from './replayArchive.js';
 
@@ -22,11 +24,8 @@ function setupAlerts(): void {
   const webhook = process.env.NW_ALERT_WEBHOOK_URL;
   const sendAlert = webhook
     ? (text: string) => {
-        void fetch(webhook, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: `[NW metaserver] ${text}` }),
-        }).catch(() => {/* ignore webhook delivery failures */});
+        // Shared helper picks the Slack/Discord vs WeCom body shape and swallows delivery failures.
+        void postAlertWebhook(webhook, `[NW metaserver] ${text}`);
       }
     : null;
 
@@ -166,11 +165,40 @@ async function main() {
   }, 24 * 3600 * 1000);
   reputationDecayTimer.unref();
 
+  // C5-b account purge (accountPurge.ts): erase accounts whose soft-delete grace period has elapsed, in every
+  // service. Hourly rather than daily like the sweeps above: a deploy restarts this process and resets every
+  // setInterval, and a daily timer on a service that is redeployed more than once a day never fires at all —
+  // tolerable for a sweep, not for a deletion promise with a stated deadline. The first tick also runs a
+  // minute after boot for the same reason.
+  const purgeClient = new HttpAccountPurgeClient(
+    {
+      social: env.socialsvcInternalUrl,
+      world: env.worldInternalUrl,
+      auction: env.auctionInternalUrl,
+      commercial: env.commercialUrl,
+      analytics: env.analyticsInternalUrl,
+    },
+    env.internalKey,
+  );
+  const runAccountPurge = () => {
+    void purgeDeletedAccountsOnce({ cols: mongo.collections, client: purgeClient, now: () => Date.now() })
+      .then((r) => {
+        if (r.scanned > 0) log.info('account purge tick', { ...r });
+      })
+      .catch((e) => log.error('account purge tick failed', { err: (e as Error).message }));
+  };
+  const accountPurgeTimer = env.accountPurgeIntervalMs > 0 ? setInterval(runAccountPurge, env.accountPurgeIntervalMs) : null;
+  accountPurgeTimer?.unref();
+  const accountPurgeKickoff = env.accountPurgeIntervalMs > 0 ? setTimeout(runAccountPurge, 60_000) : null;
+  accountPurgeKickoff?.unref();
+
   const shutdown = async () => {
     if (auditTimer) clearInterval(auditTimer);
     clearInterval(archiveSweepTimer);
     clearInterval(reputationDecayTimer);
     clearInterval(coinAnomalyTimer);
+    if (accountPurgeTimer) clearInterval(accountPurgeTimer);
+    if (accountPurgeKickoff) clearTimeout(accountPurgeKickoff);
     await app.close();
     await mongo.close();
     process.exit(0);

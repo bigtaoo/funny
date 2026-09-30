@@ -77,6 +77,8 @@ export interface FamilyMessageView {
   id: string;
   senderId: string;
   senderName: string;
+  /** Sender's publicId ('' when unresolvable) — the client keys block-hiding and Report/Block on it (Guideline 1.2). */
+  senderPublicId: string;
   /** Sender's equipped title (称号), if any. */
   title?: string;
   /** Sender's family name (家族) — the family itself, since this channel is family-scoped. */

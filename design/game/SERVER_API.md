@@ -50,6 +50,7 @@
 - 登录拿**无状态 JWT**（服务端密钥签），后续 REST 走 `Authorization: Bearer <token>`，WS 在握手 query 或首帧带 `token`。
 - `accountId` 由服务端从 token 解出，**客户端请求体里不带 accountId**（防越权）。
 - **滑动续期（2026-09-10，ADR-089 / `ACCOUNT_DESIGN.md §5`）**：任何 `bearerAuth` 端点的响应**都可能**带响应头 `x-nw-token`——当前 token 剩余不足 10 天时 metaserver 用同一个 accountId 重签的新 token。**客户端必须用它替换手上那个**（`client/src/net/ApiClient/core.ts` 的 `fetchRaw()` 统一处理，不需要逐端点接线）。只有 metaserver 签发（worldsvc/socialsvc/auctionsvc/analyticsvc 只验签、不连账号库）；该头在 metaserver 的 CORS `exposedHeaders` 里，否则跨域客户端读不到。契约里声明在 `components.securitySchemes.bearerAuth.description`（90 个操作逐个挂 `headers:` 不划算）。
+- **吊销（2026-09-29，`ACCOUNT_DESIGN.md`「令牌吊销表」）**：「无状态」有一个例外——已清除账号的 token 在所有验签方（meta + 四个服务 + gateway）都会被拒：REST 410 `ACCOUNT_DELETED`，gateway 握手 4401，analyticsvc 按匿名入库。各方每 60 秒从 meta 拉一次吊销表（`SERVER_API_INTERNAL §15`），验签时只查内存。
 
 ### 1.2 编码（契约单一来源 + 双端 codegen）
 - **REST = JSON / `openapi.yml`（design-first，M15）**：`contracts/openapi.yml` 是机器契约的合并产物（真源 = `openapi/` 分域 fragment，见 §0 ADR-040 提示，勿手改）；客户端 typed fetch（`openapi-typescript` + `openapi-fetch`，`client/scripts/gen-openapi.mjs` 生成入库）。服务端 metaserver 路由+校验经**构建期代码生成**装配（ADR-023，已落地 2026-06-30）：`server/contracts/scripts/gen-openapi-server.mjs` 解析 openapi.yml，生成 `server/metaserver/src/generated/routes.gen.ts` 并入库——坏 spec 在 codegen/tsc 阶段即失败，契约变更有服务端 diff 可供 CD 卡版本；运行时不再依赖 `fastify-openapi-glue`。CI 检查：`npm run gen:api:server:check`（在 metaserver 目录）。统一响应包络：
@@ -250,7 +251,7 @@ DELETE /account   (JWT)   → { ok, data:{ confirmToken } }
 
 > 订正 2026-08-10：宽限期内「重新登录恢复」曾经只是文案/隐私政策的承诺，代码里从未实现——`authWx`/`authDevice`/`authLogin`/`authOAuth` 在签 token 前就用 `rejectIfBanned` 拒绝了已删除账号，真正能恢复的 `POST /account/cancel-deletion` 又要求已登录的 token，形成死锁，删除即永久锁死。已修复：四个 auth 入口新增 `restoreIfWithinGrace`，宽限期内重新登录会自动清除 `deletedAt`/`deletionConfirmToken` 后正常签发 token；过期则维持 410。详见 `ACCOUNT_DESIGN §C5-b 订正`。
 
-- meta 编排：删/匿名化 `saves` + `accounts`（移除 `openid`/`deviceId`/`loginId`/`displayName` 等 PII）+ 通知 commercial 处理钱包/交易留存（交易记录依税务/审计义务可保留必要最小集，但与身份解绑）+ analyticsvc 按 `user_id` 批删事件 + social 解好友关系/清私聊。
+- meta 编排（2026-09-29 落地，此前只有软删）：宽限期满后 metaserver 清除任务（`accountPurge.ts`，每小时）依次调用 socialsvc / worldsvc / auctionsvc / commercial / analyticsvc 的 `POST /internal/accounts/:id/purge`（内部契约见 `SERVER_API_INTERNAL.md §14`），再删 meta 本地数据，最后把 `accounts` 行替换为墓碑 `{ _id, createdAt, deletedAt, purgedAt }`（凭证/昵称/publicId 全部移除）。交易记录依税务/审计义务保留必要最小集，但与身份解绑。已清除账号的旧 JWT 在 metaserver 任何鉴权接口上返回 410 `ACCOUNT_DELETED`，且不再续期。完整清单见 `ACCOUNT_DESIGN.md`「C5-b 账号清除」。
 - **二次确认**在客户端（`SettingsScene`），服务端要求 `confirm:true`；删除不可逆（或给短宽限 `scheduledPurgeAt` 后清除，按法务定）。
 - GDPR 数据导出（DSAR）测试期走人工，正式期再做自助导出端点（占位，未建）。
 

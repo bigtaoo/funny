@@ -12,6 +12,18 @@ import { scrollRegionLayer } from '../../ui/widgets/scrollRegionLayer';
 import { peekViewportH } from '../../ui/widgets/scrollPeek';
 import { caretText } from './repaint';
 import { drawChatLine } from '../../ui/widgets/chatRow';
+import { isBlocked, messageContent, openPlayerCard } from '../../ui/moderation';
+import type { SectMessageView } from '../../net/WorldApiClient';
+
+/**
+ * The sender's publicId for a sect-channel message. SectMessageView carries only the accountId
+ * today, so this is empty until the server adds `senderPublicId` (worldsvc SectMessageView, App
+ * Review 1.2) — rows without it simply have no Report/Block card and are never
+ * filtered, since a block is keyed on publicId.
+ */
+function senderPublicIdOf(msg: SectMessageView): string | undefined {
+  return msg.senderPublicId || undefined;
+}
 
 /** Left inset of a channel row, mirrored on the right as the row's truncation margin. This is the
  *  narrow half of a split view, so it is what actually bounds a message — see chatRow.ts. */
@@ -147,13 +159,16 @@ export function renderChannel(
   const inputH = 52;
   const availH2 = maxH - inputH - 6;
 
-  if (core.messages.length === 0) {
+  // A blocked player's messages are dropped at render time (App Review 1.2), so a block — or a live
+  // push from them — never shows. Channel is returned newest-first; render oldest-at-top.
+  const ordered = core.messages.filter((m) => !isBlocked(senderPublicIdOf(m))).reverse();
+  if (ordered.length === 0) {
     const empty = txt(t('sect.noMessages'), FS.label, C.mid);
     empty.anchor.set(0.5, 0); empty.x = x0 + colW / 2; empty.y = y0 + 8;
     core.bodyLayer.addChild(empty);
   }
 
-  const msgH = core.messages.length * ROW_H;
+  const msgH = ordered.length * ROW_H;
   // Clamp the viewport so it always cuts mid-row when there's more below — a partial next
   // message always peeks above the fold instead of landing flush with the input box.
   const viewH2 = peekViewportH(availH2, ROW_H, msgH);
@@ -169,8 +184,6 @@ export function renderChannel(
   const { layer: list } = scrollRegionLayer(core.bodyLayer, { x: x0, y: y0, w: colW, h: viewH2 });
   const over = viewH2;
 
-  // Channel is returned newest-first; render oldest-at-top for natural reading.
-  const ordered = [...core.messages].reverse();
   let cy = y0 - core[scrollKey];
   for (const msg of ordered) {
     if (cy + ROW_H < y0 - over || cy > y0 + viewH2 + over) { cy += ROW_H; continue; }
@@ -179,6 +192,12 @@ export function renderChannel(
       { senderName: msg.senderName, title: msg.title, sectName: msg.sectName, familyName: msg.familyName },
       msg.body, FS.label, FS.label, colW - ROW_INSET * 2,
     );
+    // Someone else's message: tap for their card — Report (this message) / Block.
+    const publicId = senderPublicIdOf(msg);
+    if (publicId && msg.senderId !== core.cb.myAccountId) {
+      const target = { publicId, name: msg.senderName, content: messageContent('sect', msg.body, msg.id) };
+      core.hitRects.push({ rect: { x: x0, y: cy, w: colW, h: ROW_H }, fn: () => openPlayerCard(target), scroll: 'channel' });
+    }
     cy += ROW_H;
   }
 

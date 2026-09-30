@@ -42,7 +42,11 @@ Wir gewähren Ihnen eine begrenzte, nicht ausschließliche, nicht übertragbare,
 ## 4. Nutzergenerierte Inhalte (UGC)
 
 - Sie sind für von Ihnen erstellte Inhalte (Anzeigenamen, Chat, Meldungen) verantwortlich und gewähren uns eine nicht ausschließliche Lizenz zu deren Nutzung für Betrieb, Anzeige, Moderation und Sicherheit.
-- Wir setzen Begriffsfilter, Meldungen und Blockierungen als Moderationsmittel ein und **können, sind aber nicht verpflichtet**, verstoßende Inhalte zu prüfen, zu entfernen oder einzuschränken.
+- **Null Toleranz.** Anstößige Inhalte (Belästigung, Mobbing, Hassrede, sexuelle Inhalte, Gewalt, Spam/Betrug, Identitätstäuschung, Veröffentlichung personenbezogener Daten oder sonstige rechtswidrige Inhalte) und beleidigende Nutzer werden in keiner Weise toleriert. Das gilt für Chats (Welt / Familie / Sekte / privat), Familienankündigungen, Post sowie Spieler-, Familien- und Sektennamen.
+- **Filter.** Nutzerinhalte werden automatisch auf anstößige Begriffe und Inhalte gefiltert, bevor andere Spieler sie sehen.
+- **Melden & Blockieren.** Jeder Spieler und jede Nachricht kann im Spiel gemeldet werden (Namen oder Nachricht antippen → „Melden“ → Grund wählen), und jeder Spieler kann blockiert werden („Blockieren“). Eine Blockierung blendet die Inhalte des Spielers für den Blockierenden sofort aus, verhindert weitere Nachrichten an ihn und benachrichtigt unser Moderationsteam. Blockierungen lassen sich unter „Blockierte Spieler“ einsehen und aufheben.
+- **Unsere Reaktion.** Wir prüfen jede Meldung und reagieren **innerhalb von 24 Stunden**: Der anstößige Inhalt wird entfernt und der Verursacher je nach Schwere verwarnt, stummgeschaltet, vorübergehend gesperrt oder dauerhaft gesperrt (siehe §8). Schwere Verstöße führen zur sofortigen dauerhaften Sperre; rechtswidrige Inhalte können den Behörden gemeldet werden.
+- **EULA.** Diese Bedingungen sind die Endnutzer-Lizenzvereinbarung (EULA) des Spiels. In der iOS-App ergänzen sie Apples Standard-EULA für lizenzierte Apps; Spieler akzeptieren sie vor der Registrierung bzw. Anmeldung.
 - Sie dürfen keine Inhalte veröffentlichen, die Rechte Dritter verletzen oder gegen §3 verstoßen.
 
 ---

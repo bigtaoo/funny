@@ -37,5 +37,31 @@ export async function handleInternalReportsRoutes(ctx: BaseCtx): Promise<boolean
     }
   }
 
+  // Staff content removal (App Store Review Guideline 1.2 — remove reported content within 24h). Admin is the
+  // sole caller; it routes sect/world content to worldsvc's twin endpoints instead.
+  if (method === 'POST' && path === '/internal/moderation/delete-content') {
+    const body = await readJson(req);
+    const channel = body.channel;
+    if (channel !== 'dm' && channel !== 'family' && channel !== 'announcement') {
+      sendErr(res, ErrorCode.BAD_REQUEST, 'channel must be dm, family or announcement');
+      return true;
+    }
+    const messageId = typeof body.messageId === 'string' && body.messageId ? body.messageId : undefined;
+    const targetId = typeof body.targetId === 'string' && body.targetId ? body.targetId : undefined;
+    if (channel === 'announcement' ? !targetId : !messageId) {
+      sendErr(res, ErrorCode.BAD_REQUEST, channel === 'announcement' ? 'targetId required' : 'messageId required');
+      return true;
+    }
+    send(res, 200, ok({ deleted: await friendSvc.deleteContent(channel, messageId, targetId) }));
+    return true;
+  }
+  if (method === 'POST' && path === '/internal/moderation/purge-author') {
+    const body = await readJson(req);
+    const accountId = typeof body.accountId === 'string' && body.accountId ? body.accountId : null;
+    if (!accountId) { sendErr(res, ErrorCode.BAD_REQUEST, 'accountId required'); return true; }
+    send(res, 200, ok(await friendSvc.purgeAuthor(accountId)));
+    return true;
+  }
+
   return false;
 }

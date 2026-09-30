@@ -72,12 +72,13 @@ describe('friend profile popup: action row never overlaps the info lines', () =>
           .toBeGreaterThan(idLine.bottom);
       }
 
-      // Message and Block share a row (roughly same y) and don't overlap horizontally.
-      expect(Math.abs(message.top - block.top)).toBeLessThan(4);
-      expect(message.right).toBeLessThan(block.left);
+      // Plain actions get their own row above the danger ones (2026-09-29, App Review 1.2: every
+      // player card now carries Report + Block, and four buttons on one row was unreadable), so
+      // Message sits above Block rather than beside it — and never overlapping it.
+      expect(block.top).toBeGreaterThan(message.bottom);
 
-      // Close sits below the action row.
-      expect(close.top).toBeGreaterThan(message.bottom);
+      // Close sits below the last action row.
+      expect(close.top).toBeGreaterThan(block.bottom);
 
       popup.destroy();
     });

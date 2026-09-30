@@ -1,6 +1,6 @@
 // socialsvc httpApi split — public /social/mail/* player mail (P2, see ../httpApi.ts for the module
 // overview). No behavior change — copied verbatim from the original httpApi.ts.
-import { ErrorCode, ok } from '@nw/shared';
+import { ErrorCode, ok, type ChatRegion } from '@nw/shared';
 import { send, sendErr, readJson, type RouteCtx } from './helpers';
 
 /** Returns true once matched + a response was sent; false lets the next handler in the chain try. */
@@ -39,7 +39,8 @@ export async function handleMailRoutes(ctx: RouteCtx): Promise<boolean> {
     const subject = typeof body.subject === 'string' ? body.subject : null;
     const mailBody = typeof body.body === 'string' ? body.body : '';
     if (!toPublicId || !subject) { sendErr(res, ErrorCode.BAD_REQUEST, 'toPublicId + subject required'); return true; }
-    const r = await mailSvc.sendPlayerMail(accountId, toPublicId, subject, mailBody);
+    const mailRegion = (req.headers['x-chat-region'] as ChatRegion | undefined) ?? 'global';
+    const r = await mailSvc.sendPlayerMail(accountId, toPublicId, subject, mailBody, mailRegion);
     if (r.kind === 'error') {
       if (r.error === 'NOT_FRIEND') { sendErr(res, ErrorCode.NOT_FRIEND, 'not friends'); return true; }
       if (r.error === 'NOT_FOUND') { sendErr(res, ErrorCode.NOT_FOUND, 'player not found'); return true; }

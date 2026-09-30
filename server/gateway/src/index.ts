@@ -5,7 +5,7 @@
 //   • Fetches ELO from meta before enqueueing for ranked and passes it along.
 //
 // Reverse proxy: /gw → this process's public WS port; internal HTTP port is not exposed.
-import { loadInternalAuth, createLogger, startHeartbeat, type JwtConfig } from '@nw/shared';
+import { loadInternalAuth, createLogger, startHeartbeat, startTokenRevocationList, type JwtConfig } from '@nw/shared';
 import { loadGatewayEnv } from './config';
 import { Gateway } from './Gateway';
 import { MatchsvcClient } from './matchsvcClient';
@@ -21,12 +21,19 @@ async function main(): Promise<void> {
   const meta = new MetaClient(env.metaBaseUrl, env.internalKey);
   const matchsvc = new MatchsvcClient(env.matchsvcInternalUrl, env.internalKey);
   const socialsvc = new SocialsvcClient(env.socialsvcInternalUrl, env.internalKey);
+  // C5-b: tokens of purged accounts, polled from metaserver (same base URL as /internal/elo).
+  const tokenRevocations = startTokenRevocationList(env.metaBaseUrl, {
+    caller: 'gateway',
+    key: env.internalKey,
+    log: createLogger('gateway:token-revocations'),
+  });
   const gateway = new Gateway(
     { host: env.host, port: env.port, rateLimitTight: env.rateLimitTight, rateLimitStandard: env.rateLimitStandard },
     jwt,
     matchsvc,
     meta,
     socialsvc,
+    tokenRevocations,
   );
 
   const internal = startInternalHttp(
@@ -49,6 +56,7 @@ async function main(): Promise<void> {
   }
 
   const shutdown = (): void => {
+    tokenRevocations?.stop();
     gateway.close();
     internal.close();
     if (subscriber) void subscriber.quit();

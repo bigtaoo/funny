@@ -73,8 +73,8 @@ export class FamilyService {
   dissolveFamily(requesterId: string) {
     return this.membership.dissolveFamily(requesterId);
   }
-  setAnnouncement(requesterId: string, announcement: string) {
-    return this.membership.setAnnouncement(requesterId, announcement);
+  setAnnouncement(requesterId: string, announcement: string, region: ChatRegion = 'global') {
+    return this.membership.setAnnouncement(requesterId, announcement, region);
   }
   setEmblem(requesterId: string, emblemKey: EmblemKey, emblemColor: number) {
     return this.membership.setEmblem(requesterId, emblemKey, emblemColor);
