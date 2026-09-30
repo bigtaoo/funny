@@ -110,11 +110,13 @@ describe('POST /auction/:id/bid input validation', () => {
 describe('error mapping fallbacks', () => {
   it('an ErrorCode with no entry in shared`s HTTP mapping table answers 400, not undefined', async () => {
     // ERROR_HTTP_STATUS lives in @nw/shared and does not cover every ErrorCode; a missing entry must
-    // degrade to a plain client error rather than producing an invalid status.
-    const { base } = await startServer({ listAuctions: async () => { throw new SlgError('ACCOUNT_DELETED', 'account is gone'); } });
+    // degrade to a plain client error rather than producing an invalid status. The code is made up on
+    // purpose: borrowing a real unmapped one breaks this test the day that code gains a mapping.
+    const unmapped = Object.assign(new SlgError('ALREADY_ACTIVE', 'no mapping'), { code: 'TEST_UNMAPPED_CODE' });
+    const { base } = await startServer({ listAuctions: async () => { throw unmapped; } });
     const res = await fetch(`${base}/auction/list`, { headers: auth() });
     expect(res.status).toBe(400);
-    expect((await res.json() as { error: { code: string } }).error.code).toBe('ACCOUNT_DELETED');
+    expect((await res.json() as { error: { code: string } }).error.code).toBe('TEST_UNMAPPED_CODE');
   });
 
   it('a thrown non-Error still logs and answers a sanitized 500', async () => {
