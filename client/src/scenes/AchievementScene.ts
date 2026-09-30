@@ -1,38 +1,27 @@
 import * as PIXI from 'pixi.js-legacy';
 import { Scene } from './SceneManager';
-import { ILayout } from '../layout/ILayout';
+import { ILayout, type Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../render/sketchUi';
 import { showToastMessage, type ToastKind } from '../net/log';
-import { buildIcon, type IconKind } from '../render/icons';
+import { buildIcon } from '../render/icons';
 import { preloadRewardIconArt } from '../render/rewardIcon';
 import { FS, snapFont, iconFloorPx } from '../render/fontScale';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawCareerTabs } from '../ui/widgets/CareerTabs';
 import { drawStatusTag } from '../ui/widgets/statusTag';
-import { drawSidebarTabs, drawHubTabs, hubTabsHeight, sidebarNavW, type HubTab } from '../ui/widgets/HubTabs';
+import { drawSidebarTabs, drawHubTabs, hubTabsHeight, sidebarNavW, bottomNavH, type HubTab } from '../ui/widgets/HubTabs';
 import type { AchievementsView, Achievement } from '../net/ApiClient';
 import { tierState, achievementClaimable, type TierState } from '../game/meta/achievements';
-import { dispatchHit, type Hit } from '../ui/hits';
+import { hitAction, type Hit } from '../ui/hits';
+import { ScrollTapGesture } from '../ui/scrollTapGesture';
+import { wheelScrollY } from '../ui/wheelScroll';
+import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
+import { scrollRegionLayer } from '../ui/widgets/scrollRegionLayer';
 import { drawButtonLabel, buttonLabelIconW } from '../ui/widgets/buttonLabel';
-
-// collection/progression moved off 'brush'/'trophy' to their own AI icons (AI art batch 2 dedupe,
-// design/product/tab-icon-art-prompts.md §batch2) — 'brush' meant "皮肤" elsewhere (now skinIcon), not
-// "收藏进度", and 'trophy' stays reserved for Career's Achievements tab (the parent of this category strip).
-// pve/pvp moved off 'book'/'swords' to their own AI icons too (AI art batch 3): batch 2's judgment
-// table missed that 'book' had a 3rd usage here (Career's "stats" tab reuses statsTabIcon instead, see
-// CareerTabs.ts, so 'book' was never actually free) — pve gets a treasure-map scroll, distinct from the
-// book/stats-chart glyphs elsewhere in this same Career hub; pvp gets a crossed-swords AI icon as a pure
-// recognizability upgrade (no reuse conflict — 'swords' elsewhere is only ever a content badge/action icon).
-/** Category → hand-drawn tab glyph (pve = treasure map, pvp = crossed swords, collection = jigsaw puzzle piece, progression = stacked chevrons). */
-const CATEGORY_ICON: Record<Achievement['category'], IconKind> = {
-  pve: 'pveTabIcon',
-  pvp: 'pvpTabIcon',
-  collection: 'collectionTabIcon',
-  progression: 'progressTabIcon',
-};
+import { CATEGORY_ICON, CATEGORY_ORDER, TIER_LABELS, widestTierLabelW } from './AchievementScene/tiers';
 
 // ── AchievementScene — achievement wall (personal view, ACHIEVEMENT_DESIGN §7) ──────────────────────
 //
@@ -41,11 +30,6 @@ const CATEGORY_ICON: Record<Achievement['category'], IconKind> = {
 // + red dots (tab/card). Personal view only — not shown to others (public bragging goes through the title system).
 // defs/stats/progress are served by GET /achievements; the client computes the tier state locally (§4.1).
 // Landscape: cards laid out in two columns to make full use of the wide screen.
-
-/** Category tab order (categories with no achievements are auto-hidden). */
-const CATEGORY_ORDER: Achievement['category'][] = ['pve', 'pvp', 'collection', 'progression'];
-
-const TIER_LABELS = ['I', 'II', 'III'];
 
 export interface AchievementCallbacks {
   onBack(): void;
@@ -91,13 +75,41 @@ export class AchievementScene implements Scene {
   /** True while a claim is in flight (prevents double-tap). */
   private claiming = false;
 
+  // ── Card list scroll ──────────────────────────────────────────────────────────
+  // The list used to be drawn straight onto the page with no clip and no bottom reserve, so in
+  // portrait the third pvp card ran under the Career bottom bar and could not be reached
+  // (2026-09-29). Cards now go into a masked layer between the category tabs and the bar.
+  private scrollY = 0;
+  private scrollMax = 0;
+  /** Viewport of the card list; zero-sized while no list is drawn (loading / empty). */
+  private scrollView: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  private scrollLayer: PIXI.Container | null = null;
+  private scrollbar: PIXI.Graphics | null = null;
+  /** Taps are deferred to pointer-up only while the list can scroll, so a drag is never a claim. */
+  private readonly gesture = new ScrollTapGesture();
+  /** Where card content is drawn: the scroll layer while cards are built, the page otherwise. */
+  private body: PIXI.Container;
+  /** Card hits in unscrolled coordinates; `applyScroll` offsets and clips them into `hits`. */
+  private cardHits: Hit[] = [];
+  /** Everything that does not scroll: back, category tabs, the Career bar. */
+  private fixedHits: Hit[] = [];
+
   constructor(layout: ILayout, input: InputManager, cb: AchievementCallbacks) {
     this.container = new PIXI.Container();
     this.w = layout.designWidth;
     this.h = layout.designHeight;
     this.landscape = layout.orientation === 'landscape';
     this.cb = cb;
+    this.body = this.container;
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
+    this.unsubs.push(input.onMove((_x, y) => this.handleMove(y)));
+    this.unsubs.push(input.onUp(() => this.handleUp()));
+    this.unsubs.push(input.onWheel((x, y, deltaY) => {
+      const v = this.scrollView;
+      if (x < v.x || x > v.x + v.w) return;
+      const next = wheelScrollY(v.y, v.y + v.h, y, deltaY, this.scrollY, this.scrollMax);
+      if (next !== null) { this.scrollY = next; this.applyScroll(); }
+    }));
     this.render();
     // The category strip's AI tab icons + the reward coin glyph are raster art — warm them and
     // repaint once decoded, else the first frame draws blanks / procedural fallbacks.
@@ -127,7 +139,37 @@ export class AchievementScene implements Scene {
   }
 
   private handleDown(x: number, y: number): void {
-    dispatchHit(this.hits, x, y);
+    const act = hitAction(this.hits, x, y);
+    // Nothing to scroll: keep firing on press, exactly as before the list could scroll.
+    if (this.scrollMax <= 0) { act?.(); return; }
+    this.gesture.down(this.scrollY, y, act);
+  }
+
+  private handleMove(y: number): void {
+    const next = this.gesture.move(y);
+    if (next !== null) { this.scrollY = Math.min(this.scrollMax, next); this.applyScroll(); }
+  }
+
+  private handleUp(): void {
+    this.gesture.up()?.();
+  }
+
+  /** Move the card layer and rebuild `hits` from the fixed hits plus the card hits still in view. */
+  private applyScroll(): void {
+    if (!this.scrollLayer) return;
+    const sy = Math.min(this.scrollY, this.scrollMax);
+    this.scrollLayer.y = -sy;
+    const top = this.scrollView.y;
+    const bottom = top + this.scrollView.h;
+    const visible: Hit[] = [];
+    for (const hit of this.cardHits) {
+      const y0 = Math.max(top, hit.rect.y - sy);
+      const y1 = Math.min(bottom, hit.rect.y - sy + hit.rect.h);
+      if (y1 > y0) visible.push({ ...hit, rect: { ...hit.rect, y: y0, h: y1 - y0 } });
+    }
+    this.hits = this.fixedHits.concat(visible);
+    this.scrollbar?.destroy();
+    this.scrollbar = drawScrollIndicator(this.container, this.scrollView, sy, this.scrollMax);
   }
 
   private flash(msg: string, kind: ToastKind = 'success'): void {
@@ -169,6 +211,13 @@ export class AchievementScene implements Scene {
     if (this.destroyed) return;
     tearDownChildren(this.container);
     this.hits = [];
+    this.cardHits = [];
+    this.fixedHits = [];
+    this.scrollLayer = null;
+    this.scrollbar = null; // torn down with the container above
+    this.scrollMax = 0;
+    this.scrollView = { x: 0, y: 0, w: 0, h: 0 };
+    this.body = this.container;
     const { w, h, landscape } = this;
 
     // Landscape only for now, and only when the Career hub peer strip is actually shown — see
@@ -224,11 +273,17 @@ export class AchievementScene implements Scene {
     const top = landscape ? tbH + Math.round(h * 0.025) : catStripTop + catStripH + Math.round(h * 0.02);
     this.drawCategoryTabs(cats, landscape ? sidebarBottom : catStripTop, catStripH);
 
-    // Achievement cards for the current category.
+    // Achievement cards for the current category, in a masked layer that ends above the portrait
+    // Career bar. Drawn at unscrolled coordinates; `applyScroll` moves the layer.
     const contentX = landscape ? sidebarNavW(w, h, true) + Math.round(w * 0.025) : Math.round(w * 0.06);
     const padRight = landscape ? Math.round(w * 0.04) : Math.round(w * 0.06);
-    let y = top;
     const gap = Math.round(h * 0.02);
+    const viewBottom = h - (hasCareerNav && !landscape ? bottomNavH(h) : 0) - Math.round(h * 0.01);
+    this.scrollView = { x: 0, y: top, w, h: Math.max(0, viewBottom - top) };
+    const { layer } = scrollRegionLayer(this.container, this.scrollView);
+    this.scrollLayer = layer;
+    this.body = layer;
+    let y = top;
     const defs = this.data.defs.filter((d) => d.category === this.activeCat && !d.hidden);
 
     if (this.landscape) {
@@ -252,17 +307,24 @@ export class AchievementScene implements Scene {
           rowStartY = Math.max(leftBottom, cardBottom) + gap;
           col = 0;
         }
+        y = Math.max(y, cardBottom);
       }
     } else {
       // Portrait: single column
       const cardW = w - contentX - padRight;
       for (const def of defs) {
-        y = this.drawCard(def, contentX, y, cardW);
-        y += gap;
+        y = this.drawCard(def, contentX, y, cardW) + gap;
       }
+      y -= gap;
     }
+    this.body = this.container;
+    // The last card's bottom may scroll up to a gap above the viewport's bottom edge.
+    this.scrollMax = Math.max(0, Math.round(y + gap - viewBottom));
+    this.scrollY = Math.min(this.scrollY, this.scrollMax);
 
     drawPortraitCareerBar();
+    this.fixedHits = this.hits;
+    this.applyScroll();
   }
 
   private drawCentered(tbH: number, msg: string): void {
@@ -292,6 +354,7 @@ export class AchievementScene implements Scene {
     }));
     const onSelect = (i: number): void => {
       this.activeCat = cats[i];
+      this.scrollY = 0;
       this.render();
     };
     if (!this.landscape) {
@@ -319,20 +382,20 @@ export class AchievementScene implements Scene {
     const box = sketchPanel(w, cardH, { fill: C.paper, border: C.line, width: 1.6, seed: seedFor(x, y, w) });
     box.x = x; box.y = y;
     sketchAccentBar(box, cardH, claimable ? C.gold : C.accent, seedFor(x, cardH, 7));
-    this.container.addChild(box);
+    this.body.addChild(box);
 
     const innerX = x + Math.round(w * 0.05);
 
     // Achievement name + card-level red dot.
     const name = txt(t(('achievement.' + def.id + '.name') as TranslationKey), snapFont(Math.round(titleH * 0.74)), C.dark, true);
     name.anchor.set(0, 0); name.x = innerX; name.y = y + padV;
-    this.container.addChild(name);
+    this.body.addChild(name);
     if (claimable) this.drawDot(innerX + name.width + Math.round(h * 0.012), y + padV + titleH * 0.32, Math.round(h * 0.008));
 
     // Description.
     const desc = txt(t(('achievement.' + def.id + '.desc') as TranslationKey), snapFont(Math.round(descH * 0.62)), C.mid);
     desc.anchor.set(0, 0); desc.x = innerX; desc.y = y + padV + titleH;
-    this.container.addChild(desc);
+    this.body.addChild(desc);
 
     // Three-tier rows.
     let ry = y + padV + titleH + descH;
@@ -347,12 +410,15 @@ export class AchievementScene implements Scene {
     const cy = y + rowH / 2;
 
     // Tier badge label.
-    const tierLbl = txt(TIER_LABELS[s.tier - 1] ?? String(s.tier), snapFont(Math.round(rowH * 0.4)), s.reached ? C.gold : C.mid, true);
+    const tierFS = snapFont(Math.round(rowH * 0.4));
+    const tierLbl = txt(TIER_LABELS[s.tier - 1] ?? String(s.tier), tierFS, s.reached ? C.gold : C.mid, true);
     tierLbl.anchor.set(0, 0.5); tierLbl.x = x; tierLbl.y = cy;
-    this.container.addChild(tierLbl);
+    this.body.addChild(tierLbl);
 
-    // Progress bar + progress text.
-    const barX = x + Math.round(rowH * 0.6);
+    // Progress bar + progress text. The bar starts past the WIDEST tier label, not at a fixed
+    // `rowH * 0.6`: three bold glyphs at `rowH * 0.4` are ~0.72 rowH wide, so "III" ran into the bar
+    // (2026-09-29). Measured against the widest label so the bars of one card still line up.
+    const barX = x + Math.max(Math.round(rowH * 0.6), Math.ceil(widestTierLabelW(tierFS) + rowH * 0.15));
     const barW = Math.round((rightX - barX) * 0.52);
     const barH = Math.round(rowH * 0.22);
     const barY = cy - barH / 2;
@@ -364,11 +430,11 @@ export class AchievementScene implements Scene {
       bg.drawRect(barX, barY, Math.round(barW * ratio), barH);
       bg.endFill();
     }
-    this.container.addChild(bg);
+    this.body.addChild(bg);
 
     const prog = txt(`${Math.min(cur, s.threshold)}/${s.threshold}`, snapFont(Math.round(rowH * 0.3)), C.mid);
     prog.anchor.set(0, 0.5); prog.x = barX; prog.y = barY - Math.round(rowH * 0.24);
-    this.container.addChild(prog);
+    this.body.addChild(prog);
 
     // Right-side status / claim button.
     if (s.claimable && this.cb.onClaim) {
@@ -388,9 +454,9 @@ export class AchievementScene implements Scene {
       const by = cy - bh / 2;
       const btn = sketchPanel(bw, bh, { fill: C.gold, border: C.gold, width: 1.6, seed: seedFor(bx, by, bw) });
       btn.x = bx; btn.y = by;
-      this.container.addChild(btn);
+      this.body.addChild(btn);
       drawButtonLabel(this.container, bx, by, bw, bh, label, 'gift', 0xffffff, bfs);
-      this.hits.push({ rect: { x: bx, y: by, w: bw, h: bh }, sound: 'sfx.ui.reward', fn: () => void this.claim(def.id, s.tier) });
+      this.cardHits.push({ rect: { x: bx, y: by, w: bw, h: bh }, sound: 'sfx.ui.reward', fn: () => void this.claim(def.id, s.tier) });
     } else if (s.claimed) {
       // The claim BUTTON above keeps its word at every width; this is the state it leaves behind,
       // so it degrades to the check alone on a row too narrow for both (ui/widgets/statusTag.ts).
@@ -405,21 +471,21 @@ export class AchievementScene implements Scene {
       // Not yet reached: coin glyph + reward amount (replaces "reward N coins" text).
       const amt = txt(String(s.coins), snapFont(Math.round(rowH * 0.34)), C.mid);
       amt.anchor.set(1, 0.5); amt.x = rightX; amt.y = cy;
-      this.container.addChild(amt);
+      this.body.addChild(amt);
       // Floored, not just proportional: a compact row (phone landscape, 844x390) computes 19
       // design px = 6.9 CSS px for this coin, under the floor the `snapFont` call two lines up
       // already gives the amount beside it. Reported by the layout audit's icon gate (2026-09-14).
       const icS = iconFloorPx(rowH * 0.4);
       const ic = buildIcon('coin', icS, C.gold);
       ic.x = rightX - amt.width - Math.round(rowH * 0.15) - icS; ic.y = cy - icS / 2;
-      this.container.addChild(ic);
+      this.body.addChild(ic);
     }
   }
 
   private drawDot(x: number, y: number, r: number): void {
     const g = new PIXI.Graphics();
     g.beginFill(C.red); g.drawCircle(x, y, r); g.endFill();
-    this.container.addChild(g);
+    this.body.addChild(g);
   }
 
 }

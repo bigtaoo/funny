@@ -21,7 +21,7 @@ import {
   getEquipDef, enhanceSuccessRate, enhanceDemoteChance, enhanceCost, salvageRefund, affixKind,
   EQUIP_MAX_LEVEL, REFORGE_MATERIAL_RARITY, PROTECT_ENHANCE_ITEM_ID, isSalvageable, reforgeCoinCost,
 } from '../../game/meta/equipmentDefs';
-import { buildIcon, type IconKind } from '../../render/icons';
+import { buildIcon } from '../../render/icons';
 import { RARITY_COLOR } from './layout';
 import { itemName, affixDesc, materialsStr, equippedIds, stackSiblingIds, canAffordEnhance } from './helpers';
 import type { CellAction } from './types';
@@ -29,17 +29,7 @@ import type { EquipmentSceneCore } from './core';
 import { renderHeaderCurrency, renderMaterialsBand } from './headerRow';
 import type { AssignPanel } from './assign';
 import type { ReforgePanel } from './reforge';
-
-/** Affix id (strip m_/s_/k_ prefix) → stat icon kind; returns null for unknown affixes. */
-function affixIconKind(affixId: string): IconKind | null {
-  const stat = affixId.replace(/^[a-z]_/, '');
-  if (stat === 'atk' || stat === 'hp' || stat === 'armor' || stat === 'spd' || stat === 'atkspd') return stat;
-  // Batch 8: the three that used to fall through to null and draw a bare text line next to five
-  // iconned ones (design/product/tab-icon-art-prompts-batch8.md). `s_critmult` strips to
-  // `critmult`, matching its art's kind name.
-  if (stat === 'siege' || stat === 'crit' || stat === 'critmult') return stat;
-  return null;
-}
+import { affixIconKind, wrappedHeight } from './detailHelpers';
 
 export class DetailPanel {
   constructor(
@@ -67,16 +57,40 @@ export class DetailPanel {
     // Natural (unscaled) content size — everything below is laid out in this local frame.
     // Equip/unequip/reforge/salvage moved onto the grid cell (InventoryPanel.renderInstanceCell)
     // and fire directly; this modal keeps affixes + enhance rate/cost + the protect toggle, plus
-    // its own confirm button for enhance (see the file header comment for why).
+    // its own confirm button for enhance (see the file header comment for why), plus whichever of
+    // the cell's actions did not fit on it.
     const mw = Math.min(330, w - 24);
     const affixCount = inst.affixes.length;
     const protectCount = save.inventory?.items?.[PROTECT_ENHANCE_ITEM_ID] ?? 0;
     const demoteChance = maxed ? 0 : enhanceDemoteChance(inst.level);
-    // 44 = top(12) + title(26) + affix-gap(6); enhance section is 58 (rate+cost+protect) + 40
+    // 44 = top(12) + title(26) + affix-gap(6); enhance section is two text rows (rate, cost — `rowH` below) + 22 (protect) + 40
     // (gap+confirm button, 2026-07-22b — enhance now requires opening this modal to set the
-    // protect toggle first, see instanceActions) + 18 (demote-risk warning line, +7/+8 only,
+    // protect toggle first, see instanceActions) + one more row (demote-risk warning line, +7/+8 only,
     // ADR-063) or 24 (maxed); +12 bottom pad.
-    const mh = 44 + affixCount * 20 + (maxed ? 24 : 58 + 40 + (demoteChance > 0 ? 18 : 0)) + 12;
+    // Actions the grid cell had no room for (cells.ts splitCellActions) get a full-width button
+    // each below the enhance section. Enhance itself never needs one: this modal is its UI.
+    const overflowKeys = core.cellOverflow.get(inst.id) ?? [];
+    const extraActions = overflowKeys.length === 0 ? []
+      : this.instanceActions(save, inst).filter((a) => a.key !== 'enhance' && overflowKeys.includes(a.key));
+    const actionBtnH = 32;
+    const actionGap = 6;
+    const actionsH = extraActions.length * (actionGap + actionBtnH) + (extraActions.length > 0 ? 4 : 0);
+    // The protect and demote lines are sentences, and in German each runs past the panel's width
+    // (2026-09-29: "Schutzstein ×0 (Material bei Fehlschlag behalten)" was drawn 476 px wide in a
+    // 280 px panel and cut off at its edge). They wrap inside the panel instead, and every line
+    // past the first adds its height to the section.
+    const textW = mw - 24;
+    const boxSz = 14;
+    const protectText = t('equip.protect').replace('{n}', String(protectCount));
+    const demoteText = t('equip.enhanceDemoteWarn').replace('{pct}', String(Math.round(demoteChance * 100)));
+    const oneLineH = wrappedHeight('X', textW);
+    const protectExtra = maxed ? 0 : Math.max(0, wrappedHeight(protectText, textW - boxSz - 4) - oneLineH);
+    const demoteExtra = demoteChance > 0 ? Math.max(0, wrappedHeight(demoteText, textW) - oneLineH) : 0;
+    // One text row of the enhance section. A fixed 18 held FS.micro until the floor raised it: at
+    // the 360/844 German floor a line is ~27 tall, and the cost row (centred on its row) rose into
+    // the success-rate line above it (layout sweep, 2026-09-29).
+    const rowH = Math.max(18, Math.ceil(oneLineH));
+    const mh = 44 + affixCount * 20 + (maxed ? 24 : rowH * 2 + 22 + 40 + protectExtra + (demoteChance > 0 ? rowH + demoteExtra : 0)) + actionsH + 12;
     const mx = 0;
     const my = 0;
 
@@ -157,28 +171,27 @@ export class DetailPanel {
       const rateLbl = core.stxt(t('equip.enhanceRate').replace('{rate}', String(rate)), FS.micro, C.dark);
       rateLbl.x = mx + 12; rateLbl.y = cy;
       panelRoot.addChild(rateLbl);
-      cy += 18;
+      cy += rowH;
       if (demoteChance > 0) {
         // Demote-risk warning (ADR-063): only +7/+8 attempts carry this, so it's easy to miss —
         // called out in red rather than folded into the success-rate line above.
-        const demoteLbl = core.stxt(t('equip.enhanceDemoteWarn').replace('{pct}', String(Math.round(demoteChance * 100))), FS.micro, C.red);
+        const demoteLbl = core.stxt(demoteText, FS.micro, C.red, false, textW);
         demoteLbl.x = mx + 12; demoteLbl.y = cy;
         panelRoot.addChild(demoteLbl);
-        cy += 18;
+        cy += rowH + demoteExtra;
       }
       const affordable = canAffordEnhance(save, cost);
       const costColor = affordable ? C.mid : C.red;
       const costLbl = core.stxt(`${t('equip.cost')}:`, FS.micro, costColor);
-      costLbl.anchor.set(0, 0.5); costLbl.x = mx + 12; costLbl.y = cy + 7;
+      costLbl.anchor.set(0, 0.5); costLbl.x = mx + 12; costLbl.y = cy + rowH / 2;
       panelRoot.addChild(costLbl);
-      core.drawCostChips(panelRoot, costLbl.x + costLbl.width + 8, cy + 7, cost.materials, cost.coins, costColor, 13);
-      cy += 18;
+      core.drawCostChips(panelRoot, costLbl.x + costLbl.width + 8, cy + rowH / 2, cost.materials, cost.coins, costColor, 13);
+      cy += rowH;
       // Protect-item row (E7): show quantity held + toggle switch.
       const canToggle = protectCount > 0;
       const protecting = core.useProtectEnhance && canToggle;
       const protectColor = canToggle ? (protecting ? C.accent : C.dark) : C.mid;
       // Toggle checkbox: a small ink box, ticked with a hand-drawn check when on (replaces [✓]/[ ]).
-      const boxSz = 14;
       const box = new PIXI.Graphics();
       box.lineStyle(1.5, protectColor, 1);
       box.drawRect(mx + 12, cy, boxSz, boxSz);
@@ -188,16 +201,16 @@ export class DetailPanel {
         ck.x = mx + 12; ck.y = cy;
         panelRoot.addChild(ck);
       }
-      const protectLbl = core.stxt(t('equip.protect').replace('{n}', String(protectCount)), FS.micro, protectColor);
+      const protectLbl = core.stxt(protectText, FS.micro, protectColor, false, textW - boxSz - 4);
       protectLbl.x = mx + 12 + boxSz + 4; protectLbl.y = cy + 2;
       panelRoot.addChild(protectLbl);
       if (canToggle && !core.bt.busy) {
         core.modalHits.push({
-          rect: core.toModalScreen({ x: mx + 10, y: cy - 2, w: mw - 20, h: 18 }),
+          rect: core.toModalScreen({ x: mx + 10, y: cy - 2, w: mw - 20, h: 18 + protectExtra }),
           fn: () => { core.useProtectEnhance = !core.useProtectEnhance; core.render(); },
         });
       }
-      cy += 22;
+      cy += 22 + protectExtra;
 
       // Confirm-enhance button (2026-07-22b): unlike equip/reforge/salvage, enhance takes the
       // protect toggle above as a parameter, so it can't just fire from the grid cell — the
@@ -221,9 +234,38 @@ export class DetailPanel {
       cy += btnH;
     }
 
-    // Hit priority is first-match: the confirm button / protect toggle (above) win, then the
-    // panel area is inert, then a tap anywhere outside the panel closes the detail (added last =
-    // lowest). The remaining actions (equip / reforge / salvage) still live on the grid cell.
+    if (extraActions.length > 0) cy += 4;
+    for (const a of extraActions) {
+      cy += actionGap;
+      const enabled = !a.disabled;
+      const onDark = enabled && (a.fill === C.dark || a.fill === 0x3355aa);
+      const ink = enabled ? (onDark ? C.light : C.dark) : C.mid;
+      const b = sketchPanel(mw - 24, actionBtnH, { fill: enabled ? a.fill : C.btnOff, border: enabled ? a.stroke : C.mid, seed: seedFor(cy, 23, mw) });
+      b.x = mx + 12; b.y = cy;
+      panelRoot.addChild(b);
+      const bl = core.stxt(a.label, FS.tiny, ink, true);
+      const icSz = 16;
+      const groupW = icSz + 6 + bl.width;
+      const ic = buildIcon(a.icon, icSz, ink);
+      ic.x = mx + (mw - groupW) / 2; ic.y = cy + (actionBtnH - icSz) / 2;
+      panelRoot.addChild(ic);
+      bl.anchor.set(0, 0.5); bl.x = ic.x + icSz + 6; bl.y = cy + actionBtnH / 2;
+      panelRoot.addChild(bl);
+      if (enabled) {
+        // Equip/unequip leave the item's modal behind; reforge and salvage open their own dialog
+        // on top of it and rely on detailId to come back here (see showConfirm / openReforgeSelect).
+        const leaves = a.key === 'equip' || a.key === 'unequip';
+        core.modalHits.push({
+          rect: core.toModalScreen({ x: mx + 12, y: cy, w: mw - 24, h: actionBtnH }),
+          fn: () => { if (leaves) this.closeDetail(); a.fn(); },
+        });
+      }
+      cy += actionBtnH;
+    }
+
+    // Hit priority is first-match: the confirm button / protect toggle / action buttons (above)
+    // win, then the panel area is inert, then a tap anywhere outside the panel closes the detail
+    // (added last = lowest). Actions the grid cell had room for stay there only.
     core.modalHits.push({ rect: core.toModalScreen({ x: mx, y: my, w: mw, h: mh }), fn: () => {} });
     core.modalHits.push({ rect: { x: 0, y: 0, w, h }, fn: () => this.closeDetail() });
   }
@@ -381,16 +423,17 @@ export class DetailPanel {
       .replace('{name}', itemName(inst.defId))
       .replace('{count}', String(stackCount))
       .replace('{refund}', materialsStr(refund) || t('equip.nothing'));
-    core.showConfirm(msg, () => void this.doSalvage(inst.id));
+    core.showConfirm(msg, () => void this.runSalvage([inst.id], t('equip.salvaged')));
   }
 
-  private async doSalvage(instanceId: string): Promise<void> {
+  /** Salvage `ids` in one batch call; `okMsg` is the success toast. */
+  private async runSalvage(ids: string[], okMsg: string): Promise<void> {
     const core = this.core;
     if (core.bt.busy) return;
     core.bt.start();
     try {
-      const res = await withTimeout(core.cb.salvage([instanceId]));
-      if (res.ok) { core.showToast(t('equip.salvaged'), C.green); core.detailId = null; }
+      const res = await withTimeout(core.cb.salvage(ids));
+      if (res.ok) { core.showToast(okMsg, C.green); core.detailId = null; }
       else core.showToast(t(res.key), C.red);
     } catch (e) {
       core.showToast(t(e instanceof TimeoutError ? 'common.networkTimeout' : 'equip.err.generic'), C.red);
@@ -410,23 +453,7 @@ export class DetailPanel {
       .replace('{name}', itemName(inst.defId))
       .replace('{count}', String(ids.length))
       .replace('{refund}', materialsStr(total) || t('equip.nothing'));
-    core.showConfirm(msg, () => void this.doSalvageAll(ids));
-  }
-
-  private async doSalvageAll(instanceIds: string[]): Promise<void> {
-    const core = this.core;
-    if (core.bt.busy) return;
-    core.bt.start();
-    try {
-      const res = await withTimeout(core.cb.salvage(instanceIds));
-      if (res.ok) { core.showToast(t('equip.salvagedAll').replace('{count}', String(instanceIds.length)), C.green); core.detailId = null; }
-      else core.showToast(t(res.key), C.red);
-    } catch (e) {
-      core.showToast(t(e instanceof TimeoutError ? 'common.networkTimeout' : 'equip.err.generic'), C.red);
-    } finally {
-      core.bt.stop();
-      core.render();
-    }
+    core.showConfirm(msg, () => void this.runSalvage(ids, t('equip.salvagedAll').replace('{count}', String(ids.length))));
   }
 
   async doEquip(slot: EquipSlot, instanceId: string | null, cardId: string): Promise<void> {

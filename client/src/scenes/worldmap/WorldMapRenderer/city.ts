@@ -118,6 +118,14 @@ export class WorldMapRendererCity implements CityHandlers {
           const shieldBreakFx = new PIXI.Graphics();
           shieldBreakFx.name = 'shieldBreakFx';
           shieldBreakFx.blendMode = PIXI.BLEND_MODES.ADD;
+          // The four effect layers are empty on almost every base (not damaged, not protected, not
+          // mid-pop) — about 10 of the container's 13 nodes. Hidden while empty so the renderer and
+          // the idle change detector (render/renderPolicy.ts) skip the subtree instead of walking it;
+          // each one is shown exactly where it gets drawn below / in lifecycle.update.
+          hpGfx.visible = false;
+          shieldFx.visible = false;
+          shieldGlowFx.visible = false;
+          shieldBreakFx.visible = false;
           cityC = new PIXI.Container();
           cityC.addChild(sprite);
           cityC.addChild(plotMask);
@@ -198,7 +206,9 @@ export class WorldMapRendererCity implements CityHandlers {
         // hp absent = full HP per the WorldTileView contract, so the guard also skips those.
         const hpbar = cityC.getChildByName('hpbar') as PIXI.Graphics;
         hpbar.clear();
+        hpbar.visible = false;
         if (tile.maxHp && tile.hp != null && tile.hp < tile.maxHp) {
+          hpbar.visible = true;
           const ratio = Math.max(0, Math.min(1, tile.hp / tile.maxHp));
           const barW = baseSpriteTiles * tp * 0.6;
           const barH = Math.max(3, tp * 0.07);
@@ -230,7 +240,10 @@ export class WorldMapRendererCity implements CityHandlers {
         // a glance rather than a flat static overlay.
         const shieldFx = cityC.getChildByName('shieldFx') as PIXI.Graphics;
         const shieldGlowFx = cityC.getChildByName('shieldGlowFx') as PIXI.Container;
-        if ((tile.protectedUntil ?? 0) > Date.now()) {
+        const shielded = (tile.protectedUntil ?? 0) > Date.now();
+        shieldFx.visible = shielded;
+        shieldGlowFx.visible = shielded;
+        if (shielded) {
           const cx = 0;
           const cy = -sprite.height * (1 - contentTopFrac) * 0.5;
           const rx = sprite.width * 0.42;
@@ -249,7 +262,10 @@ export class WorldMapRendererCity implements CityHandlers {
           // Was protected as of the last redraw and just dropped out — pop a one-shot break
           // flash at the same spot (2026-08-08 follow-up, borrowed from daydayup's shield_break).
           const priorGeom = ctx.shieldGeom.get(cacheKey);
-          if (priorGeom) ctx.shieldBreakFx.set(cacheKey, { ...priorGeom, age: 0 });
+          if (priorGeom) {
+            ctx.shieldBreakFx.set(cacheKey, { ...priorGeom, age: 0 });
+            (cityC.getChildByName('shieldBreakFx') as PIXI.Graphics).visible = true;
+          }
           shieldFx.clear();
           clearShieldGlow(shieldGlowFx);
           ctx.shieldGeom.delete(cacheKey);
@@ -288,6 +304,7 @@ export class WorldMapRendererCity implements CityHandlers {
         // own plot diamond, and a bar hovering above the roof would be clipped away with it.
         const hpbar = new PIXI.Graphics();
         hpbar.name = 'hpbar';
+        hpbar.visible = false;  // empty until damaged — see the base branch above
         cityC.addChild(hpbar);
         ctx.cityLayer.addChild(cityC);
         ctx.citySprites.set(key, cityC);
@@ -317,7 +334,9 @@ export class WorldMapRendererCity implements CityHandlers {
       // cannot convey that a level-10 capital's wall is only ~22% deeper than a level-3 city's.
       const cityHp = cityC.getChildByName('hpbar') as PIXI.Graphics;
       cityHp.clear();
+      cityHp.visible = false;
       if (node.durabilityMax && node.durability != null && node.durability < node.durabilityMax) {
+        cityHp.visible = true;
         const ratio = Math.max(0, Math.min(1, node.durability / node.durabilityMax));
         const barW = spriteTiles * tp * 0.5;
         const barH = Math.max(3, tp * 0.07);

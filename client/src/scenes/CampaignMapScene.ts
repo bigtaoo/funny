@@ -12,6 +12,7 @@ import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawNode, drawTrail, drawDecor, drawTape, drawClearStamp, clearStampX } from './CampaignMapScene/drawing';
 import { buildCampaignHeader } from './CampaignMapScene/header';
 import { dispatchHit, type Hit } from '../ui/hits';
+import { steppedTime } from '../render/steppedTime';
 
 // ── CampaignMapScene (S3-5 → CAMPAIGN_DESIGN §12) — the "campaign notebook" ──────
 //
@@ -124,7 +125,9 @@ export class CampaignMapScene implements Scene {
     this.pulseT += dt;
     const ring = this.page?.pulse;
     if (ring) {
-      const k = 0.5 + 0.5 * Math.sin(this.pulseT * 4.2);
+      // Phase-stepped (render/steppedTime.ts), like the guide ring: an unquantized sine rewrote the
+      // ring's scale + alpha on every tick and held this demand-painted map at 60 paints/s.
+      const k = 0.5 + 0.5 * Math.sin(steppedTime(this.pulseT) * 4.2);
       ring.scale.set(1 + 0.22 * k);
       ring.alpha = 0.3 + 0.45 * k;
     }

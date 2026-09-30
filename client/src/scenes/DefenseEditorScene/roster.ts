@@ -5,9 +5,10 @@
 // explicitly instead of becoming their own domain class.
 import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
-import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
+import { ui as C, txt, sketchPanel, seedFor, fitOrWrap } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
+import { fitToWidth } from '../../ui/widgets/truncateText';
 import { cardInstanceArtUrl } from '../../render/cardArt';
 import type { UnitType } from '@nw/engine/types';
 import type { CardInstance } from '../../game/meta/SaveData';
@@ -27,8 +28,7 @@ export function renderAttackBody(core: DefenseEditorSceneCore, top: number, bott
   const rightX = PAD + leftW + gap;
   const rightW = w - PAD - rightX;
 
-  const toolbarH = 60;
-  renderAttackToolbar(core, PAD, top, leftW, toolbarH);
+  const toolbarH = renderAttackToolbar(core, PAD, top, leftW);
   renderGrid(core, top + toolbarH + 6, bottom, PAD, leftW);
 
   core.rosterX = rightX;
@@ -38,116 +38,92 @@ export function renderAttackBody(core: DefenseEditorSceneCore, top: number, bott
   renderCardRosterPanel(core, rightX, top, rightW, bottom - top);
 }
 
-/** Hint text + 自动回城 toggle + erase toggle, sized to the left (grid) half only. */
-export function renderAttackToolbar(
-  core: DefenseEditorSceneCore,
-  x: number,
-  y: number,
-  w: number,
-  h: number
-): void {
-  const eraseW = 60,
-    eraseH = h - 6;
-  const eraseX = x + w - eraseW;
+/** Height of the toggle row; the pills are 6 shorter, which leaves room for a two-line label. */
+const TOOL_ROW_H = 60;
 
-  // 占领后自动回城 toggle (2026-07-23): a compact pill just left of the erase toggle. Off (default) = the team
-  // stays stationed on a captured/moved-to tile; on = it marches home afterward.
+/**
+ * Toggle row (领队 / 自动回城 / erase) over the grid, and the hint on its own line(s) under it — sized
+ * to the left (grid) half only. Returns the height it took.
+ *
+ * The hint used to share the toggle row and be squeezed into whatever the three pills left over:
+ * ~250 design px in portrait for a ~980 px English sentence, drawn at 0.25 (5 design px against a
+ * floor of 20), and the pills' own labels were squeezed into fixed 76 / 116 px boxes the same way
+ * (2026-09-29). Now the pills are sized from their labels, a label that still does not fit goes
+ * onto two lines, and the hint wraps across the full width of the grid.
+ */
+export function renderAttackToolbar(core: DefenseEditorSceneCore, x: number, y: number, w: number): number {
+  const pillH = TOOL_ROW_H - 6;
+  const gap = 8;
   const arActive = core.autoReturn;
-  const arW = 116,
-    arH = eraseH;
-  const arX = eraseX - 8 - arW;
-  const arBox = sketchPanel(arW, arH, {
-    fill: arActive ? C.gold : C.paper,
-    border: arActive ? C.dark : C.gold,
-    width: arActive ? 2.4 : 1.4,
-    seed: seedFor(arX, y, arW),
-  });
-  arBox.x = arX;
-  arBox.y = y + 3;
-  core.bodyLayer.addChild(arBox);
-  const arLbl = txt(
-    `${t('world.team.autoReturn')} ${arActive ? '✓' : '✕'}`,
-    FS.micro,
-    arActive ? C.dark : C.gold,
-    true
-  );
-  arLbl.anchor.set(0.5, 0.5);
-  arLbl.x = arBox.x + arW / 2;
-  arLbl.y = arBox.y + arH / 2;
-  if (arLbl.width > arW - 8) arLbl.scale.set((arW - 8) / arLbl.width);
-  core.bodyLayer.addChild(arLbl);
-  core.hits.push({
-    rect: { x: arBox.x, y: arBox.y, w: arW, h: arH },
-    fn: () => {
-      core.autoReturn = !core.autoReturn;
-      core.render();
-    },
-  });
-
-  // 领队 tool (2026-07-25): armed like the erase toggle — while it's active, tapping a placed card
-  // makes that card the team's icon. Deliberately NOT a fixed "leader cell" on the grid: the leader is
-  // an identity, and tying it to a square would force the player to break their formation to change it.
   const ldActive = core.tool.kind === 'leader';
-  const ldW = 76,
-    ldH = eraseH;
-  const ldX = arX - 8 - ldW;
-  const ldBox = sketchPanel(ldW, ldH, {
-    fill: ldActive ? C.accent : C.paper,
-    border: ldActive ? C.dark : C.accent,
-    width: ldActive ? 2.4 : 1.4,
-    seed: seedFor(ldX, y, ldW),
-  });
-  ldBox.x = ldX;
-  ldBox.y = y + 3;
-  core.bodyLayer.addChild(ldBox);
-  const ldLbl = txt(`★ ${t('world.team.leader')}`, FS.micro, ldActive ? C.light : C.accent, true);
-  ldLbl.anchor.set(0.5, 0.5);
-  ldLbl.x = ldBox.x + ldW / 2;
-  ldLbl.y = ldBox.y + ldH / 2;
-  if (ldLbl.width > ldW - 8) ldLbl.scale.set((ldW - 8) / ldLbl.width);
-  core.bodyLayer.addChild(ldLbl);
-  core.hits.push({
-    rect: { x: ldBox.x, y: ldBox.y, w: ldW, h: ldH },
-    fn: () => {
-      core.tool = ldActive ? { kind: 'erase' } : { kind: 'leader' };
-      core.render();
-    },
-  });
-
-  const hint = txt(
-    core.tool.kind === 'leader' ? t('world.team.leaderHint') : t('world.team.hint'),
-    FS.micro,
-    C.mid
-  );
-  hint.anchor.set(0, 0.5);
-  hint.x = x;
-  hint.y = y + h / 2;
-  const hintMax = ldX - 8 - x;
-  if (hint.width > hintMax) hint.scale.set(hintMax / hint.width);
-  core.bodyLayer.addChild(hint);
-
   const eraseActive = core.tool.kind === 'erase';
-  const box = sketchPanel(eraseW, eraseH, {
-    fill: eraseActive ? C.red : C.paper,
-    border: eraseActive ? C.dark : C.red,
-    width: eraseActive ? 2.4 : 1.4,
-    seed: seedFor(eraseX, y, eraseW),
-  });
-  box.x = eraseX;
-  box.y = y + 3;
-  core.bodyLayer.addChild(box);
-  const lbl = txt(t('world.defense.erase'), FS.micro, eraseActive ? C.light : C.red, true);
-  lbl.anchor.set(0.5, 0.5);
-  lbl.x = box.x + eraseW / 2;
-  lbl.y = box.y + eraseH / 2;
-  core.bodyLayer.addChild(lbl);
-  core.hits.push({
-    rect: { x: box.x, y: box.y, w: eraseW, h: eraseH },
-    fn: () => {
-      core.tool = { kind: 'erase' };
-      core.render();
+
+  // Right to left: erase, 自动回城, 领队. 自动回城 (2026-07-23) — off (default) = the team stays
+  // stationed on a captured/moved-to tile; on = it marches home afterward. 领队 (2026-07-25) is armed
+  // like the erase toggle: while active, tapping a placed card makes that card the team's icon —
+  // deliberately not a fixed "leader cell", which would force breaking the formation to change it.
+  const pills = [
+    {
+      label: t('world.defense.erase'), minW: 60,
+      fill: eraseActive ? C.red : C.paper, border: eraseActive ? C.dark : C.red, active: eraseActive,
+      ink: eraseActive ? C.light : C.red,
+      fn: () => { core.tool = { kind: 'erase' }; core.render(); },
     },
+    {
+      label: `${t('world.team.autoReturn')} ${arActive ? '✓' : '✕'}`, minW: 116,
+      fill: arActive ? C.gold : C.paper, border: arActive ? C.dark : C.gold, active: arActive,
+      ink: arActive ? C.dark : C.gold,
+      fn: () => { core.autoReturn = !core.autoReturn; core.render(); },
+    },
+    {
+      label: `★ ${t('world.team.leader')}`, minW: 76,
+      fill: ldActive ? C.accent : C.paper, border: ldActive ? C.dark : C.accent, active: ldActive,
+      ink: ldActive ? C.light : C.accent,
+      fn: () => { core.tool = ldActive ? { kind: 'erase' } : { kind: 'leader' }; core.render(); },
+    },
+  ];
+  const labels = pills.map((p) => txt(p.label, FS.micro, p.ink, true));
+  const widths = pills.map((p, i) => Math.max(p.minW, Math.ceil(labels[i]!.width) + 16));
+  // Short of room (portrait German), 自动回城 — the longest — gives up width first and wraps.
+  const over = widths.reduce((sum, bw) => sum + bw, 0) + gap * (pills.length - 1) - w;
+  if (over > 0) widths[1] = Math.max(60, widths[1]! - over);
+
+  let right = x + w;
+  pills.forEach((p, i) => {
+    const bw = widths[i]!;
+    const bx = right - bw;
+    const box = sketchPanel(bw, pillH, {
+      fill: p.fill, border: p.border, width: p.active ? 2.4 : 1.4, seed: seedFor(bx, y, bw),
+    });
+    box.x = bx;
+    box.y = y + 3;
+    core.bodyLayer.addChild(box);
+    const lbl = labels[i]!;
+    lbl.anchor.set(0.5, 0.5);
+    fitOrWrap(lbl, bw - 8);
+    lbl.x = bx + bw / 2;
+    lbl.y = box.y + pillH / 2;
+    core.bodyLayer.addChild(lbl);
+    core.hits.push({ rect: { x: bx, y: box.y, w: bw, h: pillH }, fn: p.fn });
+    right = bx - gap;
   });
+
+  // The hint swaps text with the leader tool; the row keeps the taller of the two so arming the tool
+  // does not shift the grid under the player's finger.
+  const hintKeys = ['world.team.hint', 'world.team.leaderHint'] as const;
+  const hintH = Math.max(...hintKeys.map((k) => {
+    const probe = txt(t(k), FS.micro, C.mid);
+    fitOrWrap(probe, w, 'left');
+    const hh = probe.height;
+    probe.destroy({ texture: true, baseTexture: true });
+    return hh;
+  }));
+  const hint = txt(ldActive ? t('world.team.leaderHint') : t('world.team.hint'), FS.micro, C.mid);
+  fitOrWrap(hint, w, 'left');
+  hint.x = x;
+  hint.y = y + TOOL_ROW_H + 2;
+  core.bodyLayer.addChild(hint);
+  return TOOL_ROW_H + 2 + Math.ceil(hintH);
 }
 
 /** Right-half card roster: a scrollable portrait-card grid (mirrors TeamsScene's roster grid). */
@@ -179,7 +155,21 @@ export function renderCardRosterPanel(
   const gap = 8;
   const cellWTarget = 168,
     cellH = 96;
-  const cols = Math.max(1, Math.floor((w + gap) / (cellWTarget + gap)));
+  // Columns: as many 168-wide cells as fit, but never so narrow that the longest hero name on the
+  // list does not fit beside the portrait at the floor size. "Chen Shou" needs ~99 design px and a
+  // three-column portrait cell leaves ~88; the old answer scaled it (with "Lv.9" appended) to 0.58 of
+  // the floor (2026-09-29). Chinese names, and short latin ones, keep three columns.
+  const nameW = Math.max(0, ...cards.map((c) => {
+    const probe = txt(rosterCardName(c.card), FS.micro, C.dark, true);
+    const pw = probe.width;
+    probe.destroy({ texture: true, baseTexture: true });
+    return pw;
+  }));
+  const minCellW = Math.ceil(nameW) + rosterCellChromeW(cellH);
+  const cols = Math.max(1, Math.min(
+    Math.floor((w + gap) / (cellWTarget + gap)),
+    Math.floor((w + gap) / (minCellW + gap)),
+  ));
   const cellW = (w - gap * (cols - 1)) / cols;
   const rows = Math.ceil(cards.length / cols);
   const totalH = rows * (cellH + gap) + gap;
@@ -213,6 +203,16 @@ export function renderCardRosterPanel(
   drawScrollIndicator(core.bodyLayer, { x, y: listY, w, h: availH }, core.scrollY, core.scrollMax);
 }
 
+const ROSTER_CELL_PAD = 6;
+/** Portrait frame width for a roster cell `cellH` tall. */
+const rosterImgW = (cellH: number): number => Math.round((cellH - ROSTER_CELL_PAD * 2) * 0.72);
+/** Everything in a roster cell's width that is not the text column: pads, portrait, gap. */
+const rosterCellChromeW = (cellH: number): number => ROSTER_CELL_PAD * 2 + rosterImgW(cellH) + 8;
+const rosterCardName = (card: CardInstance): string =>
+  t(`card.${card.defId}.name` as import('../../i18n').TranslationKey);
+/** Line pitch of the text column: an FS.micro line at the portrait floor is ~20 tall. */
+const ROSTER_LINE = 20;
+
 export function renderRosterCell(
   core: DefenseEditorSceneCore,
   c: { card: CardInstance; unitType: UnitType; troops: number; cap: number },
@@ -223,7 +223,7 @@ export function renderRosterCell(
 ): void {
   const active = core.tool.kind === 'card' && core.tool.cardInstanceId === c.card.id;
   const placed = core.cellForCard(c.card.id) !== undefined;
-  const pad = 6;
+  const pad = ROSTER_CELL_PAD;
   const box = sketchPanel(cellW, cellH, {
     fill: active ? C.accent : 0xfaf9f5,
     border: active ? C.dark : placed ? C.accent : C.mid,
@@ -235,7 +235,7 @@ export function renderRosterCell(
   core.bodyLayer.addChild(box);
 
   const imgH = cellH - pad * 2;
-  const imgW = Math.round(imgH * 0.72);
+  const imgW = rosterImgW(cellH);
   // fillAlpha: 0 — see CardScene/list.ts's renderCardCell (2026-08-21): the cell behind is already
   // the one background layer, this frame is a stroke-only outline.
   const frame = sketchPanel(imgW, imgH, {
@@ -252,22 +252,30 @@ export function renderRosterCell(
 
   const ax = x + pad + imgW + 8;
   const rightW = Math.max(10, x + cellW - pad - ax);
-  const name = t(`card.${c.card.defId}.name` as import('../../i18n').TranslationKey);
-  const nameLbl = txt(`${name} Lv.${c.card.level}`, FS.micro, active ? C.light : C.dark, true);
+  // Name, then level on its own line — "Chen Shou Lv.9" on one line was the widest thing in the cell.
+  const nameLbl = txt(rosterCardName(c.card), FS.micro, active ? C.light : C.dark, true);
   nameLbl.x = ax;
   nameLbl.y = y + pad;
-  if (nameLbl.width > rightW) nameLbl.scale.set(Math.max(0.5, rightW / nameLbl.width));
+  // The column count above makes room for every name on the list; this only guards a cell that is
+  // narrower than that anyway (a one-column list on a very narrow panel).
+  if (nameLbl.width > rightW) nameLbl.text = fitToWidth(nameLbl.text, FS.micro, rightW, true);
   core.bodyLayer.addChild(nameLbl);
+
+  const lvLbl = txt(`Lv.${c.card.level}`, FS.micro, active ? C.light : C.dark);
+  lvLbl.x = ax;
+  lvLbl.y = y + pad + ROSTER_LINE;
+  core.bodyLayer.addChild(lvLbl);
 
   const troopLbl = txt(`${c.troops}/${c.cap}`, FS.micro, active ? C.light : C.mid);
   troopLbl.x = ax;
-  troopLbl.y = y + pad + 18;
+  troopLbl.y = y + pad + ROSTER_LINE * 2;
   core.bodyLayer.addChild(troopLbl);
 
   if (placed) {
     const tag = txt(`[${t('roster.inTeam')}]`, FS.micro, active ? C.light : C.accent, true);
     tag.x = ax;
-    tag.y = y + pad + 36;
+    tag.y = y + pad + ROSTER_LINE * 3;
+    if (tag.width > rightW) tag.text = fitToWidth(tag.text, FS.micro, rightW, true);
     core.bodyLayer.addChild(tag);
   }
 

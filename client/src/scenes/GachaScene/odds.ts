@@ -11,7 +11,7 @@ import { buildEquipIcon } from '../../render/atlas/equipmentAtlas';
 import { buildMaterialIcon } from '../../render/atlas/materialAtlas';
 import { CARD_DEFS } from '../../game/meta/cardDefs';
 import { SKIN_TARGET_UNIT } from '../../game/meta/skinDefs';
-import { cardInstanceArtUrl, getArtTexture, unitPortraitUrl } from '../../render/cardArt';
+import { artUrlForBox, cardInstanceArtUrl, getArtTexture, unitPortraitUrl } from '../../render/cardArt';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { peekViewportH } from '../../ui/widgets/scrollPeek';
 import { FS, snapFont } from '../../render/fontScale';
@@ -196,7 +196,9 @@ export class OddsPanel implements OddsHandlers {
     }
 
     const cardDef = CARD_DEFS[itemId];
-    const artUrl = cardDef ? cardInstanceArtUrl({ defId: itemId }) ?? undefined : undefined;
+    // The single-pull reveal card is the one box big enough to magnify a thumbnail (ADR-096).
+    const thumbUrl = cardDef ? cardInstanceArtUrl({ defId: itemId }) : null;
+    const artUrl = thumbUrl ? artUrlForBox(thumbUrl, size) : undefined;
     if (artUrl) {
       const tex = getArtTexture(artUrl);
       if (tex.baseTexture.valid) {

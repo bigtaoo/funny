@@ -38,7 +38,6 @@ const MAX_PROFILES_PER_SESSION = 6;
 
 class FakeTicker {
   deltaMS = 16.7;
-  maxFPS = 60;
   private cb: (() => void) | null = null;
   add(cb: () => void): void { this.cb = cb; }
   remove(_cb: unknown): void { this.cb = null; }
@@ -61,7 +60,8 @@ function makeDoc() {
 /** The live accumulator instance PerfMonitor drains — re-imported per case (see beforeEach), and at
  *  module scope because `feedWindow` below records through it. */
 let recordFrameSample: (ms: number) => void;
-let recordRenderSample: (ms: number) => void;
+let recordRenderSample: (ms: number, split?: { texMs: number; shMs: number; txtMs: number; geoMs: number }) => void;
+let setActiveScene: (name: string) => void;
 
 /**
  * Feed `windows` complete sampling windows at `fps`.
@@ -103,6 +103,7 @@ describe('render_profile', () => {
   let monitor: { install(t: unknown, i?: unknown): void; uninstall(): void };
   let stats: RenderStats;
   let setLiveRenderStats: (s: RenderStats | null) => void;
+  let setLiveFramePacing: (p: { capFps: number; refreshHz: number } | null) => void;
 
   beforeEach(async () => {
     vi.resetModules();
@@ -111,17 +112,19 @@ describe('render_profile', () => {
     ({ doc, fire } = makeDoc());
     vi.stubGlobal('document', doc);
     ticker = new FakeTicker();
-    stats = { ticks: 0, painted: 0, skipped: 0 };
+    stats = { ticks: 0, painted: 0, skipped: 0, idle: false };
     // Imported AFTER resetModules, or PerfMonitor would read a different module instance of the
     // counter holder than the one this test writes to (and every paint field would come back absent).
-    ({ setLiveRenderStats } = await import('../src/render/renderStats'));
+    ({ setLiveRenderStats, setLiveFramePacing } = await import('../src/render/renderStats'));
     setLiveRenderStats(stats);
+    // ADR-094: the cap and the refresh estimate come from the pacer, not from `ticker.maxFPS`.
+    setLiveFramePacing({ capFps: 60, refreshHz: 59.94 });
     // Same trap as the counter holder above, one module over: `vi.resetModules()` makes the mock
     // factory re-run, so the accumulator PerfMonitor drains is a NEW instance every case. Recording
     // through a module-scope import taken before this line would feed the previous case's copy, and
     // every cost field would come back 0 — a green test asserting nothing.
     const anr = await import('../src/net/anomaly/anrContext');
-    ({ recordFrameSample, recordRenderSample } = anr);
+    ({ recordFrameSample, recordRenderSample, setActiveScene } = anr);
     takeFrameCostImpl = anr.takeFrameCost;
     anr.takeFrameCost(); // drain anything the import chain itself recorded
     const { PerfMonitor } = await import('../src/cache/PerfMonitor');
@@ -131,6 +134,7 @@ describe('render_profile', () => {
   afterEach(() => {
     monitor.uninstall();
     setLiveRenderStats(null);
+    setLiveFramePacing(null);
     vi.unstubAllGlobals();
   });
 
@@ -166,6 +170,8 @@ describe('render_profile', () => {
     expect(props.fpsMin).toBe(25);
     expect(props.windows).toBe(FIRST_PROFILE_WINDOWS);
     expect(props.maxFps).toBe(60);
+    // The display's own refresh rate — what tells a 30 Hz panel apart from a slow device.
+    expect(props.hz).toBe(60);
     expect(props.res).toBe(2);
     expect(props.dpr).toBe(3);
     // The one field that says whether ADR-083's dpr cap did anything on THIS device.
@@ -177,6 +183,25 @@ describe('render_profile', () => {
     monitor.install(ticker, { resolution: 1, dpr: 1, canvasW: 750, canvasH: 1334 });
     feedWindow(ticker, 50, FIRST_PROFILE_WINDOWS);
     expect((track.mock.calls[0]![1] as Record<string, unknown>).dprCapped).toBe(false);
+  });
+
+  it('reports the lowered resolution and where it came from after an adaptive drop (ADR-100)', () => {
+    // app.ts hands PerfMonitor one object and rewrites it in place when the resolution drops.
+    const info: { resolution: number; dpr: number; canvasW: number; canvasH: number; resFrom?: number } =
+      { resolution: 2, dpr: 2, canvasW: 2048, canvasH: 1308 };
+    monitor.install(ticker, info);
+    info.resolution = 1.5; info.resFrom = 2; info.canvasW = 1536; info.canvasH = 981;
+    feedWindow(ticker, 18, FIRST_PROFILE_WINDOWS);
+    const props = track.mock.calls[0]![1] as Record<string, unknown>;
+    expect(props.res).toBe(1.5);
+    expect(props.resFrom).toBe(2);
+    expect(props.canvasW).toBe(1536);
+  });
+
+  it('carries no resFrom on a session whose resolution never dropped', () => {
+    monitor.install(ticker, RENDER_INFO);
+    feedWindow(ticker, 50, FIRST_PROFILE_WINDOWS);
+    expect(track.mock.calls[0]![1]).not.toHaveProperty('resFrom');
   });
 
   it('derives the paint rate from the counter DIFF, so a reactive scene reads below the tick rate', () => {
@@ -268,6 +293,83 @@ describe('render_profile', () => {
     expect(props.fpsP50).toBe(50);
     expect(props.paintPerSec).toBeUndefined();
   });
+  // ── full-rate stretches only (ADR-095) ─────────────────────────────────────────
+  // An idle menu held at IDLE_FPS paints nothing new; its 20fps is the power saving working, not a
+  // slow device. fps is measured on the full-rate stretches and the idle share is its own field.
+
+  it('keeps idle stretches out of the fps and reports their share as idlePct', () => {
+    monitor.install(ticker, RENDER_INFO);
+    // Alternate 5 full-rate windows at 50fps with 10 idle ones at the 20fps cap (idle = 2/3 of span).
+    for (let w = 0; w < FIRST_PROFILE_WINDOWS; w++) {
+      stats.idle = w % 3 !== 0;
+      feedWindow(ticker, stats.idle ? 25 : 50, 1);
+    }
+    const props = track.mock.calls[0]![1] as Record<string, unknown>;
+    expect(props.fpsP50).toBe(50);
+    expect(props.fpsMin).toBe(50);
+    // Each idle->full switch also drops the waking interval, hence a hair over 2/3.
+    expect(props.idlePct).toBe(67);
+    expect(props.maxFps).toBe(60);
+  });
+
+  it('omits fps entirely for a span that was idle throughout, rather than reporting 20', () => {
+    const pacing = { capFps: 20, refreshHz: 60 };
+    setLiveFramePacing(pacing);
+    stats.idle = true;
+    monitor.install(ticker, RENDER_INFO);
+    feedWindow(ticker, 25, FIRST_PROFILE_WINDOWS);
+    const props = track.mock.calls[0]![1] as Record<string, unknown>;
+    expect(props.fpsP50).toBeUndefined();
+    expect(props.fpsMin).toBeUndefined();
+    expect(props.fpsMax).toBeUndefined();
+    expect(props.idlePct).toBe(100);
+    // No full-rate frame to take a ceiling from: the cap standing at report time.
+    expect(props.maxFps).toBe(20);
+  });
+
+  it('reports maxFps as the full-rate ceiling even when the report lands while idle', () => {
+    // Before ADR-095 this read the cap at report time, so a report written a second after the menu
+    // went still said `maxFps: 20` about a span measured at 60.
+    const pacing = { capFps: 60, refreshHz: 60 };
+    setLiveFramePacing(pacing);
+    monitor.install(ticker, RENDER_INFO);
+    feedWindow(ticker, 50, FIRST_PROFILE_WINDOWS - 1);
+    pacing.capFps = 20;
+    stats.idle = true;
+    feedWindow(ticker, 25, 1);
+    const props = track.mock.calls[0]![1] as Record<string, unknown>;
+    expect(props.maxFps).toBe(60);
+    expect(props.fpsP50).toBe(50);
+  });
+
+  it('does not count the interval that wakes from idle as a full-rate frame', () => {
+    // The first tick after a wake closes an interval that began at an idle tick: up to a whole idle
+    // period long. Counted, it would read as one very slow full-rate frame in every such window.
+    monitor.install(ticker, RENDER_INFO);
+    for (let w = 0; w < FIRST_PROFILE_WINDOWS; w++) {
+      stats.idle = true;
+      ticker.tick(40, 25);   // 1000ms idle
+      stats.idle = false;
+      ticker.tick(250, 1);   // the waking interval: an exaggerated 250ms gap
+      ticker.tick(10, 75);   // 750ms at 100fps
+    }
+    const props = track.mock.calls[0]![1] as Record<string, unknown>;
+    // With the wake counted: 76 frames / 1000ms = 76. Without: 75 / 750ms = 100.
+    expect(props.fpsP50).toBe(100);
+  });
+
+  it('a window with under 500ms at full rate yields no fps sample', () => {
+    monitor.install(ticker, RENDER_INFO);
+    feedWindow(ticker, 50, FIRST_PROFILE_WINDOWS - 1);
+    // One window with a 400ms full-rate burst at 10fps: too short to be a rate, so it is not the min.
+    stats.idle = true;
+    ticker.tick(40, 40);    // 1600ms idle
+    stats.idle = false;
+    ticker.tick(100, 5);    // 1 wake + 4 counted = 400ms
+    const props = track.mock.calls[0]![1] as Record<string, unknown>;
+    expect(props.fpsMin).toBe(50);
+  });
+
   // ── where the frame budget went ─────────────────────────────────────────────────
   // `fpsP50` says a device is slow; `maxFps` vs `fpsMax` says whether it was even allowed to go
   // faster. Neither says WHERE the frame went, and that is the fork the 2026-09-11 dpr-2 session was
@@ -313,6 +415,40 @@ describe('render_profile', () => {
     const props = track.mock.calls[0]![1] as Record<string, unknown>;
     expect(props.updP50).toBe(3);
     expect(props.updMax).toBe(40);
+  });
+
+  it('explains the worst render: its split, its scene and when it happened', () => {
+    // The 2026-09-28 question this answers: an iPhone first launch showed a 2s IntroScene render and
+    // nothing else. The split must belong to THAT call — a later, cheaper render with a bigger
+    // upload must not overwrite it, or the row would explain a frame nobody complained about.
+    monitor.install(ticker, RENDER_INFO);
+    setActiveScene('IntroScene');
+    feedWindow(ticker, 50, 1, { rnd: 1 });
+    recordRenderSample(900, { texMs: 12, shMs: 850, txtMs: 30, geoMs: 4 });
+    setActiveScene('LobbyScene');
+    recordRenderSample(80, { texMs: 70, shMs: 0, txtMs: 5, geoMs: 0 });
+    feedWindow(ticker, 50, FIRST_PROFILE_WINDOWS - 1, { rnd: 1 });
+
+    const props = track.mock.calls[0]![1] as Record<string, unknown>;
+    expect(props.rndMax).toBe(900);
+    expect(props.rndMaxSh).toBe(850);
+    expect(props.rndMaxTex).toBe(12);
+    expect(props.rndMaxTxt).toBe(30);
+    expect(props.rndMaxGeo).toBe(4);
+    expect(props.rndMaxScene).toBe('IntroScene');
+    expect(typeof props.rndMaxAt).toBe('number');
+  });
+
+  it('leaves the split off an unremarkable span', () => {
+    // Below RND_MAX_DETAIL_MS the split is noise: five more fields on every healthy row.
+    monitor.install(ticker, RENDER_INFO);
+    recordRenderSample(20, { texMs: 15, shMs: 0, txtMs: 0, geoMs: 0 });
+    feedWindow(ticker, 50, FIRST_PROFILE_WINDOWS, { rnd: 1 });
+
+    const props = track.mock.calls[0]![1] as Record<string, unknown>;
+    expect(props.rndMax).toBe(20);
+    expect(props).not.toHaveProperty('rndMaxSh');
+    expect(props).not.toHaveProperty('rndMaxScene');
   });
 
   it('drops the cost of a hidden window instead of letting it leak into the next one', () => {

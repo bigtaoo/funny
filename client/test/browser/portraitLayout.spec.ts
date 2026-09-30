@@ -1,4 +1,4 @@
-// Layout sweep — walks every screen, modal and battle the lobby can reach, on six viewports in a
+// Layout sweep — walks every screen, modal and battle the lobby can reach, on eleven viewports in a
 // real browser, and fails on labels that collide, spill, fall off the canvas or come out too small
 // to read.
 //
@@ -39,7 +39,7 @@ import { seedAccount, seedWorld, type SeedTarget } from './lib/seed';
 // Both live under `src/` since 2026-09-12, because the WeChat layout probe
 // (`src/entries/wechat-layout.ts`) bundles them into a mini-game package that audits itself from
 // the inside. Dependency-free of PIXI and the DOM, so pulling them into a Playwright process is
-// still safe — and sharing the table is what keeps the two sweeps walking the same 45 stops.
+// still safe — and sharing the table is what keeps the two sweeps walking the same 48 stops.
 import { auditLayout, type AuditFinding, type AuditResult } from '../../src/testing/layoutAudit';
 // The design box this viewport will get, and how to print a finding. Shared with
 // `rotateLayout.spec.ts`, which judges one screen against two boxes — see lib/auditBox.ts.
@@ -50,7 +50,7 @@ import { STOPS, hopName, type Hop, type Stop } from '../../src/testing/layoutSto
  * Every shape the layout has to survive. Portrait is why the sweep exists (development happens in a
  * landscape desktop window, so portrait defects only ever arrive as a screenshot from a phone), but
  * nothing in the walk or the audit is portrait-specific — the design box and the legibility floor
- * are derived per viewport below — so the same 45 stops cover landscape for the cost of two more
+ * are derived per viewport below — so the same 48 stops cover landscape for the cost of two more
  * rows here. The table itself lives in `src/testing/layoutStops.ts` since 2026-09-12, because the
  * WeChat in-package sweep walks the same one (see that file's header).
  *
@@ -66,7 +66,7 @@ import { STOPS, hopName, type Hop, type Stop } from '../../src/testing/layoutSto
  *    rather than a scale artefact.
  *
  * Each is a separate Playwright test, a separate browser context and a separate fresh account, so
- * one shape failing still reports the others. The full run is ~25 minutes; `--grep <name>` runs one.
+ * one shape failing still reports the others. The full run is ~30 minutes; `--grep <name>` runs one.
  */
 const VIEWPORTS = [
   { name: 'phone-390x844',     width: 390,  height: 844,  locale: 'en' },
@@ -85,6 +85,10 @@ const VIEWPORTS = [
   { name: 'narrow-360x640-de', width: 360,  height: 640,  locale: 'de' },
   { name: 'phone-390x844-zh',  width: 390,  height: 844,  locale: 'zh' },
   { name: 'narrow-360x640-zh', width: 360,  height: 640,  locale: 'zh' },
+  // German landscape (2026-09-29). Landscape ran English only, and a phone held sideways renders at
+  // the same 0.36x as one held upright — the fuse panel's cost line and the daily rail's labels
+  // were only ever checked there in the language with the shortest words.
+  { name: 'landscape-844x390-de', width: 844, height: 390, locale: 'de' },
 ] as const satisfies readonly { name: string; width: number; height: number; locale: Locale }[];
 
 const OUT_DIR = 'portrait-report';
@@ -178,7 +182,11 @@ test.describe('layout sweep — real renderer', () => {
         await page.waitForTimeout(600);
         await audit('lobby');
 
+        // `NW_SWEEP_STOPS=equipment+detail,shop` walks just those stops (by `as`, else `screen`) — for
+        // re-checking one fix without the ~30-minute walk. The lobby is always audited.
+        const only = (process.env.NW_SWEEP_STOPS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
         for (const stop of STOPS) {
+          if (only.length > 0 && !only.includes(stop.as ?? stop.screen)) continue;
           const landed = await open(page, stop, vp.locale);
           if (landed === null) {
             expect(

@@ -22,8 +22,9 @@ import {
   ACTIVE_AFTER_INPUT_MS, DECOR_QUIET_AFTER_MS, IDLE_FLOOR_MS, IDLE_FPS, IDLE_QUIET_MS,
   MAX_RENDER_RESOLUTION, RenderPolicy, TARGET_FPS,
   holdRenderActive, invalidateRender, rendererResolution, resetRenderHold, setRenderPolicyClock,
-  stageSignature, type PaintMode,
+  setSignatureCovered, stageSignature, type PaintMode,
 } from '../../src/render/renderPolicy';
+import type { FrameScheduler } from '../../src/render/framePacer';
 import { decorationsQuiet, setDecorationsQuiet } from '../../src/render/idleQuiet';
 import { BoilingSprite } from '../../src/render/boil';
 
@@ -46,11 +47,23 @@ function stubHost() {
 /** Frozen clock: `hold` and `floor` are time-based, and both must be OFF while testing detection. */
 let clockMs = 10_000;
 
+/** rAF seam that never fires by itself: the decision tests step `policy.tick()` directly. */
+const manualScheduler: FrameScheduler = { request: () => 1, cancel: () => {} };
+
+/** Installed this case; uninstalled in afterEach so `Ticker.shared` (a global) is handed back. */
+const installed: RenderPolicy[] = [];
+
 function policyFor(mode: () => PaintMode | undefined) {
   const host = stubHost();
-  const policy = new RenderPolicy(host, mode);
+  const policy = new RenderPolicy(host, mode, manualScheduler);
   policy.install();
+  installed.push(policy);
   return { host, policy };
+}
+
+/** The cap the policy asked for. Since ADR-094 that lives on the pacer, not on `ticker.maxFPS`. */
+function capOf(policy: RenderPolicy): number {
+  return policy.framePacer?.capFps ?? -1;
 }
 
 beforeEach(() => {
@@ -62,9 +75,8 @@ beforeEach(() => {
 afterEach(() => {
   setRenderPolicyClock();
   resetRenderHold();
-  // `Ticker.shared` is a process-wide global that the policy now caps (see setMaxFps); most cases
-  // here never uninstall, so hand it back uncapped rather than leaking 60 into the next suite.
-  PIXI.Ticker.shared.maxFPS = 0;
+  // `Ticker.shared` is a process-wide global whose loop the pacer takes over; hand it back.
+  for (const p of installed.splice(0)) p.uninstall();
 });
 
 describe('rendererResolution — the dpr cap', () => {
@@ -87,9 +99,11 @@ describe('rendererResolution — the dpr cap', () => {
 });
 
 describe('install — the frame cap, and taking over the paint', () => {
-  it('caps the ticker at TARGET_FPS', () => {
-    const { host } = policyFor(() => 'live');
-    expect(host.ticker.maxFPS).toBe(TARGET_FPS);
+  it("caps the loop at TARGET_FPS, and keeps PIXI's own truncating throttle off (ADR-094)", () => {
+    const { host, policy } = policyFor(() => 'live');
+    expect(capOf(policy)).toBe(TARGET_FPS);
+    expect(host.ticker.maxFPS).toBe(0);
+    expect(PIXI.Ticker.shared.maxFPS).toBe(0);
   });
 
   it("removes Application's own render listener — the ticker must not paint behind the gate", () => {
@@ -98,7 +112,6 @@ describe('install — the frame cap, and taking over the paint', () => {
     // every skip below would be a lie. Drive the REAL ticker here (the decision tests below call
     // policy.tick() directly).
     const { host } = policyFor(() => 'reactive');
-    host.ticker.start();
     host.ticker.update(clockMs);          // first tick: nothing painted yet -> the policy paints once
     const afterFirst = host.paints;
     clockMs += 20;
@@ -118,6 +131,29 @@ describe('paint modes', () => {
     const { policy } = policyFor(() => undefined);
     expect(policy.tick().reason).toBe('live');
     expect(policy.tick().reason).toBe('live');
+  });
+
+  it("'live' never walks the stage: nothing reads a signature while the scene stays live (ADR-096)", () => {
+    // The walk was a quarter of the city screen's main-thread time, spent after every paint on a
+    // number no live tick compares against. Counted through the one field every visit reads first.
+    const { host, policy } = policyFor(() => 'live');
+    const child = new PIXI.Container();
+    let reads = 0;
+    Object.defineProperty(child, 'visible', { get: () => { reads += 1; return true; }, configurable: true });
+    host.stage.addChild(child);
+    for (let i = 0; i < 5; i++) policy.tick();
+    expect(host.paints).toBe(5);
+    expect(reads).toBe(0);
+  });
+
+  it('a switch from live to reactive paints once, then settles', () => {
+    let mode: PaintMode = 'live';
+    const { host, policy } = policyFor(() => mode);
+    for (let i = 0; i < 3; i++) policy.tick();
+    mode = 'reactive';
+    expect(policy.tick()).toEqual({ painted: true, reason: 'changed' });
+    for (let i = 0; i < 10; i++) expect(policy.tick().painted).toBe(false);
+    expect(host.paints).toBe(4);
   });
 
   it("'reactive' paints the first tick and then stops while nothing changes", () => {
@@ -278,7 +314,7 @@ describe('the safety valves', () => {
     const { policy } = policyFor(() => 'reactive');
     policy.tick();
     for (let i = 0; i < 9; i++) policy.tick();
-    expect(policy.stats).toEqual({ ticks: 10, painted: 1, skipped: 9 });
+    expect(policy.stats).toEqual({ ticks: 10, painted: 1, skipped: 9, idle: false });
   });
 });
 
@@ -300,6 +336,154 @@ describe('stageSignature', () => {
   });
 });
 
+// ── walking less (ADR-101) ────────────────────────────────────────────────────
+//
+// The walk was 40% of the world map's and the city's idle main thread. Two savings, each pinned both
+// ways: the walk is skipped where it was wasted, and every case where skipping would hide a change
+// still paints (or at worst paints one frame late — never stops painting, never keeps painting).
+
+/** A node that counts how often the walk reads it: the walk reads `visible` exactly once per node. */
+function walkCounter(): { node: PIXI.Container; walks: () => number } {
+  const node = new PIXI.Container();
+  let reads = 0;
+  Object.defineProperty(node, 'visible', { get: () => { reads += 1; return true; }, set: () => {} });
+  return { node, walks: () => reads };
+}
+
+describe('covered subtrees (a scene under a full-screen overlay)', () => {
+  it('a change inside a covered subtree does not repaint; uncovering it does', () => {
+    const { host, policy } = policyFor(() => 'reactive');
+    const under = new PIXI.Container();
+    const g = new PIXI.Graphics();
+    under.addChild(g);
+    host.stage.addChild(under);
+    policy.tick();
+    setSignatureCovered(under, true);
+    expect(policy.tick().reason).toBe('changed');      // covering is itself a change of picture
+    expect(policy.tick().painted).toBe(false);
+    g.x += 5;
+    expect(policy.tick().painted).toBe(false);          // painted over: nothing to show
+    setSignatureCovered(under, false);
+    // Uncovering alone moves the signature, even with no invalidateRender() around it.
+    expect(policy.tick().reason).toBe('changed');
+    expect(policy.tick().painted).toBe(false);
+    g.x += 5;
+    expect(policy.tick().reason).toBe('changed');
+  });
+
+  it('is not descended into at all — that is the saving', () => {
+    const under = new PIXI.Container();
+    const probe = walkCounter();
+    under.addChild(probe.node);
+    const stage = new PIXI.Container();
+    stage.addChild(under);
+    stageSignature(stage);
+    expect(probe.walks()).toBe(1);
+    setSignatureCovered(under, true);
+    stageSignature(stage);
+    expect(probe.walks()).toBe(1);
+    setSignatureCovered(under, false);
+    stageSignature(stage);
+    expect(probe.walks()).toBe(2);
+  });
+});
+
+describe('the baseline after a paint', () => {
+  function setup(render?: (stage: PIXI.Container) => void) {
+    const made = policyFor(() => 'reactive');
+    if (render) {
+      const count = made.host.render.bind(made.host);
+      made.host.render = (): void => { count(); render(made.host.stage); };
+    }
+    const probe = walkCounter();
+    made.host.stage.addChild(probe.node);
+    made.policy.tick();
+    expect(made.policy.tick().painted).toBe(false);
+    return { ...made, probe };
+  }
+
+  it('a drag does not walk at all — every tick of it paints without looking', () => {
+    const { policy, probe } = setup();
+    const before = probe.walks();
+    for (let i = 0; i < 30; i++) {
+      holdRenderActive();                      // a pointer move every frame
+      expect(policy.tick().reason).toBe('hold');
+      clockMs += 16;
+    }
+    expect(probe.walks()).toBe(before);
+  });
+
+  it('the last paint of a gesture walks, so the screen settles the moment the hold ends', () => {
+    const { policy, probe } = setup();
+    holdRenderActive();
+    policy.tick();
+    const before = probe.walks();
+    clockMs += ACTIVE_AFTER_INPUT_MS - 10;     // under one tick left
+    expect(policy.tick().reason).toBe('hold');
+    expect(probe.walks()).toBe(before + 1);
+    clockMs += 20;
+    expect(policy.tick().painted).toBe(false); // no extra paint for the hold having ended
+  });
+
+  it('a change walks once, not twice — the pre-paint walk stands in for the post-paint one', () => {
+    const { host, policy, probe } = setup();
+    const g = new PIXI.Graphics();
+    host.stage.addChild(g);
+    policy.tick();
+    policy.tick();
+    // An animation stepping every other tick, like the world map's 30 fps shield at 60 Hz.
+    const before = probe.walks();
+    for (let i = 0; i < 10; i++) {
+      g.x += 1;
+      expect(policy.tick().reason).toBe('changed');
+      expect(policy.tick().painted).toBe(false);
+    }
+    expect(probe.walks() - before).toBe(20);
+  });
+
+  it('a Text that render re-rasterises gets a real post-paint walk (no extra paint)', () => {
+    const text = new PIXI.Text('a');
+    const { host, policy } = setup(() => text.updateText(true));
+    host.stage.addChild(text);
+    policy.tick();
+    expect(policy.tick().painted).toBe(false);
+    text.text = 'something longer';
+    expect(policy.tick().reason).toBe('changed');
+    expect(policy.tick().painted).toBe(false);
+  });
+
+  it('a container that render sorts gets a real post-paint walk (no extra paint)', () => {
+    const layer = new PIXI.Container();
+    layer.sortableChildren = true;
+    const a = new PIXI.Graphics();
+    const b = new PIXI.Graphics();
+    layer.addChild(a, b);
+    // What `Container.updateTransform` does on the way into a real render.
+    const { host, policy } = setup(() => { if (layer.sortDirty) layer.sortChildren(); });
+    host.stage.addChild(layer);
+    policy.tick();
+    expect(policy.tick().painted).toBe(false);
+    a.zIndex = 5;
+    expect(policy.tick().reason).toBe('changed');
+    expect(policy.tick().painted).toBe(false);
+  });
+
+  it('a render-side change nothing knows about costs one extra paint, then settles', () => {
+    // The guard: the paint straight after a reused baseline walks for real.
+    const g = new PIXI.Graphics();
+    const { host, policy } = setup(() => { g.y += 1; });   // moves on every render
+    host.stage.addChild(g);
+    policy.tick();
+    policy.tick();
+    g.x += 1;
+    expect(policy.tick().reason).toBe('changed');
+    expect(policy.tick().reason).toBe('changed');          // the one extra
+    let paints = 0;
+    for (let i = 0; i < 10; i++) if (policy.tick().painted) paints++;
+    expect(paints).toBe(0);
+  });
+});
+
 // ── the idle throttles (2026-09-09) ──────────────────────────────────────────
 //
 // Demand-driven painting stopped the idle GPU work; these two knobs go after what is left, which is
@@ -312,35 +496,47 @@ describe('idle tick-rate throttle', () => {
     for (let i = 0; i < n; i++) { clockMs += stepMs; policy.tick(); }
   }
 
-  it('caps the SECOND rAF loop too — Application does not use Ticker.shared', () => {
+  it('drives the SECOND loop too, on the same beat — Application does not use Ticker.shared', () => {
     // `sharedTicker` defaults to false, so `render/boil.ts` and the battle fx animate on a ticker
     // the application's own cap never touched: uncapped, i.e. 120 Hz on a ProMotion device, for as
-    // long as one lobby boiling line existed.
-    PIXI.Ticker.shared.maxFPS = 0;
-    policyFor(() => 'reactive');
-    expect(PIXI.Ticker.shared.maxFPS).toBe(TARGET_FPS);
+    // long as one lobby boiling line existed. ADR-094: one pacer runs both, shared first.
+    const order: string[] = [];
+    const fx = (): void => { order.push('shared'); };
+    PIXI.Ticker.shared.add(fx);
+    const { host, policy } = policyFor(() => 'live');
+    host.ticker.add(() => { order.push('app'); });
+    expect(PIXI.Ticker.shared.started).toBe(false); // its own rAF loop is off
+    // A real-clock timestamp: `Ticker.shared` was started long ago, and PIXI ignores any time at or
+    // before its `lastTime`.
+    policy.framePacer!.onFrame(performance.now() + 1_000);
+    expect(order).toEqual(['shared', 'app']);
+    PIXI.Ticker.shared.remove(fx);
   });
 
   it('hands the shared ticker back as it found it on uninstall', () => {
-    PIXI.Ticker.shared.maxFPS = 0;
+    const shared = PIXI.Ticker.shared;
+    const before = { autoStart: shared.autoStart, maxFPS: shared.maxFPS };
     const { policy } = policyFor(() => 'reactive');
-    expect(PIXI.Ticker.shared.maxFPS).toBe(TARGET_FPS);
+    expect(shared.autoStart).toBe(false);
     policy.uninstall();
-    expect(PIXI.Ticker.shared.maxFPS).toBe(0);
+    installed.splice(installed.indexOf(policy), 1);
+    expect({ autoStart: shared.autoStart, maxFPS: shared.maxFPS }).toEqual(before);
   });
 
   it('drops to IDLE_FPS once a reactive screen has been still for IDLE_QUIET_MS', () => {
     const { host, policy } = policyFor(() => 'reactive');
     policy.tick();                       // first tick always paints (no baseline yet)
-    expect(host.ticker.maxFPS).toBe(TARGET_FPS);
+    expect(capOf(policy)).toBe(TARGET_FPS);
 
     run(policy, 1, IDLE_QUIET_MS - 1);   // not quiet long enough yet
-    expect(host.ticker.maxFPS).toBe(TARGET_FPS);
+    expect(capOf(policy)).toBe(TARGET_FPS);
+    expect(policy.stats.idle).toBe(false);
 
     run(policy, 1, 2);
-    expect(host.ticker.maxFPS).toBe(IDLE_FPS);
-    expect(PIXI.Ticker.shared.maxFPS).toBe(IDLE_FPS);
-  });
+    expect(capOf(policy)).toBe(IDLE_FPS);
+    // Published with the cap: PerfMonitor keeps these stretches out of the fps (ADR-095).
+    expect(policy.stats.idle).toBe(true);
+      });
 
   it('the IDLE_FLOOR_MS paint does not count as activity — otherwise this never engages at all', () => {
     // The floor fires every 500ms, so if a floor paint re-armed full frame rate the 2s quiet window
@@ -350,19 +546,20 @@ describe('idle tick-rate throttle', () => {
     const paintsBefore = host.paints;
     run(policy, 6, IDLE_FLOOR_MS + 1);   // 6 floor paints, ~3s of clock
     expect(host.paints).toBe(paintsBefore + 6); // they really did paint, i.e. really were floors
-    expect(host.ticker.maxFPS).toBe(IDLE_FPS);
+    expect(capOf(policy)).toBe(IDLE_FPS);
   });
 
   it('a real change puts the rate straight back', () => {
     const { host, policy } = policyFor(() => 'reactive');
     policy.tick();
     run(policy, 1, IDLE_QUIET_MS + 1);
-    expect(host.ticker.maxFPS).toBe(IDLE_FPS);
+    expect(capOf(policy)).toBe(IDLE_FPS);
 
     host.stage.addChild(new PIXI.Container()); // the picture changed
     clockMs += 16;
     expect(policy.tick().reason).toBe('changed');
-    expect(host.ticker.maxFPS).toBe(TARGET_FPS);
+    expect(capOf(policy)).toBe(TARGET_FPS);
+    expect(policy.stats.idle).toBe(false);
   });
 
   it('a pointer event restores the rate synchronously, without waiting for a tick', () => {
@@ -371,17 +568,22 @@ describe('idle tick-rate throttle', () => {
     const { host, policy } = policyFor(() => 'reactive');
     policy.tick();
     run(policy, 1, IDLE_QUIET_MS + 1);
-    expect(host.ticker.maxFPS).toBe(IDLE_FPS);
+    expect(capOf(policy)).toBe(IDLE_FPS);
 
+    expect(policy.stats.idle).toBe(true);
     holdRenderActive();
-    expect(host.ticker.maxFPS).toBe(TARGET_FPS); // no tick happened in between
+    expect(capOf(policy)).toBe(TARGET_FPS); // no tick happened in between
+    // ...and so does the idle flag, or the first full-rate interval after a tap would be dropped
+    // from the fps as idle while the pacer is already running it at 60.
+    expect(policy.stats.idle).toBe(false);
     policy.uninstall();
   });
 
   it('never throttles a live scene, however long it sits there', () => {
     const { host, policy } = policyFor(() => 'live');
     run(policy, 60, IDLE_QUIET_MS);
-    expect(host.ticker.maxFPS).toBe(TARGET_FPS);
+    expect(capOf(policy)).toBe(TARGET_FPS);
+    expect(policy.stats.idle).toBe(false);
   });
 });
 

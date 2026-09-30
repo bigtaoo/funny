@@ -97,6 +97,7 @@ art-direction §5.4 本来就要「帧率保留手绘的跳跃感，不必追求
 | `test/ui/sceneGeometryBudget.ui.ts`（9 例） | 大厅一帧**索引预算 25,000**（实测 15,582 headless）。计数直接调 `GraphicsGeometry.updateBatches()`（PIXI 三角化是纯 JS），CI 无 GPU 也能拿到精确三角数；`bake()` 喂 stub renderer，量的是**上线路径**。设置页（§12）占六例：**四个状态各自量**（基础屏 / 改名弹窗 / 删号确认，预算 12,000，实测 2,004 / 2,034 / 2,028；头像选择器另给 20,000，实测 12,366 —— 20 个头像格本身就是真美术），外加纸背景必须是 `Sprite` 且几何为 0（钉机制，不只钉数字）、以及把旧那段 27 条实时描线放回来会超预算的自证 |
 | `test/liveStrokedInkCallSites.test.ts`（4 例，§12.1） | **入口侧**的两张网，源码级：① `src/` 里每一处 `SketchPen…rect(` 都要在期望表里注明属于哪一类（FALLBACK / BAKED / DOODLE / GAMEPLAY / ICON / DEV），当前 16 处；② 每一个自己画笔记本纸的文件**都必须 `bake()`**（当前 4 个，`sketchDemo.ts` 是唯一豁免的 dev 页）。两条都用「把设置页那两处改回去」做过变异验证 |
 | `test/ui/guideOverlay.ui.ts`（19 例） | 引导圆环：`update()` 一秒 60 帧**一次几何重建都不许有**、alpha 仍在动、一秒最多 ~10 个不同 alpha（`update` + 每帧 `showAt` 一起调也一样）、目标移动时几何**必须**重描、**呼吸区间仍是 0.5–0.9**（改的是成本不是观感——把环改暗的「优化」不该靠读重绘计数才发现） |
+| `test/ui/framePacer.ui.ts`（ADR-094，§14） | 帧率上限的**节奏**：60 Hz / 上限 60 每个 vsync 都跑（外加一例把 PIXI 自己 `maxFPS = 60` 在均匀 60 Hz 流上丢帧的行为钉成特征测试——哪天 PIXI 修了它会转红）；十二组刷新率 × 上限各自都是**恒定**的 vsync 间隔；两个 ticker 同一时间戳、shared 在前；上限拉高下一拍生效；长帧后不再多等一轮；常见刷新率离分频翻转点 ≥ 0.05 |
 | `test/ui/renderLoopWiring.ui.ts`（15 例） | 中间那层接线（ADR-072 的教训）：app.ts 真的装了 policy、真的过了 dpr 上限、四条指针路径都 hold、`paintMode` 对 overlay/fade 悲观 |
 
 **每一条关键断言都做过变异验证**（删掉签名里对应那行 / 把 lifecycle 改回每帧重建 / 把大厅那份 `sketchPanel` 改回旧实现 → 报 271,110 索引，红得很响）。
@@ -110,7 +111,7 @@ art-direction §5.4 本来就要「帧率保留手绘的跳跃感，不必追求
 
 1. 抢 webpack require 拿 PIXI：`window.webpackChunkpixigame.push([["probe"],{},r=>req=r])`，再 `req.c[<key ending in pixi.js-legacy/lib/index.mjs>].exports`。
 2. **拿 app 的 ticker**：包 `PIXI.Ticker.prototype.update`，第一帧（截图会强制一帧）把它存下来；之后 `tk.update(t += 16.7)` 就能**手动驱动整个循环**（场景 update + policy 决策），配合 `__nwRenderStats` 直接读出重绘率。
-   ⚠️ 认 ticker 的判据是 **`maxFPS === 60`**，不是 `this !== Ticker.shared`：`Ticker.system`（PIXI 自己用来跑 `BasePrepare` 一类的）也不是 shared，会被先抓到，而它的 `maxFPS` 是 0。2026-09-08 第一次按旧判据测，量了半天量的是 system ticker。
+   ⚠️ 认 ticker 不能用 `this !== Ticker.shared`：`Ticker.system`（PIXI 自己用来跑 `BasePrepare` 一类的）也不是 shared，会被先抓到。2026-09-08 第一次按这个判据测，量了半天量的是 system ticker。当时的判据是 `maxFPS === 60`，**ADR-094 起不再成立**（两个 ticker 的 `maxFPS` 都恒为 0）。现在更简单：e2e 构建直接用 `__nwE2E.app.ticker`；非 e2e 构建开 `nw_render_debug` 后读 `globalThis.__nwFramePacer`（`capFps` / `refreshHz` / `runs`），手动驱动就调它的 `onFrame(t)`。
 3. **拿舞台**：`app.renderer.render` 在 `app.ts` 里被 `.bind()` 过，patch 原型抓不到它；改 patch `PIXI.Graphics.prototype._render` 抓任意实例，再顺 `parent` 爬到根。
 4. 几何/draw call：包 `gl.drawElements`/`drawArrays`/`bufferData`/`texImage2D` 按 `count` 累加；单帧的 count 序列直接暴露「哪几个物件是大头」，再用 `getBounds()` 认屏上位置。
 5. 真 GPU 时间：`EXT_disjoint_timer_query_webgl2`，但**结果不会同步就绪**——beginQuery/render N 次/endQuery 放一次 JS 调用，`QUERY_RESULT` 放**下一次**调用里读。
@@ -303,6 +304,8 @@ fpsP50 59   maxFps 60   skipPct 8   updP50 0.4   rndP50 0.8   updMax 9.9   rndMa
 
 那台 dpr 2 / 30 Hz 的设备**还没有一份带新字段的报告**。拿到之后它就是一行读数的事：`updP50 + rndP50` 贴着 33 ms 就查我们的代码，远低于 33 ms 就别再查客户端 JS 了。
 
+2026-09-28 查明它是一台 **iPad**（iPadOS 16.6.2 Safari「请求桌面网站」：UA 带 `Macintosh`，`screen 768×1024`、dpr 2，横屏 1024×654 CSS → 2048×1308）。大厅那行 `skipPct 66`、`paintPerSec 9` 也只到 `fpsMax 30`，所以 30 是 Safari 给 rAF 的上限（最可能是低电量模式），不是我们的负载。09-11 之后它没再来过。
+
 
 ## 10. 还没做的
 
@@ -337,19 +340,19 @@ headless（`vitest.ui` 里的真 PIXI），空闲世界地图，**2,833 个舞�
 |---|---|---|
 | 空闲 tick 率 | `IDLE_FPS = 20`，静默 `IDLE_QUIET_MS = 2 s` 后生效 | `render/renderPolicy.ts` |
 | 装饰动画静默 | 无输入 `DECOR_QUIET_AFTER_MS = 30 s` 后 | `render/idleQuiet.ts` + 三个读者 |
-| 共用 ticker 上限 | 与 app ticker 同步（60 / 20） | `RenderPolicy.setMaxFps` |
+| 共用 ticker 上限 | 与 app ticker 同步（60 / 20）；ADR-094 起两者由同一个 `FramePacer` 驱动 | `RenderPolicy.setMaxFps` → `render/framePacer.ts` |
 | GPU 偏好 | `POWER_PREFERENCE = 'low-power'` | `render/renderPolicy.ts` → `app.ts` |
 | 出站限流补桶 | 桶满且无人排队就停表 | `net/rateGate.ts` |
 
 三条**别顺手清理**的线：
 
 - **`'floor'` 不算活动。** 500 ms 地板一秒触发两次；算了活动就永远走不完 2 秒静默窗口，这条节流一次都不会生效。门禁里有一例专门喂 6 个地板帧、并断言那 6 帧真的画了（否则用例是空的）。
-- **指针事件同步把 `maxFPS` 拨回 60**（模块级 `onActivity` 回调），不等下一个 tick——降到 20 Hz 后下一 tick 最远 50 ms，第一帧点击反馈不能付这个钱。
-- **卡顿 watchdog 的阈值必须夹在上限之下**（`PerfMonitor` 的 `FPS_WARN_HEADROOM`：`min(nw_fps_warn, maxFPS - 5)`）。不夹的话每个健康的空闲菜单每 10 秒报一条 `cpu` 异常——和 2026-07-26「后台标签页假 cpu」同一类假阳性，只是从另一个方向来。同理 `render_profile` 的 `maxFps` **不再是常量**：`maxFps: 20, fpsP50: 20` 是一个行为正确的空闲菜单，**先读 `maxFps` 再读 `fpsP50`**。
+- **指针事件同步把上限拨回 60**（模块级 `onActivity` 回调；ADR-094 起写的是 `FramePacer.capFps`，不是 `ticker.maxFPS`），不等下一个 tick——降到 20 Hz 后下一 tick 最远 50 ms，第一帧点击反馈不能付这个钱。
+- ~~卡顿 watchdog 的阈值必须夹在上限之下~~（`FPS_WARN_HEADROOM` / `windowMinCap`）——**ADR-095（2026-09-28）起删除**：fps 只在满速段统计，降频段不进样本，阈值回到固定的 `nw_fps_warn`。`render_profile` 的 `maxFps` 也不再是「上报时刻的上限」，见 §15。
 
 ### 这个客户端一直有两个 rAF 循环
 
-`PIXI.Application` 的 `sharedTicker` 默认 **false** → `app.ticker` 是一个新 Ticker。而 `render/boil.ts` 的沸腾线、战斗/卡牌视图共 14 处 fx 回调挂在 `PIXI.Ticker.shared` 上，**那个 ticker `autoStart = true`，只要有一个监听者就自己起一条 rAF 循环，而 ADR-083 的 `maxFPS = 60` 从来没碰过它**——大厅只要有一条沸腾线，第二条循环就按屏幕刷新率跑（ProMotion 上 120 Hz）。现在 `setMaxFps` 同时写两个 ticker，`uninstall` 把 `Ticker.shared` 还原成安装前的值（它是进程级全局，测试里必须还回去）。
+`PIXI.Application` 的 `sharedTicker` 默认 **false** → `app.ticker` 是一个新 Ticker。而 `render/boil.ts` 的沸腾线、战斗/卡牌视图共 14 处 fx 回调挂在 `PIXI.Ticker.shared` 上，**那个 ticker `autoStart = true`，只要有一个监听者就自己起一条 rAF 循环，而 ADR-083 的 `maxFPS = 60` 从来没碰过它**——大厅只要有一条沸腾线，第二条循环就按屏幕刷新率跑（ProMotion 上 120 Hz）。现在 `setMaxFps` 同时管两个 ticker，`uninstall` 把 `Ticker.shared` 还原成安装前的值（它是进程级全局，测试里必须还回去）。**ADR-094 起两条循环合并成一条**，见 §14。
 
 没有把那 14 处收敛到一个 seam：功耗问题是**速率**，而每一处都已经在积分 `deltaMS`（降速率只改采样粗细，不改动画时长）；收敛要动 14 条 destroy 路径，而那正是这个仓库出过泄漏的地方。
 
@@ -457,3 +460,180 @@ ADR-086 收尾后回头找「客户端还有什么能在本机量的」，量到
 新增的三处 `bakeLazy` 站点（`hpBar.ts`、`stickmanDraft.ts`、`UnitView/assets.ts`）已在 `pageBakeCallSites.test.ts` 里登记为 `pageScale: false`（单位/HUD 级的小块 chrome，且都骑在会 `scale` 的容器上，device-exact 会糊——ADR-073 那句话原样适用）。
 
 **为什么血条是 sprite 而不是节流重绘**：血条的 HP 分数几乎每帧都在变（尤其持续受击的基地），节流重绘（像手牌 `bar` 那样按签名判断是否重描）只能把重绘频率从 120/120 降到「HP 真的变了才描」，仍然是逐帧潜在成本；而 sprite 路径把这份成本从「重新三角化」降成「改一个数字」，两者不是同一个数量级。手牌 `bar` 留着节流是因为它的形状变化频率本来就低（拖拽时才变），血条不是。
+
+## 14. 帧率上限改成 vsync 整数分频（ADR-094，2026-09-28）
+
+**起因**：用户要求各界面帧率稳定、抖动 ≤ 3。本机真 Chrome（有头窗口、60 Hz、1366×768）逐屏测了 53 个界面：rAF 本身完全均匀，但 app ticker 在**每个界面**都每 3 秒丢约 4 帧（33 ms 空档）。
+
+**根因**：PIXI `Ticker.update` 的节流先把经过时间截成整数毫秒再比：`delta = (t - lastFrame) | 0; if (delta < 1000 / maxFPS) return;`。16.67 → 16 < 16.67，这一帧就没了。线上 `fpsP50` 常年 59 就是它。75 / 90 / 144 Hz 屏上同样的「按毫秒比」会得到 1 拍 / 2 拍交替。另外 `Ticker.shared` 自己一条 rAF 循环、自己节流，20 fps 时 101 次 tick 里 101 次和主画面不在同一个 vsync 上。
+
+**现在的做法**（`render/framePacer.ts`）：
+- 两个 ticker 都 `autoStart = false` + `stop()` + `maxFPS = 0`，由 pacer 的**一条** rAF 循环驱动，每次先 `Ticker.shared.update(t)` 再 `app.ticker.update(t)`，同一个时间戳。
+- 每 `N = max(1, round(刷新率 / 上限 − 0.1))` 个 vsync 跑一次。刷新率 = 最近 16 个 rAF 间隔的中位数。长帧按实际经过的 vsync 数计。
+- `ticker.maxFPS` 恒为 0，**别再拿它当上限读**。程序内读 `render/renderStats.ts` 的 `framePacing()`；`render_profile` 新增 `hz` 字段（估计的显示刷新率）。
+
+**修复后实测**（同一套探针，e2e 构建）：
+
+| 场景 | 上限 | 迟到帧 | 最大帧间隔 | 每秒帧数 | shared 错拍 |
+|---|---|---|---|---|---|
+| 大厅有操作 6 s | 60 | 0 | 17.0 ms | 60,60,60,60,61,60 | 0 |
+| 大厅静止 6 s | 60 | 0 | 16.9 ms | 60 ×6 | 0 |
+| 设置页静止 5 s | 20 | 0 | 50.2 ms（恒定 3 拍） | 21,19,20,20,20 | 0 |
+| 设置页有操作 5 s | 60 | 0 | 16.8 ms | 60 ×5 | 0 |
+
+修复前同样场景：大厅有操作 6 s 迟到 9 帧、最大间隔 34.0 ms、每秒 58–59；设置页 20 fps 时 shared 101/101 错拍。20 fps 那行的 21 / 19 是 1 秒分桶和 50 ms 节拍的边界量化，不是真抖动。
+
+**探针配方**：Playwright `channel: 'chrome', headless: false`（headless 没有 vsync，量不出节奏）；app ticker 上挂一个优先级 −100 的监听，记录 `lastTime + elapsedMS`（**不是** `lastTime`：它在监听者跑完之后才更新）；另起一条 rAF 记录原始 vsync 做对照；每站 3 s 真 `page.mouse.move` + 6 s 静止。当前共享的 `nwE2E.bootToLogin` 还停在旧的年龄门，探针是自己用 `entryGateCb.onAnswered({ birthYear, granted: true })` 过门的。
+
+**空闲 60 → 20** 本身仍会让「每秒 tick 数」跳 40——这是省电设计，不改；帧率统计口径改为只算满速段，见 §15。
+
+## 15. 帧率只统计满速段（ADR-095，2026-09-28）
+
+**为什么**：§14 之后，有输入 / 有东西在动时各界面都是 60 ± 1。唯一剩下的「抖动」是菜单静止 2 秒降到 20——那段时间画面**没有在变**（降频的前提就是签名没变、没输入、不是 `live` 场景），降频期每秒只重绘约 2 次。把它算进 fps，是把「故意不画」当成「画得慢」。用户选了保留 20 省电、改口径。
+
+**口径**：
+- `RenderPolicy` 往 `renderStats` 里多发一个 `idle`（pacer 压在 `IDLE_FPS` 时为真；和上限在 `setMaxFps` 同一处写，输入同步拨回 60 时它同步变假）。
+- `PerfMonitor` 只把**两端都不是 `idle`** 的 tick 间隔计入 fps。进降频、降频中、醒来那一段（半截是 50 ms 空闲）都不算。
+- 2 秒窗口内满速不足 500 ms → 这个窗口不出 fps 样本，对 watchdog 中性（不累加也不清零连续计数）。
+- `windowMinCap` / `FPS_WARN_HEADROOM` 删除，阈值固定 `nw_fps_warn`（默认 25）。
+
+**`render_profile` 怎么读**：
+
+| 字段 | 旧（无 `idlePct` 的行） | 新 |
+|---|---|---|
+| `fpsP50/Min/Max` | 所有窗口，混着 20 fps 的降频段 | 只算满速段；整段都在降频时**缺省** |
+| `maxFps` | 上报时刻的上限（可能是 20） | span 内满速帧见过的最高上限（正常 60） |
+| `idlePct` | — | 降频时间占比 0–100。省电看它 |
+| `tickPerSec/paintPerSec/skipPct` | 全部 tick | 不变 |
+
+**真 Chrome 实测**（有头、60 Hz、设置页，3 s 动鼠标 / 5 s 静止交替，第一条 `render_profile`，30 s）：
+
+- 旧口径（每秒 tick 数）：`60,60,60,60,60,34,20,20,58,60,…`——每次静止都从 60 掉到 20。
+- 新口径上报：`fpsP50 60, fpsMax 60, idlePct 19, maxFps 60, hz 60`。满速间隔 1380 个，中位 16.70 ms，超过 25 ms 的只有 1 个。
+- `fpsMin 45` 来自这条 span 开头的启动 / 大厅→设置切屏窗口（切屏卡顿，另一个开放项），不是降频。
+
+**门禁**：`test/PerfMonitor.test.ts`（降频段不报、醒来那一段不进样本、满速段真慢仍然报）、`test/renderProfile.test.ts`（`idlePct`、全降频时 fps 缺省、`maxFps` 取满速上限）、`test/ui/renderPolicy.ui.ts`（`idle` 与上限同步，含输入同步唤醒）。
+
+## 16. 切屏卡顿（ADR-096，2026-09-28）
+
+**方法**：有头 Chrome（`channel: chrome`）、1366×768、dev 构建、docker 栈 + 种子账号。每屏记 LoAF（带脚本归因）、包一层 `gl.texImage2D` 计时、CDP `Profiler` 按 LoAF 窗口聚合（`Profiler.start` 之后第一条 LoAF 是探针自身开销，丢掉）。**只跑一个 spec、`--workers=1`**——并行种子会撞 `cardInstances` 的 `_id`。
+
+**找到的**：
+- 图鉴首帧大头是 GL 上传：12 张立绘都是 ~2200 px 原图，在 ~110 px 的格子里显示。上传成本 ∝ 像素数。
+- 离开一分钟再回来又卡：PIXI `TextureGC`（AUTO，3600 帧没用过就逐出显存）→ 回来重新上传 120 ms。所以修法是**把贴图做小**，不是预热。
+- 图鉴每张图解码完都整屏 `render()`。
+- `live` 场景每帧画完还做一次 `stageSignature` 遍历，占主城屏主线程约四分之一，结果从来不用。
+- 家族屏三次 `render()`，入会申请串在频道后面。
+
+**改了什么**：兵种立绘 640 px 缩略图档（`assets/units/thumb/`），只有 `artUrlForBox` 判定显示框 > 640 设备 px（抽卡单抽揭示）才用原图；图鉴走 `buildFittedSprite`；`live` 帧不算签名；家族屏并行加载、画两次。详见 ADR-096。
+
+**放大审计**：各 `STOPS` × {桌面 1366 dpr1、retina 1920 dpr2、手机 390 dpr3}，缩略图最大显示倍率 0.76（retina 卡组）——没有任何地方被放大。
+
+**实测**（首访 = 进入后第一次；回访在 1 分钟内，LoAF 只列 ≥ 50 ms 的）：
+
+| 屏 | 改前 | 改后 |
+|---|---|---|
+| 图鉴首访 | 52 / 81 / 183 ms，GL 113 ms | 62 / 77 ms，GL 18 ms |
+| 图鉴回访（先在世界地图停 70 s，贴图已被 GC） | 162 ms（120 ms 重新上传） | 无 LoAF（33 ms 上传分散到多帧） |
+| 家族首访 | 159 ms（一帧） | 97 / 57 ms |
+| 卡组首访 | 59–148 ms | 86 ms（没动，噪声大） |
+| 主城（经世界地图） | 145 ms | 77 / 74 / 93 / 83 ms（没动） |
+| 所有屏 1 分钟内回访 | — | 无 LoAF |
+
+**还没修的首帧成本**（面太广，另立项；下次直接从这里开始，不用重测）：
+- PIXI.Text 创建 / `measureText` / `getContext`。
+- `buildPaperBackground` 里 `SketchPen` 逐段圆头线：每个新 bake key 约 27 ms。
+- 世界地图程序化地块 + `world_atlas.png`（1960×1827）上传 29–42 ms——主城经世界地图进入时首帧的大头。
+- 卡组 JS 构建：`renderCardCell`、`txtFit`、字形图集。
+
+**门禁**：`test/cardArt.test.ts`（缩略图 640、小框不换、780 换原图、按设备 px 算、无缩略图的 url 原样返回）、`test/ui/renderPolicy.ui.ts`（`live` 不读 stage；live → reactive 画一次后照常跳帧）、`test/ui/cardCodexScene.ui.ts`（贴图后到不调 `render`、不换背景、没有残留隐藏 sprite）、`test/familyLoadDecouple.test.ts`（approver 只画两次、申请不等频道）。
+
+## 17. 空闲满帧重绘（ADR-097，2026-09-28）
+
+- **方法**：有头 Chrome 1366×768，seed 过账号和世界（有行军、驻扎、护盾），每屏空闲 4 s 后挂一个 priority -200 的 ticker 回调，每帧对整棵舞台树按 `stageSignature` 读的字段（visible / renderable / alpha / tint / `transform._localID` / zIndex / 纹理 uid+frame+dirtyId / `geometry.dirty` / text / 子节点数）逐节点做快照，跟上一帧比，按「字段 + 节点路径」计数。探针在会话 scratchpad，不进仓库。
+- **找到的来源**（修前，4 s = 240 帧）：
+
+  | 屏 | 每帧都变的 | 其它 |
+  |---|---|---|
+  | 世界地图 | 行军 / 驻扎小人骨骼（7 × 10 根）+ 容器位置 | 护盾 30/s、HUD 每秒整片重建、引导圈 10/s |
+  | 主城 | 同上（地图在下面照样动） | 城内引导圈 10/s |
+  | 战役图 | 下一关脉动圈 scale + alpha | — |
+  | 每日页 | 可领格子 scale | — |
+
+- **修法**：行军小人姿势与行军插值时间共用 12 fps 时钟（只量化时间，`syncTokens` 仍每帧跑，拖图同帧跟手）；覆盖层压着时地图 `covered`，时间驱动的活全停（地图不隐藏，避免 TextureGC 逐出 `world_atlas`）；脉动走 `render/steppedTime.ts` 10 fps 相位量化。
+- **结果**（`painted / ticks`，空闲 4 s 后采 4 s）：
+
+  | 屏 | 修前 | 修后 |
+  |---|---|---|
+  | 世界地图（有护盾在视野内） | 240 / 240 | 138 / 240（护盾 30/s + 小人 12/s） |
+  | 主城 | 241 / 241 | 40 / 240（城内引导圈） |
+  | 战役图 | 241 / 241 | 40 / 240 |
+  | 每日页 | 240 / 240 | 41 / 241 |
+
+- **剩下的**：视野里有护盾就是 30/s（设计决定，见 ADR-097「不改的」）；两个时钟不同相，并集约 35/s——**已由 ADR-098 对齐到 30/s，见 §18**。地图 HUD 每秒整片重建（`tearDownChildren` + 重新创建所有 Text / sketchPanel）仍在，每秒一次、只在地图可见时。
+- **门禁**：`test/ui/worldMapOverlayCoalescing.ui.ts`（行军 11–13 次/秒——ADR-098 起 9–11——且不冻、拖图同帧跟手、covered 时 120 帧 0 次重绘并在 resume 后恢复）、`test/ui/ambientPulseRate.ui.ts`（战役圈）、`test/ui/dailySceneCheckinFocus.ui.ts`（每日格子），均做过变异检查。
+
+## 18. 手机首启卡顿与地图节拍（ADR-098，2026-09-28）
+
+- **`render_profile` 新字段**（`rndMax ≥ 50 ms` 时才带）：
+
+  | 字段 | 含义 |
+  |---|---|
+  | `rndMaxTex` | 最长那次 render 里纹理上传（`texImage2D` / `texSubImage2D` / `compressedTexImage2D`）的毫秒数 |
+  | `rndMaxSh` | 着色器编译 / 链接 / 状态查询 |
+  | `rndMaxTxt` | 脏 `PIXI.Text` 的光栅化（`updateText`，含字体首次使用） |
+  | `rndMaxGeo` | 脏 `PIXI.Graphics` 的三角化（`GraphicsGeometry.updateBatches`） |
+  | `rndMaxScene` / `rndMaxAt` | 那一帧所在的场景（弹窗算在它下面的场景头上）、启动后第几秒 |
+
+  读法：四项加起来接近 `rndMax` 就看哪项最大；远小于 `rndMax` 说明时间在这四类之外（绘制调用提交、GPU 同步）。
+- **为什么 fps 看不见**：PIXI ticker 把单帧 `deltaMS` 截到 100 ms（`maxElapsedMS`），PerfMonitor 的窗口按 `deltaMS` 累加，一次 2 s 的卡顿只算 100 ms。首启这类一次性卡顿只能靠 `rndMax` / `updMax` 看。
+- **本机复现配方**：Playwright 有头 Chrome，`viewport 390×844`、`deviceScaleFactor 3`、`isMobile`，CDP `Emulation.setCPUThrottlingRate 6`；开场故事不需要后端。init script 里包住 GL 原型方法和 `renderer.render` 逐帧记录，超过 10 ms 的 render 记 `new Error().stack`——烘焙渲染也走 `renderer.render`，栈能直接指到是谁在烘焙。
+- **边框图集**：`prewarmPanelFrame()` 在启动加载阶段建图集（发请求之后、`await` 之前）。进年龄门那一帧：CPU×6 下 256 ms（其中 `rndMaxGeo` 216）→ 桌面 24.7 ms（剩下 12 个文字纹理上传）。
+- **地图节拍**：`MAP_ANIM_FPS = 30` 一个累加器，护盾每拍、小人每 3 拍（10 fps）。有护盾和行军时空闲 4 s：138 / 240 → 123 / 240（护盾 30 + HUD 1）；没护盾时约 10 次/秒。
+- **门禁**：`test/renderProfile.test.ts`（分项属于最长那次、50 ms 以下不带）、`test/renderCostProbe.test.ts` + `test/ui/renderCostProbe.ui.ts`（分桶、干净 Text 不读时钟）、`test/appAssetGateWiring.test.ts`（预热在发请求和 `await` 之间）、`test/ui/panelFrameAssembly.ui.ts`（预热后第一个面板不再烘焙）、`test/ui/worldMapOverlayCoalescing.ui.ts`（行军 9–11 次/秒；行军 + 护盾 ≤ 32，旧时钟是 36），均做过变异检查。
+- **还开着**：IntroScene 首启 735–2006 ms 的根因——等一份带新字段的 iPhone 首启报告（重装后打开一次）。
+
+## 19. 首次进屏成本与自动降分辨率（ADR-099 / ADR-100，2026-09-28）
+
+- **探针**（临时，不入库）：Playwright 有头 Chrome，每个 `STOPS` 站点进入前 `Profiler.start`（采样 100 µs），落地后 `settleMs + 800 ms` 停；按调用栈算函数**包含**耗时（`buildPaperBackground` / `bake` / `renderCardCell` / `txtFit` / `updateText` / `render`），外加 init script 包 `texImage2D` / `generateMipmap` 记 > 2 ms 的上传尺寸。先 `seedAccount` + 开一次地图 + `seedWorld`，再 `reload`，保证每站都是首访。
+- **LoAF 不可用作指标**：这台机器上两版代码都会出现 400 ms 以上、帧内没有任何脚本、render 段只有 1 ms 的 LoAF，是环境噪声。看 CPU 采样。
+- **纸背景**（`render/paperRules.ts`）：一页 = 纯色矩形 + 条带窗口 sprite，全部来自一张 1024 宽的小图集。桌面 44 站：每屏 20–67 ms → ≤ 1.8 ms；整页烘焙从 bake 缓存里消失（原来每种页面尺寸一整张后缓冲）。
+- **文字**：`setTextResolution` 让新文字从渲染器分辨率起步（原来 1x 布局光栅化一次 + 首次渲染 2x 再一次）；`measuredWidth` 让 `txtFit` 不再为试字号光栅化。卡牌列表首建 86 → 36 ms；dpr 2 下 `updateText` 卡牌列表 41 → ~20、主城 60 → 47、家族 65 → 52。
+- **世界图集**：`idlePrefetch` 的 `slg:world` 波次解码后再等一个空闲时段 `uploadToGpu`。地图首帧原来的 34 ms `texImage2D`（1960×1827）不再出现。只覆盖「最近两周开过地图」的玩家（预取本身的门槛）。
+- **烘焙尺寸**：`bake` / `bakeLazy` 按 `ceil(ceil(size) × res) / res` 分配。原来小数分辨率下基础纹理会比请求短最多 `0.5 / res` 点，图集最后一行越界即抛异常；边框图集在 0.5–3.0 的 251 个分辨率里有 180 个会抛。门禁 `test/ui/bakeFractionalResolution.ui.ts` 逐个扫。
+- **自动降分辨率**（`render/adaptiveResolution.ts`）：live 场景、进入 3 s 后、5 s 窗口中位间隔 > 41.7 ms（< 24 fps）、不计 > 250 ms 的停顿、样本 ≥ 50 → 分辨率 2 → 1.5，每会话一次。验证用每帧注入 50 ms 忙等（CPU 降速 12 倍在本机对战仍有 57 fps）：6.9 s 后切换，后缓冲 2048×1536 → 1536×1152，CSS 尺寸与布局不变。线上看 `render_res_down` 与随后 `render_profile` 的 `resFrom` / `fpsP50`。
+- **门禁**：`test/ui/paperRules.ui.ts`（新尺寸不增加烘焙条目、线铺满整宽、红线位置、小数分辨率不抛）、`test/ui/textRasterOnce.ui.ts`（`measuredWidth` 与 getter 一致且不光栅化；`txtFit` 全程零光栅化）、`test/ui/bakeFractionalResolution.ui.ts`、`test/uploadToGpu.test.ts`、`test/idlePrefetch.test.ts`（上传在下一个空闲时段、下一波之前）、`test/adaptiveResolution.test.ts`（触发、30 Hz 不触发、停顿不触发、reactive 重置、≤ 1.5 不挂、只一次）、`test/appRenderResolutionWiring.test.ts`。纸背景、覆盖尺寸、`txtFit` 均做过变异检查。
+- **还开着**（2026-09-29 已处理，见 §20 / ADR-101）：`visit`（`stageSignature` 遍历）在世界地图 / 主城的采样窗口里自身耗时 150–210 ms / 1.2 s（dev 构建），是稳态成本不是首建成本，这次没动。
+
+## 20. 变化检测的遍历成本（ADR-101，2026-09-29）
+
+- **探针**（临时，不入库）：Playwright 有头 Chrome 1366×768，`registerAndEnterLobby` → `seedAccount` → 开一次地图 → `seedWorld`。每屏落地后等 4 s，分两段各 5 s：静止（不动鼠标）和拖动（按住左键画圈），每段 `Profiler.start`（100 µs 采样），按调用栈算 `stageSignature` / `render` 的包含耗时，并读 `__nwRenderStats` 的 ticks / painted 差值。进主城要先进地图、**等淡入结束**再调 `onOpenCity`——淡入途中叠覆盖层是另一个状态（见 ADR-101 决策 1）。新旧代码交替跑三轮再比，单轮噪声能到 ±30%。
+- **节点构成**（种子账号）：世界地图约 1,900–2,100 个节点，其中一个 650 个子节点的格子容器占 1,550–1,710 个（Graphics 格子 + Sprite + BitmapText 标签）；BitmapText 398–483 个（这是含隐藏格子在内的总数；每个是容器 + 一个 Mesh，不是每字一个 Sprite，见 §21 订正）。主城叠在地图上时，舞台约 2,500 个节点，其中主城自己只有约 535 个。
+- **每次遍历的成本**：约 0.3–0.7 µs / 节点（dev 构建，属性访问是多态的）。地图一次遍历约 0.7–1 ms；静止时 tick 仍是 60 Hz（护盾 30 fps 的变化算「忙」），所以每秒约 60 次。
+- **结果**：见 ADR-101「实测」。拖动时两屏的遍历基本清零；主城静止降到原来的约 15%；地图静止降约 40%，剩下的就是每个 tick 画前那一次。
+- **门禁**：`test/ui/renderPolicy.ui.ts` 用一个 `visible` getter 计数的节点数遍历次数（遍历对每个节点只读一次 `visible`）；`test/ui/sceneManager.ui.ts` 直接比对 `stageSignature(stage)` 看某个场景里的改动能不能被看见。
+- **还开着**（2026-09-29 已处理，见 §21 / ADR-102）：地图格子没有视口裁剪（一半在屏幕外）。
+
+## 21. 世界地图格子池视口裁剪（ADR-102，2026-09-29）
+
+- **探针**：同 §20（只跑世界地图），新旧代码交替三轮。另用 claude-in-chrome 手动推帧（`__nwFramePacer.onFrame` + MessageChannel 让出，标签页在后台时 rAF 不走）看了 L1 静止、拖动 40 帧后和 L2：边缘格子与屏幕边的高建筑都完整。
+- **结果**：见 ADR-102「实测」。L1 隐藏 51% 的格子，舞台节点约 2,000 → 1,500；静止签名 / 渲染各降约 12% / 15%，拖动渲染降约 12%。
+- **怎么量裁掉多少**：找 `sortableChildren` 且子节点 > 300 的容器（就是 `poolContainer`），数 `visible` 的子节点。
+- **订正**：原先这里写「屏幕内 `Lv.N` BitmapText 每个字形一个 Sprite，是剩余节点大头」——不对。Pixi 7.4 的 BitmapText = 容器 + 每字体页一个 Mesh（2 个节点），种子账号屏幕内可见标签只有 13–24 个。换成共享纹理 + 单 Sprite 试做过，A/B 三轮每屏只省约 20 个节点、耗时量不出差别，没合（ADR-102「订正」）。
+- **地图可见节点构成**（三轮，探针里按「所在层:构造器名」计数）：格子 Graphics 213–352、格子上的 Sprite（母题/建筑）153–210、格子池之外的 Sprite 226–258、Container 55–77、Graphics 46–100、Text 28–34、标签 26–48。**同一版本不同轮的签名/渲染耗时能差一倍**（种子账号地图内容不同），节点差几十个的改动在这个探针上量不出来。
+- **还开着**（2026-09-29 已拆开，见 §22 / ADR-103）：格子池之外那 ~250 个 Sprite 分属哪一层。
+
+## 22. 世界地图格子池之外的节点归属（ADR-103，2026-09-29）
+
+- **探针**：Playwright 同 §20 的种子流程，进世界地图等 5 s 后，从场景容器（第 1 个子节点带遮罩且 ≥ 7 个子节点的那个）按子节点顺序命名各层（背景 / 地图裁剪区内的 L3、格子池、城池、雾、覆盖层、行军 / HUD / 顶栏 / 顶栏产量 / 弹窗 / toast / busy / 暗角 / 引导），跳过 `visible=false`、`renderable=false`、`worldAlpha=0`，按「层:构造器名」计数，并记每组最常见的纹理和 `getBounds` 落在屏幕外或为空的个数。
+- **归属**（一轮，同一轮测两次一致）：背景横线 Sprite 76（同一张纹理）、行军 Sprite 70 + 容器 15、HUD Sprite 62、顶栏产量 Sprite 43、城池层 17 座城 221 个节点（Graphics 136 个里 110 个是空的）、格子池 Sprite 166 / Graphics 352 / 标签 33×2。
+- **处理**：城池层的空特效层改成隐藏（ADR-103），普通城 13 → 3 个可见节点。
+- **还开着**（2026-09-29 已处理，见 §23 / ADR-104）：背景横线 76 个 Sprite 可以烘成一张纹理，但 `buildPaperBackground` 所有场景共用，要单独评估；其余都是画面上真有的东西。
+
+## 23. 纸背景横线并成网格（ADR-104，2026-09-29）
+
+- **先排除的两条路**：整页烘成一张图（就是 ADR-099 拆掉的做法，每种尺寸一整张后缓冲）；图集加宽到 2048（高清屏会到 4096 宽，碰部分手机显卡上限，只省到 ~54 个）。另查过只在世界地图隐藏横线：缩放 1 级看不见，但缩放 2、3 级会从半透明格子里透出来（1920×911，只藏横线、保留底色做像素差，≥ 4/255 的像素 3–8 万个），而且底色本身不能藏（去掉后 62% 像素变化）。
+- **做法**：WebGL 下所有横线窗口 = 一个 Mesh 的四边形，红线另一个 Mesh；Canvas 回退仍是 Sprite。四边形的角与纹理坐标逐个等于原 Sprite 的（单元测试逐四边形比对）。
+- **像素核对**（临时探针，不入库）：e2e 构建新旧两个 dev server，同一账号；找「第 0 个子节点是 Graphics、第 1 个的基础纹理宽 1024、本地宽 > 1500」的节点就是整页背景，用 `renderer.render(page, { renderTexture, transform })` 在四种变换（1、0.7371 + 亚像素、0.5、1.3333）下渲染、`extract.pixels` 取 FNV 哈希。大厅 / 扭蛋 / 世界地图三页新旧全部相同。标签页在后台时要设 `localStorage.nw_render_debug=1` 才有 `__nwFramePacer`，用它手动推帧，点击要在推帧期间发。
+- **结果**：页面子节点 89 → 3（地图 87 → 2）；背景单独渲染一次 19–41 µs → 5.5–12.5 µs（dev 构建，各两轮）；多 1 次绘制调用。
+- **门禁**：`test/ui/paperRules.ui.ts`、`test/ui/sceneGeometryBudget.ui.ts`（见 ADR-104「影响」）。

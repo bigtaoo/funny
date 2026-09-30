@@ -5,7 +5,9 @@
 // only caller is InventoryPanel itself (renderLoadout from renderInventory, renderInstanceCell from
 // renderInventory + refreshInstanceCell), which imports them directly.
 import { t, type TranslationKey } from '../../i18n';
+import * as PIXI from 'pixi.js-legacy';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
+import { measuredWidth } from '../../render/pixiText';
 import { FS } from '../../render/fontScale';
 import { buildIcon } from '../../render/icons';
 import type { SaveData, EquipmentInstance } from '../../game/meta/SaveData';
@@ -14,6 +16,8 @@ import { LOADOUT_H, EQUIP_CELL_H, RARITY_COLOR, SLOTS, AFFIX_COL_GAP, EQUIP_GLYP
 import { itemName, affixDesc } from './helpers';
 import type { EquipmentSceneCore } from './core';
 import type { DetailPanel } from './detail';
+import type { CellAction } from './types';
+import { splitCellActions, CELL_BTN_GAP } from './cellActionSplit';
 
 /** Loadout strip (Weapon/Armor/Trinket preview cells), confined to the right column — right of the sidebar rail, mirroring the filter bar and item grid below it. */
 export function renderLoadout(core: EquipmentSceneCore, detail: DetailPanel, save: SaveData, y: number, left: number): void {
@@ -199,11 +203,24 @@ export function renderInstanceCell(
   // never changes height while a request is in flight. Pushed to hitRects *before* the full-cell
   // rect below so a button tap wins over the card-body detail tap.
   if (actions.length > 0) {
-    const n = actions.length;
-    const bgap = 5;
+    const bgap = CELL_BTN_GAP;
     const by = y + EQUIP_CELL_H - pad - btnBandH;
-    const bw = (cellW - pad * 2 - bgap * (n - 1)) / n;
-    actions.forEach((a, i) => {
+    // Only the buttons whose label reads at the floor go on the cell; the rest move behind a
+    // trailing "more" button that opens the detail modal, which lists them (2026-09-29, see
+    // splitCellActions). Recorded on core so the modal knows which ones it has to offer.
+    const split = splitCellActions(actions, cellW - pad * 2, (label) => {
+      const probe = txt(label, FS.micro, C.dark, true);
+      const w = measuredWidth(probe);
+      probe.destroy({ texture: true, baseTexture: true });
+      return w;
+    });
+    core.cellOverflow.set(inst.id, split.overflow.map((a) => a.key));
+    const buttons: CellAction[] = split.overflow.length === 0 ? split.shown : [...split.shown, {
+      key: 'more', label: t('equip.moreActions'), icon: 'close', fill: 0xeeeeee, stroke: C.mid,
+      fn: () => detail.openDetail(inst.id),
+    }];
+    const bw = split.buttonW;
+    buttons.forEach((a, i) => {
       const bx = x + pad + i * (bw + bgap);
       const fill = a.disabled ? C.btnOff : a.fill;
       const stroke = a.disabled ? C.mid : a.stroke;
@@ -214,12 +231,13 @@ export function renderInstanceCell(
       const onDark = !a.disabled && (a.fill === C.dark || a.fill === 0x3355aa);
       const inkColor = a.disabled ? C.mid : (onDark ? C.light : C.dark);
       const iconSz = 20;
-      const ic = buildIcon(a.icon, iconSz, inkColor);
+      // There is no ink art for "more"; three dots in the label's ink is the conventional glyph.
+      const ic = a.key === 'more' ? moreDots(iconSz, inkColor) : buildIcon(a.icon, iconSz, inkColor);
       ic.x = bx + bw / 2 - iconSz / 2; ic.y = by + 5;
       core.bodyLayer.addChild(ic);
+      // No scale.set: splitCellActions only lets a label onto the cell if it fits at FS.micro.
       const lbl = txt(a.label, FS.micro, inkColor, true);
       lbl.anchor.set(0.5, 0.5); lbl.x = bx + bw / 2; lbl.y = by + btnBandH - 10;
-      if (lbl.width > bw - 4) lbl.scale.set(Math.max(0.35, (bw - 4) / lbl.width));
       core.bodyLayer.addChild(lbl);
       if (!a.disabled) core.hitRects.push({ rect: { x: bx, y: by, w: bw, h: btnBandH }, owner: inst.id, fn: a.fn });
     });
@@ -227,4 +245,14 @@ export function renderInstanceCell(
 
   // Card body (outside the buttons) opens the info modal — affixes, enhance rate/cost, protect toggle.
   core.hitRects.push({ rect: { x, y, w: cellW, h: EQUIP_CELL_H }, owner: inst.id, fn: () => detail.openDetail(inst.id) });
+}
+
+/** Three ink dots centred in a `size` box: the "more" button's glyph. */
+function moreDots(size: number, color: number): PIXI.Graphics {
+  const g = new PIXI.Graphics();
+  const r = Math.max(1.5, size * 0.09);
+  g.beginFill(color);
+  for (const dx of [-0.3, 0, 0.3]) g.drawCircle(size / 2 + dx * size, size / 2, r);
+  g.endFill();
+  return g;
 }

@@ -15,9 +15,11 @@
  * 1. {@link rendererResolution} — cap the backbuffer at {@link MAX_RENDER_RESOLUTION}. Pure
  *    fill-rate saving, no behavioural risk. The art style is hand-drawn ink at ~2 px stroke
  *    widths; dpr 3 buys nothing a reader can see.
- * 2. `ticker.maxFPS = `{@link TARGET_FPS} — one assignment, halves the frame count on every
- *    120 Hz device. `dt` is unaffected in kind (every consumer already integrates `deltaMS`),
- *    only its distribution changes, so no simulation reads differently.
+ * 2. A {@link TARGET_FPS} cap — halves the frame count on every 120 Hz device. `dt` is unaffected
+ *    in kind (every consumer already integrates `deltaMS`), only its distribution changes, so no
+ *    simulation reads differently. Enforced by `render/framePacer.ts` as a whole-number divisor of
+ *    the refresh rate, not by PIXI's `ticker.maxFPS` (ADR-094: that throttle drops ~2% of frames
+ *    at 60 Hz).
  * 3. Demand-driven painting for scenes that declare `paint: 'reactive'` (see `Scene.paint` in
  *    scenes/SceneManager.ts): the stage is painted only when it actually CHANGED.
  *
@@ -43,8 +45,10 @@
  */
 import * as PIXI from 'pixi.js-legacy';
 import { debugFlag } from '../debugFlags';
-import { setLiveRenderStats, type RenderStats } from './renderStats';
+import { setLiveFramePacing, setLiveRenderStats, type RenderStats } from './renderStats';
+import { FramePacer, type FrameScheduler } from './framePacer';
 import { setDecorationsQuiet } from './idleQuiet';
+import { stageSignature, lastWalkRenderMutates } from './stageSignature';
 
 /**
  * Backbuffer resolution ceiling. 2 keeps text and ink crisp on every retina-class display;
@@ -125,6 +129,13 @@ export const IDLE_QUIET_MS = 2_000;
  * this exists for is the app left open in a pocket or on a second monitor for minutes.
  */
 export const DECOR_QUIET_AFTER_MS = 30_000;
+
+/**
+ * A hold with more than this left will certainly still be holding on the next tick, so the paint
+ * needs no baseline (see `RenderPolicy.baselineAfterPaint`). One {@link IDLE_FPS} period: the
+ * longest gap between two ticks the pacer schedules. A late frame past it costs one extra paint.
+ */
+const HOLD_WALK_MARGIN_MS = 1000 / IDLE_FPS;
 
 /** How a scene wants to be painted. See `Scene.paint`. */
 export type PaintMode = 'live' | 'reactive';
@@ -210,95 +221,7 @@ export function resetRenderHold(): void {
   lastActivityMs = now();
 }
 
-// ── change detection ──────────────────────────────────────────────────────────
-
-/** FNV-1a step. Kept inline-able and integer-only so the walk allocates nothing. */
-function mix(h: number, v: number): number {
-  return Math.imul(h ^ (v | 0), 0x01000193) >>> 0;
-}
-
-function mixString(h: number, s: string): number {
-  let out = h;
-  for (let i = 0; i < s.length; i++) out = mix(out, s.charCodeAt(i));
-  return mix(out, s.length);
-}
-
-/**
- * Every field of a display object the renderer's output depends on, folded into one number.
- *
- * What is deliberately read, and why each one is load-bearing:
- * - `visible` / `renderable` / `alpha` / `tint` — the cheap ways a scene shows and hides things.
- * - `transform._localID` — PIXI bumps this on any position/scale/rotation/skew/pivot write, so one
- *   integer covers every kind of movement. World transforms are NOT read: they are recomputed
- *   during render, which we may be skipping, and a parent's own `_localID` is already in the hash.
- * - `baseTexture.uid` + the frame rect + `baseTexture.dirtyId` — an atlas frame swap moves the
- *   frame; a different image moves the uid; an image finishing its decode (or a `Text`
- *   re-rasterising into its canvas) moves `dirtyId`. Without the last one, late art would pop in
- *   only on the next floor tick.
- * - `geometry.dirty` — `Graphics` bumps it on `clear()` and on every drawing op, which is how a
- *   re-stroked panel or a redrawn HUD announces itself.
- * - `text` — a label rewritten to the same width is otherwise invisible to every other field.
- * - `children.length` and recursion order — covers add/remove/reparent. `zIndex` is read as a value
- *   rather than via the container's `sortDirty` flag: sorting happens inside render, so between two
- *   paints the child array is still in the old order, and `sortDirty` can already be true from an
- *   unrelated `addChild` (which is exactly how the first version of this let a reorder through).
- *
- * A mask needs no field of its own: PIXI's `mask` setter flips the mask object's `renderable`, and
- * every mask in this codebase is a child of the tree it clips, so the change is already hashed.
- *
- * Every field above is pinned by a case in test/ui/renderPolicy.ui.ts that goes red when the line
- * is deleted, except `visible` and `children.length`: those two are implied by the walk's shape
- * (a hidden subtree is not descended into; an added child folds in more values) and are kept only
- * to stop the hash from being structurally ambiguous. Redundant fields were REMOVED rather than
- * left unpinned. Four were in the first version and none of them could be made to matter:
- * `graphicsData.length` (always moves with `geometry.dirty`), `sortDirty` (always moves with
- * `zIndex`), `baseTexture.valid` (PIXI derives it from the size, which moves `dirtyId`) and a
- * `mask` presence bit.
- */
-export function stageSignature(root: PIXI.Container): number {
-  let h = 0x811c9dc5;
-  const visit = (o: PIXI.DisplayObject): void => {
-    const d = o as PIXI.DisplayObject & {
-      visible?: boolean; renderable?: boolean; alpha?: number; tint?: number;
-      transform?: { _localID?: number };
-      texture?: {
-        baseTexture?: { uid?: number; dirtyId?: number };
-        frame?: { x: number; y: number; width: number; height: number };
-      };
-      geometry?: { dirty?: number };
-      text?: unknown;
-      children?: PIXI.DisplayObject[];
-      zIndex?: number;
-    };
-    h = mix(h, d.visible === false ? 1 : 2);
-    if (d.visible === false) return;
-    h = mix(h, d.renderable === false ? 3 : 4);
-    h = mix(h, Math.round((d.alpha ?? 1) * 1024));
-    h = mix(h, d.tint ?? 0);
-    h = mix(h, d.transform?._localID ?? 0);
-    h = mix(h, d.zIndex ?? 0);
-    const tex = d.texture;
-    if (tex) {
-      // `baseTexture.uid` + the frame rect, NOT `texture.uid` — PIXI's `Texture` has no `uid` at
-      // all (only `BaseTexture` does), so the first version of this line hashed `undefined` on
-      // every sprite in the tree and an atlas frame swap went undetected. Caught by the mutation
-      // sweep in test/ui/renderPolicy.ui.ts: deleting the line changed nothing.
-      h = mix(h, tex.baseTexture?.uid ?? 0);
-      const f = tex.frame;
-      if (f) h = mix(mix(mix(mix(h, f.x), f.y), f.width), f.height);
-      h = mix(h, tex.baseTexture?.dirtyId ?? 0);
-    }
-    if (d.geometry) h = mix(h, d.geometry.dirty ?? 0);
-    if (typeof d.text === 'string') h = mixString(h, d.text);
-    const kids = d.children;
-    if (kids) {
-      h = mix(h, kids.length);
-      for (let i = 0; i < kids.length; i++) visit(kids[i]!);
-    }
-  };
-  visit(root);
-  return h;
-}
+export { stageSignature, setSignatureCovered } from './stageSignature';
 
 // ── the policy ────────────────────────────────────────────────────────────────
 
@@ -334,24 +257,31 @@ export interface RenderTickResult {
  */
 export class RenderPolicy {
   private lastSignature = -1;
+  /** What {@link decide} walked on a 'changed' tick, or -1 if render will move it. */
+  private prePaintSignature = -1;
+  /** The last paint's baseline was {@link prePaintSignature}, not a fresh walk. */
+  private reusedBaseline = false;
   private lastPaintMs = 0;
   /** Last tick that painted for a real reason — see {@link IDLE_QUIET_MS} on why 'floor' isn't one. */
   private lastBusyMs = 0;
-  /** Current tick-rate ceiling, so a rate that hasn't changed isn't re-assigned every frame. */
-  private appliedMaxFps = 0;
-  /** `PIXI.Ticker.shared.maxFPS` as found, restored on {@link uninstall} (it is a global). */
-  private sharedMaxFpsBefore = 0;
+  /** Drives both tickers; created on {@link install}, because it takes their loops over. */
+  private pacer: FramePacer | null = null;
   /** Counters exposed for the browser measurement recipe (`window.__nwRenderStats`). */
-  readonly stats: RenderStats = { ticks: 0, painted: 0, skipped: 0 };
+  readonly stats: RenderStats = { ticks: 0, painted: 0, skipped: 0, idle: false };
 
   constructor(
     private readonly host: RenderLoopHost,
     /** Current scene's paint mode; `undefined` (no scene, or a scene that never declared one) = 'live'. */
     private readonly paintMode: () => PaintMode | undefined,
+    /** rAF seam for the pacer; tests pass a manual one so no real frame loop runs under them. */
+    private readonly scheduler?: FrameScheduler,
   ) {}
 
   install(): void {
-    this.sharedMaxFpsBefore = PIXI.Ticker.shared.maxFPS;
+    // `Ticker.shared` first: fx that animate this frame must land before the paint that shows them.
+    this.pacer = new FramePacer([PIXI.Ticker.shared, this.host.ticker], this.scheduler);
+    this.pacer.install();
+    setLiveFramePacing(this.pacer);
     this.setMaxFps(TARGET_FPS);
     setLiveRenderStats(this.stats);
     this.publishStats();
@@ -369,8 +299,13 @@ export class RenderPolicy {
     setLiveRenderStats(null);
     setDecorationsQuiet(false);
     onActivity = null;
-    PIXI.Ticker.shared.maxFPS = this.sharedMaxFpsBefore;
+    this.pacer?.uninstall();
+    this.pacer = null;
+    setLiveFramePacing(null);
   }
+
+  /** The installed pacer (tests, and the measurement recipe via `__nwRenderStats`). */
+  get framePacer(): FramePacer | null { return this.pacer; }
 
   /**
    * Apply a tick-rate ceiling to BOTH loops.
@@ -383,12 +318,14 @@ export class RenderPolicy {
    * existed. Capping it here rather than converting fourteen `Ticker.shared` call sites to a seam:
    * the power problem is the rate, and every one of those sites already integrates `deltaMS`, so a
    * lower rate changes how finely an effect is sampled and not how long it takes.
+   *
+   * Since ADR-094 both are driven by one {@link FramePacer}, so they also tick on the same vsync.
    */
   private setMaxFps(fps: number): void {
-    if (this.appliedMaxFps === fps) return;
-    this.appliedMaxFps = fps;
-    this.host.ticker.maxFPS = fps;
-    PIXI.Ticker.shared.maxFPS = fps;
+    if (this.pacer) this.pacer.capFps = fps;
+    // Published beside the cap, never derived later from it: PerfMonitor must see a wake-up on
+    // input the same instant the pacer does (ADR-095).
+    this.stats.idle = fps < TARGET_FPS;
   }
 
   /** One frame's decision. Exposed (not just wired to the ticker) so tests can step it by hand. */
@@ -399,12 +336,12 @@ export class RenderPolicy {
     if (result.painted) {
       this.host.render();
       this.lastPaintMs = now();
-      // Re-read AFTER painting: render itself mutates fields the signature reads (Text rasterises
-      // into its texture and clears its dirty flag, containers sort their children), so a
-      // pre-paint baseline would report a change on every following tick and never settle.
-      this.lastSignature = stageSignature(this.host.stage);
+      this.lastSignature = this.baselineAfterPaint(result.reason);
       this.stats.painted++;
     } else {
+      // A skipped tick means the reused baseline was right: the guard only arms for the tick
+      // straight after a reuse, so an animation changing every other tick keeps reusing.
+      this.reusedBaseline = false;
       this.stats.skipped++;
     }
     return result;
@@ -424,6 +361,9 @@ export class RenderPolicy {
     // the host where it mattered most. See debugFlags.ts.
     if (!debugFlag('nw_render_debug')) return;
     (globalThis as { __nwRenderStats?: RenderPolicy['stats'] }).__nwRenderStats = this.stats;
+    // The pacer too: `capFps` / `refreshHz` / `runs` are what a frame-pacing probe reads, and since
+    // ADR-094 `ticker.maxFPS` is always 0, so it can no longer tell the app ticker apart by its cap.
+    (globalThis as { __nwFramePacer?: FramePacer | null }).__nwFramePacer = this.pacer;
   }
 
   /**
@@ -442,12 +382,48 @@ export class RenderPolicy {
     setDecorationsQuiet(t - lastActivityMs >= DECOR_QUIET_AFTER_MS);
   }
 
+  /**
+   * The signature the next tick compares against, after a paint.
+   *
+   * It has to describe the tree AFTER `render()`, because render itself changes fields the walk
+   * reads (a `Text` rasterises into a new frame, a `BitmapText` rebuilds its glyphs, a container
+   * sorts). The first version re-walked the whole tree after every paint to get it, which on the
+   * world map and the city was a third of all walking while idle and all of it while dragging
+   * (ADR-101). It only has to walk when the answer could actually be used and is not already known:
+   *
+   * - `live` — nothing compares against it while the scene stays live, and the walk is not cheap
+   *   on a live scene (ADR-096). -1 is never a signature (they are unsigned), so the first tick
+   *   after a switch to a reactive scene reads as 'changed' and paints, as a switch does anyway.
+   * - `hold` that will still be holding next tick — that tick paints without looking. Only the last
+   *   paint of a gesture walks, so a drag across the map stops walking 60 times a second.
+   * - `changed` — {@link decide} walked the tree a moment ago. If that walk saw nothing render will
+   *   change, its signature IS the post-paint one. The one guard: if the tick right after such a
+   *   reuse reads 'changed' again, walk for real this time. A render-side change this list does not
+   *   know about therefore costs one extra paint and then settles; it can never keep a still screen
+   *   painting every tick.
+   * - `floor`, and a hold that is about to end — walk.
+   */
+  private baselineAfterPaint(reason: RenderTickResult['reason']): number {
+    const reused = this.reusedBaseline;
+    this.reusedBaseline = false;
+    if (reason === 'live') return -1;
+    if (reason === 'hold' && activeUntilMs - now() > HOLD_WALK_MARGIN_MS) return -1;
+    if (reason === 'changed' && this.prePaintSignature !== -1 && !reused) {
+      this.reusedBaseline = true;
+      return this.prePaintSignature;
+    }
+    return stageSignature(this.host.stage);
+  }
+
   private decide(): RenderTickResult {
     if ((this.paintMode() ?? 'live') !== 'reactive') return { painted: true, reason: 'live' };
     if (renderHoldActive()) return { painted: true, reason: 'hold' };
     if (now() - this.lastPaintMs >= IDLE_FLOOR_MS) return { painted: true, reason: 'floor' };
     const sig = stageSignature(this.host.stage);
-    if (sig !== this.lastSignature) return { painted: true, reason: 'changed' };
+    if (sig !== this.lastSignature) {
+      this.prePaintSignature = lastWalkRenderMutates() ? -1 : sig;
+      return { painted: true, reason: 'changed' };
+    }
     return { painted: false, reason: 'skipped' };
   }
 }

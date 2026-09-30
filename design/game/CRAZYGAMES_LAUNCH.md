@@ -91,8 +91,10 @@
   规格与禁止项见 [`store-assets-checklist.md §4.1`](../product/release/store-assets-checklist.md)。现有的 1280×720 战斗截图不合格。
 
 - 门户内容政策逐条核对（开发者后台）、[`acceptance-smoke.md`](release/acceptance-smoke.md) CrazyGames 列 9 行（门户 QA 工具里跑）。
-- 上线前：Atlas M0 升档、备份异地（均为 2026-07 起挂着的决定）。
-- 生产环境是否配置了 `NW_CRAZYGAMES_GAME_ID`：没配也不会卡死玩家（§2 回退），但门户玩家都会变成设备访客。
+- 封面 prompt 已出（[`crazygames-cover-art-prompts.md`](../product/crazygames-cover-art-prompts.md)，2026-09-28），用户 AI 出图；预览视频用户手机录。
+- Atlas M0 升档、备份异地：**用户 2026-09-28 定：提审前不升，上线一天后看数据再决定。**
+- `/pve/stamina/ad`：2026-09-28 核过线上已部署（`POST https://api.gamestao.com/api/pve/stamina/ad` 回 400 校验错，不是 404）。
+- 生产环境 `NW_CRAZYGAMES_GAME_ID`：**2026-09-28 核过仍未配**（`/api/auth/crazygames` 回 `SSO not configured`）。这个值是 CrazyGames 开发者后台建好游戏后分配的，拿到后写进 `secrets/funny/prod.yaml` → `push-env.py` → 重建 metaserver 即可；它只被 `/auth/crazygames` 读，**对其他平台零影响**。没配也不会卡死玩家（§2 回退），但门户玩家都会变成设备访客。
 
 ## 6. 其余官方条目核对结果（2026-09-27 第二轮）
 

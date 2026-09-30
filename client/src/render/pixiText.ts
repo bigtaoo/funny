@@ -40,6 +40,47 @@ export function makeText(
 }
 
 /**
+ * `text.width`, computed WITHOUT rasterizing the text.
+ *
+ * Reading `PIXI.Text.width` runs `updateText()`: measure, resize the canvas, `fillText` every line and
+ * mark the texture for re-upload. That is the right price for a label that will be shown — but a
+ * fit-to-width loop that reads it for sizes it then throws away pays the whole rasterization per
+ * probe. On the card roster's first open that was 43 of the grid's 86 ms (2026-09-28 probe:
+ * `txtFit` rasterizing every name and team tag that did not fit, then rasterizing it again).
+ *
+ * Same numbers `updateText` + `updateTexture` would produce, from the same `TextMetrics` call —
+ * including the canvas's whole-device-pixel rounding at the text's current resolution — so a
+ * decision made on this agrees with the width the label will have once it is drawn. `trim` changes
+ * the canvas after drawing, so a trimmed style falls back to the real getter.
+ */
+export function measuredWidth(t: PIXI.Text): number {
+  const style = t.style;
+  if (style.trim) return t.width;
+  const m = PIXI.TextMetrics.measureText(t.text || ' ', style, style.wordWrap, t.canvas);
+  const res = t.resolution;
+  const canvasW = Math.ceil(Math.ceil(Math.max(1, m.width) + style.padding * 2) * res);
+  return Math.abs(t.scale.x) * (canvasW / res - style.padding * 2);
+}
+
+/**
+ * Build every new `PIXI.Text` at the renderer's resolution instead of `settings.RESOLUTION` (1).
+ *
+ * `PIXI.Text` is auto-resolution: it starts at `Text.defaultResolution ?? settings.RESOLUTION` and
+ * switches to `renderer.resolution` — re-rasterizing — the first time it is rendered. Nearly every
+ * label in this game has its `width`/`height` read during layout, before that first render, and the
+ * read rasterizes it. So on any renderer above resolution 1 (every phone, every retina screen; the
+ * cap is 2) each such label was drawn twice: once at 1x for layout, then again at 2x on screen.
+ * Setting the default up front makes the layout rasterization the only one. `autoResolution` stays
+ * on, so a later change of renderer resolution (render/adaptiveResolution.ts) still re-rasterizes
+ * whatever is on screen at the new value.
+ *
+ * Call with the renderer's resolution at boot, and again whenever it changes.
+ */
+export function setTextResolution(resolution: number): void {
+  if (Number.isFinite(resolution) && resolution > 0) PIXI.Text.defaultResolution = resolution;
+}
+
+/**
  * Raise PIXI's global default text padding to a floor, once at app boot. Belt-and-
  * suspenders for any `new PIXI.Text(...)` that bypasses {@link makeText}. A fixed
  * floor (rather than proportional) is fine here: padding never shifts layout, and

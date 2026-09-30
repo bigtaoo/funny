@@ -24,6 +24,8 @@ export interface AtlasLoader {
    * optional cosmetic upgrades and degrade to a procedural fallback on null.
    */
   load(): Promise<void>;
+  /** The decoded page, or null until {@link load} has resolved. For a GPU pre-upload (bake.ts `uploadToGpu`). */
+  baseTexture(): PIXI.BaseTexture | null;
 }
 
 /**
@@ -70,5 +72,6 @@ export function createAtlasLoader(
     getTexture: (name: string) => (sheet ? (sheet.textures[name] ?? null) : null),
     frameNames: () => (sheet ? Object.keys(sheet.textures) : []),
     load,
+    baseTexture: () => sheet?.baseTexture ?? null,
   };
 }

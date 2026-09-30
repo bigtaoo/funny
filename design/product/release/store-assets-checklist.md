@@ -531,11 +531,11 @@ Crash Data、Performance Data（分析/不关联）、**Purchase History**（App
 ### 4.1 素材规格
 | 素材 | 规格 | 状态 |
 |---|---|---|
-| 封面 · 横版 | **1920×1080**（16:9） | ❌ 待美术（现有 `art/store/icons/crazygames_thumb_1280x720.png` 尺寸不对、而且是战斗截图——官方明确不要截图） |
-| 封面 · 竖版 | **800×1200**（2:3） | ❌ 待美术 |
-| 封面 · 方形 | **800×800**（1:1） | ❌ 待美术 |
-| 预览视频 · 横版 | 1080p 16:9，**15–20 s**，≤ 50 MB | ❌ 待录制 |
-| 预览视频 · 竖版 | 1080p 2:3，15–20 s，≤ 50 MB | ❌ 待录制 |
+| 封面 · 横版 | **1920×1080**（16:9） | ✅ `art/store/crazygames/cover_landscape_1920x1080.jpg`（2026-09-28，AI 出图，prompt 见 [`crazygames-cover-art-prompts.md`](../crazygames-cover-art-prompts.md)；原图在 `src/`）。旧的 `art/store/icons/crazygames_thumb_1280x720.png` 是战斗截图，不再用于 CG |
+| 封面 · 竖版 | **800×1200**（2:3） | ✅ `art/store/crazygames/cover_portrait_800x1200.jpg`（同上） |
+| 封面 · 方形 | **800×800**（1:1） | ✅ `art/store/crazygames/cover_square_800x800.jpg`（同上） |
+| 预览视频 · 横版 | 1080p 16:9，**15–20 s**，≤ 50 MB | ⏳ 用户手机录制 |
+| 预览视频 · 竖版 | 1080p 2:3，15–20 s，≤ 50 MB | ⏳ 用户手机录制 |
 | 游戏标题/描述 | 英文（见 §0.1 EN） | — |
 | 操作说明 | 鼠标/触屏操作说明 | ✅ 见 §4.1b（2026-09-09 拟，逐条对着代码核过） |
 

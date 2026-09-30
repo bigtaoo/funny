@@ -23,9 +23,9 @@ export default defineConfig({
   // the end-stats fixture and re-measure the bake ceiling against the same stack, on the same dev
   // server, with one command).
   testMatch: /(portraitLayout|rotateLayout|captureEndStats|bakeBudget)\.spec\.ts$/,
-  // Six viewports x ~45 stops, each a real navigation (or a real tap into a modal) against a real
+  // Eleven viewports x 48 stops, each a real navigation (or a real tap into a modal) against a real
   // backend, and one Playwright test per viewport — so this is the budget for ONE viewport's whole
-  // walk, not for the run. The run is ~25 minutes.
+  // walk, not for the run. The run is ~30 minutes.
   timeout: 600_000,
   fullyParallel: false,
   retries: 0,

@@ -177,6 +177,17 @@ describe('DailyScene checkin grid — the claimable cell is the focal point (202
     scene.destroy();
   });
 
+  it('breathes in steps — at most ~10 distinct scales a second, so the tab is not repainted every frame', async () => {
+    // ADR-097: an unquantized sine rewrote `scale` on every tick, and the render policy hashes it.
+    const scene = await buildCheckinTab(saveWith(3, false));
+    const cell = focalCell(scene.container)!;
+    const seen = new Set<number>();
+    for (let i = 0; i < 60; i++) { scene.update(1 / 60); seen.add(cell.scale.x); }
+    expect(seen.size).toBeLessThanOrEqual(11);
+    expect(seen.size).toBeGreaterThan(1);
+    scene.destroy();
+  });
+
   it('stops breathing when the tab switches away, instead of writing into a destroyed node', async () => {
     const scene = await buildCheckinTab(saveWith(3, false));
     const stale = focalCell(scene.container)!;

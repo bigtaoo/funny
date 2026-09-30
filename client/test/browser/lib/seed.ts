@@ -59,6 +59,13 @@ const DB_META = 'notebook_wars';
 const DB_SOCIAL = 'nw_social';
 const DB_WORLD = 'notebook_wars_world';
 const DB_AUCTION = 'notebook_wars_auction';
+/** commercial's own database — the only writer of coin balances (COMMERCIAL_DESIGN §0 K1). */
+const DB_COMMERCIAL = 'notebook_wars_commercial';
+/** Seven digits: the lobby/shop/auction coin chip is the single most reused number in the UI. */
+const SEED_COINS = 9876543;
+
+/** Every skin id the game ships (SKIN_TARGET_UNIT, client/src/game/meta/skinDefs.ts). */
+const SEED_SKINS = ['skin_shop_c1', 'skin_shop_r1', 'skin_shop_e1', 'skin_e1', 'skin_e2', 'skin_l1'];
 
 /** How many other accounts the seed dresses up as roster/leaderboard/market population. */
 const BOTS = 120;
@@ -173,6 +180,12 @@ export async function seedAccount(page: Page): Promise<SeedTarget> {
     equipment: inv.equipment,
     mails,
     now,
+    coins: SEED_COINS,
+    skins: SEED_SKINS,
+    // Two days left on the monthly card: inside the shop's three-day lead window
+    // (ShopScene/core.ts monthlyCardStatus), so the card draws its "expiring soon" stamp — the one
+    // state of that tile a fresh account (no card at all) and a just-bought one both skip.
+    subscriptionExpiry: now + 2 * 86400000,
     // The server's own period keys, computed with the server's own functions: retention state is
     // matched against `makeDayKey(now)` / `makeWeekKey(now)` on read and lazily zeroed when it does
     // not agree (shared/src/retention.ts resetStaleRetention), so a hand-rolled key here would seed
@@ -183,6 +196,7 @@ export async function seedAccount(page: Page): Promise<SeedTarget> {
 const meta    = db.getSiblingDB('${DB_META}');
 const social  = db.getSiblingDB('${DB_SOCIAL}');
 const auction = db.getSiblingDB('${DB_AUCTION}');
+const comm    = db.getSiblingDB('${DB_COMMERCIAL}');
 
 // Population: the first N other accounts by _id, so a re-run dresses up the SAME accounts rather
 // than renaming a fresh batch every time and leaving a trail of them behind.
@@ -226,10 +240,17 @@ meta.saves.bulkWrite(saveOps);
 // ── The account itself ────────────────────────────────────────────────────────────────────────
 meta.accounts.updateOne({ _id: P.me }, { $set: { displayName: ${JSON.stringify(LONG_NAMES[0])} } });
 meta.saves.updateOne({ _id: P.me }, { $set: {
-  // Seven-digit coins: the lobby/shop/auction coin chip is the single most reused number in the UI.
-  'save.wallet.coins': 9876543,
+  // Only the offline-display mirror; the balance itself is seeded into commercial below.
+  'save.wallet.coins': P.coins,
   'save.materials': { scrap: 482300, lead: 96420, binding: 27180 },
   'save.inventory.items': { gacha_ticket: 1288, gacha_ticket_premium: 366 },
+  // Every skin the game has, one of them worn. A fresh account owns none, which renders the
+  // wardrobe as nothing but "Default" tiles — the status line on a worn skin and the per-hero skin
+  // names (the widest label on a tile) were never drawn, and neither was the auction picker's skin
+  // entry. The ids are SKIN_TARGET_UNIT's (client/src/game/meta/skinDefs.ts); the equip key is
+  // skinEquipKey(unitType), i.e. 'skin:' + the unit type.
+  'save.inventory.skins': P.skins,
+  'save.equipped.skin:lena': 'skin_e1',
   'save.pvp.elo': 2960,
   'save.pvp.rank': 'king',
   'save.pvp.seasonNo': seasonNo,
@@ -281,6 +302,23 @@ meta.saves.updateOne({ _id: P.me }, { $set: {
     'ach.cast.meteor': { claimedTiers: [1] },
   },
 } });
+
+// ── Coins ─────────────────────────────────────────────────────────────────────────────────────
+// meta's save.wallet.coins is a mirror: every GET /save re-reads commercial's wallet and writes the
+// mirror over whatever is there (metaserver economy/delivery.ts mirrorWalletFrom). Seeding only the
+// mirror, as this file did until 2026-09-29, showed 0 on every coin chip in the matrix. So the
+// balance goes where commercial's credit() puts it: the free coins pool plus one ledger entry.
+const walletBefore = comm.wallets.findOne({ _id: P.me });
+comm.wallets.updateOne(
+  { _id: P.me },
+  { $set: { coins: P.coins, subscription: { expiry: P.subscriptionExpiry }, updatedAt: P.now },
+    $inc: { rev: 1 }, $setOnInsert: { gacha: { pity: {} } } },
+  { upsert: true },
+);
+comm.ledger.insertOne({
+  accountId: P.me, delta: P.coins - ((walletBefore && walletBefore.coins) || 0),
+  balanceAfter: P.coins, reason: 'grant', ts: P.now,
+});
 
 // ── Inventory ─────────────────────────────────────────────────────────────────────────────────
 meta.cardInstances.deleteMany({ accountId: P.me, _id: /^seedcard/ });
@@ -419,7 +457,7 @@ const tileAt = function (dx, dy) { return worldId + ':' + (bx + dx) + ':' + (by 
 // maxed lichuang, 300 for every other maxed card, and 200/100 for a level-1 one.
 //
 // Level is not a formality here: the 25 cards picked up below are whatever the account holds, and
-// the first few of those are the FTUE starter cards at level 1, not the level-60 ones this seed
+// the first few of those are the FTUE starter cards at level 1, not the level-9 ones this seed
 // wrote. Allotting every card the maxed figure printed 'Troops 1500/1300' on the city's team strip
 // - more troops carried than the team can hold, which is a state the game cannot produce.
 const cards = meta.cardInstances.find({ accountId: P.me }, { projection: { _id: 1, defId: 1, level: 1 } }).limit(25).toArray();

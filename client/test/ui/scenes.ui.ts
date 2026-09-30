@@ -1305,6 +1305,78 @@ describe('LobbyScene — identity chip row', () => {
 
     scene.destroy();
   });
+
+  // The test above passes with a three-letter name, which is how the real overlap went unseen: the
+  // name's cap was a fixed fraction of the width, while the coin chip grows with the balance. With
+  // the layout sweep's maxed-out account (a widest-possible CJK name, seven-digit coins) the name ran
+  // under the coin chip on a 390-wide phone (2026-09-29). The fix caps the name at the chip's left
+  // edge — shrinking at most to 0.8x, then cutting with an ellipsis rather than going unreadable.
+  function nameLabelOf(scene: LobbyScene, name: string): PIXI.Text {
+    const found: PIXI.Text[] = [];
+    const walk = (n: PIXI.DisplayObject): void => {
+      if (n instanceof PIXI.Text && (n.text === name || n.text.endsWith('…'))) found.push(n);
+      for (const c of (n as PIXI.Container).children ?? []) walk(c);
+    };
+    walk(scene.container);
+    expect(found).toHaveLength(1);
+    return found[0]!;
+  }
+
+  // Headless text is measured at a flat 7 px per character whatever the font (test/harness/
+  // pixiHeadless.ts), so the real CJK name is only ~77 design px here and never reaches the chip.
+  // The names below are sized for THAT metric: 58 characters overflows the ~360 px left of the chip
+  // by less than 0.8x (shrink only), 120 by far more (shrink to the floor, then cut).
+  function lobbyWithName(w: number, h: number, name: string): LobbyScene {
+    return new LobbyScene(createLayout(w, h), new InputManager(), {
+      onStartGame() {}, onOpenCampaign() {}, onOpenRoom() {}, onOpenWorld() {},
+      onOpenShop() {}, onOpenCards() {}, onOpenStats() {}, onOpenProfile() {},
+      onOpenRecharge() {}, onOpenLeaderboard() {},
+      getCoins: () => 9_876_543,
+      pvp: { rank: 'king', elo: 2960 },
+      playerName: name,
+    });
+  }
+
+  it('portrait 390x844: a name slightly too wide for the row is shrunk, not cut', () => {
+    const name = 'W'.repeat(58);
+    const scene = lobbyWithName(390, 844, name);
+    const coinsRect = (scene as any).core.coinsChipRect as { x: number };
+    const label = nameLabelOf(scene, name);
+    expect(label.text).toBe(name);
+    expect(label.scale.x).toBeLessThan(1);
+    expect(label.scale.x).toBeGreaterThanOrEqual(0.8);
+    expect(label.x + label.width).toBeLessThanOrEqual(coinsRect.x);
+    scene.destroy();
+  });
+
+  // `chipBound`: whether the coin chip, rather than the old width fraction, is the binding limit.
+  // At 360x640 the fraction still binds (the design width is the same 1080, the band is not).
+  for (const [w, h, chipBound] of [[390, 844, true], [360, 640, false]] as const) {
+    it(`portrait ${w}x${h}: a far too wide name stops at the floor scale and is cut before the coin chip`, () => {
+      const name = 'W'.repeat(120);
+      const scene = lobbyWithName(w, h, name);
+      const coinsRect = (scene as any).core.coinsChipRect as { x: number };
+      const profileRect = (scene as any).core.profileChipRect as { x: number; w: number };
+      const label = nameLabelOf(scene, name);
+      expect(label.text.endsWith('…')).toBe(true);
+      expect(label.scale.x).toBeCloseTo(0.8, 9);
+      // The drawn glyphs AND the tap rect both end before the coin chip starts.
+      expect(label.x + label.width).toBeLessThanOrEqual(coinsRect.x);
+      expect(profileRect.x + profileRect.w).toBeLessThanOrEqual(coinsRect.x);
+      // ...and not by more than about one character: the cut is measured at the floor scale, so the
+      // kept prefix fills the row instead of leaving a 0.8x-sized hole next to the chip.
+      if (chipBound) expect(profileRect.x + profileRect.w).toBeGreaterThan(coinsRect.x - 2 * 7 * 0.8);
+      scene.destroy();
+    });
+  }
+
+  it('portrait: a short name is neither shrunk nor cut', () => {
+    const { scene } = buildOnlineLobby(...PORTRAIT);
+    const label = nameLabelOf(scene, 'tao');
+    expect(label.text).toBe('tao');
+    expect(label.scale.x).toBe(1);
+    scene.destroy();
+  });
 });
 
 // ── LevelPrepScene: layout invariants (regression for 6-row overflow bug) ────

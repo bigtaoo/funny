@@ -322,7 +322,8 @@ Art 7(1) 的举证留痕，不是遥测。
     "shop_buy":       { "sample": 1.0 },
     "upgrade":        { "sample": 1.0 },
     "churn_signal":   { "sample": 1.0 },
-    "render_profile": { "sample": 1.0 }
+    "render_profile": { "sample": 1.0 },
+    "render_res_down": { "sample": 1.0 }
   }
 }
 ```
@@ -494,10 +495,14 @@ scene 取值：`IntroScene / LobbyScene / LoginScene / CampaignMapScene / LevelP
 
 | 事件 | 必填属性 | 说明 |
 |---|---|---|
-| `render_profile` | `scene, spanS, windows, fpsP50, fpsMin, fpsMax, maxFps` | `scene` 取自 anomaly 的 `getActiveScene()`，于是可按场景切（世界地图 vs 大厅 vs 战斗）；`spanS`/`windows` 是本条覆盖的可见时长与窗口数 |
+| `render_profile` | `scene, spanS, windows, maxFps`（`fpsP50, fpsMin, fpsMax` 见下行） | `scene` 取自 anomaly 的 `getActiveScene()`，于是可按场景切（世界地图 vs 大厅 vs 战斗）；`spanS`/`windows` 是本条覆盖的可见时长与窗口数 |
+| （同上，帧率口径）2026-09-28 起（ADR-095） | `fpsP50, fpsMin, fpsMax, idlePct` | **fps 只统计满速段**：菜单静止降频到 20 的时段画面没在变，不计入 fps；整段都在降频时三个 fps 字段**缺省**。`maxFps` = span 内满速帧见过的最高上限（正常 60）。`idlePct` = 降频时间占比，省电看它、流畅看 `fpsP50`。没有 `idlePct` 的行是旧口径（fps 混着降频段，`maxFps` 是上报时刻的上限） |
+| （同上，装了 RenderPolicy 时附加）2026-09-28 起 | `hz` | 帧节拍器（ADR-094）估计的**显示刷新率**。`fpsMax` 卡在 30 时先看它：`hz: 30` = 屏幕本身就是 30 Hz，`hz: 60` = 设备跟不上。`maxFps` 也改由节拍器给出（`ticker.maxFPS` 恒为 0） |
 | （同上，装了 RenderPolicy 时附加） | `tickPerSec, paintPerSec, skipPct` | **`paintPerSec` vs `tickPerSec` = 按需重绘有没有在工作**。取自 `render/renderStats.ts` 计数器的**差值**，不是累计值 |
 | （同上，app.ts 传入 renderer 事实时附加） | `res, dpr, dprCapped, canvasW, canvasH` | **`dprCapped`（`dpr > res`）= dpr 上限在这台设备上到底有没有生效**。微信永远为 `false`：`WechatPlatform.devicePixelRatio` 硬编码 1，那条旋钮在微信是空操作 |
 | （同上，帧成本）2026-09-13 起 | `updP50, rndP50, updMax, rndMax` | **一帧的钱花在哪**。均为每 **tick** 的毫秒数（`rnd` 因此已含 `skipPct` 的折扣，可直接与帧周期 `1000/fpsP50` 相比）；两者之和接近帧周期 = 主线程是瓶颈，远小于帧周期 = 时间不在我们的 JS 里（显示刷新上限 / GPU 填充率 / 合成器）。见 `claudedocs/client-render-budget.md` §9.6 |
+| （同上，自动降分辨率后）2026-09-28 起（ADR-100） | `resFrom` | 本会话渲染分辨率被自动降过：`resFrom` 是原值，`res` / `canvasW/H` 是降后的值。没有这个字段 = 没降过 |
+| `render_res_down` | `from, to, fps, scene` | 对战中位帧率低于 24，渲染分辨率 2 → 1.5（`client/src/render/adaptiveResolution.ts`）。每会话最多一次；`fps` 是触发时那个 5 s 窗口的中位帧率。看有没有用：同一会话随后一条 `render_profile` 的 `fpsP50` |
 
 Grafana 上值得先看的两张：按 `platform` 切的 `fpsP50` 分布（iOS/微信/web），以及按 `scene` 切的 `skipPct`（reactive 的菜单应该显著大于 0，`live` 的战斗应该等于 0）。
 

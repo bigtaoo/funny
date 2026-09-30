@@ -45,13 +45,11 @@
 import * as PIXI from 'pixi.js-legacy';
 import { ILayout, Rect } from '../../layout/ILayout';
 import { SketchPen } from '../../render/sketch';
-import { palette } from '../../render/theme';
-import { bake } from '../../render/bake';
 import { BoilingSprite } from '../../render/boil';
 import { StickmanRuntime } from '../../render/stickman/StickmanRuntime';
 import { preloadIconArt } from '../../render/icons';
 import { makeText } from '../../render/pixiText';
-import { tearDownChildren, sketchPanel as sharedSketchPanel } from '../../render/sketchUi';
+import { tearDownChildren, sketchPanel as sharedSketchPanel, buildPaperBackground } from '../../render/sketchUi';
 import { addPanelFrame } from '../../render/panelFrame';
 
 export { fmtCoins } from './format';
@@ -152,33 +150,12 @@ export function drawBtn(target: PIXI.Container, w: number, h: number, enabled: b
 }
 
 /**
- * Procedural notebook background drawn with the shared SketchPen: aged paper,
- * hand-drawn faint-blue ruled lines, and a red "teacher's margin" line down
- * the left (diegetic correcting pen, double-stroked for emphasis). Baked to a
- * texture cached per (w,h) so it costs nothing per frame; falls back to live
- * Graphics if no renderer is wired.
+ * The lobby's notebook page. It used to be a private copy of {@link buildPaperBackground} with the
+ * same pen, seed and rule positions, baked under its own `lobbybg:` key — so the lobby and every
+ * other screen of the same size held two identical full-page textures. It is the shared page now.
  */
 export function buildBackground(w: number, h: number): PIXI.DisplayObject {
-  const gfx = new PIXI.Graphics();
-  gfx.beginFill(C.bg);
-  gfx.drawRect(0, 0, w, h);
-  gfx.endFill();
-
-  const pen = new SketchPen(gfx, 0x5bd1c7);
-  const lineGap = Math.round(h / 28);
-  for (let y = lineGap; y < h; y += lineGap) {
-    pen.line(0, y, w, y, { color: palette.ruleLine, width: 1.1, jitter: 0.7, taper: 0.9, double: false });
-  }
-  const mx = Math.round(w * 0.09);
-  pen.line(mx, 0, mx, h, { color: palette.inkRed, width: 2.2, jitter: 1.0, taper: 0.95 });
-
-  const tex = bake(`lobbybg:${Math.round(w)}x${Math.round(h)}`, gfx, w, h, { pageScale: true });
-  if (tex) {
-    const s = new PIXI.Sprite(tex);
-    gfx.destroy();
-    return s;
-  }
-  return gfx;
+  return buildPaperBackground('lobby', w, h);
 }
 
 // ── LobbyScene ────────────────────────────────────────────────────────────────

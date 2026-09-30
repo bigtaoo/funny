@@ -111,6 +111,17 @@
 | [ADR-091](DECISIONS_ADR-086-onward.md#adr-091-文档里的代码路径也进门禁一次扫掉-164-处指向不存在文件的引用--accepted--2026-09-15) | 文档里的代码路径也进门禁：一次扫掉 164 处指向不存在文件的引用 | Accepted | 2026-09-15 |
 | [ADR-092](DECISIONS_ADR-086-onward.md#adr-092-单大区容量目标改为-3000-人取代-adr-032-的-500代码常量等服务端扩容验证后再改--accepted--2026-09-26) | 单大区容量目标改为 3000 人（取代 ADR-032 的 500）；代码常量等服务端扩容验证后再改 | Accepted | 2026-09-26 |
 | [ADR-093](DECISIONS_ADR-086-onward.md#adr-093-本城基础产量纸--石墨--金属各保底-50小时--accepted--2026-09-27) | 本城基础产量：纸 / 石墨 / 金属各保底 50/小时 | Accepted | 2026-09-27 |
+| [ADR-094](DECISIONS_ADR-086-onward.md#adr-094-帧率上限改由-vsync-整数分频实现两个-ticker-共用一个节拍取代-pixi-maxfps--accepted--2026-09-28) | 帧率上限改由 vsync 整数分频实现，两个 ticker 共用一个节拍（取代 PIXI `maxFPS`） | Accepted | 2026-09-28 |
+| [ADR-095](DECISIONS_ADR-086-onward.md#adr-095-帧率只统计满速段静止降频的时段不计入-fps另报-idlepct--accepted--2026-09-28) | 帧率只统计「满速段」：静止降频的时段不计入 fps，另报 `idlePct` | Accepted | 2026-09-28 |
+| [ADR-096](DECISIONS_ADR-086-onward.md#adr-096-切屏卡顿兵种立绘分两档640-px-缩略图--抽卡揭示用原图图鉴贴图到齐不再整屏重建live-帧不再走签名--accepted--2026-09-28) | 切屏卡顿：兵种立绘分两档（640 px 缩略图 + 抽卡揭示用原图）、图鉴贴图到齐不再整屏重建、`live` 帧不再走签名 | Accepted | 2026-09-28 |
+| [ADR-097](DECISIONS_ADR-086-onward.md#adr-097-世界地图--主城空闲不再满帧重绘行军小人-12-fps-步进被全屏覆盖层盖住的地图停摆战役图与每日页的脉动相位量化--accepted--2026-09-28) | 世界地图 / 主城空闲不再满帧重绘：行军小人 12 fps 步进、被覆盖的地图停摆、脉动相位量化 | Accepted | 2026-09-28 |
+| [ADR-098](DECISIONS_ADR-086-onward.md#adr-098-手机首启卡顿render_profile-拆开最长那一帧边框图集挪到启动加载阶段地图小人改为跟护盾共用-30-hz-节拍--accepted--2026-09-28) | 手机首启卡顿：拆开最长那一帧、边框图集挪到启动加载；地图小人跟护盾共用 30 Hz 节拍 | Accepted | 2026-09-28 |
+| [ADR-099](DECISIONS_ADR-086-onward.md#adr-099-首次进屏卡顿纸背景改用线条条带图集文字只光栅化一次世界图集在大厅空闲时上传烘焙纹理不再比请求的小--accepted--2026-09-28) | 首次进屏卡顿：纸背景线条条带图集、文字只光栅化一次、世界图集空闲上传；烘焙纹理不再比请求的小 | Accepted | 2026-09-28 |
+| [ADR-100](DECISIONS_ADR-086-onward.md#adr-100-慢设备自动降分辨率对战撑不住-24-fps-时渲染分辨率-2--15--accepted--2026-09-28) | 慢设备自动降分辨率：对战撑不住 24 fps 时 2 → 1.5 | Accepted | 2026-09-28 |
+| [ADR-101](DECISIONS_ADR-086-onward.md#adr-101-变化检测少走冤枉路被覆盖层盖住的场景不遍历画完后的基线能沿用就不重走--accepted--2026-09-29) | 变化检测少走冤枉路：覆盖层下的场景不遍历、画完后的基线能沿用就不重走 | Accepted | 2026-09-29 |
+| [ADR-102](DECISIONS_ADR-086-onward.md#adr-102-世界地图格子池视口裁剪屏幕外的格子隐藏滚进来才画--accepted--2026-09-29) | 世界地图格子池视口裁剪：屏幕外的格子隐藏、滚进来才画 | Accepted | 2026-09-29 |
+| [ADR-103](DECISIONS_ADR-086-onward.md#adr-103-世界地图城池层空的特效层隐藏不留在可见树上--accepted--2026-09-29) | 世界地图城池层：空的特效层隐藏，不留在可见树上 | Accepted | 2026-09-29 |
+| [ADR-104](DECISIONS_ADR-086-onward.md#adr-104-纸背景横线并成网格每页约-80-个-sprite-变成-2-个-mesh--accepted--2026-09-29) | 纸背景横线并成网格：每页约 80 个 Sprite 变成 2 个 Mesh | Accepted | 2026-09-29 |
 
 ---
 

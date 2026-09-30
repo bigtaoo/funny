@@ -192,8 +192,7 @@ describe('live-stroked rectangles are all accounted for', () => {
  * that CALL `bake()`, so a drawer that never calls it is invisible there by construction.
  */
 const PAPER_DRAWERS: Record<string, boolean> = {
-  'render/sketchUi.ts':          true,  // the shared builder, used by ~30 scenes
-  'scenes/LobbyScene/core.ts':   true,  // the lobby's own copy, predates the shared one
+  'render/sketchUi.ts':          true,  // the shared builder (~30 scenes + the lobby): strip atlas, live only headless
   'render/BoardView.ts':         true,  // the battle sheet: same ruling, different geometry
   'render/sketchDemo.ts':        false, // the ?sketch sampler: a dev page, drawn once, not the game
 };
@@ -209,7 +208,9 @@ describe('every notebook page is baked', () => {
       if (!/palette\.ruleLine/.test(source)) continue;
       if (!/\.\s*(?:line|stroke)\s*\(/.test(source)) continue;
       const rel = relative(SRC, file).split(sep).join('/');
-      drawers[rel] = /\bbake(?:Lazy)?\s*\(/.test(source);
+      // `addPaperRules(` counts as baked: it lays the page out of render/paperRules.ts's baked strip
+      // atlas and only falls back to the live strokes when there is no renderer (ADR-099).
+      drawers[rel] = /\bbake(?:Lazy)?\s*\(|\baddPaperRules\s*\(/.test(source);
     }
 
     expect(

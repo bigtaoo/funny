@@ -5,7 +5,7 @@
 // explicitly instead of becoming their own domain class.
 import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
-import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor } from '../../render/sketchUi';
+import { ui as C, txt, fitOrWrap, sketchPanel, sketchAccentBar, seedFor } from '../../render/sketchUi';
 import { buildIcon } from '../../render/icons';
 import { buildMaterialIcon } from '../../render/atlas/materialAtlas';
 import { getArtTexture, containScale } from '../../render/cardArt';
@@ -88,15 +88,18 @@ export function drawCard(
   if (spec.expiringSoonStamp) {
     const stamp = new PIXI.Container();
     const stampW = Math.round(imgSize * 0.92);
-    const stampH = Math.round(imgSize * 0.26);
     const ink = 0xaf2430;
-    const border = new PIXI.Graphics();
-    border.lineStyle(Math.max(2, Math.round(imgSize * 0.02)), ink, 0.9);
-    border.drawRoundedRect(-stampW / 2, -stampH / 2, stampW, stampH, stampH * 0.3);
-    stamp.addChild(border);
+    // Two lines rather than shrunk past the floor when the words do not fit ("LÄUFT BALD AB" /
+    // "EXPIRING SOON" on the 137px art were drawn at 0.78 of it, 2026-09-29); the stamp grows to
+    // hold them.
     const label = txt(t('shop.expiringSoonStamp'), snapFont(Math.round(imgSize * 0.13)), ink, true);
     label.anchor.set(0.5, 0.5);
-    if (label.width > stampW * 0.88) label.scale.set((stampW * 0.88) / label.width);
+    fitOrWrap(label, stampW * 0.88);
+    const stampH = Math.max(Math.round(imgSize * 0.26), Math.ceil(label.height + imgSize * 0.06));
+    const border = new PIXI.Graphics();
+    border.lineStyle(Math.max(2, Math.round(imgSize * 0.02)), ink, 0.9);
+    border.drawRoundedRect(-stampW / 2, -stampH / 2, stampW, stampH, Math.round(imgSize * 0.26) * 0.3);
+    stamp.addChild(border);
     stamp.addChild(label);
     stamp.rotation = -0.3;
     stamp.alpha = 0.88;
@@ -105,11 +108,22 @@ export function drawCard(
     body.addChild(stamp);
   }
 
-  // Savings / best-value badge: top-right corner over the art.
+  // Savings / best-value badge: top-right corner, beside the art. The badge is a fixed size while the
+  // art is centred in a card whose width follows the grid, so on a narrow column (portrait 390 wide:
+  // "Save $10" ran over the year card's 365 ticket, 2026-09-29) the corner is not free. Then the badge
+  // moves down to lead the status lines instead — the art row and the title keep the same y as the
+  // neighbouring card in the row, which a badge row of its own above the art would break.
+  let lines = spec.lines ?? [];
   if (spec.badge) {
     const badge = txt(spec.badge.text, snapFont(Math.round(ch * 0.075)), spec.badge.color, true);
-    badge.anchor.set(1, 0); badge.x = x + cw - pad; badge.y = y + pad;
-    body.addChild(badge);
+    const cornerLeft = x + cw - pad - badge.width;
+    if (cornerLeft >= imgX + imgSize + Math.round(cw * 0.02)) {
+      badge.anchor.set(1, 0); badge.x = x + cw - pad; badge.y = y + pad;
+      body.addChild(badge);
+    } else {
+      badge.destroy();
+      lines = [{ text: spec.badge.text, color: spec.badge.color }, ...lines];
+    }
   }
 
   // ── Middle text band: title, then price, then status lines — all centred, top-aligned from just
@@ -188,7 +202,6 @@ export function drawCard(
   }
 
   // Status / bonus lines (Active, Free, item description…) — centred, wrapped, clamped to the band.
-  const lines = spec.lines ?? [];
   if (lines.length > 0 && ty < bandBottom) {
     const fontSize = snapFont(Math.round(ch * 0.06));
     for (const ln of lines) {

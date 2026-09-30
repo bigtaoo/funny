@@ -48,6 +48,7 @@ export class DataPanel implements DataHandlers {
     const core = this.core;
     const fam = await core.cb.worldApi.getFamily(familyId);
     await this.applyFamily(fam);
+    if (!core.destroyed) core.render();
   }
 
   private async applyFamily(fam: FamilyDetailView): Promise<void> {
@@ -56,7 +57,7 @@ export class DataPanel implements DataHandlers {
     core.members = fam.members ?? [];
     core.mode = 'myFamily';
     // Paint the roster/identity as soon as the family is known — the channel is a second
-    // round-trip, so don't hold the whole scene blank on it. loadData()/doJoin() render again
+    // round-trip, so don't hold the whole scene blank on it. loadData()/loadMyFamily() render again
     // once loadChannel() lands, filling the message list in.
     if (!core.destroyed) core.render();
     // Emblem atlas is lazy-loaded (not boot L0 — see emblemAtlas.ts); kick it off as soon as we
@@ -64,8 +65,10 @@ export class DataPanel implements DataHandlers {
     // the header/info-band badge (drawHeaderTitle / renderInfoBand) doesn't stay blank until the
     // player happens to open the picker. Idempotent — a no-op if already loaded/loading.
     if (fam.emblemKey) void loadEmblemAtlas().then(() => { if (!core.destroyed) core.render(); }).catch(() => {});
-    await this.loadChannel();
-    await this.loadJoinRequests();
+    // Together, and without a render of their own: the join-request list used to render when it
+    // landed and then loadData() rendered again straight after, two full rebuilds of the scene in
+    // one frame on a leader's first visit (ADR-096). The caller's one render shows both.
+    await Promise.all([this.loadChannel(), this.loadJoinRequests()]);
   }
 
   async loadChannel(): Promise<void> {
@@ -83,7 +86,6 @@ export class DataPanel implements DataHandlers {
     } catch {
       core.joinRequests = [];
     }
-    if (!core.destroyed) core.render();
   }
 
   /**

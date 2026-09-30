@@ -8,8 +8,9 @@
 import * as PIXI from 'pixi.js-legacy';
 import { IPlatform } from './platform/IPlatform';
 import { MemoryMonitor } from './cache/MemoryMonitor';
-import { PerfMonitor } from './cache/PerfMonitor';
-import { initCrashSentinel, installAnomalyWatchers, previousSessionCrash, setAnomalyStorage, recordRenderSample } from './net/anomaly';
+import { PerfMonitor, type RenderProfileInfo } from './cache/PerfMonitor';
+import { initCrashSentinel, installAnomalyWatchers, previousSessionCrash, setAnomalyStorage, recordRenderSample, getActiveScene } from './net/anomaly';
+import { installRenderCostProbe, beginRenderCost, readRenderCost } from './render/renderCostProbe';
 import * as analytics from './analytics';
 import { markBoot } from './analytics/bootTimeline';
 import { startIdleWatch } from './analytics/idleWatch';
@@ -28,9 +29,11 @@ import { setSubscriptionDisclosureSink } from './ui/dialogs/subscriptionDisclosu
 import { t } from './i18n';
 import { ui as C } from './render/sketchUi';
 import { setBakeRenderer } from './render/bake';
+import { prewarmPanelFrame } from './render/panelFrame';
 import { msSinceActivity, POWER_PREFERENCE, RenderPolicy, rendererResolution } from './render/renderPolicy';
+import { installAdaptiveResolution } from './render/adaptiveResolution';
 import { setDebugFlagStorage } from './debugFlags';
-import { installTextPaddingFloor } from './render/pixiText';
+import { installTextPaddingFloor, setTextResolution } from './render/pixiText';
 import { preloadBoot } from './assets/bootManifest';
 import { startIdlePrefetch } from './assets/idlePrefetch';
 import { installPrefetchPolicy } from './assets/prefetchPolicy';
@@ -97,16 +100,23 @@ export async function startApp(
   // Raise the global text-padding floor so no PIXI.Text (migrated to makeText or not)
   // can clip tall CJK glyph tops. See render/pixiText.ts. Layout-neutral.
   installTextPaddingFloor();
+  // Rasterize each label once, at the renderer's resolution, instead of at 1x for layout and again
+  // at 2x on its first render. See render/pixiText.ts.
+  setTextResolution(app.renderer.resolution);
 
   // Time the actual GPU render call: PIXI's own ticker listener (registered by Application at
   // UPDATE_PRIORITY.LOW) runs strictly after SceneManager's onTick, so a stall inside render()
   // itself (draw-call submission, or Text canvas rasterization it triggers) is invisible to
   // recordFrameSample/recordConstructSample. See recordRenderSample in net/anomaly.ts.
+  // The render-cost probe splits that time into uploads / shader compile / Text rasterization, so a
+  // multi-second first-launch frame says which of the three it was. See render/renderCostProbe.ts.
+  installRenderCostProbe((app.renderer as { gl?: unknown }).gl);
   const origRender = app.renderer.render.bind(app.renderer);
   app.renderer.render = ((...args: Parameters<typeof origRender>) => {
+    beginRenderCost();
     const t0 = performance.now();
     origRender(...args);
-    recordRenderSample(performance.now() - t0);
+    recordRenderSample(performance.now() - t0, readRenderCost());
     // Boot timeline, phase ③: the first completed render is the moment the page stops being blank.
     // markBoot ignores every call after the first, so the steady-state cost here is one Map lookup
     // per frame.
@@ -130,12 +140,14 @@ export async function startApp(
 
   // CPU / main-thread saturation watchdog: long-task busy ratio + sustained low FPS;
   // either condition crossing its threshold continuously triggers a cpu anomaly report (net/anomaly full-coverage channel).
-  new PerfMonitor().install(app.ticker, {
+  // Held by reference: installAdaptiveResolution below rewrites it if the resolution drops.
+  const renderInfo: RenderProfileInfo = {
     resolution: app.renderer.resolution,
     dpr:        platform.devicePixelRatio,
     canvasW:    app.view.width,
     canvasH:    app.view.height,
-  });
+  };
+  new PerfMonitor().install(app.ticker, renderInfo);
 
   // Full-coverage anomaly reporting: memory / CPU / WebGL-lost / hang / uncaught exceptions
   // are reported directly to Loki (not subject to the log-targeting allowlist) to help
@@ -191,6 +203,17 @@ export async function startApp(
   // mode, and it must run before the first frame the boot gate below lets through.
   new RenderPolicy(app, () => manager.paintMode).install();
 
+  // Resolution 2 -> 1.5 on a device that cannot hold 24 fps in a battle at 2 (ADR-100). Once per
+  // session, down only; reported so the field says how often it fires and what fps triggered it.
+  installAdaptiveResolution(app, () => manager.paintMode, (d) => {
+    renderInfo.resolution = d.to;
+    renderInfo.resFrom = d.from;
+    renderInfo.canvasW = app.view.width;
+    renderInfo.canvasH = app.view.height;
+    analytics.track('render_res_down', { from: d.from, to: d.to, fps: d.fps, scene: getActiveScene() });
+    console.info(`[render] resolution ${d.from} -> ${d.to} (median ${d.fps} fps)`);
+  });
+
   // ── L0 boot-tier preload gate (ASSET_PACKAGING §3, §11) ─────────────────────
   // Show a loading screen (top-most: built after all other layers) and await the
   // minimal asset set the first LOBBY PAINT needs. Battle-only L0 assets (starter
@@ -205,10 +228,14 @@ export async function startApp(
   // player's connection rather than their CPU, so it is reported separately from everything else.
   markBoot('preload_start');
   let preloadAssets = 0;
-  await preloadBoot((done, total) => {
+  const bootAssets = preloadBoot((done, total) => {
     preloadAssets = total;
     loading.setProgress(total ? done / total : 1);
   });
+  // The requests are in flight: spend the wait on the one-off panel-frame atlas bake, which would
+  // otherwise land on the first frame that shows a panel (see prewarmPanelFrame).
+  prewarmPanelFrame();
+  await bootAssets;
   markBoot('preload_done', { preload_assets: preloadAssets });
   loading.destroy();
 

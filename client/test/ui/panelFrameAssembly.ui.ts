@@ -19,7 +19,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
 import { setBakeRenderer, clearBakeCache } from '../../src/render/bake';
 import { sketchPanel, sketchAccentBar, inkLayer, tearDownChildren, ui } from '../../src/render/sketchUi';
-import { resetFrameAtlas, tierIndexFor, weightIndexFor } from '../../src/render/panelFrame';
+import { resetFrameAtlas, tierIndexFor, weightIndexFor, prewarmPanelFrame } from '../../src/render/panelFrame';
 
 /** The real world-map HUD panel set (headerHud.ts / hud.ts), the case that motivated this. */
 const HUD_PANELS: [string, number, number][] = [
@@ -407,5 +407,24 @@ describe('panelFrame — cost gate over the world-map HUD panel set', () => {
       `build=${build.toFixed(2)}ms (best of 9) verts=${verts} nonBatchable=${nonBatchable} fellBack=${fellBack} ` +
       `(pre-atlas baseline: 8.60ms / 132300 / 13 / 0); one-time atlas build ${atlasMs.toFixed(1)}ms`,
     );
+  });
+});
+
+describe('panelFrame — boot prewarm', () => {
+  beforeAll(installStubRenderer);
+  afterAll(teardownRenderer);
+
+  it('bakes the atlas once up front, so the first panel on screen renders nothing', () => {
+    // The atlas is ~410k vertices triangulated inside its bake render (2026-09-28): lazily, that
+    // landed on the frame the age/consent gate or the first lobby panel appeared. app.ts prewarms it
+    // behind the boot loading screen; after that, building a panel must not bake anything.
+    prewarmPanelFrame();
+    expect(renderCalls).toBe(1);
+    prewarmPanelFrame();
+    expect(renderCalls).toBe(1);
+    const p = panel(400, 200);
+    expect(renderCalls).toBe(1);
+    expect(p.children.some((c) => c instanceof PIXI.Sprite)).toBe(true); // the atlas path, not the fallback
+    tearDownChildren(p);
   });
 });

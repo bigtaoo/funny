@@ -8,10 +8,14 @@ import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { buildIcon } from '../render/icons';
-import { FS, snapFont } from '../render/fontScale';
+import { FS } from '../render/fontScale';
 import { formatLadderTitle, getTitleKeys } from '../game/meta/titles';
 import { wheelScrollY } from '../ui/wheelScroll';
 import { dispatchHit, type Hit } from '../ui/hits';
+import { leaderboardRowGeom, fitNameAndTitle, fitRowName, type RowGeom } from './LeaderboardScene/rowFit';
+
+export { leaderboardRowGeom, fitNameAndTitle, fitRowName };
+export type { RowGeom };
 
 // ── LeaderboardScene — global ladder leaderboard (SE-6) ─────────────────────────
 //
@@ -19,94 +23,6 @@ import { dispatchHit, type Hit } from '../ui/hits';
 // Displays: current season Top-100 (ELO descending), drag-scrollable, with the
 // caller's own rank pinned under the season label (even when outside the Top-100).
 // Data: GET /leaderboard (JWT, driven by the loadLeaderboard callback).
-
-/**
- * Row column geometry, split out as a pure function so it can be tested without a renderer.
- *
- * Why this exists (2026-08-16, TITLE_DESIGN §6 note): the row used to derive its **font sizes**
- * from `rowH` (which tracks screen *height*) while placing its **columns** at fractions of `w`
- * (screen *width*). Landscape is ~16:9 so nothing showed; portrait is ~1:2, so the height-driven
- * type ran far wider than the width-driven grid — measured against real `monospace` metrics, a row
- * with the default `Player1234` name and any equipped title pushed the title label 58px (zh) to
- * 182px (de `Rangliste`) into the rank-tier column, in every locale, on every portrait phone, and
- * worse on taller ones.
- *
- * Portrait now gives each row two lines (name on top; title / tier / ELO beneath), which is what
- * actually buys the space back. The single-line landscape form is unchanged. Both paths hand the
- * name+title block a hard right boundary and clamp into it via {@link fitNameAndTitle}, so an
- * unusually long display name cannot reintroduce the collision — worth having, since no
- * server-side length cap on `displayName` was found.
- */
-export interface RowGeom {
-  twoLine: boolean;
-  rankX: number; rankCY: number; rankFs: number; medalSize: number;
-  nameX: number; nameCY: number; nameFs: number;
-  titleCY: number; titleFs: number;
-  /** Right boundary the name+title block must not cross (the tier column's left edge). */
-  contentRight: number;
-  tierCX: number; tierCY: number; tierFs: number;
-  eloRightX: number; eloCY: number; eloFs: number;
-}
-
-export function leaderboardRowGeom(w: number, rowH: number, twoLine: boolean): RowGeom {
-  const rankX = Math.round(w * 0.03);
-  const nameX = Math.round(w * 0.18);
-  const eloRightX = w - Math.round(w * 0.03);
-
-  if (!twoLine) {
-    const tierFs = snapFont(Math.round(rowH * 0.38));
-    const tierCX = w * 0.68;
-    return {
-      twoLine: false,
-      rankX, rankCY: rowH / 2, rankFs: snapFont(Math.round(rowH * 0.5)), medalSize: Math.round(rowH * 0.62),
-      nameX, nameCY: rowH / 2, nameFs: snapFont(Math.round(rowH * 0.48)),
-      titleCY: rowH / 2, titleFs: snapFont(Math.round(rowH * 0.3)),
-      // Half a tier label of clearance: the tier text is centre-anchored on tierCX.
-      contentRight: tierCX - tierFs,
-      tierCX, tierCY: rowH / 2, tierFs,
-      eloRightX, eloCY: rowH / 2, eloFs: snapFont(Math.round(rowH * 0.5)),
-    };
-  }
-
-  // Portrait: line 1 carries the name, line 2 the title / tier / ELO. Type is sized off rowH as
-  // before, but from the *line* share of it rather than the whole row, so the fonts stay in the
-  // same visual ballpark as the old single-line row instead of doubling with the height.
-  const line1CY = rowH * 0.34;
-  const line2CY = rowH * 0.74;
-  const tierFs = snapFont(Math.round(rowH * 0.16));
-  const tierCX = w * 0.62;
-  return {
-    twoLine: true,
-    rankX, rankCY: rowH / 2, rankFs: snapFont(Math.round(rowH * 0.26)), medalSize: Math.round(rowH * 0.42),
-    nameX, nameCY: line1CY, nameFs: snapFont(Math.round(rowH * 0.23)),
-    titleCY: line2CY, titleFs: snapFont(Math.round(rowH * 0.16)),
-    contentRight: tierCX - tierFs,
-    tierCX, tierCY: line2CY, tierFs,
-    eloRightX, eloCY: line2CY, eloFs: snapFont(Math.round(rowH * 0.22)),
-  };
-}
-
-/**
- * Fit a measured name and title into `avail` px, returning the scale to apply to each and where
- * the title starts. Takes measured widths rather than strings so it stays renderer-free.
- *
- * When both fit, nothing is scaled — the common case must be pixel-identical to no clamping at
- * all. When they do not, the title is capped at a minority share of the space (the name is the
- * identifying field and gets the remainder) and each is scaled down to its budget, the same
- * shrink-to-fit TitlesScene already uses for its own overlong labels.
- */
-export function fitNameAndTitle(
-  nameW: number, titleW: number, avail: number, gap: number,
-): { nameScale: number; titleScale: number; titleX: number } {
-  if (nameW + gap + titleW <= avail) {
-    return { nameScale: 1, titleScale: 1, titleX: nameW + gap };
-  }
-  const titleBudget = Math.max(0, Math.min(titleW, avail * 0.45));
-  const nameBudget = Math.max(0, avail - gap - titleBudget);
-  const nameScale = nameW > 0 ? Math.min(1, nameBudget / nameW) : 1;
-  const titleScale = titleW > 0 ? Math.min(1, titleBudget / titleW) : 1;
-  return { nameScale, titleScale, titleX: nameW * nameScale + gap };
-}
 
 export interface LeaderboardEntry {
   rank: number;
@@ -456,9 +372,9 @@ export class LeaderboardScene implements Scene {
     // never compete; single-line rows share one span. Either way the block is clamped to
     // `contentRight` so a long name can never push the title into the tier column.
     const gap = 4;
+    const fullName = e.displayName || `#${e.publicId}`;
     if (g.twoLine) {
-      const nameAvail = g.contentRight - g.nameX;
-      if (nameLbl.width > nameAvail) nameLbl.scale.set(nameAvail / nameLbl.width);
+      fitRowName(nameLbl, fullName, g.nameFs, g.contentRight - g.nameX);
       if (titleLbl) {
         titleLbl.x = x + g.nameX;
         const titleAvail = g.contentRight - g.nameX;
@@ -466,10 +382,10 @@ export class LeaderboardScene implements Scene {
       }
     } else {
       const fit = fitNameAndTitle(nameLbl.width, titleLbl?.width ?? 0, g.contentRight - g.nameX, gap);
-      if (fit.nameScale < 1) nameLbl.scale.set(fit.nameScale);
+      fitRowName(nameLbl, fullName, g.nameFs, nameLbl.width * fit.nameScale);
       if (titleLbl) {
         if (fit.titleScale < 1) titleLbl.scale.set(fit.titleScale);
-        titleLbl.x = x + g.nameX + fit.titleX;
+        titleLbl.x = x + g.nameX + nameLbl.width + gap;
       }
     }
 

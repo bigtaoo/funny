@@ -250,7 +250,7 @@ UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴
 
 目标：**两条 happy-path**，专抓白屏/断连级事故，不做逐像素比对。
 
-1. **单账号 PvE**：走 intro → consent → register → lobby → 进离线/战役战斗 → 断言 canvas 非空白 + 控制台 0 error + 0 uncaught pageerror。覆盖 shader/atlas 上传路径。
+1. **单账号 PvE**：走 intro → entryGate（年龄 + 同意合并屏，2026-09-23 起；此前是 ageGate → consent 两屏）→ register → lobby → 进离线/战役战斗 → 断言 canvas 非空白 + 控制台 0 error + 0 uncaught pageerror。覆盖 shader/atlas 上传路径。
 2. **双账号交互**：两个 `browserContext`（各自独立 cookie/storage，互不干扰）各登一个账号 → A 建好友房 → B 用房间码加入 → 双方 ready → 进入真联机对战（`showGameNet`，双方各自真渲染器同时跑）→ 断言双方 0 error。这条路径同时验证：登录 UI、房间 UI、真实网络握手、双人对战真渲染、（后续可加）结算页。是"个人项目两账号手测"里最高密度的一条路径，优先自动化它而不是逐功能补齐。
 3. 用例序列直接照抄 `full-link.e2e.ts` 的 `registerAndEnterLobby` / 友房测试的调用序列（`onRegister`→`onOpenRoom`→`createRoom`/`joinRoom`→`setReady`），只是通过 `window.__nwE2E.state.<screen>Cb` 而非 headless `views` 直接调。
 
@@ -315,6 +315,7 @@ UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴
 - **必须由 spec 在登录之后调用，不能预先写死**。socialsvc 只存 accountId、显示名读的时候实时问 metaserver；家族/宗门每一处权限判断都比 `leaderId`。所以成员必须是**真账号**、族长必须是**浏览器当次登录的那个号**——而那是 `registerAndEnterLobby` 几秒钟前刚注册的随机号。
 - **分两段**：账号侧登录后立刻跑；世界侧必须等 `joinWorld` 建出 `PlayerWorldDoc`，所以 spec 先走一趟世界地图，回大厅，再喂第二段。
 - **`mongosh` 直接吃 stdin 是 REPL**（提示符会印进输出、多行块靠续行猜），走 `sh -c 'cat > 文件 && mongosh --file'`；结果行靠 `@@NWSEED@@` 前缀认，不靠行号。另：`TileDoc._id` 已经是全限定的 `worldId:x:y`，`mainBaseTile` 就是一个 tile id；**中立地块根本没有文档**（`proceduralTile` 现算），所以「占地」只能 insert 不能 update——第一版 `updateMany` 只命中了主城自己那 3×3 的 9 格。
+- **金币写在 commercial 库，不写 meta 的 save**（2026-09-29 修）：`save.wallet.coins` 只是镜像，每次 `GET /save` 都会按 commercial 的钱包把它盖回去（`mirrorWalletFrom`）。seed 以前只写镜像，于是 2026-09-14 以后所有带金币芯片的站都是 `0`，「金币七位」那条从没生效过。现在按 `credit()` 的样子写 `notebook_wars_commercial.wallets` 的 `coins`，加一条 `reason:'grant'` 的 `ledger`。**判断一个 seed 值有没有生效，要看截图里的数，不要看 seed 写了什么**——服务端有镜像/权威关系的字段，写进去不等于读出来。
 
 **三语是矩阵的一列，不是一个乘数（2026-09-11 加）**：`initI18n` 在**任何场景构建之前**读 `localStorage['nw_locale']`，所以只能用 `context.addInitScript` 在首次导航前塞，不能事后去设置页点——**此前每轮跑的都是 Chromium 自己的 `en-US`，德语和中文从来没被门禁跑过**。三语 × 六视口 = 75 分钟太贵，改成**矩阵加四行**：德语和中文只上 390×844 / 360×640 两台手机（德语是逐词最长的那门，撑破按钮的是它；中文是全角、且没有空格可供折行，是另一类失败；四个更宽的视口在英语下本来就有余量）。连带的必然改动：`{tap: '文字'}` 全部改成 **`{tap: <TranslationKey>}`**，由 spec 自己按该视口的 locale 查字典（直接 import `src/i18n/locales/*`，纯数据），带 `{cost}` 占位符的取 `{` 之前的字面前缀；另有 `{tapText}` 形式，**只允许用于本套件自己写进数据库的字符串**。
 

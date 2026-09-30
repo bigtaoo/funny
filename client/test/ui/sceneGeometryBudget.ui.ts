@@ -199,15 +199,19 @@ describe('settings per-frame geometry', () => {
     });
   }
 
-  it('draws the notebook page as a baked sprite, not 27 live ruled lines', () => {
+  it('draws the notebook page from the baked strip atlas, not 27 live ruled lines', () => {
     // The specific regression: SettingsScene.drawBackground() used to stroke the ruled lines and the
     // red margin rule itself and add the raw Graphics to the tree. A budget alone would catch that,
     // but only for as long as the number stays where it is — this pins the mechanism, so a future
-    // resize/refactor cannot quietly put the live copy back under a raised budget.
+    // resize/refactor cannot quietly put the live copy back under a raised budget. Since ADR-099 the
+    // page is a flat fill (one rect, 6 indices) plus windows of the paper-rule strip atlas — since
+    // ADR-104 the windows are quads of two meshes (rules, margin) on that atlas.
     const settings = buildSettings();
-    const page = settings.container.children[0]!;
-    expect(page).toBeInstanceOf(PIXI.Sprite);
-    expect(indexCount(page)).toBe(0);
+    const page = settings.container.children[0] as PIXI.Container;
+    expect(indexCount(page)).toBeLessThanOrEqual(6);
+    const meshes = page.children.filter((c): c is PIXI.Mesh => c instanceof PIXI.Mesh);
+    expect(meshes).toHaveLength(2);
+    expect(meshes[0]!.geometry.getBuffer('aVertexPosition').data.length / 8).toBeGreaterThan(20);
     settings.destroy();
   });
 

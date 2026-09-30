@@ -3,9 +3,9 @@
 // (roster.ts) are split into their own form-① free-function modules — see each file's header
 // comment — since RenderPanel just needs a one-line delegate for each, not their full bodies here.
 import { t } from '../../i18n';
-import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
+import { ui as C, txt, sketchPanel, seedFor, fitOrWrap } from '../../render/sketchUi';
 import { drawButtonLabel, buttonLabelIconW } from '../../ui/widgets/buttonLabel';
-import { FS } from '../../render/fontScale';
+import { FS, currentFontFloor } from '../../render/fontScale';
 import * as PIXI from 'pixi.js-legacy';
 import { BuildingType, UnitType } from '@nw/engine/types';
 import type { CardInstance } from '../../game/meta/SaveData';
@@ -37,7 +37,7 @@ export interface RenderHandlers {
   /** Draws the tool palette and returns the height it used (it wraps to more rows when narrow). */
   renderPalette(top: number): number;
   renderAttackBody(top: number, bottom: number): void;
-  renderAttackToolbar(x: number, y: number, w: number, h: number): void;
+  renderAttackToolbar(x: number, y: number, w: number): number;
   renderCardRosterPanel(x: number, y: number, w: number, h: number): void;
   renderRosterCell(
     c: { card: CardInstance; unitType: UnitType; troops: number; cap: number },
@@ -68,7 +68,7 @@ export interface RenderHandlers {
     isLeader?: boolean
   ): void;
   renderFooter(top: number): void;
-  renderAttackHeaderControls(headerH: number): void;
+  renderAttackHeaderControls(headerH: number): number;
   renderActionButtons(rightEdge: number, top: number, rowH: number, scale?: number): void;
 }
 
@@ -125,8 +125,8 @@ export class RenderPanel implements RenderHandlers {
     renderAttackBodyImpl(this.core, top, bottom);
   }
 
-  renderAttackToolbar(x: number, y: number, w: number, h: number): void {
-    renderAttackToolbarImpl(this.core, x, y, w, h);
+  renderAttackToolbar(x: number, y: number, w: number): number {
+    return renderAttackToolbarImpl(this.core, x, y, w);
   }
 
   renderCardRosterPanel(x: number, y: number, w: number, h: number): void {
@@ -307,8 +307,16 @@ export class RenderPanel implements RenderHandlers {
    * Attack-mode header controls: the troop readout (garrison / committed / pool) at the top-left
    * (right of the back pill, scaled to clear the centred title) + the Fill/Clear/Save cluster at the
    * top-right — both drawn over the baked header chrome so the bottom footer band frees up entirely.
+   *
+   * Returns the height of the band it took BELOW the header (0 when everything fits in it). In
+   * portrait the gap between the back pill and the title is ~190 design px against a ~790 px
+   * readout, which the old `scale.set(avail / width)` squeezed to 0.24 — 7.7 design px against a
+   * floor of 20 — and the 2x button cluster (~690 px) ran left over the title and the back pill
+   * (2026-09-29). Each of the two that does not fit beside the title moves under the header instead:
+   * the readout to a full-width row of its own (wrapping there if it has to), the buttons to a
+   * right-aligned row below that.
    */
-  renderAttackHeaderControls(headerH: number): void {
+  renderAttackHeaderControls(headerH: number): number {
     const core = this.core;
     const { w } = core;
     const troopsStr = `${core.committedTroops()}/${core.teamCapacity()}`;
@@ -328,20 +336,33 @@ export class RenderPanel implements RenderHandlers {
     const titleLeft = w / 2 - titleNode.width / 2;
     titleNode.destroy({ texture: true, baseTexture: true });
     const avail = titleLeft - 12 - startX;
-    if (avail > 20 && counts.width > avail) counts.scale.set(avail / counts.width);
+    const minScale = Math.min(1, currentFontFloor() / FS.title);
+    let bandH = 0;
+    if (avail > 20 && counts.width * minScale <= avail) {
+      if (counts.width > avail) counts.scale.set(avail / counts.width);
+    } else {
+      counts.anchor.set(0, 0);
+      counts.x = PAD;
+      counts.y = headerH + 4;
+      fitOrWrap(counts, w - PAD * 2, 'left');
+      bandH = Math.ceil(counts.height) + 8;
+    }
     core.bodyLayer.addChild(counts);
 
     // ~2x the shared button size, only in the roomy attack header (the defense footer keeps scale 1).
-    this.renderActionButtons(w - PAD, 0, headerH, 2);
+    const titleRight = w - titleLeft;
+    const cluster = this.actionButtonMetrics(2);
+    if (w - PAD - cluster.totalW >= titleRight + 12) {
+      this.renderActionButtons(w - PAD, 0, headerH, 2);
+    } else {
+      this.renderActionButtons(w - PAD, headerH + 4 + bandH, cluster.btnH, 2);
+      bandH += cluster.btnH + 8;
+    }
+    return bandH;
   }
 
-  /**
-   * Right-aligned Fill troops (attack only) / Clear / Save cluster, vertically centred on the band
-   * [top, top+rowH] ending at `rightEdge`. Shared by the defense footer (scale 1) and the attack header
-   * (scale 2 — the header band is tall enough and the PC readout needs to be legible).
-   */
-  renderActionButtons(rightEdge: number, top: number, rowH: number, scale = 1): void {
-    const core = this.core;
+  /** Sizes of the Fill / Clear / Save cluster at `scale` — shared by the layout decision and the draw. */
+  private actionButtonMetrics(scale: number): { btnW: number; fillW: number; btnH: number; gap: number; labelSize: number; totalW: number } {
     const btnH = 30 * scale,
       gap = 8 * scale;
     const labelSize = scale >= 2 ? FS.heading : FS.tiny;
@@ -360,6 +381,22 @@ export class RenderPanel implements RenderHandlers {
       return Math.max(max, wd);
     }, 0);
     const btnW = Math.max(70 * scale, Math.ceil(widest) + buttonLabelIconW(labelSize) + 12 * scale);
+    // Same rule as the pair beside it, just its own (longer) word: German's "Truppen auffüllen" is
+    // two words, so this one wraps inside the widget rather than growing to 380 design px and
+    // pushing the cluster off the left of the band.
+    const fillW = Math.max(84 * scale, btnW * 1.2);
+    const totalW = btnW * 2 + gap + (this.core.mode === 'attack' ? gap + fillW : 0);
+    return { btnW, fillW, btnH, gap, labelSize, totalW };
+  }
+
+  /**
+   * Right-aligned Fill troops (attack only) / Clear / Save cluster, vertically centred on the band
+   * [top, top+rowH] ending at `rightEdge`. Shared by the defense footer (scale 1) and the attack header
+   * (scale 2 — the header band is tall enough and the PC readout needs to be legible).
+   */
+  renderActionButtons(rightEdge: number, top: number, rowH: number, scale = 1): void {
+    const core = this.core;
+    const { btnW, fillW, btnH, gap, labelSize } = this.actionButtonMetrics(scale);
     const cy = top + (rowH - btnH) / 2;
     const save = sketchPanel(btnW, btnH, {
       fill: C.dark,
@@ -387,10 +424,6 @@ export class RenderPanel implements RenderHandlers {
 
     if (core.mode === 'attack') {
       const fillFull = core.teamCapacity() > 0 && core.committedTroops() >= core.teamCapacity();
-      // Same rule as the pair beside it, just its own (longer) word: German's
-      // "Truppen auffüllen" is two words, so this one wraps inside the widget rather than growing
-      // to 380 design px and pushing the cluster off the left of the band.
-      const fillW = Math.max(84 * scale, btnW * 1.2);
       const fill = sketchPanel(fillW, btnH, {
         fill: C.paper,
         border: fillFull ? C.mid : C.gold,

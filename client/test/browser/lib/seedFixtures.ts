@@ -18,6 +18,13 @@
 
 /** Longest display name the server accepts (MAX_DISPLAY_NAME_LEN, shared/src/password.ts). */
 export const NAME_MAX = 24;
+/**
+ * Highest card level the game can produce (MAX_CARD_LEVEL, shared/src/cards.ts). The roster below
+ * wrote 60 until 2026-09-29, a level no card can reach: cells rendered "Lv.60" and a star row the
+ * game never draws, and the level-dependent layouts (the nine-star row, a maxed card's detail) were
+ * never measured.
+ */
+export const CARD_LEVEL_MAX = 9;
 /** Longest family/sect name, in display units — a full-width glyph counts 2 (ORG_NAME_WIDTH_MAX). */
 export const ORG_WIDTH_MAX = 12;
 /** Mail subject cap (MAIL_SUBJECT_MAX, shared/src/social.ts). */
@@ -192,7 +199,7 @@ export function buildInventory(accountId: string, cards: number, spareEquipment:
       accountId,
       defId: CARD_DEF_IDS[i % CARD_DEF_IDS.length]!,
       // Card level: max is what makes the cell print its widest power number.
-      level: 60,
+      level: CARD_LEVEL_MAX,
       gear,
       gearInstanceIds: Object.values(gear),
       locked: i % 5 === 0,

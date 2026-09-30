@@ -13,7 +13,8 @@ import { updateLoadingErase, cancelLoadingErase } from './loadingReveal';
 import { overlayInkSignature } from './fog';
 
 /**
- * Animation-step rate for the capital-protection shield bubbles (spinning ring + breathing dome).
+ * Beat of the map's shared animation clock. The capital-protection shield bubbles (spinning ring +
+ * breathing dome) step on every beat; the tokens on every MAP_TOKEN_BEATS-th (below).
  *
  * A step no longer costs anything worth measuring — shieldFx.ts builds the geometry once per
  * layout refresh and a step is a handful of `rotation`/`alpha`/`scale` writes — so what this
@@ -27,7 +28,23 @@ import { overlayInkSignature } from './fog';
  * step the biggest moving thing on the map strobed ("这个护盾的动画，看起来不连贯啊" report), which
  * is not the same phenomenon as art-direction §5.4's hand-drawn frame-rate jitter. See shieldFx.ts.
  */
-const SHIELD_ANIM_FPS = 30;
+const MAP_ANIM_FPS = 30;
+
+/**
+ * Tokens (march / occupy / siege / stationed) step on every MAP_TOKEN_BEATS-th beat of that clock,
+ * i.e. 10 fps — both the walk-cycle pose and a march's position along its route, together.
+ *
+ * These used to advance on every tick, and that alone held the (demand-painted) map at the full
+ * frame rate whenever any team was in the field: 60 repaints a second for a figure that crosses a
+ * tile in tens of seconds, i.e. well under a pixel per frame. ADR-097 stepped them at 12
+ * (the menu pose rate) on a clock of their own — which, next to a 30 fps shield, painted ~35 times a
+ * second, because two unaligned clocks change on different frames. Deriving the token step from
+ * the shield's beat makes every token frame a shield frame too: 30 paints/s with a shield in view,
+ * 10 without. 10 over 12 because 12 does not divide 30 (ADR-098).
+ * Only the TIME inputs are stepped: `syncTokens` still runs every frame, so a pan or zoom moves the
+ * tokens with the map on the same frame instead of 100 ms behind it.
+ */
+const MAP_TOKEN_BEATS = 3;
 import { t } from '../../../i18n';
 import { tileToScreen, ISO_RATIO } from '../../../render/isoGrid';
 import { BASE_FOOTPRINT, citySpriteTiles, cityGroundFwdPx } from '@nw/shared';
@@ -70,7 +87,8 @@ export class WorldMapRendererLifecycle implements LifecycleHandlers {
     // repaints the HUD from existing state — no network — so it's cheap and safe to run continuously
     // (and is the prerequisite for P1-2 removing the poll: without it, countdowns would freeze
     // entirely once nothing periodically calls renderHud()).
-    ctx.hudTickTimer += dt;
+    // Not while covered by an overlay: the rebuild is invisible there, and resume() re-arms it.
+    if (!ctx.covered) ctx.hudTickTimer += dt;
     if (ctx.hudTickTimer >= 1) {
       ctx.hudTickTimer = 0;
       ctx.panels.renderHud();
@@ -83,6 +101,12 @@ export class WorldMapRendererLifecycle implements LifecycleHandlers {
       if (ctx.toastTimer <= 0) tearDownChildren(ctx.toastLayer);
     }
     this.vignette.updateVignette(dt);
+    // Under a full-screen overlay (CityScene, the social panels) nothing below is visible, but all of
+    // it is time-driven, and every step of it changed the stage signature — so the reactive overlay
+    // on top was repainted at 60 fps for animation nobody could see. Held instead, like
+    // decorationsQuiet() holds ambience; WorldMapScene.resume() re-arms the HUD countdown, and the
+    // dirty flags / token sync below catch up on the first uncovered frame.
+    if (ctx.covered) return;
     this.updateGuide(dt);
     // Protection-shield bubbles (S8-8 follow-up, 2026-08-08): re-animate every active shield's
     // ring spin / dome breath continuously instead of only on the sporadic redraws refreshCityLayer
@@ -95,18 +119,22 @@ export class WorldMapRendererLifecycle implements LifecycleHandlers {
     // meantime (30 s of quiet = 2.9 revolutions, i.e. a visible snap to a random angle). The
     // break-pop flashes below are NOT gated: those are one-shot reactions to something that just
     // happened, not ambience.
-    if (!decorationsQuiet()) {
-      ctx.shieldAnimT += dt;
-      ctx.shieldAnimAcc += dt;
-    }
-    // Step at SHIELD_ANIM_FPS, keeping the remainder rather than zeroing it: zeroing quantised the
+    // The beat itself always runs (tokens are not ambience — a march's position is state); only the
+    // shield's use of it is gated.
+    const quiet = decorationsQuiet();
+    if (!quiet) ctx.shieldAnimT += dt;
+    ctx.mapAnimAcc += dt;
+    // One beat at MAP_ANIM_FPS, keeping the remainder rather than zeroing it: zeroing quantised the
     // real interval to whole frames (6 frames at 60 Hz, 7 after any hiccup) while the phase kept
     // advancing on true `dt`, so evenly-spaced motion got unevenly sampled and jittered on top of
     // being slow. `%=` also collapses a long stall into one step instead of a burst.
-    const shieldStepSec = 1 / SHIELD_ANIM_FPS;
-    const shieldStep = ctx.shieldAnimAcc >= shieldStepSec;
-    if (shieldStep) ctx.shieldAnimAcc %= shieldStepSec;
-    if (shieldStep && ctx.shieldGeom.size > 0) {
+    const beatSec = 1 / MAP_ANIM_FPS;
+    const beat = ctx.mapAnimAcc >= beatSec;
+    if (beat) {
+      ctx.mapAnimAcc %= beatSec;
+      ctx.mapAnimBeats += 1;
+    }
+    if (beat && !quiet && ctx.shieldGeom.size > 0) {
       for (const [key] of ctx.shieldGeom) {
         const cityC = ctx.citySprites.get(key);
         const shieldFx = cityC?.getChildByName('shieldFx') as PIXI.Graphics | undefined;
@@ -123,7 +151,7 @@ export class WorldMapRendererLifecycle implements LifecycleHandlers {
         const cityC = ctx.citySprites.get(key);
         const shieldBreakFx = cityC?.getChildByName('shieldBreakFx') as PIXI.Graphics | undefined;
         if (!shieldBreakFx || fx.age >= SHIELD_BREAK_LIFE) {
-          shieldBreakFx?.clear();
+          if (shieldBreakFx) { shieldBreakFx.clear(); shieldBreakFx.visible = false; }
           ctx.shieldBreakFx.delete(key);
           continue;
         }
@@ -141,22 +169,29 @@ export class WorldMapRendererLifecycle implements LifecycleHandlers {
     if (ctx.overlayInkDirty || overlayInkSignature(ctx) !== ctx.overlayInkSig) {
       this.fog.renderOverlayInk();
     }
-    // Tokens, on the other hand, DO move every frame: a march rides its route between the server
-    // ticks instead of jumping on each one, and an occupy hold plays its 'attacking' clip
-    // throughout. This is sprite transforms and clip playback only — no Graphics rebuild.
+    // Tokens, on the other hand, DO move (every MAP_TOKEN_BEATS-th beat above): a march rides its
+    // route between the server ticks instead of jumping on each one, and an occupy hold plays its
+    // 'attacking' clip throughout. This is sprite transforms and clip playback only — no Graphics rebuild.
     //
     // Also runs with zero live entries but leftover pooled runtimes (all marches just arrived/were
     // recalled, or the camera zoomed out to L3) so the sync passes' cleanup actually tears the
     // orphans down — otherwise their sprites would linger forever, since nothing else would reach
     // that loop. The sync passes gate their own zoom<3-only drawing internally, so no zoom check
     // is needed here.
+    ctx.tokenAnimT += dt;
+    let tokenDt = 0;
+    if (beat && ctx.mapAnimBeats % MAP_TOKEN_BEATS === 0) {
+      tokenDt = ctx.tokenAnimT - ctx.tokenAnimStepT;
+      ctx.tokenAnimStepT = ctx.tokenAnimT;
+      ctx.tokenNowMs = Date.now();
+    }
     if (
       ctx.marches.length > 0 || ctx.marchTokenRuntimes.size > 0 ||
       ctx.occupations.length > 0 || ctx.occupyTokenRuntimes.size > 0 ||
       ctx.siegeHolds.length > 0 || ctx.siegeTokenRuntimes.size > 0 ||
       ctx.stationed.length > 0 || ctx.stationedTokenRuntimes.size > 0
     ) {
-      this.fog.syncTokens(dt);
+      this.fog.syncTokens(tokenDt);
     }
   }
 

@@ -6,7 +6,7 @@
 // Locked-count assertions are computed from CARD_DEFINITIONS itself (deduped by nameKey, same rule the
 // scene uses) rather than hardcoded, so the test doesn't rot if the card pool changes.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
@@ -15,6 +15,8 @@ import { CardCodexScene, type CardCodexCallbacks } from '../../src/scenes/CardCo
 import { CARD_DEFINITIONS, UNIT_BLUEPRINTS } from '@nw/engine/config';
 import { CardType, UnitType } from '@nw/engine/types';
 import { fromFp } from '@nw/engine/math/fixed';
+import { cardArtUrl, getArtTexture } from '../../src/render/cardArt';
+import { resetSharedStubTexture } from '../harness/sharedStubTexture';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -127,5 +129,45 @@ describe('CardCodexScene — locked/unlocked card compendium', () => {
     // Only unit entries can lock; buildings/spells always render as if unlocked.
     expect(countText(scene.container, t('collection.locked' as never))).toBe(DISTINCT_UNIT_TYPES.length);
     expect(countText(scene.container, t('collection.locked' as never))).toBeLessThan(totalDistinctNames);
+  });
+});
+
+// ADR-096: the codex used to re-render the whole scene once per decoded art url — a dozen rebuilds on
+// a cold first visit. The art now fits itself in place; the scene is never rebuilt for it.
+describe('CardCodexScene — art that decodes after the build', () => {
+  beforeEach(resetSharedStubTexture);
+
+  it('shows the art in place without rebuilding the scene', () => {
+    const scene = new CardCodexScene(createLayout(1920, 1080), new InputManager(), baseCb(['lena']));
+    const url = cardArtUrl(CARD_DEFINITIONS.find((c) => c.unitType === UnitType.Lena)!)!;
+    const tex = getArtTexture(url);
+    expect(tex.baseTexture.valid).toBe(false);
+    // Stubbed, not just watched: the old per-url hook re-rendered from inside the 'loaded' emit, and
+    // in this harness every png is the same data: URI, so a real re-render hooks the same texture
+    // again and never stops.
+    const rebuild = vi.spyOn(scene as unknown as { render(): void }, 'render').mockImplementation(() => {});
+    const background = scene.container.children[0];
+    // This harness resolves every png to one data: URI, so this also counts icon sprites; the art is
+    // among them only because it is now built up front, hidden, rather than skipped until decode.
+    const hidden = (): number => {
+      let n = 0;
+      const walk = (c: PIXI.Container): void => {
+        if (c instanceof PIXI.Sprite && c.texture.baseTexture === tex.baseTexture && !c.visible) n++;
+        for (const k of c.children) walk(k as PIXI.Container);
+      };
+      walk(scene.container);
+      return n;
+    };
+    expect(hidden()).toBeGreaterThan(0);
+
+    tex.baseTexture.valid = true;
+    tex.baseTexture.setRealSize(400, 600);
+    tex.baseTexture.emit('loaded', tex.baseTexture);
+
+    expect(rebuild).not.toHaveBeenCalled();
+    expect(scene.container.children[0]).toBe(background);
+    expect(hidden()).toBe(0);
+    rebuild.mockRestore();
+    scene.destroy();
   });
 });

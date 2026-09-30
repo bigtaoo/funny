@@ -10,7 +10,7 @@ import '@pixi/unsafe-eval';
  * (`npm run build:wechat-layout`, **never shipped**).
  *
  * ── Why an entry, and not automation ────────────────────────────────────────────────────────────
- * `test/browser/portraitLayout.spec.ts` walks 40 stops on ten viewports and judges the real display
+ * `test/browser/portraitLayout.spec.ts` walks 48 stops on eleven viewports and judges the real display
  * tree, and every number in it was measured on Chromium. The whole reason to repeat it here is that
  * the two runtimes disagree about the one input the judgement rests on: every text style in this
  * repo asks for `fontFamily: 'monospace'`, `fitFont` divides once to find "the size that fits" on
@@ -39,7 +39,7 @@ import '@pixi/unsafe-eval';
  *    package can reach a database. This sweep therefore walks a FRESH account, and the stops whose
  *    content the seed supplies will report thin. Read it as "does the WeChat runtime lay out what
  *    it does paint differently", not as a replacement for the browser matrix.
- *  · **One shape.** The browser sweep's power is ten viewports; a simulator run is whatever device
+ *  · **One shape.** The browser sweep's power is eleven viewports; a simulator run is whatever device
  *    the IDE is set to. Change it in DevTools and run again.
  *  · **One locale.** `WechatPlatform.supportedLocales` is `['zh']`. Chinese is the interesting one
  *    here anyway — full-width glyphs and no spaces for word-wrap to break at.
@@ -186,10 +186,10 @@ async function capture(name: string): Promise<void> {
 
 /**
  * Boot gates → lobby. Written as a loop over whatever screen is currently up rather than as a fixed
- * sequence, because the order is a product decision that has moved twice (intro → age gate →
- * consent → login, plus the FTUE redirect that lands a brand-new account in the tutorial LEVEL
- * rather than the lobby — see `registerAndEnterLobby` in test/browser/lib/nwE2E.ts). A loop absorbs
- * a reorder; a fixed sequence times out on it.
+ * sequence, because the order is a product decision that keeps moving (intro → entry gate — the
+ * merged age + consent screen — → login, plus the FTUE redirect that lands a brand-new account in
+ * the tutorial LEVEL rather than the lobby — see `registerAndEnterLobby` in
+ * test/browser/lib/nwE2E.ts). A loop absorbs a reorder; a fixed sequence times out on it.
  */
 async function reachLobby(handle: E2EHandle, deadlineMs: number): Promise<string | null> {
   const state = handle.state;
@@ -206,8 +206,9 @@ async function reachLobby(handle: E2EHandle, deadlineMs: number): Promise<string
     const bag = state[`${screen}Cb`] as Record<string, (...a: unknown[]) => unknown> | undefined;
     try {
       if (screen === 'intro' && bag?.onFinish) bag.onFinish(true);
-      else if (screen === 'ageGate' && bag?.onDeclared) bag.onDeclared(new Date().getFullYear() - 30);
-      else if (screen === 'consent' && bag?.onAccept) bag.onAccept();
+      else if (screen === 'entryGate' && bag?.onAnswered) {
+        bag.onAnswered({ birthYear: new Date().getFullYear() - 30, granted: true });
+      }
       else if (screen === 'game' && bag?.onExitToLobby) bag.onExitToLobby();
       else if (screen === 'login' && bag?.onRegister && !registered) {
         registered = true;

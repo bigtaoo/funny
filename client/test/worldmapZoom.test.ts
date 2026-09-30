@@ -48,13 +48,15 @@ describe('makeZoomCfgs', () => {
     }
   });
 
-  it('pool is exactly the visible span plus one buffer row/column on each side', () => {
-    // The +2 is what lets a pan of up to one tile happen before the pool has to be rebuilt. Off by one and
-    // the leading edge of a pan has no slot to draw into.
+  it('pool is the visible span plus the leading buffer, the fractional-pan column and one spare', () => {
+    // refreshPool starts one tile before the floored bounds, and at a fractional pan the span is visW + 1,
+    // not visW — so +2 left the far column/row without a slot (ADR-102; test/ui/worldMapPoolCulling.ui.ts
+    // pans through such offsets and checks for the hole). Off by one and the leading edge of a pan has no
+    // slot to draw into.
     for (const [name, w, h] of SCREENS) {
       for (const cfg of makeZoomCfgs(w, h)) {
-        expect(cfg.poolW, `${name} @${cfg.tile}px poolW`).toBe(cfg.visW + 2);
-        expect(cfg.poolH, `${name} @${cfg.tile}px poolH`).toBe(cfg.visH + 2);
+        expect(cfg.poolW, `${name} @${cfg.tile}px poolW`).toBe(cfg.visW + 3);
+        expect(cfg.poolH, `${name} @${cfg.tile}px poolH`).toBe(cfg.visH + 3);
       }
     }
   });
