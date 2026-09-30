@@ -12,7 +12,7 @@
 // a direct reference the other way isn't available yet at construction time.
 import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
-import { ui as C, txt, sketchPanel, seedFor, tearDownChildren, drawLoadingOverlay } from '../../render/sketchUi';
+import { ui as C, sketchPanel, seedFor, tearDownChildren, drawLoadingOverlay } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
 import { sidebarNavW, hubTabsHeight } from '../../ui/widgets/HubTabs';
 import { withTimeout, TimeoutError } from '../../ui/busyTracker';
@@ -21,7 +21,7 @@ import {
   getEquipDef, enhanceSuccessRate, enhanceDemoteChance, enhanceCost, salvageRefund, affixKind,
   EQUIP_MAX_LEVEL, REFORGE_MATERIAL_RARITY, PROTECT_ENHANCE_ITEM_ID, isSalvageable, reforgeCoinCost,
 } from '../../game/meta/equipmentDefs';
-import { buildIcon, type IconKind } from '../../render/icons';
+import { buildIcon } from '../../render/icons';
 import { RARITY_COLOR } from './layout';
 import { itemName, affixDesc, materialsStr, equippedIds, stackSiblingIds, canAffordEnhance } from './helpers';
 import type { CellAction } from './types';

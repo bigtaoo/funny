@@ -5,7 +5,7 @@ import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../render/sketchUi';
 import { showToastMessage, type ToastKind } from '../net/log';
-import { buildIcon, type IconKind } from '../render/icons';
+import { buildIcon } from '../render/icons';
 import { preloadRewardIconArt } from '../render/rewardIcon';
 import { FS, snapFont, iconFloorPx } from '../render/fontScale';
 import { buildDecorCLayer } from '../render/decorCLayer';
@@ -21,7 +21,6 @@ import { wheelScrollY } from '../ui/wheelScroll';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { scrollRegionLayer } from '../ui/widgets/scrollRegionLayer';
 import { drawButtonLabel, buttonLabelIconW } from '../ui/widgets/buttonLabel';
-import { measuredWidth } from '../render/pixiText';
 import { CATEGORY_ICON, CATEGORY_ORDER, TIER_LABELS, widestTierLabelW } from './AchievementScene/tiers';
 
 // ── AchievementScene — achievement wall (personal view, ACHIEVEMENT_DESIGN §7) ──────────────────────
