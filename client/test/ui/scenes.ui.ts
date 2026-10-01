@@ -1339,7 +1339,8 @@ describe('LobbyScene — identity chip row', () => {
 
   it('portrait 390x844: a name slightly too wide for the row is shrunk, not cut', () => {
     const name = 'W'.repeat(58);
-    const scene = lobbyWithName(390, 844, name);
+    // The 1080x2337 box a 390x844 phone had before ADR-105 — what "slightly too wide" was sized to.
+    const scene = lobbyWithName(540, 1169, name);
     const coinsRect = (scene as any).core.coinsChipRect as { x: number };
     const label = nameLabelOf(scene, name);
     expect(label.text).toBe(name);

@@ -141,12 +141,18 @@ export class CardScene implements Scene {
     core.hitRects.push({ rect: core.backRect, sound: 'sfx.ui.back', fn: () => core.cb.onBack() });
 
     this.list.renderHeaderCurrency();
+    const navFrom = core.bodyLayer.children.length;
     this.list.renderSidebar();
     if (core.tab === 'skins') {
       // The grid layer is persistent, so leaving the tab has to tear it down explicitly — a plain
       // `tearDownChildren(bodyLayer)` no longer reaches the cells.
       this.list.clearGrid();
+      const nav = core.bodyLayer.children.slice(navFrom);
       this.skins.renderSkinsTab();
+      // The skins grid is draw-culled, not masked, so a card straddling the bottom nav is drawn in
+      // full — after the nav, i.e. over it. Re-adding moves the nav back on top. (Hits need nothing:
+      // the nav registered first, and the first matching hit wins.)
+      for (const n of nav) core.bodyLayer.addChild(n);
     } else {
       this.list.renderList();
     }

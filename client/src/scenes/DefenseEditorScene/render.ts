@@ -355,8 +355,15 @@ export class RenderPanel implements RenderHandlers {
     if (w - PAD - cluster.totalW >= titleRight + 12) {
       this.renderActionButtons(w - PAD, 0, headerH, 2);
     } else {
-      this.renderActionButtons(w - PAD, headerH + 4 + bandH, cluster.btnH, 2);
-      bandH += cluster.btnH + 8;
+      // Its own row — but even a whole row can be narrower than the 2x cluster: German's three
+      // labels at FS.heading come to ~760 design px, and the 720-wide portrait design
+      // (layout/designSize.ts) put "Truppen auffüllen" off the left edge. Step the scale down to
+      // the largest that fits the row.
+      const rowW = w - PAD * 2;
+      const scale = [2, 1.5, 1].find((k) => this.actionButtonMetrics(k).totalW <= rowW) ?? 1;
+      const row = this.actionButtonMetrics(scale);
+      this.renderActionButtons(w - PAD, headerH + 4 + bandH, row.btnH, scale);
+      bandH += row.btnH + 8;
     }
     return bandH;
   }
@@ -365,7 +372,7 @@ export class RenderPanel implements RenderHandlers {
   private actionButtonMetrics(scale: number): { btnW: number; fillW: number; btnH: number; gap: number; labelSize: number; totalW: number } {
     const btnH = 30 * scale,
       gap = 8 * scale;
-    const labelSize = scale >= 2 ? FS.heading : FS.tiny;
+    const labelSize = scale >= 2 ? FS.heading : scale >= 1.5 ? FS.body : FS.tiny;
     // Width from the widest of the labels this cluster can show, not a literal 70. The footer band
     // is the full screen width with a counts line and a hint on its left, so these three buttons
     // sit in ~900 free design px and the old fixed width spent 70 of them whatever the word was:

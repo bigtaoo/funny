@@ -25,7 +25,7 @@ import { getEquipDef } from '../../game/meta/equipmentDefs';
 import { buildEquipIcon } from '../../render/atlas/equipmentAtlas';
 import { cardInstanceArtUrl, getArtTexture, unitPortraitUrl } from '../../render/cardArt';
 import { SKIN_TARGET_UNIT } from '../../game/meta/skinDefs';
-import { AUC_CELL_H, AUC_CELL_PAD, AUC_CELL_IMG_GAP, AUC_CELL_IMG_MAX, aucInfoColumnW } from './types';
+import { AUC_CELL_H, AUC_CELL_PAD, AUC_CELL_IMG_GAP, aucImgSize, aucInfoColumnW } from './types';
 import type { AuctionSceneCore } from './core';
 import { itemKind, saleModeKind, auctionLabel, auctionLabelText, auctionItemLevel, auctionItemMaxLevel } from './itemLabels';
 
@@ -63,7 +63,7 @@ export function renderAuctionCell(
 
   // ── Left: framed item picture (square, capped so a tall cell doesn't crowd out the text
   // column to its right — see renderItemPicture for the real per-item art). ──
-  const imgSize = Math.min(AUC_CELL_H - pad * 2, AUC_CELL_IMG_MAX);
+  const imgSize = aucImgSize(cellW);
   const imgX = x + pad; const imgY = y + (AUC_CELL_H - imgSize) / 2;
   // fillAlpha: 0 — see CardScene/list.ts's renderCardCell (2026-08-21): the cell behind is already
   // the one background layer, this frame is a stroke-only outline.

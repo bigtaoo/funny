@@ -10,7 +10,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { ui as C, txt, tearDownChildren } from '../../../render/sketchUi';
 import { buildIcon, type IconKind } from '../../../render/icons';
-import { snapFont } from '../../../render/fontScale';
+import { snapFont, snapFontDown } from '../../../render/fontScale';
 
 export interface HeaderCurrencyChip {
   icon: IconKind;
@@ -91,7 +91,10 @@ function buildCluster(
   scale: number,
 ): { cluster: PIXI.Container; width: number } {
   const iconSize = Math.round(headerH * 0.32 * scale);
-  const fontSize = snapFont(Math.round(headerH * 0.26 * scale));
+  // Snapped DOWN: the cluster shares the bar with the back pill and the title, and rounding it up
+  // a tier is what the title pays for (see snapFontDown). The amount only: every other size here
+  // already snaps to the same token either way at the bar heights that ship.
+  const fontSize = snapFontDown(Math.round(headerH * 0.26 * scale));
   const labelSize = snapFont(Math.round(fontSize * 0.8));
   const capSize = snapFont(Math.round(headerH * 0.2 * scale));
   const gap = Math.round(headerH * 0.28 * scale);
