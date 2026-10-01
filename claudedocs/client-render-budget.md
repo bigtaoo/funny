@@ -195,7 +195,7 @@ art-direction §5.4 本来就要「帧率保留手绘的跳跃感，不必追求
 字段：`scene` / `spanS` / `windows` / `fpsP50` / `fpsMin` / `fpsMax` / `maxFps` / `res` / `dpr` / **`dprCapped`** / `canvasW` / `canvasH` / `tickPerSec` / `paintPerSec` / `skipPct`。
 `dprCapped`（`dpr > res`）是「ADR-083 的 dpr 上限在这台设备上到底有没有生效」的那一位；`paintPerSec` vs `tickPerSec` 是「按需重绘有没有在工作」的那一对。
 
-量是有界的：**每会话最多 6 条**（首条约 30 秒，之后每约 5 分钟），且只统计全程可见的窗口——后台被节流的标签页会报出假的 4 fps。服务端 `analyticsvc` 里 `render_profile` 采样率 1.0（不采样，否则跨宿主对比就没意义了）。
+量是有界的：**每会话最多 6 条**（首条约 30 秒，之后每约 5 分钟），且只统计全程可见的窗口——后台被节流的标签页会报出假的 4 fps。**例外（ADR-106）**：会话还没报过、又出现过 ≥50 ms 的一帧时，第一次隐藏就把已有跨度提前报一条（`trigger: 'hide'`），这样跳过开场就走的冷首启也有数据。服务端 `analyticsvc` 里 `render_profile` 采样率 1.0（不采样，否则跨宿主对比就没意义了）。
 
 **⚠️ 2026-09-09 订正：那三个重绘字段一条都没发出去过（已修）。** 线上 `notebook_wars_analytics.events` 里到 2026-09-09 只有**一条** `render_profile`，`fpsP50`/`dprCapped`/`canvasW` 都在，`tickPerSec`/`paintPerSec`/`skipPct` **全缺**。`app.ts` 先构造 `PerfMonitor`（~97 行）、后装 `RenderPolicy`（~143 行），而计数器是后者发布的，于是 `install()` 里那次 `renderStats()` 恒为 `null`，基线为空 → 静默丢字段；第二条（约 5 分钟后）才带上。修法是 `onTick` 里**迟绑定基线**（不是去调 `app.ts` 的顺序——顺序不该由这个模块依赖）。查这类事的入口：
 

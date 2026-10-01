@@ -123,6 +123,7 @@
 | [ADR-103](DECISIONS_ADR-086-onward.md#adr-103-世界地图城池层空的特效层隐藏不留在可见树上--accepted--2026-09-29) | 世界地图城池层：空的特效层隐藏，不留在可见树上 | Accepted | 2026-09-29 |
 | [ADR-104](DECISIONS_ADR-086-onward.md#adr-104-纸背景横线并成网格每页约-80-个-sprite-变成-2-个-mesh--accepted--2026-09-29) | 纸背景横线并成网格：每页约 80 个 Sprite 变成 2 个 Mesh | Accepted | 2026-09-29 |
 | [ADR-105](DECISIONS_ADR-086-onward.md#adr-105-竖屏设计宽度跟着屏宽走手机-720860平板及以上仍是-1080--accepted--2026-10-01) | 竖屏设计宽度跟着屏宽走：手机 720–860，平板及以上仍是 1080 | Accepted | 2026-10-01 |
+| [ADR-106](DECISIONS_ADR-086-onward.md#adr-106-render_profile-隐藏时补发短会话里出现过慢帧也报一条--accepted--2026-10-01) | `render_profile` 隐藏时补发：短会话里出现过慢帧也报一条 | Accepted | 2026-10-01 |
 
 ---
 
