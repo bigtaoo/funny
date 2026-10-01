@@ -113,15 +113,26 @@ export async function startApp(
   // multi-second first-launch frame says which of the three it was. See render/renderCostProbe.ts.
   installRenderCostProbe((app.renderer as { gl?: unknown }).gl);
   const origRender = app.renderer.render.bind(app.renderer);
+  // Run once, in its own task, right after the first render that reached the screen (see the
+  // prewarmPanelFrame call below).
+  let afterFirstPaint: (() => void) | null = null;
   app.renderer.render = ((...args: Parameters<typeof origRender>) => {
     beginRenderCost();
     const t0 = performance.now();
     origRender(...args);
     recordRenderSample(performance.now() - t0, readRenderCost());
+    // A bake (render/bake.ts) goes through this same call with a renderTexture and puts nothing on
+    // screen, so it is neither the first frame nor a reason to run afterFirstPaint.
+    if ((args[1] as { renderTexture?: unknown } | undefined)?.renderTexture) return;
     // Boot timeline, phase ③: the first completed render is the moment the page stops being blank.
     // markBoot ignores every call after the first, so the steady-state cost here is one Map lookup
     // per frame.
     markBoot('first_frame');
+    if (afterFirstPaint) {
+      const run = afterFirstPaint;
+      afterFirstPaint = null;
+      setTimeout(run, 0);
+    }
   }) as typeof app.renderer.render;
 
   // Procedural art (sketch.ts) bakes static board layers to textures via this renderer.
@@ -234,8 +245,12 @@ export async function startApp(
     loading.setProgress(total ? done / total : 1);
   });
   // The requests are in flight: spend the wait on the one-off panel-frame atlas bake, which would
-  // otherwise land on the first frame that shows a panel (see prewarmPanelFrame).
-  prewarmPanelFrame();
+  // otherwise land on the first frame that shows a panel (see prewarmPanelFrame). Not synchronously
+  // here: nothing has been painted yet at this point, so the bake (~100 ms on an iPhone, 2026-10-01
+  // render_profile) would hold the loading screen off a blank canvas. After the first paint it costs
+  // one late progress-bar frame instead. If the assets arrive first, the first panel bakes it lazily
+  // and this call is a no-op.
+  afterFirstPaint = prewarmPanelFrame;
   await bootAssets;
   markBoot('preload_done', { preload_assets: preloadAssets });
   loading.destroy();

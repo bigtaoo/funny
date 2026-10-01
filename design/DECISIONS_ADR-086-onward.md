@@ -496,3 +496,16 @@ docker compose -f docker-compose.cloud.yml --env-file .env config | grep MONGO_U
   - 监听要在把窗口锁存为隐藏的那个监听**之前**注册，也要在 `analytics.init()` 之前（`app.ts` 里 PerfMonitor 本来就装在前面）：这样才判断得出当前窗口是否可见，事件也才能在分析队列自己的隐藏刷新之前入队。两种宿主上监听都按注册顺序执行。
 - **影响**：`client/src/cache/PerfMonitor.ts`；测试 `test/renderProfile.test.ts`（新增「early report on hide」四条，桩 `document` 加了 `visibilityState`）。Grafana 里 `trigger` 字段缺失 = 定时报告，`'hide'` = 提前报的那条，算 `fpsP50` 时它的跨度可能只有零点几秒。
 
+## ADR-107 边框图集预烘焙挪到第一次上屏之后，`first_frame` 只认上屏的那次 render — Accepted — 2026-10-01
+
+- **问题**：2026-10-01 巡检里，测试 iPhone 登录页两条 `render_profile` 的 `rndMax` 是 108 / 116 ms，其中 `rndMaxGeo` 占 91 / 101，`rndMaxAt 0.4`、`rndMaxScene ""`。这一帧就是 ADR-098 的 `prewarmPanelFrame()`（约 41 万顶点的边框图集烘焙）：
+  - `bake()` 调的是 `app.renderer.render`，而 `app.ts` 已经把这个属性换成了计时包装，所以烘焙也会被计成一次 render。
+  - 它在 `startApp` 里同步执行，那时 ticker 一帧都还没跑，所以它是整个会话的**第一次 render**，`first_frame`（「白屏到第一帧」）记的其实是这次离屏烘焙的结束时刻。
+  - 在 iPhone 上，加载画面因此晚了约 100 ms 才画出来，这段时间屏幕是空白的。
+- **决策**：
+  1. 只有不带 `renderTexture` 的 render 才算上屏。`first_frame` 只在上屏的 render 上打点；烘焙仍记入 `rndMs` / `rndMax`，因为它确实占了主线程。
+  2. `prewarmPanelFrame` 不再同步调用，改为登记到 `afterFirstPaint`：第一次上屏 render 结束后，用 `setTimeout(…, 0)` 放到下一个任务里跑。代价从「加载画面晚 100 ms 出现」变成「进度条晚一帧更新」。
+  3. 如果资源先到、第一个面板先建好（缓存热，或标签页在后台打开、不出帧），图集就由那个面板按需烘焙，之后的预热调用什么也不做。这跟 ADR-098 之前的行为一样，只是不再提前。
+- **不改的**：烘焙仍然记在 `rndMax` 里。iPhone 会话的首个跨度大概率仍是约 100 ms、`rndMaxScene ""` 的这一次，所以 ADR-106 的 `rndMax ≥ 50 ms` 门槛几乎总会触发。读数时要按 `rndMaxScene` 区分；IntroScene 真正的首启卡顿（735–2006 ms）比它大得多，不会被它盖住。
+- **核对**：桌面 Chrome 测不到前台路径，因为这台机器上自动化用的窗口一直是 `visibilityState hidden`，不出帧。测到的是后台路径（第 3 条）：第一次上屏发生在年龄门建好之后，预热耗时 0 ms。前台路径的效果，以下次 iPhone 冷启动的 `first_frame` 为准：应比 375–442 ms 小约 100 ms，`rndMaxAt` 应落在 0.4 s 之后。
+- **影响**：`client/src/app.ts`；测试 `test/appAssetGateWiring.test.ts`（预热登记在发请求和 `await` 之间；离屏烘焙在 `first_frame` 打点之前就返回；`afterFirstPaint` 在打点之后执行）。文档 `design/game/ANALYTICS_DESIGN.md` §5.1b、`claudedocs/client-render-budget.md` §18。

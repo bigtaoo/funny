@@ -588,7 +588,7 @@ ADR-086 收尾后回头找「客户端还有什么能在本机量的」，量到
   读法：四项加起来接近 `rndMax` 就看哪项最大；远小于 `rndMax` 说明时间在这四类之外（绘制调用提交、GPU 同步）。
 - **为什么 fps 看不见**：PIXI ticker 把单帧 `deltaMS` 截到 100 ms（`maxElapsedMS`），PerfMonitor 的窗口按 `deltaMS` 累加，一次 2 s 的卡顿只算 100 ms。首启这类一次性卡顿只能靠 `rndMax` / `updMax` 看。
 - **本机复现配方**：Playwright 有头 Chrome，`viewport 390×844`、`deviceScaleFactor 3`、`isMobile`，CDP `Emulation.setCPUThrottlingRate 6`；开场故事不需要后端。init script 里包住 GL 原型方法和 `renderer.render` 逐帧记录，超过 10 ms 的 render 记 `new Error().stack`——烘焙渲染也走 `renderer.render`，栈能直接指到是谁在烘焙。
-- **边框图集**：`prewarmPanelFrame()` 在启动加载阶段建图集（发请求之后、`await` 之前）。进年龄门那一帧：CPU×6 下 256 ms（其中 `rndMaxGeo` 216）→ 桌面 24.7 ms（剩下 12 个文字纹理上传）。
+- **边框图集**：`prewarmPanelFrame()` 在启动加载阶段建图集：在发请求之后、`await` 之前登记，等第一次上屏之后在下一个任务里执行（ADR-107）。同步执行时它是整个会话的第一次 render，iPhone 上约 100 ms，`first_frame` 记的也是它。进年龄门那一帧：CPU×6 下 256 ms（其中 `rndMaxGeo` 216）→ 桌面 24.7 ms（剩下 12 个文字纹理上传）。
 - **地图节拍**：`MAP_ANIM_FPS = 30` 一个累加器，护盾每拍、小人每 3 拍（10 fps）。有护盾和行军时空闲 4 s：138 / 240 → 123 / 240（护盾 30 + HUD 1）；没护盾时约 10 次/秒。
 - **门禁**：`test/renderProfile.test.ts`（分项属于最长那次、50 ms 以下不带）、`test/renderCostProbe.test.ts` + `test/ui/renderCostProbe.ui.ts`（分桶、干净 Text 不读时钟）、`test/appAssetGateWiring.test.ts`（预热在发请求和 `await` 之间）、`test/ui/panelFrameAssembly.ui.ts`（预热后第一个面板不再烘焙）、`test/ui/worldMapOverlayCoalescing.ui.ts`（行军 9–11 次/秒；行军 + 护盾 ≤ 32，旧时钟是 36），均做过变异检查。
 - **还开着**：IntroScene 首启 735–2006 ms 的根因——等一份带新字段的 iPhone 首启报告（重装后打开一次）。
