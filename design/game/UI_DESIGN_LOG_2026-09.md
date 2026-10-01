@@ -687,6 +687,21 @@ PNG 逐张读过——真主城、真训练弹窗、真主城防守编辑器。`
 `achievements` 那张 PNG 上有一条「网络连接失败」toast，`friends+world` 那张写着「世界频道加载失败」，
 而同一次跑注册是成功的。
 
+#### ③-补2（2026-10-01）：剩下两站的根因——又是探针，不是游戏；修法已写，**包内重跑延后到发微信版时**
+
+两站都是从代码和上一轮的 report/PNG 推出来的，**修后没在 DevTools 里重跑过**（重启 DevTools 后包没执行起来，
+用户决定微信剩余问题等发版时一起处理）。tsc + `build:wechat-layout` 都过。
+
+- **`battlePass` 挂在 `GachaScene`**：上一站 `showGacha` 走 `enterWithAssets`（`app/assetGate.ts`）——先
+  `input.suppress(true)` 预热纹理，热完才 `goto(GachaScene)`。预热期间 `state.screen` **已经**是 `gacha`，
+  walker 据此认为到站、调下一站 `openBattlePass`；BattlePassScene 挂上之后，门控迟到的 `goto` 又把抽卡页盖回来。
+  玩家碰不到：预热期间输入是压住的。修法：`waitSettled()` 除了等 `manager.transition` 为空，也等
+  `InputManager.suppressed` 为假（上限放到 15s），等价于真实输入的约束。
+- **`equipment+craft` 不切页**：`findLabel` 按子串匹配、取最上面那个。全新空号的背包空提示
+  `equip.invEmpty`（「背包空，去「锻造」造一件」）**包含**标签文字「锻造」，而且画在标签条之后——点到的是提示。
+  浏览器那边 seed 过的账号有装备、不出这条提示，所以从没撞上。修法：精确等于的优先，没有才退回子串
+  （`layoutWalk.ts` 的 `findLabel` 和浏览器侧 `nwE2E.ts` 的 `tapLabel` 同改）；tap 前也先 `waitSettled()`。
+
 ### 51.4 本轮的结果与它的边界
 
 模拟器（390×844，`resolution: 1`，设计缩放 0.361，locale `zh`）：**35/36 站，0 条 finding，

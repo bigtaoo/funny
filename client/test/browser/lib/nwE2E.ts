@@ -169,6 +169,9 @@ export async function tapLabel(page: Page, needle: string): Promise<boolean> {
     const app = (window as any).__nwE2E?.app as { stage: N } | undefined;
     if (!app) return null;
     const best: { x: number; y: number } = { x: NaN, y: NaN };
+    // A label that IS the needle beats one that merely contains it — prose can quote a button (the
+    // empty-bag hint names the craft tab). Same rule as the in-package walker's `findLabel`.
+    const exact: { x: number; y: number } = { x: NaN, y: NaN };
     const walk = (n: N): void => {
       if (!n.visible || n.alpha <= 0.02) return;
       const own = typeof n.text === 'string' ? n.text
@@ -179,12 +182,14 @@ export async function tapLabel(page: Page, needle: string): Promise<boolean> {
         if (b.width > 0 && b.height > 0) {
           best.x = b.x + b.width / 2;
           best.y = b.y + b.height / 2;
+          if (own.trim() === text) { exact.x = best.x; exact.y = best.y; }
         }
       }
       const kids = n.children;
       if (kids) for (const k of kids) walk(k);
     };
     walk(app.stage);
+    if (Number.isFinite(exact.x)) return exact;
     return Number.isFinite(best.x) ? best : null;
   }, needle);
   if (pt === null) return false;

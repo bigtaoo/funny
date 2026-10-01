@@ -105,9 +105,10 @@ export async function walkLayout(deps: WalkDeps): Promise<WalkResult> {
 
   const screenNow = (): string => (typeof state.screen === 'string' ? state.screen : '?');
 
-  /** `state.<bag>.<fn>(...args)`, awaited. False when the callback does not exist on this screen. */
   /**
-   * Waits out an in-flight SceneManager cross-fade. A player cannot act mid-fade — `InputGate`
+   * Waits until a player could act again: no SceneManager cross-fade in flight and pointer input
+   * not suppressed. Both are states in which a real tap is either swallowed or only ends the wait,
+   * and this walker's callbacks and synthetic taps reach past both. A player cannot act mid-fade — `InputGate`
    * freezes taps and the first one just ends the fade — but a callback called straight off its bag
    * bypasses that gate. Measured 2026-10-01 (UI_DESIGN_LOG §51.3 ③): `backToLobby`'s faded
    * `goLobby` was still fading the lobby IN when the next stop called `onOpenWorldMap`, so that
@@ -115,12 +116,21 @@ export async function walkLayout(deps: WalkDeps): Promise<WalkResult> {
    * ran, `swap` appended the map ON TOP of it — `city`/`defenseEditor`/`city+trainModal` audited
    * the map's labels and screenshot the map. Unreachable by touch, so this mirrors the gate rather
    * than hardening `pushOverlay` against a call order no real input produces.
+   *
+   * The input half is the same story through a different gate (§51.3 ③-补2). `showGacha` mounts
+   * behind an asset gate (`enterWithAssets`) that suppresses input while the gacha textures warm and
+   * only then `goto`s the scene — but `state.screen` already says `gacha`. In the package the warm
+   * is a real download, so `battlePass` called `openBattlePass` mid-gate; BattlePassScene mounted,
+   * and the gate's late `goto` put GachaScene straight back over it. Hence the longer deadline.
    */
   const waitSettled = async (): Promise<void> => {
     const mgr = (handle.views as unknown as { manager?: { transition?: object | null } }).manager;
-    const deadline = Date.now() + 3_000;
-    while (mgr?.transition && Date.now() < deadline) await sleep(50);
+    const gate = input as unknown as { suppressed?: boolean };
+    const deadline = Date.now() + 15_000;
+    while ((mgr?.transition || gate.suppressed) && Date.now() < deadline) await sleep(50);
   };
+
+  /** `state.<bag>.<fn>(...args)`, awaited. False when the callback does not exist on this screen. */
 
   const callCb = async (bag: string, fn: string, args: unknown[] = []): Promise<boolean> => {
     const target = state[bag] as Record<string, (...a: unknown[]) => unknown> | undefined;
@@ -164,6 +174,7 @@ export async function walkLayout(deps: WalkDeps): Promise<WalkResult> {
       getBounds(skipUpdate?: boolean): { x: number; y: number; width: number; height: number };
     }
     let best: { x: number; y: number } | null = null;
+    let exact: { x: number; y: number } | null = null;
     const walk = (n: N): void => {
       if (!n.visible || n.alpha <= 0.02) return;
       const own = typeof n.text === 'string' ? n.text
@@ -173,13 +184,21 @@ export async function walkLayout(deps: WalkDeps): Promise<WalkResult> {
         const b = n.getBounds(false);
         // Last match wins: pre-order DFS is PIXI's paint order, so the last one found is the one
         // drawn on top — which is the one a player's finger would reach once a modal is up.
-        if (b.width > 0 && b.height > 0) best = { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+        if (b.width > 0 && b.height > 0) {
+          const pt = { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+          best = pt;
+          if (own.trim() === needle) exact = pt;
+        }
       }
       const kids = n.children;
       if (kids) for (const k of kids) walk(k);
     };
     walk(app.stage as unknown as N);
-    return best;
+    // A label that IS the needle beats one that merely contains it. Substring matching exists for
+    // parameterised strings (`label()` hands over only the literal prefix), but it also matches
+    // prose that quotes a button: a fresh account's empty bag says 背包空，去「锻造」造一件, painted
+    // after the tab bar, so `equipment+craft` tapped that hint instead of the 锻造 tab (§51.3 ③-补2).
+    return exact ?? best;
   };
 
   /**
@@ -251,6 +270,7 @@ export async function walkLayout(deps: WalkDeps): Promise<WalkResult> {
         // Polled rather than tapped once: a tap hop that follows a navigation hop fires the instant
         // `state.screen` changes, which for a list the server fills in is before any row exists.
         const text = 'tap' in hop ? label(hop.tap) : hop.tapText;
+        await waitSettled();
         const deadline = Date.now() + TAP_WAIT_MS;
         let tapped = await tapLabel(text);
         while (!tapped && Date.now() < deadline) {
