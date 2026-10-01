@@ -222,6 +222,15 @@ vitest 走 esbuild、webpack 也不做类型检查，且 `client/tsconfig.json` 
 
 > 坑：客户端 `vitest.ui.config.ts` 里裸 `@nw/shared` 只别名到 `slg/index.ts`，装备常量要从 `@nw/shared/equipment` 引；用错的话收集阶段就报 `Cannot convert undefined or null to object`，不会给出模块找不到的提示。
 
+### 同日第二轮：覆盖率存量重量（第十轮）
+
+按配方（CLI 撑开 `--coverage.include='src/**'`，加 `--testTimeout=30000`）重量一次：整个 `src/` **36.66%（23669/64552），573 文件**；0% 且 ≥25 行 200 文件 / 30.0k 行，其中不直接 import PIXI 的 45 文件 / 4.4k 行。刨掉场景 Core 协作者（间接经 `sketchUi` 碰 PIXI）、`entries/**`、`testing/**`、生成代码、已决定不做的 `hostProbe.ts`，**真正可动的只有两个**，都已进覆盖率 include：
+
+- `scenes/worldmap/net/structures.ts` → `test/worldMapStructures.test.ts`（33 例）：箭塔/拒马建造与拆除、列表内放弃、国家改名此前**任何一层都没测过**；只清该格缓存 vs 清全部、响应缺 `me` 时保留旧值、哪个面板重绘、商店双击锁与超时释放。沿用 `push.ts`/`loaders.ts` 的假 ctx + 桩 `loaders`。
+- `render/textMetricsProbe.ts` → `test/textMetricsProbe.test.ts`（13 例）：两个调用方（微信入口、Playwright spec）都在覆盖率套件外。线性度按**中位数**算偏差、各失败路径不报 `ok`、`measureText` 中途抛错时保留已测样本并写明停在哪。
+
+覆盖率 scope：129 文件 / 7299/7388 行（98.79%）。变异 9 处，7 处首轮变红；存活的两处：拆除漏 `closeModal`（补了断言）、码点 vs UTF-16 计数——**语料全是 BMP 字符，两种计数相同，这条用例本来就测不出来，删掉了**，并在文件头注明没钉这一条。
+
 ## 缺口 A（已补）：GameScene / ReplayScene 冒烟
 
 对战场景驱动**完整 GameRenderer**（board/units/buildings/HUD/VFX）跑真 `IGameEngine`，是「逻辑对、一进去就崩」的高发区。`gameScenes.ui.ts` 把它纳入 headless 冒烟：
