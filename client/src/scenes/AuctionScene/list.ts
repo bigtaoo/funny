@@ -9,7 +9,7 @@
 // the tab chrome and the grid geometry that places the cells.
 import * as PIXI from 'pixi.js-legacy';
 import { ui as C, txt, sketchPanel, sketchButton, seedFor } from '../../render/sketchUi';
-import { FS } from '../../render/fontScale';
+import { FS, fitFont } from '../../render/fontScale';
 import { drawButtonLabel } from '../../ui/widgets/buttonLabel';
 import { drawSidebarTabs, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTab } from '../../ui/widgets/HubTabs';
 import { t } from '../../i18n';
@@ -125,7 +125,22 @@ export class ListPanel {
       chip.x = contentX + i * chipW + pad / 2; chip.y = y + 3;
       core.bodyLayer.addChild(chip);
       const midY = y + 3 + (FILTER_H - 12) / 2;
-      const hasIcon = f !== '';
+      // Label first, so the chip can decide what to give up. Same order of degradation as the
+      // shared button label (ui/widgets/buttonLabel.ts): drop the glyph before shrinking the words,
+      // then step the size down the scale (never below the floor) — scaling the built text, which is
+      // all this did before, put "Equipment" at 15.5 design px on a 360-wide phone, under its floor.
+      const label = t(keys[f]);
+      let lbl = txt(label, fontSize, active ? C.light : C.dark);
+      const roomWithIcon = chipW - pad - 20 - (iconSize + 8);
+      const roomBare = chipW - pad - 20;
+      const hasIcon = f !== '' && lbl.width <= roomWithIcon;
+      const maxLblW = hasIcon ? roomWithIcon : roomBare;
+      if (lbl.width > maxLblW) {
+        const size = fitFont(fontSize, lbl.width, maxLblW);
+        lbl.destroy({ texture: true, baseTexture: true });
+        lbl = txt(label, size, active ? C.light : C.dark);
+        if (lbl.width > maxLblW) lbl.scale.set(Math.max(0.5, maxLblW / lbl.width));
+      }
       const iconGap = hasIcon ? iconSize + 8 : 0;
       // Category glyph prefix (the 'all' filter stays text-only).
       if (hasIcon) {
@@ -133,9 +148,6 @@ export class ListPanel {
         fi.x = contentX + i * chipW + pad / 2 + 12; fi.y = midY - iconSize / 2;
         core.bodyLayer.addChild(fi);
       }
-      const lbl = txt(t(keys[f]), fontSize, active ? C.light : C.dark);
-      const maxLblW = chipW - pad - 20 - iconGap;
-      if (lbl.width > maxLblW) lbl.scale.set(Math.max(0.5, maxLblW / lbl.width));
       lbl.anchor.set(0.5, 0.5);
       lbl.x = contentX + i * chipW + pad / 2 + 12 + iconGap + maxLblW / 2;
       lbl.y = midY;

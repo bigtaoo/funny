@@ -30,7 +30,8 @@ describe('resettledLayout', () => {
     // Safe drawable height shrinks by top+bottom (47+34), so the recomputed design height
     // must reflect the smaller safe-area aspect, not the raw screen aspect.
     const availH = 844 - 47 - 34;
-    expect(layout!.designHeight).toBe(Math.max(1920, Math.round(1080 * (availH / 390))));
+    // 390 wide → design width 780 (layout/designSize.ts).
+    expect(layout!.designHeight).toBe(Math.round(780 * (availH / 390)));
   });
 
   it('rebuilds when only a single inset field changed (e.g. bottom home-indicator only)', () => {

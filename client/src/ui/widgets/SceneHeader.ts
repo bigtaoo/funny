@@ -33,7 +33,7 @@ import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { getCachedDisplay } from './uiCache';
 import { buildIcon, buildRasterTabIcon, tabIconVariant, BACK_ARROW_ART, BACK_ARROW_ASPECT, type IconKind } from '../../render/icons';
-import { FS, fitFont } from '../../render/fontScale';
+import { FS, fitFont, currentFontFloor } from '../../render/fontScale';
 import { drawGuilloche } from './SceneHeader/guilloche';
 
 /**
@@ -409,7 +409,10 @@ export function drawSceneHeader(
     let leadW = icon ? icon.size + icon.gap : 0;
     if (icon && leadW + titleNode.width > usableBand) {
       const room = usableBand - titleNode.width - icon.gap;
-      if (room >= icon.size * 0.4) {
+      // "Would not read as a picture any more" has a floor beside the 40%: the legibility floor the
+      // layout sweep holds icons to (layoutAudit `icon`). A 20-px glyph squeezed to 12 on a 780-wide
+      // portrait design cleared the ratio and still read as a speck.
+      if (room >= Math.max(icon.size * 0.4, currentFontFloor())) {
         iconScale = room / icon.size;
         leadW = Math.round(room + icon.gap);
       } else {

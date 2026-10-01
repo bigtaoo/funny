@@ -89,9 +89,10 @@ export function renderCheckin(ctx: DailyPanelCtx, areaX: number, top: number, ar
   // deriving it, makes the portrait cell 224 px tall (+56% on `ch`, and therefore on every glyph
   // in it: the day number goes 15.2 → 21.7 CSS px on a 390-wide phone, the reward glyph 12.3 →
   // 19.1, the milestone badge 7.2 → 11.6). What that does NOT fix is the reason those numbers were
-  // small to begin with — portrait's design width is a fixed 1080 against a 390-px screen, i.e.
-  // 0.36x, so a design px is worth less than half what it is worth in a desktop landscape window.
-  // That is design/game/UI_DESIGN_LOG_2026-08.md §49.1's known-unfixed item, not this one.
+  // small to begin with — portrait's design width was a fixed 1080 against a 390-px screen, i.e.
+  // 0.36x, so a design px was worth less than half what it is worth in a desktop landscape window.
+  // ADR-105 (2026-10-01) narrowed it for phones; this grid is all `ch` fractions, so it keeps the
+  // same on-screen size either way.
   let rowGap = h * 0.006;
   let cellH: number;
   if (landscape) {

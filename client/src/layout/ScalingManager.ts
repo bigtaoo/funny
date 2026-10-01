@@ -185,7 +185,8 @@ export class ScalingManager {
     // which on a 390-wide phone (0.36x) is 4 CSS px of unreadable smudge. render/fontScale.ts turns
     // the scale into a floor every token is lifted to; it has to be pushed from here because this is
     // the one place the scale exists.
-    setFontScale(gameScale);
+    // The short side too: it scales snapFont's ceiling (see fontScale.ts snapCeilFor).
+    setFontScale(gameScale, Math.min(dw, dh));
     this.gameLayer.x = Math.round(availX + (availW - dw * gameScale) / 2);
     this.gameLayer.y = Math.round(availY + (availH - dh * gameScale) / 2);
 

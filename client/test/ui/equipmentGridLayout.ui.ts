@@ -29,7 +29,9 @@ const memStore = (() => {
 initI18n('en', memStore, ['zh', 'en', 'de']);
 
 const LANDSCAPE: [number, number] = [1280, 800];
-const PORTRAIT: [number, number] = [375, 812];
+// 1080x2339 — the design box a 375x812 phone got before ADR-105; this file's portrait premise is
+// that 1080-wide box (see the 3-column describe), which a tablet-width portrait screen still gets.
+const PORTRAIT: [number, number] = [540, 1169];
 
 interface Rect { x: number; y: number; w: number; h: number; }
 interface SceneInternals {

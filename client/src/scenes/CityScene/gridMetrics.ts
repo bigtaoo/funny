@@ -29,6 +29,14 @@
 /** Card height may not exceed this multiple of the card width before the grid stops stretching. */
 const MAX_ASPECT = 1.45;
 
+/**
+ * Narrowest portrait column, as a fraction of `cardWTarget`. Square-ness alone will happily pick six
+ * 105-px columns when a short band rules out the taller grids — which is what the 720-wide portrait
+ * design (layout/designSize.ts) on a 360x640 phone did, and the names then wrapped into the level
+ * line under them ("Truppen ausbilden" over "Truppen 19840/20000"). Narrower than this, scroll.
+ */
+const MIN_COL_FRAC = 0.7;
+
 export interface GridMetricsInput {
   /** Tiles to lay out (11 buildings + the synthetic train tile today). */
   count: number;
@@ -76,7 +84,7 @@ export function gridMetrics(input: GridMetricsInput): GridMetrics {
   for (let cols = 1; cols <= input.maxCols; cols++) {
     const rows = Math.ceil(input.count / cols);
     const cellW = colWidth(input, cols);
-    if (cellW <= 0) continue;
+    if (cellW <= 0 || cellW < input.cardWTarget * MIN_COL_FRAC) continue;
     const filled = Math.floor((input.availH - (rows - 1) * input.gap) / rows);
     // Shorter than the design card means the band cannot hold these rows at all — that is the
     // scrolling case, and it is `classic`'s job, not a candidate here.

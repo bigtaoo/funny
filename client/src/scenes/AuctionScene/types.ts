@@ -66,6 +66,12 @@ export const AUC_CELL_PAD = 14;
 export const AUC_CELL_IMG_GAP = 16;
 /** Cap on the square item picture, so a tall cell does not crowd out the info column beside it. */
 export const AUC_CELL_IMG_MAX = 130;
+/** The picture a cell gets when nothing squeezes it — the cap, or the cell height minus padding. */
+const AUC_CELL_IMG_FULL = Math.min(AUC_CELL_H - AUC_CELL_PAD * 2, AUC_CELL_IMG_MAX);
+/** Smallest picture a phone's two-column grid may shrink it to (see `aucGrid`). */
+export const AUC_CELL_IMG_MIN = 90;
+/** The info column's share of {@link AUC_CELL_W_TARGET} at the full picture — 166 design px. */
+const AUC_CELL_TEXT_W = AUC_CELL_W_TARGET - AUC_CELL_PAD * 2 - AUC_CELL_IMG_FULL - AUC_CELL_IMG_GAP;
 
 /**
  * Columns the grid fits into `contentW`, and the width of one cell — `ListPanel.renderList`'s own
@@ -75,9 +81,30 @@ export function aucGrid(contentW: number): { cols: number; cellW: number } {
   const avail = contentW - AUC_CELL_GAP * 2;
   // typeWidth: the target was tuned for the raw font table; on a phone the boosted text needs a
   // proportionally wider column, so the grid drops a column rather than overflow (see fontScale).
-  const target = typeWidth(AUC_CELL_W_TARGET);
-  const cols = Math.max(1, Math.floor((avail + AUC_CELL_GAP) / (target + AUC_CELL_GAP)));
+  const colsFor = (target: number): number =>
+    Math.max(1, Math.floor((avail + AUC_CELL_GAP) / (target + AUC_CELL_GAP)));
+  let cols = colsFor(typeWidth(AUC_CELL_W_TARGET));
+  // Boosting the whole 340 is generous — only the TEXT part of the cell grows with the boost, the
+  // picture and padding are fixed design px — and on the 720–860-wide portrait design
+  // (layout/designSize.ts) it dropped the grid to ONE column of half-empty cells. So where that
+  // happens (and only there: every other width keeps the column count it always had), boost just
+  // the text, and if that still is one column let the picture shrink toward AUC_CELL_IMG_MIN
+  // (aucImgSize hands the cell the picture its width leaves).
+  const fixed = (img: number): number => AUC_CELL_PAD * 2 + img + AUC_CELL_IMG_GAP;
+  if (cols === 1) cols = colsFor(fixed(AUC_CELL_IMG_FULL) + typeWidth(AUC_CELL_TEXT_W));
+  if (cols === 1) cols = colsFor(fixed(AUC_CELL_IMG_MIN) + typeWidth(AUC_CELL_TEXT_W));
   return { cols, cellW: (avail - AUC_CELL_GAP * (cols - 1)) / cols };
+}
+
+/**
+ * Side of the square item picture in a cell `cellW` wide: the full {@link AUC_CELL_IMG_FULL}, unless
+ * that would leave the info column narrower than its (boosted) text target — then whatever the text
+ * leaves, down to {@link AUC_CELL_IMG_MIN}. At the unboosted target every cell is at least 340 wide,
+ * so desktop and tablets always get the full picture.
+ */
+export function aucImgSize(cellW: number): number {
+  const room = Math.floor(cellW - AUC_CELL_PAD * 2 - AUC_CELL_IMG_GAP - typeWidth(AUC_CELL_TEXT_W));
+  return Math.max(AUC_CELL_IMG_MIN, Math.min(AUC_CELL_IMG_FULL, room));
 }
 
 /**
@@ -90,8 +117,7 @@ export function aucGrid(contentW: number): { cols: number; cellW: number } {
  * column rather than a copy of this arithmetic that can drift away from it.
  */
 export function aucInfoColumnW(cellW: number): number {
-  const imgSize = Math.min(AUC_CELL_H - AUC_CELL_PAD * 2, AUC_CELL_IMG_MAX);
-  return cellW - AUC_CELL_PAD * 2 - imgSize - AUC_CELL_IMG_GAP;
+  return cellW - AUC_CELL_PAD * 2 - aucImgSize(cellW) - AUC_CELL_IMG_GAP;
 }
 
 // Material types available for auction

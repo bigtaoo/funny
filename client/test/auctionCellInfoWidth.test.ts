@@ -38,11 +38,13 @@ import { en } from '../src/i18n/locales/en';
 import { de } from '../src/i18n/locales/de';
 import { aucGrid, aucInfoColumnW, AUC_CELL_W_TARGET } from '../src/scenes/AuctionScene/types';
 import { fontFloorDesignPx, setFontScale, resetFontScaleForTest, FS, MAX_BOOST } from '../src/render/fontScale';
+import { portraitDesignWidth } from '../src/layout/designSize';
 
 const DICTS: Record<string, Record<string, string>> = { zh, en, de };
 
 /**
- * The portrait phone, which is the shape §55.2 was measured on: the design box is a fixed 1080 wide
+ * The portrait phone AS IT WAS when §55.2 was measured (before 2026-10-01 portrait phones got a
+ * narrower design box, see the last describe below): the design box was a fixed 1080 wide
  * and the tab nav is a BOTTOM bar (§18), so the grid gets the whole width and fits three columns
  * into it, giving a 167.33-px column.
  */
@@ -196,5 +198,31 @@ describe('auction cell — under the phone type boost', () => {
         .toBeLessThanOrEqual(worst);
     }
     expect(MAX_BOOST).toBe(1.4);   // the sweep this is derived from ran at the cap
+  });
+});
+
+// Portrait phones no longer get a 1080-wide design (layout/designSize.ts, 2026-10-01): a 360–539
+// CSS-px-wide phone gets `availW / 0.5` (720–1078) at a ~0.5 scale, so the floor drops to 16 and the
+// boost to ~1.1. The grid's target now boosts only the text part of the cell (types.ts `aucGrid`),
+// which is what keeps these phones at two columns — and the question is again whether the columns
+// that produces hold the one-line rows.
+describe('auction cell — on the narrow portrait design', () => {
+  afterEach(() => resetFontScaleForTest());
+
+  it('keeps every phone width at two or more columns with the one-line rows on one line', () => {
+    for (let availW = 360; availW < 540; availW++) {
+      const designW = portraitDesignWidth(availW);
+      setFontScale(availW / designW);
+      const grid = aucGrid(designW);
+      expect(grid.cols, `${availW} css px`).toBeGreaterThanOrEqual(2);
+      const col = aucInfoColumnW(grid.cellW);
+      const adv = FS.tiny * 0.55;
+      const w = (s: string): number => widthOf(s) / ADVANCE * adv;
+      for (const dict of Object.values(DICTS)) {
+        expect(w(`${dict['auction.myBid']}: ${WIDEST_PRICE}`)).toBeLessThanOrEqual(col);
+        expect(w(fill(dict, 'auction.buyoutAt', { price: WIDEST_PRICE }))).toBeLessThanOrEqual(col);
+        expect(w(fill(dict, 'auction.timeLeft', { d: '2', h: '23', m: '59', s: '59' }))).toBeLessThanOrEqual(col);
+      }
+    }
   });
 });

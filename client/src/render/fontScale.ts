@@ -23,9 +23,11 @@
  * ## The legibility floor (2026-09-11)
  *
  * A design px is not a screen px. `ScalingManager` contains the design rect into the
- * viewport, and that factor is nowhere near 1 on a phone held upright: portrait's design
- * width is a fixed 1080, so a 390-px-wide iPhone renders the whole UI at **0.36x**, and a
- * 360-wide budget Android at 0.33x. `FS.micro` (11 design px) is then 4 CSS px — smaller
+ * viewport, and that factor is nowhere near 1 on a phone: when this was written portrait's design
+ * width was a fixed 1080, so a 390-px-wide iPhone rendered the whole UI at **0.36x** (a phone held
+ * sideways still does), and a 360-wide budget Android at 0.33x. Since ADR-105 (2026-10-01) upright
+ * phones get a 720–860-wide design at ~0.5x (layout/designSize.ts), and the floor and boost below
+ * simply have less to add there. `FS.micro` (11 design px) at 0.36x is 4 CSS px — smaller
  * than the smallest text any OS will render, and unreadable in the portrait sweep's own
  * screenshots (the defense editor's footer, the city page's `/200k` caps and `Lv.0`
  * subtitles).
@@ -201,15 +203,41 @@ let boostNow = 1;
  * That matches what resize already does with the rest of the layout: `ViewportResizer` rebuilds
  * the lobby and re-fits everything else without re-laying it out (see its header).
  */
-export function setFontScale(designScale: number): void {
+export function setFontScale(designScale: number, designShort: number = REFERENCE_SHORT_SIDE): void {
   floorPx = fontFloorDesignPx(designScale);
   boostNow = fontBoost(designScale);
   live = fontTableFor(designScale);
+  snapCeil = snapCeilFor(designShort);
 }
+
+/** The short side of the design rect every number in this table was tuned against. */
+const REFERENCE_SHORT_SIDE = 1080;
+
+/**
+ * Ceiling on {@link snapFont}'s result for a design rect whose short side is `designShort`.
+ *
+ * Runtime sizes are mostly a fraction of some height (`snapFont(cardH * 0.3)`), and on a portrait
+ * phone that height used to be counted in the 2337-tall design of a fixed 1080-wide page — so
+ * anything big snapped to `display` (60) and stopped there, i.e. ~21 CSS px on a 390-wide phone.
+ * That cap was holding a lot of narrow cells together without anyone having asked it to: when the
+ * portrait design narrowed to 720–860 (layout/designSize.ts, 2026-10-01) the same 60 came out at
+ * 30 CSS px, and German task names, result-screen buttons and the header coin readout broke out of
+ * boxes whose WIDTH had not grown. So the ceiling scales with the short side — 42 on a phone,
+ * which is the old ~21 CSS px — and is the untouched `display` wherever the short side is 1080
+ * (every landscape rect, tablets, desktop).
+ */
+function snapCeilFor(designShort: number): number {
+  if (!(designShort > 0) || designShort >= REFERENCE_SHORT_SIDE) return BASE.display;
+  return nearestTier(BASE.display * (designShort / REFERENCE_SHORT_SIDE));
+}
+
+/** Live ceiling for {@link snapFont}/{@link snapFontDown}; only {@link setFontScale} writes it. */
+let snapCeil: number = BASE.display;
 
 /** Back to the unlifted table (unit tests / headless harness). */
 export function resetFontScaleForTest(): void {
   floorPx = BASE.micro;
+  snapCeil = BASE.display;
   boostNow = 1;
   live = { ...BASE };
 }
@@ -323,9 +351,15 @@ export function typeWidth(px: number): number {
  *
  * Ties round up to the larger tier (legibility over compactness), and the result carries the
  * same legibility floor as a named token — a control whose height suggests 9px text still gets
- * text that can be read.
+ * text that can be read. It never exceeds the live short-side ceiling (`display` everywhere but a
+ * narrow portrait design — see `snapCeilFor`).
  */
 export function snapFont(px: number): number {
+  return lift(Math.min(snapCeil, nearestTier(px)));
+}
+
+/** Nearest token to `px`, ties to the larger one. */
+function nearestTier(px: number): number {
   let best = TIERS[0]!;
   let bestDist = Infinity;
   for (const tier of TIERS) {
@@ -335,5 +369,16 @@ export function snapFont(px: number): number {
       bestDist = d;
     }
   }
-  return lift(best[1]);
+  return best[1];
+}
+
+/**
+ * Like {@link snapFont}, but to the largest token at or BELOW `px` (still floored). For runtime
+ * sizes that share a band with other content, where rounding up a tier takes room a neighbour was
+ * counting on: the header currency cluster is `0.26 × bar height`, and on a 780-wide portrait
+ * design (layout/designSize.ts) that is 53 px — nearest-snapped to 60, which grew the coin readout
+ * 1.4x on screen and squeezed the scene title beside it to 8 CSS px.
+ */
+export function snapFontDown(px: number): number {
+  return lift(Math.min(snapCeil, snapDown(px)));
 }

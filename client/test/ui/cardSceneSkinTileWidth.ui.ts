@@ -37,7 +37,8 @@ initI18n('de', memStore, ['zh', 'en', 'de']);
 
 describe('CardScene wardrobe — tile width follows its labels', () => {
   it('makes every tile wide enough for the status line', () => {
-    const scene = new CardScene(createLayout(360, 640), new InputManager(), {
+    const scene = new CardScene(createLayout(540, 960), // the 1080x1920 box a 360x640 phone had before ADR-105
+      new InputManager(), {
       onBack() {},
       getSave: () => makeNewSave(),
       fuseCards: async () => ({ ok: true }),
