@@ -169,16 +169,40 @@ describe('IllustratedInterludeScene', () => {
     scene.destroy();
   });
 
-  it('lays out every beat centered on the same x, stacked strictly downward with a fixed gap', () => {
+  it('lays out every beat centered on the same x, stacked strictly downward with one consistent gap between them', () => {
     const { scene, internals } = build(() => {});
     const xs = internals.lines.map((l) => l.x);
     expect(new Set(xs).size).toBe(1); // all centered on the same column
     const ys = internals.lines.map((l) => l.y);
     for (let i = 1; i < ys.length; i++) expect(ys[i]).toBeGreaterThan(ys[i - 1]!); // strictly downward
+    // The gap is measured edge to edge (previous bottom → next top), not centre to centre — see
+    // the wrapped-beat case below for why a constant centre pitch was the bug.
     const gaps = new Set<number>();
-    for (let i = 1; i < ys.length; i++) gaps.add(ys[i]! - ys[i - 1]!);
-    expect(gaps.size).toBe(1); // one consistent per-beat gap, not ad-hoc spacing
+    for (let i = 1; i < ys.length; i++) gaps.add(Math.round(ys[i]! - (ys[i - 1]! + internals.lines[i - 1]!.height)));
+    expect(gaps.size).toBe(1);
     scene.destroy();
+  });
+
+  it('a beat that word-wraps pushes every later beat down instead of being overdrawn by it (portrait, every chapter)', () => {
+    // 2026-10-01, real Chrome: beats sat on a fixed one-line pitch, so in portrait — where nearly
+    // every beat wraps — all six interludes drew each beat on top of the previous one's second
+    // line (epilogue: 7 of 8 overlapping). Landscape hit it too on ch1 and the epilogue.
+    const keys: TranslationKey[] = [
+      'campaign.realLayer.ch1', 'campaign.realLayer.ch2', 'campaign.realLayer.ch3',
+      'campaign.realLayer.ch4', 'campaign.realLayer.ch5', 'campaign.epilogue',
+    ];
+    let sawWrap = false;
+    for (const key of keys) {
+      const scene = new IllustratedInterludeScene(createLayout(390, 844), new InputManager(), 'data:image/png;base64,', key, { onFinish: () => {} });
+      const { lines } = scene as unknown as SceneInternals;
+      const oneLine = Math.min(...lines.map((l) => l.height));
+      if (lines.some((l) => l.height > oneLine * 1.5)) sawWrap = true;
+      for (let i = 1; i < lines.length; i++) {
+        expect(lines[i]!.y, `${key} beat ${i}`).toBeGreaterThanOrEqual(lines[i - 1]!.y + lines[i - 1]!.height);
+      }
+      scene.destroy();
+    }
+    expect(sawWrap).toBe(true); // otherwise the overlap assertion above could not have failed
   });
 
   it('the tap-to-continue hint sits below the lowest beat, scaling with a longer passage (epilogue, 8 beats)', () => {
@@ -188,7 +212,7 @@ describe('IllustratedInterludeScene', () => {
 
     const lastLineBottomY = (internals: SceneInternals): number => {
       const lastLine = internals.lines[internals.lines.length - 1]!;
-      return lastLine.y; // anchor is (0.5, 0.5): y is the line's own center, hint must clear it
+      return lastLine.y + lastLine.height; // anchor is (0.5, 0): y is the beat's top edge
     };
 
     // The hint must never sit above the last beat's line, in either passage length ...

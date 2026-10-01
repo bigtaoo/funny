@@ -10,6 +10,7 @@ import type { FriendsSceneCore } from './core';
 import type { MailView } from '../../net/ApiClient';
 import { WorldApiError } from '../../net/WorldApiClient';
 import { loadEmblemAtlas } from '../../render/emblemIcon';
+import { withTimeout, TimeoutError } from '../../ui/busyTracker';
 
 export interface NetworkHandlers {
   refresh(): Promise<void>;
@@ -181,19 +182,14 @@ export class NetworkPanel implements NetworkHandlers {
     const name = core.familyCreateName.trim();
     const tag = core.familyCreateTag.trim().toUpperCase();
     if (!name || !tag) return;
-    core.clearHiddenInput();
-    try {
-      await core.cb.createFamily?.(name, tag);
+    await this.orgRequest(() => core.cb.createFamily?.(name, tag), () => {
       core.toast('social.family.created', 'success');
       core.familySubview = 'info';
       core.familyCreateName = '';
       core.familyCreateTag = '';
       core.slgLoaded = false;
       void this.loadSLGStatus();
-    } catch {
-      core.toast('social.family.createFail');
-    }
-    core.render();
+    }, () => core.toast('social.family.createFail'));
   }
 
   async loadFamilyBrowse(query: string): Promise<void> {
@@ -219,9 +215,7 @@ export class NetworkPanel implements NetworkHandlers {
   async doJoinFamily(familyId: string): Promise<void> {
     const core = this.core;
     if (!familyId) return;
-    core.clearHiddenInput();
-    try {
-      await core.cb.joinFamily?.(familyId);
+    await this.orgRequest(() => core.cb.joinFamily?.(familyId), () => {
       core.toast('social.family.joinRequested', 'success');
       core.familyJoinPending = true;
       core.familySubview = 'info';
@@ -231,7 +225,7 @@ export class NetworkPanel implements NetworkHandlers {
       core.familyDetailView = null;
       core.slgLoaded = false;
       void this.loadSLGStatus();
-    } catch (e) {
+    }, (e) => {
       // ALREADY_REQUESTED means an earlier request (this session or a prior one) is still
       // pending — not a failure, so surface the same "waiting for approval" state instead of
       // a retry-inviting error toast.
@@ -241,8 +235,7 @@ export class NetworkPanel implements NetworkHandlers {
       } else {
         core.toast('social.family.joinFail');
       }
-    }
-    core.render();
+    });
   }
 
   async doCreateSect(): Promise<void> {
@@ -250,37 +243,51 @@ export class NetworkPanel implements NetworkHandlers {
     const name = core.sectCreateName.trim();
     const tag = core.sectCreateTag.trim().toUpperCase();
     if (!name || !tag) return;
-    core.clearHiddenInput();
-    try {
-      await core.cb.createSect?.(name, tag);
+    await this.orgRequest(() => core.cb.createSect?.(name, tag), () => {
       core.toast('social.sect.created', 'success');
       core.sectSubview = 'info';
       core.sectCreateName = '';
       core.sectCreateTag = '';
       core.slgLoaded = false;
       void this.loadSLGStatus();
-    } catch {
-      core.toast('social.sect.createFail');
-    }
-    core.render();
+    }, () => core.toast('social.sect.createFail'));
   }
 
   async doJoinSect(): Promise<void> {
     const core = this.core;
     const id = core.sectJoinId.trim();
     if (!id) return;
-    core.clearHiddenInput();
-    try {
-      await core.cb.joinSect?.(id);
+    await this.orgRequest(() => core.cb.joinSect?.(id), () => {
       core.toast('social.sect.joined', 'success');
       core.sectSubview = 'info';
       core.sectJoinId = '';
       core.slgLoaded = false;
       void this.loadSLGStatus();
-    } catch {
-      core.toast('social.sect.joinFail');
-    }
+    }, () => core.toast('social.sect.joinFail'));
+  }
+
+  /**
+   * ADR-058 lock for the four family/sect create/join requests: drops a repeat tap while one is in
+   * flight (the confirm buttons grey out off `core.orgSending`), gives up after `BUSY_TIMEOUT_MS`
+   * with the shared timeout toast, and re-renders either way. FamilyScene/SectScene had this lock;
+   * the Social hub's own org tabs — the path a player actually takes to create one — did not.
+   */
+  private async orgRequest(send: () => Promise<unknown> | undefined, onOk: () => void, onFail: (e: unknown) => void): Promise<void> {
+    const core = this.core;
+    if (core.orgSending) return;
+    core.clearHiddenInput();
+    core.orgSending = true;
     core.render();
+    try {
+      await withTimeout(Promise.resolve(send()));
+      onOk();
+    } catch (e) {
+      if (e instanceof TimeoutError) core.toast('common.networkTimeout');
+      else onFail(e);
+    } finally {
+      core.orgSending = false;
+    }
+    if (!core.dead) core.render();
   }
 
   async doSendWorldChat(): Promise<void> {
