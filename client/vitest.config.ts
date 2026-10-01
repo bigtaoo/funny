@@ -254,6 +254,11 @@ export default defineConfig({
         'src/render/TutorialDirector/panels.ts',
         'src/render/atlas/spriteAtlas.ts',
         'src/render/fontScale.ts',
+        // The shared WeChat-vs-Chrome measuring routine (test/textMetricsProbe.test.ts, 2026-10-01).
+        // Both callers sit outside this suite (a WeChat entry and a Playwright spec), and its output is
+        // a report a person reads once to decide whether fitFont's one-shot division holds on a
+        // runtime — a wrong ratio or an error path claiming ok misleads rather than crashes.
+        'src/render/textMetricsProbe.ts',
         'src/render/heroAvatarArt.ts',
         'src/render/portraitHeadBox.ts',
         'src/render/presetAvatarArt.ts',
@@ -373,6 +378,13 @@ export default defineConfig({
         // cannot make the team panel claim the player owns no teams. Same fake-ctx treatment as
         // push.ts, for the same reason (the real ctx constructs PIXI).
         'src/scenes/worldmap/net/loaders.ts',
+        // ...and the last 0% sibling in that directory: the tile actions + world-info writes
+        // (test/worldMapStructures.test.ts, 2026-10-01). Four of its eleven exports had ui-layer cases
+        // (cause ①, no coverage reported); the ADR-051 arrow tower / blocker build + demolish, the
+        // in-list abandon and the nation rename had none. Same failure shape as loaders.ts: every
+        // function ends in a toast-and-return catch, so clearing the wrong cache entry, keeping a
+        // stale `me` or redrawing the wrong panel never throws. Same fake-ctx + stubbed-loaders seam.
+        'src/scenes/worldmap/net/structures.ts',
         // ...and AuctionScene's label/glyph/level helpers (test/auctionItemLabels.test.ts, 2026-09-09).
         // Form ① free functions with no `core` at all, so unlike the pointer/input entries around here
         // they are not Core collaborators — the only reason they are a per-file entry rather than a
