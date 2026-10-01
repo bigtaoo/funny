@@ -51,6 +51,8 @@ function makeDoc() {
   const listeners = new Map<string, Array<() => void>>();
   const doc = {
     hidden: false,
+    // Read by platform/appLifecycle.ts, which is how PerfMonitor's early hide report is wired.
+    visibilityState: 'visible' as 'visible' | 'hidden',
     addEventListener: (t: string, cb: () => void) => { listeners.set(t, [...(listeners.get(t) ?? []), cb]); },
     removeEventListener: () => {},
   };
@@ -140,8 +142,8 @@ describe('render_profile', () => {
 
   /** Latch "this window was hidden" the way the browser does — a bare `doc.hidden = true` is not an
    *  event, and PerfMonitor deliberately latches on the event rather than sampling at window end. */
-  function hide(): void { doc.hidden = true; fire('visibilitychange'); }
-  function show(): void { doc.hidden = false; }
+  function hide(): void { doc.hidden = true; doc.visibilityState = 'hidden'; fire('visibilitychange'); }
+  function show(): void { doc.hidden = false; doc.visibilityState = 'visible'; }
 
   /** Advance the render counters as a `live` scene would: every tick paints. */
   function paintEveryTick(ticks: number): void {
@@ -479,5 +481,67 @@ describe('render_profile', () => {
     expect(track).toHaveBeenCalledTimes(2);
     expect((track.mock.calls[0]![1] as Record<string, unknown>).updMax).toBe(3);
     expect((track.mock.calls[1]![1] as Record<string, unknown>).updMax).toBe(1);
+  });
+
+  describe('early report on hide', () => {
+    // 2026-09-30: a fresh iPhone install skipped the intro after 2.4s and left within a minute, so the
+    // cold first launch never reached FIRST_PROFILE_WINDOWS and sent nothing at all.
+
+    it('sends the span so far when a session with a slow render hides before its first report', () => {
+      monitor.install(ticker, RENDER_INFO);
+      setActiveScene('IntroScene');
+      recordRenderSample(700, { texMs: 20, shMs: 600, txtMs: 10, geoMs: 60 });
+      ticker.tick(20, 30);   // 600ms of a window that never closes
+      hide();
+
+      expect(track).toHaveBeenCalledTimes(1);
+      const props = track.mock.calls[0]![1] as Record<string, unknown>;
+      expect(props.trigger).toBe('hide');
+      expect(props.windows).toBe(1);
+      expect(props.rndMax).toBe(700);
+      expect(props.rndMaxSh).toBe(600);
+      expect(props.rndMaxScene).toBe('IntroScene');
+      expect(props.fpsP50).toBe(50);
+    });
+
+    it('stays silent for a short session without a slow frame', () => {
+      monitor.install(ticker, RENDER_INFO);
+      feedWindow(ticker, 50, 3, { rnd: 4 });
+      hide();
+      expect(track).not.toHaveBeenCalled();
+    });
+
+    it('does not fire once a scheduled report has gone out', () => {
+      monitor.install(ticker, RENDER_INFO);
+      recordRenderSample(120);
+      feedWindow(ticker, 50, FIRST_PROFILE_WINDOWS);
+      recordRenderSample(200);
+      feedWindow(ticker, 50, 1);
+      hide();
+      expect(track).toHaveBeenCalledTimes(1);
+      expect(track.mock.calls[0]![1]).not.toHaveProperty('trigger');
+    });
+
+    it('a session that comes back still owes its ~30s report, over a fresh span, and hides early only once', () => {
+      monitor.install(ticker, RENDER_INFO);
+      recordRenderSample(150);
+      feedWindow(ticker, 50, 2);
+      ticker.tick(20, 10);   // part of a third window, folded into the early report
+      hide();
+      expect(track).toHaveBeenCalledTimes(1);
+
+      show();
+      feedWindow(ticker, 50, 1);   // latched hidden window: discarded, as always
+      feedWindow(ticker, 50, FIRST_PROFILE_WINDOWS - 1);
+      hide();
+      expect(track).toHaveBeenCalledTimes(1);   // no second early report
+      show();
+      feedWindow(ticker, 50, 2);   // one discarded (latched), one counted
+      expect(track).toHaveBeenCalledTimes(2);
+      const props = track.mock.calls[1]![1] as Record<string, unknown>;
+      expect(props).not.toHaveProperty('trigger');
+      expect(props.windows).toBe(FIRST_PROFILE_WINDOWS);
+      expect(props.rndMax).toBe(0);
+    });
   });
 });

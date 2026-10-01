@@ -485,3 +485,14 @@ docker compose -f docker-compose.cloud.yml --env-file .env config | grep MONGO_U
 - **代价**：手机竖屏一屏能看到的格子变少；拍卖格在最窄的手机上缩小商品图来保住两列；主城建造格最窄 0.7× 目标列宽，再窄就滚动。
 - **没做**：手机横屏仍是 0.36×（同 §72.2 第三条，要两套版面一起返工）；真机没跑过。
 - **影响**：`client/src/layout/{designSize,PortraitLayout}.ts`、`layout/ScalingManager.ts`、`render/fontScale.ts`（`snapCeilFor`/`snapFontDown`）、`test/browser/lib/auditBox.ts`，以及 §73 列的各场景。
+
+## ADR-106 `render_profile` 隐藏时补发：短会话里出现过慢帧也报一条 — Accepted — 2026-10-01
+
+- **问题**：首条 `render_profile` 要攒满 15 个可见窗口（约 30 s）才发，页面隐藏时不补发。2026-09-30 测试 iPhone 重装后首启：2.4 s 跳过开场，不到 1 分钟就换了会话，**一条都没发**。ADR-098 加拆分仪器要等的正是这份「冷首启」报告，而只要玩家跳过开场就走，这种会话永远收不到。
+- **决策**：会话第一次隐藏时（web 的 `visibilitychange→hidden` / `beforeunload`、微信的 `wx.onHide`，统一走 `platform/appLifecycle.ts`），如果这次会话**还没发过** profile、并且见过 **`rndMax ≥ 50 ms`**（即 `RND_MAX_DETAIL_MS`，带拆分的门槛）的一帧，就把目前为止的跨度提前报出去，带 `trigger: 'hide'`。
+  - 正在采样的那个窗口先并进去：它到这一刻为止都是可见的，而 2 s 内就隐藏的会话只有这一个窗口，boot 的第一帧就在里面。并完之后清零，切回来不会重复计。
+  - 没有慢帧的短会话不报：没有要解释的东西，否则每次跳出都要多一行。
+  - 提前报的这一条计入每会话 6 条的上限，但**不算**那条约 30 s 的定时报告：切回来的会话仍在约 30 s 后发它，而不是约 5 分钟后。每个会话最多提前报一次。
+  - 监听要在把窗口锁存为隐藏的那个监听**之前**注册，也要在 `analytics.init()` 之前（`app.ts` 里 PerfMonitor 本来就装在前面）：这样才判断得出当前窗口是否可见，事件也才能在分析队列自己的隐藏刷新之前入队。两种宿主上监听都按注册顺序执行。
+- **影响**：`client/src/cache/PerfMonitor.ts`；测试 `test/renderProfile.test.ts`（新增「early report on hide」四条，桩 `document` 加了 `visibilityState`）。Grafana 里 `trigger` 字段缺失 = 定时报告，`'hide'` = 提前报的那条，算 `fpsP50` 时它的跨度可能只有零点几秒。
+
