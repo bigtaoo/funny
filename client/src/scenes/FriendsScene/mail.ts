@@ -138,14 +138,17 @@ export class MailPanel {
     subj.anchor.set(0, 0); subj.x = px; subj.y = top;
     core.container.addChild(subj);
     const from = txt(m.fromName || (m.from === 'system' ? t('mail.system') : `#${m.from}`), FS.heading, C.mid);
-    from.anchor.set(0, 0); from.x = px; from.y = top + Math.round(h * 0.05);
+    // Fractions of `h` space these out on a tall page; on a short one (a phone held sideways, 780
+    // design px since ADR-105) they would stack the lines into each other, so never closer than
+    // the line above actually is tall.
+    from.anchor.set(0, 0); from.x = px; from.y = top + Math.max(Math.round(h * 0.05), Math.ceil(subj.height));
     core.container.addChild(from);
 
     const bodyTxt = makeText(systemText(m.body), {
       fontSize: FS.heading, fill: C.dark, fontFamily: 'monospace',
       wordWrap: true, wordWrapWidth: panelW, breakWords: true,
     });
-    bodyTxt.x = px; bodyTxt.y = top + Math.round(h * 0.10);
+    bodyTxt.x = px; bodyTxt.y = Math.max(top + Math.round(h * 0.10), Math.ceil(from.y + from.height));
     core.container.addChild(bodyTxt);
 
     let cy = bodyTxt.y + bodyTxt.height + Math.round(h * 0.03);

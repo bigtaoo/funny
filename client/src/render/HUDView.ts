@@ -1,5 +1,5 @@
 import * as PIXI from 'pixi.js-legacy';
-import { makeText } from './pixiText';
+import { makeText, cjkPadding } from './pixiText';
 import { BASE_HP, BASE_UPGRADE_COSTS, HAND_REFRESH_COST } from '@nw/engine/config';
 import { fromFp } from '@nw/engine/math/fixed';
 import { GameState } from '@nw/engine/GameState';
@@ -7,7 +7,7 @@ import { OwnerId } from '@nw/engine/types';
 import { ILayout, Rect } from '../layout/ILayout';
 import { t } from '../i18n';
 import { drawHudButton, hudButtonText, HudButtonVariant } from '../ui/widgets/hudButton';
-import { FS, snapFont } from './fontScale';
+import { FS, snapFont, snapFontDown, currentFontFloor } from './fontScale';
 import { factionInk, fx } from './theme';
 import { buildIcon, preloadInkIconTextures } from './icons';
 import { HpBarView, HP_BAR_W } from './HUDView/hpBar';
@@ -275,6 +275,15 @@ export class HUDView {
 
     // Timer — landscape hugs the board's left edge; portrait keeps the strip edge.
     this.timerText   = makeText('0:00', { ...textStyle(), fontSize: FS.title });
+    // The strip is 60 design px at the classic 1080 height but only 40 on the narrowest phone held
+    // sideways (ADR-105); step down the scale until the drawn box — line plus the anti-clip padding
+    // above and below it — fits, never below the floor.
+    const drawnH = (): number => this.timerText.height + 2 * Number(this.timerText.style.padding);
+    for (let fs = FS.title; drawnH() > topR.h && fs > currentFontFloor();) {
+      fs = snapFontDown(fs - 1);
+      this.timerText.style.fontSize = fs;
+      this.timerText.style.padding = cjkPadding(fs);
+    }
     this.timerText.x = (isLandscape ? boardLeft : topR.x) + 14;
     this.timerText.y = topR.y + (topR.h - this.timerText.height) / 2;
 

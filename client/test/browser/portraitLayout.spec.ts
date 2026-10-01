@@ -1,4 +1,4 @@
-// Layout sweep — walks every screen, modal and battle the lobby can reach, on eleven viewports in a
+// Layout sweep — walks every screen, modal and battle the lobby can reach, on twelve viewports in a
 // real browser, and fails on labels that collide, spill, fall off the canvas or come out too small
 // to read.
 //
@@ -58,9 +58,9 @@ import { STOPS, hopName, type Hop, type Stop } from '../../src/testing/layoutSto
  *    mini-game floor). Both contain to WIDTH, at 0.36x and 0.33x.
  *  · tablet portrait — squatter than 9:16, so it contains to HEIGHT and `ScalingManager`
  *    letterboxes the sides into desk bands (see its DESK_FILL header), a different code path.
- *  · the same two phones rotated — landscape's design box is the mirror rule (height fixed at
- *    1080, width tracks the aspect between 1920 and 2592), and a phone held sideways renders at
- *    the same brutal 0.36x, so it needs the same legibility floor.
+ *  · the same two phones rotated — landscape's design box is the mirror rule (height 720–1080 from
+ *    the same designSize.ts rule, width tracks the aspect between the scaled 1920 and 2592); since
+ *    ADR-105 a phone held sideways renders at ~0.5x like one held upright, not 0.36x.
  *  · desktop-1366x768 — the shape the game is actually developed in, as a floor: its 0.71x asks
  *    for no legibility floor at all, so anything the sweep reports there is a plain layout bug
  *    rather than a scale artefact.
@@ -89,6 +89,9 @@ const VIEWPORTS = [
   // the same 0.36x as one held upright — the fuse panel's cost line and the daily rail's labels
   // were only ever checked there in the language with the shortest words.
   { name: 'landscape-844x390-de', width: 844, height: 390, locale: 'de' },
+  // The narrow phone held sideways (2026-10-01): 360 tall sits exactly on the 720 design-height
+  // floor, the tightest landscape box ADR-105 can produce (1280x720 design).
+  { name: 'landscape-640x360', width: 640, height: 360, locale: 'en' },
 ] as const satisfies readonly { name: string; width: number; height: number; locale: Locale }[];
 
 const OUT_DIR = 'portrait-report';

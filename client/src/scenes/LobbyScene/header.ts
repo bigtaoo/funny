@@ -12,7 +12,7 @@ import { buildAvatar } from '../../render/avatar';
 import logoUrl from '../../assets/logo.png';
 import { C, TIER_COLORS, txt, fmtCoins, sketchPanel, type LobbySceneCore } from './core';
 import { headerMetrics } from './format';
-import { FS, snapFont } from '../../render/fontScale';
+import { FS, snapFont, snapFontDown } from '../../render/fontScale';
 import { fitToWidth } from '../../ui/widgets/truncateText';
 import { measuredWidth } from '../../render/pixiText';
 
@@ -40,7 +40,11 @@ export function drawHeaderChrome(core: LobbySceneCore): void {
   titleBg.endFill();
   core.container.addChild(titleBg);
 
-  const title = txt(t('lobby.brandTitle'), FS.display, 0xffffff, true);
+  // Landscape's band is a fraction of the design height, which is 720–860 on a phone held sideways
+  // (ADR-105) — so the title is held to the band there, or `display` crowds the subtitle under it.
+  // At the classic 1080 height this is still `display`.
+  const titleSize = core.portrait ? FS.display : Math.min(FS.display, snapFontDown(tbH * 0.42));
+  const title = txt(t('lobby.brandTitle'), titleSize, 0xffffff, true);
   title.anchor.set(0, 0.5);
 
   const subtitle = txt(t('lobby.subtitle'), FS.label, C.light);
@@ -112,7 +116,10 @@ export function drawHeaderChrome(core: LobbySceneCore): void {
   };
   // Keep the profile chip clear of the brand lockup (portrait: half the band;
   // landscape: leave room for the centered lockup).
-  const nameMax = w * nameMaxFactor - (av + nameGap);
+  // Landscape also stops the name at the brand lockup's left edge: on a narrow design (1280 wide
+  // on a phone held sideways, ADR-105) the fixed factor alone ran a long CJK name under the logo.
+  const lockupClear = core.portrait ? Infinity : lockupLeft - nameGap - nameLabel.x;
+  const nameMax = Math.min(w * nameMaxFactor - (av + nameGap), lockupClear);
   fitName(nameMax);
 
   // Boiling-line title underline (art-direction §5.4) — a hand-drawn marker

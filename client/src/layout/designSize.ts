@@ -19,16 +19,18 @@
 // 720–860, i.e. ~1.4x larger literal geometry. Text barely moves, because the font scale's floor and
 // boost already aim at a CSS size and simply have less to add at the larger scale.
 //
-// Landscape is unchanged: its fixed axis is the 1080 design HEIGHT.
+// Landscape follows the same rule on its short axis, the design HEIGHT (2026-10-01, same ADR): a
+// phone held sideways (844x390) used to render at 0.36x exactly like the old portrait; it now gets a
+// 780-tall design and the long axis scales its 1920/2592 bounds by the same factor.
 
 /** The classic short side of both layouts' design rect (portrait width, landscape height). */
 export const REFERENCE_SHORT = 1080;
 
-/** The design→screen scale portrait aims for on narrow screens. */
+/** The design→screen scale both orientations aim for on their short axis on small screens. */
 export const PORTRAIT_TARGET_SCALE = 0.5;
 
 /**
- * Floor on portrait's design width. A 320-wide screen would otherwise ask for 640, where two-column
+ * Floor on the design short side. A 320-wide screen would otherwise ask for 640, where two-column
  * grids that fit at 720 stop fitting; below this the scale drops instead (320 → 0.44x).
  */
 export const PORTRAIT_MIN_W = 720;
@@ -41,4 +43,41 @@ export function portraitDesignWidth(availW: number): number {
   if (!Number.isFinite(availW) || availW <= 0) return REFERENCE_SHORT;
   const w = 2 * Math.round(availW / PORTRAIT_TARGET_SCALE / 2);
   return Math.min(REFERENCE_SHORT, Math.max(PORTRAIT_MIN_W, w));
+}
+
+/**
+ * Landscape design height for a safe drawable area `availH` CSS px tall — the same rule as
+ * {@link portraitDesignWidth}, applied to landscape's short axis. ≥ 540 CSS px tall stays 1080.
+ */
+export function landscapeDesignHeight(availH: number): number {
+  return portraitDesignWidth(availH);
+}
+
+/**
+ * LandscapeLayout's long-axis floor at the 1080 reference (scaled by `designHeight / 1080`): classic
+ * 16:9, so squatter screens get exactly the historical board.
+ */
+export const LANDSCAPE_REFERENCE_W = 1920;
+
+/**
+ * Long-axis ceiling at the 1080 reference — 2.4:1 — scaled the same way. Every real phone held
+ * sideways lands under it (16:9 is 1.78, iPhone 13 is 2.16, the widest shipping 21:9 is 2.33). What
+ * is NOT a phone aspect is an in-app WebView cropped by its host's chrome: the 2026-08-25 crash loop
+ * was a 750x270 viewport (2.78:1) that, uncapped, asked for a design rect 56% wider than the
+ * reference — all of it empty paper beside the board, and 56% more pixels in every page-sized
+ * texture (render/bake.ts). Past the cap the game contains to height and `ScalingManager` paints the
+ * desk surround in the side bands.
+ */
+export const LANDSCAPE_MAX_W = 2592;
+
+/**
+ * Landscape design width for a safe area `availW`×`availH`: the height from
+ * {@link landscapeDesignHeight}, the width tracking the aspect between the scaled 1920 and 2592.
+ * Shared with the browser sweep for the same reason as the portrait rule.
+ */
+export function landscapeDesignWidth(availW: number, availH: number): number {
+  const h = landscapeDesignHeight(availH);
+  const k = h / REFERENCE_SHORT;
+  const aspectW = Math.round(h * (availW / Math.max(1, availH)));
+  return Math.min(Math.round(LANDSCAPE_MAX_W * k), Math.max(Math.round(LANDSCAPE_REFERENCE_W * k), aspectW));
 }

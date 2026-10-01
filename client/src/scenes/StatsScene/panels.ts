@@ -173,7 +173,7 @@ export function drawSection(
     parent.addChild(val);
     // Optional hand-drawn glyph to the left of the value (e.g. a star for the star count).
     if (row.valueIcon) {
-      const isz = Math.round(rowH * 0.7);
+      const isz = iconFloorPx(rowH * 0.7); // floored like the replay glyph below
       const ic = buildIcon(row.valueIcon, isz, row.valueColor ?? C.gold);
       ic.x = valRight - val.width - isz - 4; ic.y = ry + rowH / 2 - isz / 2;
       parent.addChild(ic);

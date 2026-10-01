@@ -2,7 +2,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { buildIcon } from '../../render/icons';
-import { snapFont, fitFont } from '../../render/fontScale';
+import { snapFont, fitFont, iconFloorPx } from '../../render/fontScale';
 import { buildRewardIcon } from '../../render/rewardIcon';
 
 // ── Pure reward-cell drawing helpers for BattlePassScene ──────────────────────
@@ -76,7 +76,8 @@ export function drawCell(
   lvlTxt.anchor.set(0, 0); lvlTxt.x = x + Math.round(w * 0.05); lvlTxt.y = y + Math.round(h * 0.08);
   parent.addChild(lvlTxt);
   if (milestone) {
-    const stSz = Math.round(h * 0.26);
+    // Floored: on a short row (a phone held sideways) the raw fraction fell under the font floor.
+    const stSz = iconFloorPx(h * 0.26);
     const star = buildIcon('star', stSz, C.gold);
     star.x = lvlTxt.x + lvlTxt.width + Math.round(w * 0.03); star.y = y + Math.round(h * 0.06);
     parent.addChild(star);
