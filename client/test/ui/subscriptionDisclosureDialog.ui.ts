@@ -61,7 +61,12 @@ function withWindow(fn: () => void): Array<unknown[]> {
   const g = globalThis as { window?: unknown };
   const had = 'window' in g;
   const prev = g.window;
-  g.window = { open: (...args: unknown[]) => { calls.push(args); return null; } };
+  // Inside the iOS shell the links navigate the top frame (Capacitor hands that to Safari);
+  // window.open would be swallowed by WKWebView without a touchend gesture.
+  g.window = {
+    open: (...args: unknown[]) => { calls.push(args); return null; },
+    location: { set href(url: string) { calls.push([url]); } },
+  };
   try { fn(); } finally { if (had) g.window = prev; else delete g.window; }
   return calls;
 }
@@ -88,15 +93,15 @@ describe('SubscriptionDisclosureDialog — what App Review needs to see', () => 
     expect(all).toContain(squash(t('subDisclosure.priceYearly', { price: '$49.99' })));
   });
 
-  it('the two links open Apple\'s standard EULA and the absolute https privacy policy', () => {
+  it('the two links open Apple\'s standard EULA and the absolute https privacy policy in Safari', () => {
     const { dlg } = build({ product: 'monthly_card', price: '$4.99' });
     const [eula, privacy] = tappables(dlg.container);
     expect((eula as PIXI.Text).text).toBe('· ' + t('subDisclosure.eula'));
     expect((privacy as PIXI.Text).text).toBe('· ' + t('consent.privacyPolicy'));
     const calls = withWindow(() => { tap(eula!); tap(privacy!); });
     expect(calls).toEqual([
-      [APPLE_STANDARD_EULA_URL, '_blank', 'noopener'],
-      ['https://nivara.gamestao.com/privacy', '_blank', 'noopener'],
+      [APPLE_STANDARD_EULA_URL],
+      ['https://nivara.gamestao.com/privacy'],
     ]);
   });
 
