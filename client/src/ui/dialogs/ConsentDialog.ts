@@ -36,6 +36,7 @@ import { t } from '../../i18n/index';
 import { tapHandler } from '../hits';
 import { isNativeShell } from '../../platform/nativeShell';
 import { clientPlatformName } from '../../app/appConstants';
+import { openExternalUrl } from '../../platform/externalLink';
 
 /** Hosted marketing/legal site (Cloudflare Worker `nivara-client`, deploy-cloudflare.md §domains). */
 const LEGAL_SITE = 'https://nivara.gamestao.com';
@@ -286,7 +287,7 @@ export class ConsentDialog implements Scene {
     link.eventMode = 'static';
     link.cursor = 'pointer';
     link.on('pointertap', tapHandler(() => {
-      if (typeof window !== 'undefined') window.open(url, '_blank', 'noopener');
+      openExternalUrl(url);
     }));
     this.container.addChild(link);
   }

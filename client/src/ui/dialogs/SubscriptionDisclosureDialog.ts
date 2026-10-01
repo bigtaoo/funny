@@ -19,6 +19,7 @@ import { tapHandler } from '../hits';
 import { legalUrl } from './ConsentDialog';
 import type { SubscriptionDisclosureInfo } from './subscriptionDisclosure';
 import { MONTHLY_CARD_DAILY_COINS, MONTHLY_CARD_IMMEDIATE_COINS, YEAR_CARD_IMMEDIATE_COINS } from '@nw/shared/economy/subscriptions';
+import { openExternalUrl } from '../../platform/externalLink';
 
 /** App Store Connect uses Apple's standard license agreement for this app, so that is the EULA. */
 export const APPLE_STANDARD_EULA_URL = 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
@@ -296,7 +297,7 @@ export class SubscriptionDisclosureDialog implements Scene {
     link.eventMode = 'static';
     link.cursor = 'pointer';
     link.on('pointertap', tapHandler(() => {
-      if (typeof window !== 'undefined') window.open(url, '_blank', 'noopener');
+      openExternalUrl(url);
     }));
   }
 }

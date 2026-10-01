@@ -37,7 +37,10 @@ function withWindow(fn: () => void): Array<unknown[]> {
   const g = globalThis as { window?: unknown };
   const had = 'window' in g;
   const prev = g.window;
-  g.window = { open: (...args: unknown[]) => { calls.push(args); return null; } };
+  // `location.href` is how the native shell opens Safari (platform/externalLink.ts); recorded as a
+  // one-element call so both routes land in the same list.
+  const location = { set href(url: string) { calls.push([url]); } };
+  g.window = { open: (...args: unknown[]) => { calls.push(args); return null; }, location };
   try { fn(); } finally { if (had) g.window = prev; else delete g.window; }
   return calls;
 }
@@ -83,7 +86,7 @@ describe('SettingsScene — legal links', () => {
     ]);
   });
 
-  it('opens the absolute https pages inside the native shell', () => {
+  it('opens the absolute https pages in Safari from the native shell, not through window.open', () => {
     cap.platform = 'ios';
     const s = buildSettings(412, 915);
     const calls = withWindow(() => {
@@ -91,8 +94,8 @@ describe('SettingsScene — legal links', () => {
       rowHit(s, t('consent.terms')).fn();
     });
     expect(calls).toEqual([
-      ['https://nivara.gamestao.com/privacy', '_blank', 'noopener'],
-      ['https://nivara.gamestao.com/terms', '_blank', 'noopener'],
+      ['https://nivara.gamestao.com/privacy'],
+      ['https://nivara.gamestao.com/terms'],
     ]);
   });
 

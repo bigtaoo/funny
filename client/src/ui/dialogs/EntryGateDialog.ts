@@ -27,6 +27,7 @@ import { t } from '../../i18n/index';
 import { tapHandler } from '../hits';
 import { MIN_AGE_YEARS } from '../../app/appConstants';
 import { legalUrl, type ConsentMode } from './ConsentDialog';
+import { openExternalUrl } from '../../platform/externalLink';
 
 export interface EntryGateMode {
   /** 'ask' shows the birth-year stepper; 'ok' means age is already known — only consent is asked. */
@@ -233,7 +234,7 @@ export class EntryGateDialog implements Scene {
     link.eventMode = 'static';
     link.cursor = 'pointer';
     link.on('pointertap', tapHandler(() => {
-      if (typeof window !== 'undefined') window.open(url, '_blank', 'noopener');
+      openExternalUrl(url);
     }));
     this.container.addChild(link);
   }
