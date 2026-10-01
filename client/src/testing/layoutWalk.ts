@@ -106,9 +106,26 @@ export async function walkLayout(deps: WalkDeps): Promise<WalkResult> {
   const screenNow = (): string => (typeof state.screen === 'string' ? state.screen : '?');
 
   /** `state.<bag>.<fn>(...args)`, awaited. False when the callback does not exist on this screen. */
+  /**
+   * Waits out an in-flight SceneManager cross-fade. A player cannot act mid-fade — `InputGate`
+   * freezes taps and the first one just ends the fade — but a callback called straight off its bag
+   * bypasses that gate. Measured 2026-10-01 (UI_DESIGN_LOG §51.3 ③): `backToLobby`'s faded
+   * `goLobby` was still fading the lobby IN when the next stop called `onOpenWorldMap`, so that
+   * `goto` got QUEUED; `onOpenCity` then pushed the City overlay over the lobby, and when the queue
+   * ran, `swap` appended the map ON TOP of it — `city`/`defenseEditor`/`city+trainModal` audited
+   * the map's labels and screenshot the map. Unreachable by touch, so this mirrors the gate rather
+   * than hardening `pushOverlay` against a call order no real input produces.
+   */
+  const waitSettled = async (): Promise<void> => {
+    const mgr = (handle.views as unknown as { manager?: { transition?: object | null } }).manager;
+    const deadline = Date.now() + 3_000;
+    while (mgr?.transition && Date.now() < deadline) await sleep(50);
+  };
+
   const callCb = async (bag: string, fn: string, args: unknown[] = []): Promise<boolean> => {
     const target = state[bag] as Record<string, (...a: unknown[]) => unknown> | undefined;
     if (!target || typeof target[fn] !== 'function') return false;
+    await waitSettled();
     // Awaited: several callbacks are the LOADER for the screen behind them rather than the
     // navigation itself (`loadSLGStatus` resolves the caller's shard, and `openFamilyHub` returns
     // false until it has). A throw does not change the return value — the callback existed and ran,
@@ -202,13 +219,18 @@ export async function walkLayout(deps: WalkDeps): Promise<WalkResult> {
     const mgr = (handle.views as unknown as {
       manager?: {
         current?: object | null; overlayScene?: object | null;
-        transition?: { phase?: string } | null;
+        transition?: { phase?: string } | null; targetStage?: { children: unknown[] };
       };
     }).manager;
     if (!mgr) return '?';
     const nameOf = (o: object | null | undefined): string => o?.constructor?.name ?? '-';
     const fade = mgr.transition?.phase ?? 'none';
-    return `${nameOf(mgr.current)} +${nameOf(mgr.overlayScene)} fade:${fade}`;
+    // Stage index of each, because "mounted" is not "on top": an overlay at a LOWER index than
+    // `current` is in the tree and paints nothing visible (the 2026-10-01 finding, see waitSettled).
+    const kids = mgr.targetStage?.children ?? [];
+    const at = (o: object | null | undefined): string =>
+      o ? `@${kids.indexOf((o as { container?: unknown }).container)}` : '';
+    return `${nameOf(mgr.current)}${at(mgr.current)} +${nameOf(mgr.overlayScene)}${at(mgr.overlayScene)} fade:${fade}`;
   };
 
   /** What the app thinks it is showing — the readable half of a navigation failure. */

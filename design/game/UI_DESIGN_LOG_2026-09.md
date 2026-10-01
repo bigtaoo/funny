@@ -651,6 +651,38 @@ CityScene 画不出来」，是**某种时序**。
 
 **成因未知。这里只记测到的事实。**
 
+#### ③-补（2026-10-01）：第三行（city 族）结案——探针自己造的竞态，不是微信、也不是玩家能碰到的 bug
+
+在 `mountedNow()` 里加了两样东西重跑：`current`/`overlay` 在 `targetStage.children` 里的下标，
+以及 `goto`/`swap`/`pushOverlay`/`popOverlay` 的调用轨迹（带当时的 `transition.phase` 和有没有排队）。
+
+- **下标坐实了 z 序**：`city`、`defenseEditor`、`city+trainModal`、`defenseEditor+attack` 全是
+  `WorldMapScene@1 +CityScene@0`——overlay 在树上，但压在地图**下面**；画得出来的 `city+buildDetail`
+  是 `@0 / @1`。
+- **轨迹给出了顺序**，失败的每一站都一模一样：
+  `goto(Lobby,fade)` → `swap(Lobby)@out`（大厅开始淡入）→ `goto(WorldMap,fade)@in`（**淡入中 → 被排队**）
+  → `push(City)`（此时 `current` 还是大厅）→ 淡入结束，排队的那次跑完 `swap(WorldMap)`，
+  `addChild` 把地图**追加到 City 之上**。`goto` 只在被调用那一刻清 overlay，那时 overlay 还不存在。
+  成功的站轨迹里没有那次排队（`goto(WorldMap,fade)` 发生在 `none`/`out`，`swap` 先于 `push`）。
+- 09-30 的假设（「fade 的 `out` 相里 push」）方向对、相位错：实际是 `in` 相 + `queued`。
+
+**为什么只有包内探针中**：前一站 `backToLobby` 调的是 `goLobby({fade:true})`，walker 一看到
+`state.screen==='lobby'` 就立刻调下一站的回调。浏览器 walker 每站之间 `page.reload()`，永远没有
+在途的渐变。**为什么玩家碰不到**：`onOpenCity`/`onOpenDefense`/`onOpenChat` 全部是地图场景内部的点击，
+而渐变期间 `InputGate` 冻结输入、第一下点击直接结束渐变（`skipTransition`）——排队中的地图根本还没上
+舞台，不可能被点到。探针直接调回调，绕过了这道门。
+
+**修法在探针，不在 `SceneManager`**：`callCb` 先 `waitSettled()`（等 `manager.transition` 为空，3s 上限），
+等价于真实输入受到的约束。改后重跑：四站全部 `overlay@1`，`city` 22 → 67 标签，`defenseEditor` 22 → 24，
+PNG 逐张读过——真主城、真训练弹窗、真主城防守编辑器。`mounted` 字段保留了下标（`Scene@i`），
+「在树上 ≠ 在最上面」以后一眼可见。`pushOverlay` 注释里的「Not fade-aware」仍然成立，
+**没去加固它**：它防的调用顺序没有真实输入能产生。
+
+同轮顺带看到：`result`/`result+extreme` 现在 `mounted` 已是 `ResultScene`（第一行不再复现，
+没查是哪次改动带走的）；`battlePass`（仍挂在 `GachaScene`）和 `equipment+craft`（仍没切页）**还开着**。
+另：DevTools 模拟器文件系统**不把覆盖写同名文件落到磁盘**（新文件会落），所以每轮跑之前把
+`USER_DATA_PATH/nw-layout/` 改名挪走，否则读到的 `report.json` 是上一轮的。
+
 顺带两条同族观察，都指向同一件事——**微信侧的 REST 现在是「部分通」而不是「全通」**：
 `achievements` 那张 PNG 上有一条「网络连接失败」toast，`friends+world` 那张写着「世界频道加载失败」，
 而同一次跑注册是成功的。
