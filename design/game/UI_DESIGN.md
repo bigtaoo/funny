@@ -17,7 +17,8 @@
 | 菜单场景规格（Lobby/Room/Shop/Gacha/Collection/Profile/Campaign/Prep/Stats/Result） | §4.1–§4.10 | [`UI_DESIGN_SCENES.md`](UI_DESIGN_SCENES.md) |
 | 变更记录 2026-06 / 2026-07 | §4.9.1、§4.11–§4.28、§12–§25 | [`UI_DESIGN_LOG_2026-06_07.md`](UI_DESIGN_LOG_2026-06_07.md) |
 | 变更记录 2026-08 起 | §26–§47 | [`UI_DESIGN_LOG_2026-08.md`](UI_DESIGN_LOG_2026-08.md) |
-| 变更记录 2026-09 起 | §48–§53 | [`UI_DESIGN_LOG_2026-09.md`](UI_DESIGN_LOG_2026-09.md) |
+| 变更记录 2026-09 起 | §48–§71 | [`UI_DESIGN_LOG_2026-09.md`](UI_DESIGN_LOG_2026-09.md) |
+| 变更记录 2026-10 起 | §72– | [`UI_DESIGN_LOG_2026-10.md`](UI_DESIGN_LOG_2026-10.md) |
 
 > **写新内容放哪**：改的是「当前应该长什么样」→ 改本文或 `UI_DESIGN_SCENES.md` 的对应小节；记的是「某天改了什么、为什么」→ 追加到最新的 `UI_DESIGN_LOG_*.md` 末尾。两者都要动时，规格里写结论、log 里写来由并互相指一下。
 >

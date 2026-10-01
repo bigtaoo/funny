@@ -3,6 +3,7 @@
 // no Core delegate methods, split out of core.ts purely to keep it under the 500-line convention
 // (claudedocs/client-modules.md's split-form priority note). Every caller (core.ts, and each domain
 // class) imports directly from here rather than going through a `core.xxx()` wrapper.
+import { typeWidth } from '../../render/fontScale';
 import type { EquipRarity, EquipSlot } from '../../game/meta/SaveData';
 import type { IconKind } from '../../render/icons';
 import type { EquipGridLayout } from './types';
@@ -92,12 +93,16 @@ export function equipGridColumns(avail: number, landscape: boolean): EquipGridLa
   // content instead of margin. Landscape's much wider canvas already reaches 3+ target-width
   // columns without this, so it keeps the stricter floor (its own leftover is a thin,
   // proportionally minor margin — see the cellW cap comment below).
-  const colFloor = landscape ? EQUIP_CELL_W_TARGET : EQUIP_CELL_W_MIN;
+  // Both widths go through typeWidth: they were tuned for the raw font table, and on a phone the
+  // boosted affix lines need proportionally wider cells (fewer columns) or they wrap into the
+  // action row (see fontScale's phone type boost).
+  const target = typeWidth(EQUIP_CELL_W_TARGET);
+  const colFloor = typeWidth(landscape ? EQUIP_CELL_W_TARGET : EQUIP_CELL_W_MIN);
   const cols = Math.max(1, Math.floor((avail + CELL_GAP_X) / (colFloor + CELL_GAP_X)));
   // Cap at the target width instead of stretching to fill the row — dividing the full available
   // width evenly across `cols` left cards much wider than their content needed, reading as mostly
   // blank paper; any leftover width is just unused margin on the right.
-  const cellW = Math.min(EQUIP_CELL_W_TARGET, (avail - CELL_GAP_X * (cols - 1)) / cols);
+  const cellW = Math.min(target, (avail - CELL_GAP_X * (cols - 1)) / cols);
   // Center the row block when it still doesn't fill `avail` (e.g. a portrait screen narrower than
   // 3 min-width columns, falling back to 2) instead of hugging the left edge and leaving all the
   // slack on the right — the original complaint this whole function fixes.

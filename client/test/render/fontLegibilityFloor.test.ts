@@ -9,7 +9,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import {
   FS, MIN_LEGIBLE_CSS_PX, fontFloorDesignPx, setFontScale, resetFontScaleForTest, currentFontFloor,
-  snapFont, fitFont, iconFloorPx,
+  snapFont, fitFont, iconFloorPx, fontBoost, currentFontBoost, MAX_BOOST, TARGET_BODY_CSS_PX,
 } from '../../src/render/fontScale';
 
 /** `PortraitLayout`'s own sizing, duplicated so this test states the scale it is talking about. */
@@ -35,13 +35,13 @@ describe('font legibility floor', () => {
     setFontScale(scale);
     // 7 / 0.361 = 19.4 design px, snapped up the table to bodyLg.
     expect(currentFontFloor()).toBe(20);
+    // The boost (1.4x, its cap) takes micro to 15 and tiny to 18 — still under the floor, so
+    // those two land on it; everything from small up is boosted clear of it.
+    expect(currentFontBoost()).toBe(MAX_BOOST);
     expect(FS.micro).toBe(20);
     expect(FS.tiny).toBe(20);
-    expect(FS.small).toBe(20);
-    expect(FS.body).toBe(20);
-    // Above the floor nothing moves — the floor is a floor, not a rescale.
-    expect(FS.label).toBe(24);
-    expect(FS.display).toBe(60);
+    expect(FS.small).toBe(22);
+    expect(FS.body).toBe(25);
   });
 
   it('caps the floor instead of climbing past a label on the narrowest phone', () => {
@@ -76,6 +76,61 @@ describe('font legibility floor', () => {
     // `createLayout(0, 0)` is reachable on a cold boot with no layout yet — see bake.ts's
     // resolution floor, which exists for the same window.
     for (const bad of [0, -1, NaN, Infinity]) expect(fontFloorDesignPx(bad)).toBe(11);
+  });
+
+  // The phone type boost (2026-10-01, design log UI_DESIGN_LOG_2026-10.md §72): the floor alone
+  // left body at 7.2 CSS px on a phone, and could not climb higher without collapsing the scale.
+  describe('phone type boost', () => {
+    it('is exactly 1 on a desktop window and on a tablet', () => {
+      for (const scale of [900 / 1080, 0.711, portraitScale(768, 1024)]) {
+        setFontScale(scale);
+        expect(currentFontBoost()).toBe(1);
+        expect(FS.body).toBe(18);
+        expect(FS.display).toBe(60);
+      }
+    });
+
+    it('is the same for a phone held either way', () => {
+      // 844x390 landscape: designHeight 1080 → 0.361, the same scale as 390x844 portrait.
+      expect(fontBoost(390 / 1080)).toBe(fontBoost(portraitScale(390, 844)));
+    });
+
+    it('asks for body at TARGET_BODY_CSS_PX and is capped below it on a phone', () => {
+      const scale = portraitScale(390, 844);
+      setFontScale(scale);
+      expect(FS.body * scale).toBeGreaterThan(8.9);
+      expect(FS.body * scale).toBeLessThan(TARGET_BODY_CSS_PX);
+    });
+
+    it('keeps every token strictly above the one below it from small upward', () => {
+      // micro/tiny share the floor (as before the boost); the boost must never collapse more.
+      for (const scale of [0.3, 0.333, 0.361, 0.4, 0.42, 0.45, 0.5]) {
+        setFontScale(scale);
+        const seq = [FS.small, FS.body, FS.bodyLg, FS.label, FS.heading, FS.title, FS.headline, FS.display];
+        for (let i = 1; i < seq.length; i++) expect(seq[i]).toBeGreaterThan(seq[i - 1]!);
+      }
+    });
+
+    it('tapers towards display, which needs it least', () => {
+      setFontScale(portraitScale(390, 844));
+      expect(FS.body / 18).toBeGreaterThan(FS.display / 60);
+      expect(FS.title / 32).toBeGreaterThan(FS.display / 60);
+    });
+
+    it('is quantised, so a few px of window drag does not mint new sizes', () => {
+      expect(fontBoost(0.40)).toBe(fontBoost(0.401));
+      expect((fontBoost(0.42) * 20) % 1).toBeCloseTo(0, 9);
+    });
+
+    it('treats a degenerate scale as no boost', () => {
+      for (const bad of [0, -1, NaN, Infinity]) expect(fontBoost(bad)).toBe(1);
+    });
+
+    it('leaves snapFont on the raw ladder — a control does not grow, so its text may not', () => {
+      setFontScale(portraitScale(390, 844));
+      expect(snapFont(41)).toBe(42);
+      expect(snapFont(24)).toBe(24);
+    });
   });
 
   describe('fitFont — the alternative to scaling a built group', () => {

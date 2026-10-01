@@ -2,7 +2,7 @@
 
 > 从 [`UI_DESIGN_LOG_2026-08.md`](UI_DESIGN_LOG_2026-08.md) 滚出（2026-09-15，原文件 1597 行）。**小节编号沿用原文**，源码里的 `UI_DESIGN.md §N` 引用仍然有效。
 > 当前状态的规格看 [`UI_DESIGN.md`](UI_DESIGN.md) 和 [`UI_DESIGN_SCENES.md`](UI_DESIGN_SCENES.md)；本文只记「某天改了什么、为什么」。
-> 在先记录见 [`UI_DESIGN_LOG_2026-08.md`](UI_DESIGN_LOG_2026-08.md)。**新增小节请追加到本文末尾。**
+> 在先记录见 [`UI_DESIGN_LOG_2026-08.md`](UI_DESIGN_LOG_2026-08.md)。**本册已滚出（2026-10-01）：新增小节写到 [`UI_DESIGN_LOG_2026-10.md`](UI_DESIGN_LOG_2026-10.md)。**
 >
 > **文件名里的日期是这一册开始的时间，不是它覆盖的范围。** 滚册的触发条件是行数（ADR-067 的 500 行），切口挑在语义接缝上，所以前一册末尾会有晚于本册名的条目。
 
