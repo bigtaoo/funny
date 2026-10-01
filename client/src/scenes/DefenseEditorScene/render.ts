@@ -5,6 +5,7 @@
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor, fitOrWrap } from '../../render/sketchUi';
 import { drawButtonLabel, buttonLabelIconW } from '../../ui/widgets/buttonLabel';
+import { fitToWidth } from '../../ui/widgets/truncateText';
 import { FS, currentFontFloor } from '../../render/fontScale';
 import * as PIXI from 'pixi.js-legacy';
 import { BuildingType, UnitType } from '@nw/engine/types';
@@ -295,7 +296,10 @@ export class RenderPanel implements RenderHandlers {
     counts.y = top + 8;
     core.bodyLayer.addChild(counts);
 
-    const hint = txt(t('world.defense.hint'), FS.micro, C.mid);
+    // One line beside the button cluster; the footer has no room for a second. On a 360-wide phone
+    // German's hint ran under "Leeren", so it is cut with an ellipsis where the buttons begin.
+    const hintMaxW = w - PAD - this.actionButtonMetrics(1).totalW - 12 - PAD;
+    const hint = txt(fitToWidth(t('world.defense.hint'), FS.micro, hintMaxW), FS.micro, C.mid);
     hint.x = PAD;
     hint.y = top + 26;
     core.bodyLayer.addChild(hint);

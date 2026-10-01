@@ -483,8 +483,9 @@ docker compose -f docker-compose.cloud.yml --env-file .env config | grep MONGO_U
   - **`snapFont` 的封顶随短边缩**（`fontScale.ts#snapCeilFor`）：按格高算出来的字号，以前在 2337 高的设计里一律被 `display`(60) 截住 ≈ 21 CSS px，这道截断其实一直在替许多窄格子兜底；设计变窄后同一个 60 = 30 CSS px，德语任务名、结算页按钮、顶栏金币全撑破了宽度没变的盒子。封顶 = 最近档(60 × 短边/1080)，手机上是 42（≈ 原来的 21 CSS px），短边 1080 的地方（全部横屏、平板、桌面）仍是 60。
 - **结果**：卡牌/装备/拍卖格子、图标、等级星在手机竖屏上约大 1.4×；文字基本不变（下限和放大系数本来就瞄 CSS px，缩放到 0.5 后补得少了）。逐站修掉的溢出见 `UI_DESIGN_LOG_2026-10.md` §73。
 - **代价**：手机竖屏一屏能看到的格子变少；拍卖格在最窄的手机上缩小商品图来保住两列；主城建造格最窄 0.7× 目标列宽，再窄就滚动。
-- **没做**：手机横屏仍是 0.36×（同 §72.2 第三条，要两套版面一起返工）；真机没跑过。
-- **影响**：`client/src/layout/{designSize,PortraitLayout}.ts`、`layout/ScalingManager.ts`、`render/fontScale.ts`（`snapCeilFor`/`snapFontDown`）、`test/browser/lib/auditBox.ts`，以及 §73 列的各场景。
+- **没做**：真机没跑过。（原写「手机横屏仍是 0.36×」——同日补做，见下条。）
+- **补充（同日，横屏）**：横屏的定轴是设计**高度**，套同一条规则：`landscapeDesignHeight(availH) = clamp(偶数(availH / 0.5), 720, 1080)`，宽度仍随安全区长宽比、上下界 1920 / 2592 同乘 `k = 设计高 / 1080`（`landscapeDesignWidth`）。≥ 540 CSS px 高（平板横、桌面窗口）一个像素不动；手机横握 844×390 → 1688×780，缩放 0.361 → 0.5；360 高 → 720 下限。棋盘格 `floor(70k)`、顶 HUD、左右栏、卡牌 ×k，底条吸收取整误差，三条带严格叠成设计高（巡检 `auditBox.ts` 直接调同两个函数）。逐站账见 `UI_DESIGN_LOG_2026-10.md` §73.6。
+- **影响**：`client/src/layout/{designSize,PortraitLayout,LandscapeLayout}.ts`、`layout/ScalingManager.ts`、`render/fontScale.ts`（`snapCeilFor`/`snapFontDown`）、`test/browser/lib/auditBox.ts`，以及 §73 列的各场景。
 
 ## ADR-106 `render_profile` 隐藏时补发：短会话里出现过慢帧也报一条 — Accepted — 2026-10-01
 

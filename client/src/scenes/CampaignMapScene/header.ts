@@ -124,11 +124,15 @@ export function buildCampaignHeader(root: PIXI.Container, hits: Hit[], opts: Cam
   // size off the shared scale for whatever band that leaves, rather than scaling the built node
   // under the legibility floor.
   const bandL = hdr.backRect.x + hdr.backRect.w + pillGap;
-  const bandR = subtitleStr ? w - Math.round(w * 0.04) : rightX;
-  const band = Math.max(Math.round(w * 0.2), bandR - bandL);
   const titleY = subtitleStr ? Math.round(tbH * 0.40) : tbH / 2;
   let icon = buildTitleIcon('pveTabIcon', FS.title, C.dark);
   const probe = txt(titleStr, FS.title, C.dark, true);
+  // The owner's row only frees the title's row when the bar is tall enough for the pills to sit
+  // wholly below the title. On a short bar (a phone held sideways, 720–860 design px tall since
+  // ADR-105) the pills reach up into the title's row, so the title has to stop where they start.
+  const pillsClearTitle = Math.round(pillMidY - pillH / 2) >= titleY + probe.height / 2;
+  const bandR = subtitleStr && pillsClearTitle ? w - Math.round(w * 0.04) : rightX;
+  const band = Math.max(Math.round(w * 0.2), bandR - bandL);
   const titleSize = fitFont(FS.title, icon.size + icon.gap + probe.width, band);
   probe.destroy({ texture: true, baseTexture: true });
   if (titleSize !== FS.title) {
@@ -152,7 +156,8 @@ export function buildCampaignHeader(root: PIXI.Container, hits: Hit[], opts: Cam
     sub.anchor.set(0.5, 0.5);
     // Centred on the bar, but never into the pills that now share this row.
     sub.x = Math.min(w / 2, rightX - pillGap - sub.width / 2);
-    sub.y = pillMidY;
+    // Under the title rather than through it when the bar is too short for the fixed 0.40/0.72 rows.
+    sub.y = Math.max(pillMidY, Math.round(title.y + title.height / 2 + sub.height / 2));
     sub.alpha = 0.75;
     root.addChild(sub);
   }

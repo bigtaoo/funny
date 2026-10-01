@@ -6,27 +6,27 @@
 // `lib/walk.ts` already made for navigation — `layoutStops.ts` holds where a sweep goes, `walk.ts`
 // how it gets there, and this holds what shape it expects to find when it arrives.
 import { auditOptionsFor, type AuditFinding, type AuditOptions } from '../../../src/testing/layoutAudit';
-import { REFERENCE_SHORT, portraitDesignWidth } from '../../../src/layout/designSize';
+import {
+  REFERENCE_SHORT, portraitDesignWidth, landscapeDesignHeight, landscapeDesignWidth,
+} from '../../../src/layout/designSize';
 
-/** PortraitLayout's `REFERENCE_H` floor; LandscapeLayout's `REFERENCE_W` / `MAX_W` bounds. */
+/** PortraitLayout's `REFERENCE_H` floor. */
 const PORTRAIT_MIN_LONG = 1920;
-const LANDSCAPE_MIN_LONG = 1920;
-const LANDSCAPE_MAX_LONG = 2592;
 
 export interface ViewportSize { width: number; height: number }
 
 /**
  * The design rect `createLayout` will build for this viewport — the two layouts' own sizing rules,
  * duplicated rather than imported because those modules pull `@nw/engine/config` and PIXI into a
- * Playwright process with no DOM. Landscape fixes its height at 1080 and lets the width track the
- * aspect between 1920 and 2592 (past which it letterboxes on purpose — see LandscapeLayout's MAX_W).
+ * Playwright process with no DOM. Landscape's height and width come from the shared
+ * `landscapeDesignHeight`/`landscapeDesignWidth` (1080 tall on tablets, 720–860 on phones; the width
+ * tracks the aspect between the scaled 1920 and 2592, past which it letterboxes on purpose).
  * Portrait's width comes from the shared, dependency-free `portraitDesignWidth` (1080 on tablets,
  * 720–860 on phones) and its height tracks the aspect, never shorter than the scaled 1920.
  */
 export function designBox(vp: ViewportSize): { w: number; h: number } {
   if (vp.width > vp.height) {
-    const long = Math.round(REFERENCE_SHORT * (vp.width / vp.height));
-    return { w: Math.min(LANDSCAPE_MAX_LONG, Math.max(LANDSCAPE_MIN_LONG, long)), h: REFERENCE_SHORT };
+    return { w: landscapeDesignWidth(vp.width, vp.height), h: landscapeDesignHeight(vp.height) };
   }
   const w = portraitDesignWidth(vp.width);
   const long = Math.round(w * (vp.height / vp.width));

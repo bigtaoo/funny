@@ -8,7 +8,7 @@ import { ui as C, txt, scaledTxt, sketchPanel, seedFor } from '../../../render/s
 import { buildIcon } from '../../../render/icons';
 import { buildRasterTabIcon, CHECKIN_CUE_ART } from '../../../render/icons/tabIconRaster';
 import { buildRewardIcon } from '../../../render/rewardIcon';
-import { FS, snapFont } from '../../../render/fontScale';
+import { FS, snapFont, iconFloorPx } from '../../../render/fontScale';
 import type { SaveData } from '../../../game/meta/SaveData';
 import { nextCheckinDay, makeMonthKey } from '../../../game/meta/retention';
 import type { DailyPanelCtx } from '../types';
@@ -294,7 +294,9 @@ export function renderCheckin(ctx: DailyPanelCtx, areaX: number, top: number, ar
     // just stops competing. On the claimable cell it keeps a dark ink instead, because the muted
     // gold has too little contrast against that cell's saturated green fill.
     if (reward?.bonusCoins) {
-      const rc = Math.round(ch * 0.16);
+      // Floored like the count beside it: on a short landscape grid (a phone held sideways) the raw
+      // `ch` fraction fell under the font floor that lifts the text.
+      const rc = iconFloorPx(ch * 0.16);
       const ic = buildIcon('coin', rc, C.gold);
       const rt = mkTxt(`+${reward.bonusCoins}`, snapFont(Math.round(ch * 0.16)), isClaimable ? 0x5c4a10 : 0x9a8a55);
       rt.anchor.set(0, 0);
