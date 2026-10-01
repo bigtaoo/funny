@@ -14,7 +14,7 @@ import { SketchPen } from '../sketch';
 import { palette } from '../theme';
 import { CARD_ART_URLS, cardArtKey, getArtTexture, unitPortraitUrl } from '../cardArt';
 import { equippedSkinIdForType } from '../../game/meta/skinDefs';
-import { FS } from '../fontScale';
+import { FS, fitFont } from '../fontScale';
 
 const CARD_BG              = 0xfaf6ee;
 const CARD_BORDER          = 0x333333;
@@ -155,6 +155,12 @@ export function configureSlot(
     (c.getChildByName('type') as PIXI.Text).text = '';
     const nameText = c.getChildByName('name') as PIXI.Text;
     nameText.text = t(card.nameKey as TranslationKey);
+    // Fitted to the card: under the phone type boost (UI_DESIGN_LOG_2026-10.md §72) single-word
+    // German names ("Sturmangriff", "Bogenschuetze") at FS.bodyLg are wider than the card and
+    // wordWrap cannot break a single word. Re-measured at the full token on every configure so a
+    // pooled slot never keeps a size fitted to the previous card.
+    nameText.style.fontSize = FS.bodyLg;
+    nameText.style.fontSize = fitFont(FS.bodyLg, nameText.width, cardW - 8);
     nameText.x = (cardW - nameText.width) / 2;
     nameText.y = cardH - nameText.height - 6;
 

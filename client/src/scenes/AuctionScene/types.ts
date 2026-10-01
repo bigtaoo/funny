@@ -3,6 +3,7 @@
 // claudedocs/client-modules.md's split-form priority note. core.ts re-exports everything from here
 // (`export * from './types'`) so existing `from './core'` import paths (and the legacy `from './base'`
 // callers, now updated to './core') keep resolving unchanged.
+import { typeWidth } from '../../render/fontScale';
 import type { WorldApiClient, AuctionBidView, AuctionView } from '../../net/WorldApiClient';
 import type { SaveData } from '../../game/meta/SaveData';
 import type { IPlatform } from '../../platform/IPlatform';
@@ -72,7 +73,10 @@ export const AUC_CELL_IMG_MAX = 130;
  */
 export function aucGrid(contentW: number): { cols: number; cellW: number } {
   const avail = contentW - AUC_CELL_GAP * 2;
-  const cols = Math.max(1, Math.floor((avail + AUC_CELL_GAP) / (AUC_CELL_W_TARGET + AUC_CELL_GAP)));
+  // typeWidth: the target was tuned for the raw font table; on a phone the boosted text needs a
+  // proportionally wider column, so the grid drops a column rather than overflow (see fontScale).
+  const target = typeWidth(AUC_CELL_W_TARGET);
+  const cols = Math.max(1, Math.floor((avail + AUC_CELL_GAP) / (target + AUC_CELL_GAP)));
   return { cols, cellW: (avail - AUC_CELL_GAP * (cols - 1)) / cols };
 }
 

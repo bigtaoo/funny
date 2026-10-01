@@ -450,7 +450,14 @@ export class HudPanel implements HudHandlers {
       repIcon.x = rx + 20;
       repIcon.y = ry + (repH - 28) / 2;
       hud.addChild(repIcon);
-      const repTxt = txt(t('world.replays'), FS.label, C.light);
+      // Fitted to the badge: under the phone type boost (UI_DESIGN_LOG_2026-10.md §72) the German
+      // "Kampf-Wiederholungen" at FS.label ran past the badge's right edge and off the screen.
+      const repLabel = t('world.replays');
+      const repMaxW = rightW - 60 - 12;
+      const repProbe = txt(repLabel, FS.label, C.light);
+      const repSize = fitFont(FS.label, repProbe.width, repMaxW);
+      repProbe.destroy({ texture: true, baseTexture: true });
+      const repTxt = txt(repLabel, repSize, C.light);
       repTxt.anchor.set(0, 0.5);
       repTxt.x = rx + 60;
       repTxt.y = ry + repH / 2;
