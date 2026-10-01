@@ -15,8 +15,10 @@
 // reused offline forever after. MONGOD_VERSION is pinned on purpose — never let it float.
 import { MongoMemoryReplSet, MongoMemoryServer } from 'mongodb-memory-server';
 import { MongoClient } from 'mongodb';
-import { appendFileSync, writeFileSync, rmSync } from 'node:fs';
+import { appendFileSync, writeFileSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs';
 import type { ChildProcess } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { mongoUriHandshakePath } from './testMongoUri';
 
 /** Pinned mongod binary — bump deliberately. Must stay compatible with the mongodb driver (^6.10) and mirror what prod/compose runs. */
@@ -31,6 +33,13 @@ const SHUTDOWN_WAIT_MS = 120_000;
 
 /** Warn above this: a shutdown this slow is pure wall clock burnt every single run, worth seeing. */
 const SHUTDOWN_WARN_MS = 8_000;
+
+/**
+ * A `mongo-mem-*` dir younger than this is never swept, even when nothing holds it: mongodb-memory-
+ * server creates the dir a moment before mongod opens anything in it, and that window belongs to a
+ * concurrent run (another worktree, another package) that is just starting up.
+ */
+const ORPHAN_MIN_AGE_MS = 10 * 60_000;
 
 export interface MongoHarnessOptions {
   /** Package name. Names the handshake file and the ::warning:: lines, so a teardown hiccup says whose suite it came from. */
@@ -52,6 +61,11 @@ export function createMongoHarness({ pkg, replSet }: MongoHarnessOptions): Mongo
   return {
     async setup(): Promise<void> {
       if (process.env.NW_MONGO_URI) return;
+
+      const swept = sweepOrphanedDbPaths();
+      if (swept.length > 0) {
+        console.log(`${pkg} test setup: removed ${swept.length} orphaned mongo-mem-* dbPath(s) left by interrupted runs`);
+      }
 
       let uri: string;
       if (replSet) {
@@ -106,6 +120,65 @@ export interface StoppableMongo {
 function asStoppable(mongo: MongoMemoryReplSet | MongoMemoryServer): StoppableMongo {
   const servers = mongo instanceof MongoMemoryReplSet ? mongo.servers : [mongo];
   return { servers, stop: (opts) => mongo.stop(opts) };
+}
+
+export interface SweepOptions {
+  /** Where mongodb-memory-server puts its dbPaths. */
+  dir?: string;
+  now?: number;
+  platform?: NodeJS.Platform;
+}
+
+/**
+ * Remove the `mongo-mem-*` dbPaths that earlier, interrupted runs left behind; returns what it removed.
+ *
+ * `teardownMongo` below is the only thing that ever deletes a dbPath, so a run that dies before its
+ * teardown leaks the whole dir — mongodb-memory-server's `mongo_killer` watchdog kills the orphaned
+ * mongod but never touches its files. The common way to die there is not a crash but a pipe:
+ * `npx vitest run 2>&1 | grep … | head` — `head` exits once it has its lines, vitest dies of EPIPE on
+ * its next write, and ~0.5 GB stays in %TEMP%. Stopping a background run or ending the session that
+ * owns it does the same. Measured 2026-10-01: 47 dirs / 21.5 GB in three days, with not a single
+ * teardown warning anywhere, because no teardown ever ran. Details: claudedocs/server-testing-tooling.md.
+ *
+ * "Orphaned" is decided by the filesystem, not by guessing at processes: on Windows a directory
+ * cannot be renamed while any handle inside it is open, and a live mongod holds every file in its
+ * dbPath (rename fails with EPERM; checked against a real mongod). So a successful rename IS the
+ * proof that nobody is using the dir any more — and it moves the dir out of the way atomically, so
+ * a concurrent sweep from another package cannot race this one into a half-deleted dir. The renamed
+ * dir keeps the `mongo-mem-` prefix: if the delete below fails, the next sweep picks it up again.
+ *
+ * Windows only, on purpose: on POSIX a rename succeeds under a live mongod, so the same check would
+ * delete running suites' data. CI runs on throwaway Linux runners, where a leaked dir dies with the VM.
+ */
+export function sweepOrphanedDbPaths({
+  dir = tmpdir(),
+  now = Date.now(),
+  platform = process.platform,
+}: SweepOptions = {}): string[] {
+  if (platform !== 'win32') return [];
+
+  let names: string[];
+  try {
+    names = readdirSync(dir).filter((n) => n.startsWith('mongo-mem-'));
+  } catch {
+    return [];
+  }
+
+  const removed: string[] = [];
+  for (const name of names) {
+    const path = join(dir, name);
+    try {
+      const st = statSync(path);
+      if (!st.isDirectory() || now - st.mtimeMs < ORPHAN_MIN_AGE_MS) continue;
+      const claimed = `${path}.orphan-${process.pid}`;
+      renameSync(path, claimed); // throws while a mongod still has it open — that dir is live, skip it
+      rmSync(claimed, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+      removed.push(path);
+    } catch {
+      // Live, already claimed by a concurrent sweep, or not deletable right now: not ours this time.
+    }
+  }
+  return removed;
 }
 
 /**

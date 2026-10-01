@@ -15,11 +15,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
 import type { ChildProcess } from 'node:child_process';
-import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, mkdtempSync, mkdirSync, openSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { mongoUriHandshakePath, bridgeMongoUri } from '../../scripts/testMongoUri';
 import {
+  sweepOrphanedDbPaths,
   teardownMongo,
   waitForExit,
   type MongoServerLike,
@@ -247,5 +248,76 @@ describe('teardownMongo', () => {
     expect(existsSync(uriFile)).toBe(false);
     expect(stop).toHaveBeenCalledOnce();
     expect(warnings).toEqual([]);
+  });
+});
+
+describe('sweepOrphanedDbPaths', () => {
+  // A private stand-in for %TEMP%: the sweep is pointed at it via `dir`, so this suite can never
+  // touch a real run's dbPath — including the one this very package's globalSetup is using.
+  let root = '';
+  /** Past the 10-minute grace period, without having to backdate mtimes. */
+  const later = (): number => Date.now() + 11 * 60_000;
+
+  function dbPath(name: string): string {
+    const dir = join(root, name);
+    mkdirSync(join(dir, 'journal'), { recursive: true });
+    writeFileSync(join(dir, 'journal', 'WiredTigerLog.0000000001'), 'x', 'utf8');
+    return dir;
+  }
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'nw-sweep-selftest-'));
+  });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('removes an unheld mongo-mem-* dir past the grace period, and reports it', () => {
+    const orphan = dbPath('mongo-mem-AbC123');
+
+    expect(sweepOrphanedDbPaths({ dir: root, now: later(), platform: 'win32' })).toEqual([orphan]);
+    expect(readdirSync(root)).toEqual([]);
+  });
+
+  it('leaves a young dir alone even when nothing holds it — a concurrent run may be starting', () => {
+    dbPath('mongo-mem-young1');
+
+    expect(sweepOrphanedDbPaths({ dir: root, now: Date.now(), platform: 'win32' })).toEqual([]);
+    expect(readdirSync(root)).toEqual(['mongo-mem-young1']);
+  });
+
+  it('only touches mongo-mem-* directories', () => {
+    dbPath('nw-worldsvc-mongo-uri-dir');
+    writeFileSync(join(root, 'mongo-mem-not-a-dir'), 'x', 'utf8');
+
+    expect(sweepOrphanedDbPaths({ dir: root, now: later(), platform: 'win32' })).toEqual([]);
+    expect(readdirSync(root).sort()).toEqual(['mongo-mem-not-a-dir', 'nw-worldsvc-mongo-uri-dir']);
+  });
+
+  it('does nothing off Windows, where a rename succeeds under a live mongod', () => {
+    dbPath('mongo-mem-linux1');
+
+    expect(sweepOrphanedDbPaths({ dir: root, now: later(), platform: 'linux' })).toEqual([]);
+    expect(readdirSync(root)).toEqual(['mongo-mem-linux1']);
+  });
+
+  it('returns nothing instead of throwing when the directory does not exist', () => {
+    expect(sweepOrphanedDbPaths({ dir: join(root, 'missing'), now: later(), platform: 'win32' })).toEqual([]);
+  });
+
+  // The safety property itself: a dir with an open handle in it is in use and must survive. Only
+  // Windows refuses that rename (EPERM), which is exactly why the sweep is Windows-only.
+  it.runIf(process.platform === 'win32')('skips a dir that still has an open file in it (a live mongod)', () => {
+    const live = dbPath('mongo-mem-live01');
+    const orphan = dbPath('mongo-mem-dead01');
+    const fd = openSync(join(live, 'mongod.lock'), 'w');
+    try {
+      expect(sweepOrphanedDbPaths({ dir: root, now: later(), platform: 'win32' })).toEqual([orphan]);
+      expect(readdirSync(root)).toEqual(['mongo-mem-live01']);
+      expect(readdirSync(join(live, 'journal'))).toEqual(['WiredTigerLog.0000000001']);
+    } finally {
+      closeSync(fd);
+    }
   });
 });

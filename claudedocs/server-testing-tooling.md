@@ -1,4 +1,4 @@
-# 服务端 — 覆盖率百分比工具与 CI 稳定性（2026-08-13 ~ 09-10）
+# 服务端 — 覆盖率百分比工具与 CI 稳定性（2026-08-13 ~ 10-01）
 
 > 从 [`server-testing.md`](server-testing.md) 拆出（2026-08-20，原文件 501 行，ADR-067）。姊妹分册：[`server-testing-coverage.md`](server-testing-coverage.md)（各服务逐个补测记录）、[`server-testing-typecheck.md`](server-testing-typecheck.md)（`test/**` 类型检查）。
 > 本册是工具/流水线侧：怎么量出百分比、90% 门禁怎么加、CI 怎么并行拆分、以及「PR 绿了、合进 main 却红」那轮 flaky 治理。下文各处「见下方各自小节」指的是各包的补测记录，现在在 [`server-testing-coverage.md`](server-testing-coverage.md)；下文「前两节」指的是 hub 上保留的那两轮人工审计。
@@ -702,3 +702,52 @@ MMS 的 `killProcess` 就是 `await childprocess.once('exit')`——**这个事�
 [`server-testing-coverage.md`](server-testing-coverage.md) 里那套「多个并行 agent 共享一个 mongod、各用自己 DB 名」
 的做法**对这五个文件不成立**——两个 agent 同时跑其中两个，先跑完的那个 `afterAll` 会把另一个的活数据 drop 掉。
 现在没人这么跑，所以只记在这里，没动。
+
+## 被打断的跑留下整个 dbPath：setup 时清孤儿（2026-10-01，worktree `feat/mongo-orphan-sweep`）
+
+**现象**：09-10 那一轮修完 teardown 之后，`%TEMP%` 里照样又攒了 **47 个 `mongo-mem-*`、21.5 GB，只用了三天**
+（09-29 ~ 10-01），一条 `::warning:: … test teardown` 都没有。
+
+**根因（实测复现）**：teardown 本身没问题——**它根本没跑**。删 dbPath 这件事全仓只有
+`teardownMongo` 在做；vitest 进程只要在 teardown 之前死掉，目录就整个留下。MMS 自带的看门狗
+`mongo_killer.js` 只管杀 mongod（`process.kill(childPid)`），**从来不删目录**。
+
+| 怎么跑的 | 留下目录？ |
+|---|---|
+| 完整 `npm test`（全部包） | 否 |
+| `cd socialsvc && npx vitest run 2>&1 \| grep …` | 否 |
+| `npx vitest run 2>&1 \| head -3` | **是**——`head` 拿够行就退出，管道断了，vitest 下一次写 stdout 时 EPIPE 死掉 |
+| 直接杀掉 vitest 的 node 进程（TaskStop、会话结束带走后台任务） | **是** |
+
+会话记录里 `npx vitest run 2>&1 | grep … | head` 这种写法很常见，这是最主要的来源。
+
+**排除过的两个猜想**（别再查一遍）：
+
+- 不是 vitest 的 `teardownTimeout`（默认 10 s）把 teardown 砍断——单独造一个 15 s 的 globalSetup teardown，
+  `vitest run` 会老老实实等完（`done after 15007ms`）。那个计时器只在 `exit()` 路径上，且 `unref` 过。
+- 不是 teardown 里删目录失败——那条路径会打 `could not remove`，会话记录里一条都没有。
+
+**修法**：`createMongoHarness().setup()` 开头调 `sweepOrphanedDbPaths()`（`server/scripts/testMongoHarness.ts`），
+清掉以前的跑留下的孤儿。不管是哪种方式被打断的，下一次跑测试时都会被顺手清掉。判据交给文件系统，不去猜进程：
+
+- **Windows 上，目录里只要还有句柄开着，目录就改不了名**（`EPERM`）。活的 mongod 开着 dbPath 里的所有文件
+  ——拿真 mongod 实测过，改名失败。所以**改名成功本身就证明没人在用**，而且改名是原子的，两个包同时
+  sweep 不会把同一个目录删一半。改名后仍带 `mongo-mem-` 前缀，这次删不掉下次还会再试。
+- **10 分钟宽限**：MMS 先 `mkdtemp` 再起 mongod，中间那一小段目录是空的、没人持有，可能属于另一个
+  worktree 正在启动的跑。比这新的目录一律不动。
+- **只在 Windows 做**：POSIX 上活的 mongod 底下改名照样成功，同样的判据会删掉正在跑的套件。CI 是一次性的
+  Linux runner，漏了也随 VM 一起没。
+- 清掉时打一行 `<pkg> test setup: removed N orphaned mongo-mem-* dbPath(s) left by interrupted runs`。
+
+**验证**：
+
+- 单测 6 条（`shared/test/testMongoHarness.test.ts` 的 `sweepOrphanedDbPaths`），指向私有目录，碰不到真实的 dbPath。
+  三个变异各自只让对应那一条变红：去掉年龄判断 → 「young dir」红；不改名直接删 → 「open file」红；
+  去掉平台判断 → 「off Windows」红。「open file」那条只在 Windows 上跑（`it.runIf`）。
+- 端到端：用 `| head` 真造一个孤儿、把 mtime 往回拨 11 分钟，再正常跑 socialsvc → 打出 `removed 1`，379 条全绿，
+  `%TEMP%` 清空。
+- 并发：auctionsvc 在跑时把它**活的** dbPath mtime 拨回 30 分钟，同时跑 socialsvc → 活目录没被动，auctionsvc 383 条全绿，
+  跑完自己清干净。
+
+**规矩**（已写进 `CLAUDE.md`）：服务端测试的输出别接 `| head`，要截断就先写进文件再看。sweep 只是兜底，
+被打断的那一次跑还是白跑了，mongod 也被硬杀。
