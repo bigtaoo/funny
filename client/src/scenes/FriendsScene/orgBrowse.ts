@@ -117,9 +117,10 @@ export class OrgBrowsePanel {
       const famId = fam.familyId;
       const joinBtnX = px + panelW - joinBtnW - joinBtnGap;
       const pending = core.familyJoinPending;
+      const off = pending || core.orgSending;
       addButton(core, t(pending ? 'social.family.pending' : 'family.join'), joinBtnX, cy + (rowH - joinBtnH) / 2, joinBtnW, joinBtnH,
-        pending ? C.btnDis : C.dark, pending ? C.btnOff : C.accent,
-        () => { if (!pending) void this.network.doJoinFamily(famId); }, pending ? C.mid : 0xffffff, undefined, undefined, 'enter');
+        off ? C.btnDis : C.dark, off ? C.btnOff : C.accent,
+        () => { if (!off) void this.network.doJoinFamily(famId); }, off ? C.mid : 0xffffff, undefined, undefined, 'enter');
       // Tapping the rest of the row (left of the Join button) previews the family's info.
       core.hits.push({ rect: { x: px, y: cy, w: joinBtnX - joinBtnGap - px, h: rowH }, fn: () => this.openFamilyDetail(famId) });
       cy += rowH + rowGap;
@@ -195,8 +196,9 @@ export class OrgBrowsePanel {
       () => { core.familyDetailView = null; core.render(); }, C.dark, undefined, undefined, 'close');
     const famId = fam.familyId;
     const pending = core.familyJoinPending;
+    const off = pending || core.orgSending;
     addButton(core, t(pending ? 'social.family.pending' : 'family.join'), px + bW + bGap, bY, bW, bH,
-      pending ? C.btnDis : C.dark, pending ? C.btnOff : C.accent,
-      () => { if (!pending) void this.network.doJoinFamily(famId); }, pending ? C.mid : 0xffffff, undefined, undefined, 'enter');
+      off ? C.btnDis : C.dark, off ? C.btnOff : C.accent,
+      () => { if (!off) void this.network.doJoinFamily(famId); }, off ? C.mid : 0xffffff, undefined, undefined, 'enter');
   }
 }
