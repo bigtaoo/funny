@@ -34,6 +34,8 @@
 
 `tsc --noEmit` + webpack 构建，两者都要过（**类型过了不等于构建过了**：资源走 `import`，缺文件只有 webpack 报）。
 
+服务端测试（`server/`）的输出**不要接 `| head`**：`head` 一退出，vitest 就因 EPIPE 死在 teardown 之前，`%TEMP%` 里会留下约 0.5 GB 的 `mongo-mem-*`。要截断就先写进文件（`> /tmp/x.log 2>&1`）再看。详见 [`claudedocs/server-testing-tooling.md`](claudedocs/server-testing-tooling.md)。
+
 ## 结束任务（收尾前完整走一遍）
 
 1. 更新 `design/` 相关文档。
