@@ -187,10 +187,15 @@ export class IllustratedInterludeScene implements Scene {
     // reads top-to-bottom as one continuous piece instead of vanishing behind the next line.
     const bandH = h * TEXT_BAND_HEIGHT_FRAC;
     const fontSize = FS.heading;
-    const lineGapY = Math.round(fontSize * 1.7);
-    const startY = Math.round(bandH * 0.32);
+    const lineHeight = Math.round(fontSize * 1.4);
+    const beatGap = Math.round(fontSize * 0.3);
+    // Top edge of the first beat — the first line's centre sits where it always has.
+    let cursorY = Math.round(bandH * 0.32) - Math.round(lineHeight / 2);
 
-    this.beats.forEach((beat, i) => {
+    // Each beat is placed below the previous one's MEASURED height, not on a fixed pitch: a beat
+    // that word-wraps (most of them in portrait, ch1/epilogue's long lines even in landscape) is
+    // two or three lines tall, and a fixed pitch sized for one line drew the next beat on top of it.
+    for (const beat of this.beats) {
       const text = makeText(beat, {
         fontSize,
         fill: ui.dark,
@@ -198,19 +203,20 @@ export class IllustratedInterludeScene implements Scene {
         wordWrap: true,
         wordWrapWidth: w * 0.82,
         align: 'center',
-        lineHeight: Math.round(fontSize * 1.4),
+        lineHeight,
       });
-      text.anchor.set(0.5, 0.5);
+      text.anchor.set(0.5, 0);
       text.x = w / 2;
-      text.y = startY + i * lineGapY;
+      text.y = cursorY;
+      cursorY += text.height + beatGap;
       text.alpha = 0;
       this.container.addChild(text);
       this.lines.push(text);
-    });
+    }
 
     // Tap-to-continue hint — anchored below the lowest beat so it never overlaps the stacked
     // text once every beat (e.g. the 8-beat epilogue) has revealed itself.
-    const blockBottomY = startY + (this.beats.length - 1) * lineGapY + Math.round(fontSize * 1.4);
+    const blockBottomY = cursorY - beatGap + Math.round(lineHeight / 2);
     this.hintText = makeText(t('story.tapToContinue'), {
       fontSize: FS.label,
       fill: ui.mid,

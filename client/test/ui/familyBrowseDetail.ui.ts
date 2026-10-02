@@ -165,11 +165,10 @@ describe('FriendsScene — family browse row: Join button vs info preview', () =
     const hits = scene.core.hits as Array<{ fn: () => void }>;
     const [, joinHit] = hits.slice(-2);
     joinHit!.fn();
-    await Promise.resolve();
-    await Promise.resolve();
 
     expect(joinFamily).toHaveBeenCalledWith('fam:AAA');
-    expect(scene.core.familyDetailView).toBeNull();
+    // Settles a few microtasks later behind the ADR-058 timeout race — wait for it, don't count ticks.
+    await vi.waitFor(() => expect(scene.core.familyDetailView).toBeNull());
     scene.destroy();
   });
 

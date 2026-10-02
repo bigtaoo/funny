@@ -3,11 +3,39 @@ import { PortraitLayout } from '../src/layout/PortraitLayout';
 import { createLayout } from '../src/layout/ScalingManager';
 import { Side } from '../src/game';
 
-// The portrait design width is fixed at 1080; the height follows the *safe
+// The portrait design width follows the screen (layout/designSize.ts: 1080 from
+// 540 CSS px up, availW/0.5 clamped to 720 below); the height follows the *safe
 // drawable area* aspect (never below the classic 1920) so fit-to-width scaling
 // leaves no letterbox on tall phones. Safe-area insets are applied upstream in
 // createLayout (which shrinks the area) and by ScalingManager (which offsets the
 // layer). See src/layout/PortraitLayout.ts + ScalingManager.ts.
+
+describe('PortraitLayout dynamic width', () => {
+  it('keeps 1080 from 540 CSS px up and narrows phones toward a 0.5 scale', () => {
+    expect(new PortraitLayout(768, 1024).designWidth).toBe(1080);
+    expect(new PortraitLayout(540, 960).designWidth).toBe(1080);
+    expect(new PortraitLayout(430, 932).designWidth).toBe(860);
+    expect(new PortraitLayout(360, 640).designWidth).toBe(720);
+    // Floor: a 320-wide screen stays at 720 and simply renders smaller (0.44x).
+    expect(new PortraitLayout(320, 568).designWidth).toBe(720);
+  });
+
+  it.each([[390, 844], [360, 640], [320, 568], [430, 932]])(
+    'scales the board so it still fits between the strips at %ix%i', (w, h) => {
+      const l = new PortraitLayout(w, h);
+      const k = l.designWidth / 1080;
+      expect(l.cellSize).toBe(Math.floor(84 * k));
+      expect(l.boardRect.x).toBeGreaterThanOrEqual(0);
+      expect(l.boardRect.x + l.boardRect.w).toBeLessThanOrEqual(l.designWidth);
+      expect(l.boardRect.y).toBeGreaterThanOrEqual(l.hudTopRect.h);
+      expect(l.boardRect.y + l.boardRect.h).toBeLessThanOrEqual(l.hudBottomLeftRect.y);
+      expect(l.handRect.y + l.handRect.h).toBe(l.designHeight);
+      expect(l.hudBottomRightRect.x + l.hudBottomRightRect.w).toBe(l.designWidth);
+      // Exactly the rule the layout sweep predicts (test/browser/lib/auditBox.ts designBox): a
+      // pixel of drift moves the design scale and with it the legibility floor the sweep enforces.
+      expect(l.designHeight).toBe(Math.max(Math.round(1920 * k), Math.round(l.designWidth * h / w)));
+    });
+});
 
 describe('PortraitLayout dynamic height', () => {
   it('keeps the classic 1920 height and board origin at a 9:16 aspect', () => {
@@ -29,8 +57,9 @@ describe('PortraitLayout dynamic height', () => {
   it('grows the design height on a tall phone so there is no letterbox', () => {
     // iPhone 13 logical viewport: 390×844 (~9:19.5).
     const l = new PortraitLayout(390, 844);
-    // designHeight must match the screen aspect: 1080 * 844/390 ≈ 2337.
-    expect(l.designHeight).toBe(Math.round(1080 * 844 / 390));
+    // Narrow screen → design width 390/0.5 = 780; height must match the screen aspect.
+    expect(l.designWidth).toBe(780);
+    expect(l.designHeight).toBe(Math.round(780 * 844 / 390));
     // Fit-to-width scale (screenW/designWidth) === fit-to-height scale → no letterbox.
     const scaleW = 390 / l.designWidth;
     const scaleH = 844 / l.designHeight;
@@ -54,7 +83,7 @@ describe('PortraitLayout dynamic height', () => {
     const noInset = createLayout(390, 844);
     const inset   = createLayout(390, 844, undefined, { top: 47, right: 0, bottom: 34, left: 0 });
     // 390 × (844 − 47 − 34) = 390 × 763 → shorter design height than no-inset.
-    expect(inset.designHeight).toBe(Math.round(1080 * 763 / 390));
+    expect(inset.designHeight).toBe(Math.round(780 * 763 / 390));
     expect(inset.designHeight).toBeLessThan(noInset.designHeight);
     // The layout itself always anchors its top HUD to its own top edge; the
     // ScalingManager offsets the whole layer into the safe region.

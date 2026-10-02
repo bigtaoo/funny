@@ -4,7 +4,7 @@ import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
-import { FS, snapFont } from '../render/fontScale';
+import { FS, snapFont, fitFont } from '../render/fontScale';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader, drawHeaderCurrency, headerCurrencyWidth, sceneHeaderHeight, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
 import { sidebarNavW, bottomNavH } from '../ui/widgets/HubTabs';
@@ -304,21 +304,28 @@ export class BattlePassScene implements Scene {
     levelLbl.anchor.set(0, 0.5); levelLbl.x = pad + Math.round(barW * 0.03); levelLbl.y = y + barH / 2;
     this.container.addChild(levelLbl);
 
-    const xpLbl = txt(
-      isMaxed
-        ? t('battlepass.xpProgress', { xp: String(maxXp), total: String(maxXp) })
-        : t('battlepass.xpStatus', { xp: String(xp), n: String(xpToNextLevel(xp)) }),
-      snapFont(Math.round(barH * 0.42)), C.light,
-    );
-    xpLbl.anchor.set(1, 0.5); xpLbl.x = pad + barW - Math.round(barW * 0.03); xpLbl.y = y + barH / 2;
+    const xpText = isMaxed
+      ? t('battlepass.xpProgress', { xp: String(maxXp), total: String(maxXp) })
+      : t('battlepass.xpStatus', { xp: String(xp), n: String(xpToNextLevel(xp)) });
+    const xpSize = snapFont(Math.round(barH * 0.42));
+    let xpLbl = txt(xpText, xpSize, C.light);
     // Both labels' font sizes scale off barH (bar *height*), but barW is the content column's
     // *width* — narrow in portrait. "{xp} XP · {n} XP to next level" (and German's longer
     // wording) can out-measure the gap left of it by levelLbl, rendering the two directly on top
-    // of each other (2026-08-10 bug report, screenshot). Shrink only the right-hand status text
-    // to whatever room actually remains next to the measured level badge, same idiom as every
-    // other label-vs-available-width clamp in this codebase.
-    const xpAvailW = xpLbl.x - (levelLbl.x + levelLbl.width) - Math.round(barW * 0.02);
-    if (xpAvailW > 0 && xpLbl.width > xpAvailW) xpLbl.scale.set(Math.max(0.55, xpAvailW / xpLbl.width));
+    // of each other (2026-08-10 bug report, screenshot). Fit only the right-hand status text to
+    // whatever room actually remains next to the measured level badge: step its size down the
+    // scale first (never below the floor), and only scale the built text if even the floor is too
+    // wide — the old flat scale with a 0.55 minimum stopped fitting on the 720–860-wide portrait
+    // design (layout/designSize.ts) and drew the two labels through each other again.
+    const xpRight = pad + barW - Math.round(barW * 0.03);
+    const xpAvailW = xpRight - (levelLbl.x + levelLbl.width) - Math.round(barW * 0.02);
+    if (xpAvailW > 0 && xpLbl.width > xpAvailW) {
+      const fitted = fitFont(xpSize, xpLbl.width, xpAvailW);
+      xpLbl.destroy({ texture: true, baseTexture: true });
+      xpLbl = txt(xpText, fitted, C.light);
+      if (xpLbl.width > xpAvailW) xpLbl.scale.set(xpAvailW / xpLbl.width);
+    }
+    xpLbl.anchor.set(1, 0.5); xpLbl.x = xpRight; xpLbl.y = y + barH / 2;
     this.container.addChild(xpLbl);
 
     y += barH + Math.round(h * 0.014);
@@ -327,11 +334,15 @@ export class BattlePassScene implements Scene {
     if (!isMaxed) {
       const hint = txt(
         t('battlepass.xpEarnHint', { win: String(BP_XP_PER_RANKED_WIN), loss: String(BP_XP_PER_RANKED_LOSS) }),
-        FS.heading, C.mid,
+        FS.heading, C.mid, false, Math.round(barW * 0.98),
       );
-      hint.anchor.set(0, 0.5); hint.x = pad + Math.round(barW * 0.01); hint.y = y + Math.round(h * 0.016);
+      // Wrapped to the column: on a narrow portrait design (720-860 wide, layout/designSize.ts) the
+      // English line is wider than the screen at this size. One line still gets the old 3.2% pitch.
+      const oneLine = hint.height < FS.heading * 1.8;
+      const hintH = oneLine ? Math.round(h * 0.032) : Math.ceil(hint.height) + Math.round(h * 0.01);
+      hint.anchor.set(0, 0.5); hint.x = pad + Math.round(barW * 0.01); hint.y = y + Math.round(hintH / 2);
       this.container.addChild(hint);
-      y += Math.round(h * 0.032);
+      y += hintH;
     }
 
     y += Math.round(h * 0.008);

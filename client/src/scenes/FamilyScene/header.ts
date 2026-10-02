@@ -9,6 +9,7 @@ import { buildIcon } from '../../render/icons';
 import { buildEmblemIcon, type EmblemKey } from '../../render/emblemIcon';
 import { buildTitleIcon, backPillRightEdge } from '../../ui/widgets/SceneHeader';
 import { FS } from '../../render/fontScale';
+import { fitToWidth } from '../../ui/widgets/truncateText';
 import { FAMILY_CAP } from '@nw/shared';
 import type { FamilySceneCore } from './core';
 
@@ -86,6 +87,22 @@ export function drawHeaderTitle(core: FamilySceneCore, headerH: number): void {
 
   const rightBound = countNode ? w - 16 - countNode.width - gap : w - 16;
   const available = rightBound - leftBound;
+
+  // A narrow header (a phone held sideways, 1280 design px wide at the 720 floor since ADR-105) has
+  // less room than the cluster: cut the family name first, then drop the "Family" word (its glyph
+  // stays), rather than let the prosperity readout run under the member count.
+  if (fam && nameNode && clusterW > available) {
+    const minNameW = nameNode.width * 0.4;
+    const nameW = Math.max(minNameW, nameNode.width - (clusterW - available));
+    const oldW = nameNode.width;
+    nameNode.text = fitToWidth(`[${fam.tag}] ${fam.name}`, FS.title, nameW);
+    clusterW -= oldW - nameNode.width;
+    if (clusterW > available) {
+      clusterW -= titleNode.width;
+      titleNode.visible = false;
+      titleNode.text = '';
+    }
+  }
   let x = leftBound + Math.max(0, (available - clusterW) / 2);
 
   titleIcon.node.x = x; titleIcon.node.y = Math.round(midY - titleIcon.size / 2);

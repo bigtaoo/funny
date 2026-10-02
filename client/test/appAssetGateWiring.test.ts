@@ -34,11 +34,25 @@ describe('app.ts asset-gate wiring', () => {
     // shows a panel. Ahead of preloadBoot it would delay the requests; after the await it would sit
     // on the critical path instead of in the network wait.
     const issue = src.indexOf('= preloadBoot(');
-    const warm = src.indexOf('prewarmPanelFrame();');
+    const warm = src.indexOf('afterFirstPaint = prewarmPanelFrame;');
     const wait = src.indexOf('await bootAssets;');
     expect(issue).toBeGreaterThan(-1);
     expect(warm).toBeGreaterThan(issue);
     expect(wait).toBeGreaterThan(warm);
+  });
+
+  it('runs the panel-frame bake after the first on-screen paint, not before it', () => {
+    // Called synchronously, the bake was the first render of the session: ~100 ms on an iPhone
+    // during which the loading screen had not been painted yet, and it was also what `first_frame`
+    // recorded (2026-10-01 render_profile: rndMaxAt 0.4 s, all of it Geo).
+    expect(src).not.toMatch(/^\s*prewarmPanelFrame\(\);/m);
+    // Offscreen bakes return before the first-paint bookkeeping.
+    const offscreen = src.indexOf('?.renderTexture) return;');
+    const mark = src.indexOf("markBoot('first_frame');");
+    const run = src.indexOf('setTimeout(run, 0);');
+    expect(offscreen).toBeGreaterThan(-1);
+    expect(mark).toBeGreaterThan(offscreen);
+    expect(run).toBeGreaterThan(mark);
   });
 
   it('destroys the loading overlay before the first scene is shown', () => {

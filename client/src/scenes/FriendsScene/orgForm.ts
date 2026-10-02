@@ -162,7 +162,8 @@ export class OrgFormPanel {
     const bH = Math.round(h * 0.08);
     const bGap = Math.round(w * 0.04);
     const bW = Math.round((panelW - bGap) / 2);
-    addButton(core, t('social.family.confirm'), px, cy, bW, bH, C.dark, C.accent, () => void this.network.doCreateFamily(),
+    addButton(core, t('social.family.confirm'), px, cy, bW, bH, core.orgSending ? C.btnOff : C.dark, core.orgSending ? C.btnOff : C.accent,
+      () => { if (!core.orgSending) void this.network.doCreateFamily(); },
       0xffffff, undefined, undefined, 'check');
     addButton(core, t('social.family.cancel'), px + bW + bGap, cy, bW, bH, C.paper, C.line,
       () => { core.familySubview = 'info'; core.clearHiddenInput(); core.render(); }, C.dark, undefined, undefined, 'close');
@@ -299,7 +300,8 @@ export class OrgFormPanel {
     const bH = Math.round(h * 0.08);
     const bGap = Math.round(w * 0.04);
     const bW = Math.round((panelW - bGap) / 2);
-    addButton(core, t('social.sect.confirm'), px, cy, bW, bH, C.dark, C.gold, () => void this.network.doCreateSect(),
+    addButton(core, t('social.sect.confirm'), px, cy, bW, bH, core.orgSending ? C.btnOff : C.dark, core.orgSending ? C.btnOff : C.gold,
+      () => { if (!core.orgSending) void this.network.doCreateSect(); },
       0xffffff, undefined, undefined, 'check');
     addButton(core, t('social.sect.cancel'), px + bW + bGap, cy, bW, bH, C.paper, C.line,
       () => { core.sectSubview = 'info'; core.clearHiddenInput(); core.render(); }, C.dark, undefined, undefined, 'close');
@@ -340,7 +342,8 @@ export class OrgFormPanel {
     const bH = Math.round(h * 0.08);
     const bGap = Math.round(w * 0.04);
     const bW = Math.round((panelW - bGap) / 2);
-    addButton(core, t('social.sect.confirm'), px, cy, bW, bH, C.dark, C.gold, () => void this.network.doJoinSect(),
+    addButton(core, t('social.sect.confirm'), px, cy, bW, bH, core.orgSending ? C.btnOff : C.dark, core.orgSending ? C.btnOff : C.gold,
+      () => { if (!core.orgSending) void this.network.doJoinSect(); },
       0xffffff, undefined, undefined, 'check');
     addButton(core, t('social.sect.cancel'), px + bW + bGap, cy, bW, bH, C.paper, C.line,
       () => { core.sectSubview = 'info'; core.clearHiddenInput(); core.render(); }, C.dark, undefined, undefined, 'close');

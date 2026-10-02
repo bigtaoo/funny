@@ -3,7 +3,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
-import { FS } from '../../render/fontScale';
+import { FS, typeWidth } from '../../render/fontScale';
 import { sidebarNavW, bottomNavH } from '../../ui/widgets/HubTabs';
 import { drawButtonLabel, buttonLabelIconW } from '../../ui/widgets/buttonLabel';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
@@ -33,7 +33,7 @@ export class CraftPanel {
     // no width reservation.
     const left = (landscape ? sidebarNavW(w, h, true) : 0) + CELL_GAP;
     const avail = w - left - CELL_GAP;
-    const cols = Math.max(1, Math.floor((avail + CELL_GAP_X) / (EQUIP_CELL_W_TARGET + CELL_GAP_X)));
+    const cols = Math.max(1, Math.floor((avail + CELL_GAP_X) / (typeWidth(EQUIP_CELL_W_TARGET) + CELL_GAP_X)));
     const cellW = (avail - CELL_GAP_X * (cols - 1)) / cols;
     const rows = Math.ceil(defs.length / cols);
     const totalH = CELL_GAP + rows * (CRAFT_CELL_H + CELL_GAP);

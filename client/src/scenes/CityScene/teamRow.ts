@@ -4,7 +4,7 @@
 // only ever called from RenderPanel.renderTeamsRow and don't have a life of their own outside it.
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
-import { FS } from '../../render/fontScale';
+import { FS, fitFont } from '../../render/fontScale';
 import { buttonLabelIconW } from '../../ui/widgets/buttonLabel';
 import {
   teamSlotId,
@@ -199,7 +199,15 @@ export function renderTeamCard(
     textW = Math.max(40, ax - 8 - (x + pad));
   }
 
-  const name = txt(team?.name || teamSlotName(i), FS.body, C.dark, true, textW);
+  // One line, stepped down a token if it has to: a single long word ("Sturmvorhut") cannot wrap, so
+  // word-wrapping it just split it mid-word onto a second line that ran into the status tag below.
+  const nameStr = team?.name || teamSlotName(i);
+  let name = txt(nameStr, FS.body, C.dark, true);
+  if (name.width > textW) {
+    const size = fitFont(FS.body, name.width, textW);
+    name.destroy({ texture: true, baseTexture: true });
+    name = txt(nameStr, size, C.dark, true, textW);
+  }
   name.x = x + pad;
   name.y = y + pad;
   core.paint.pageLayer.addChild(name);
@@ -267,7 +275,14 @@ export function renderTeamCard(
   // (render/fontScale.ts), so on a 390-wide phone every token in this card is 20 design px, and a
   // hardcoded 26 put the status tag inside the name's own line box.
   const lineH = Math.max(26, Math.ceil(FS.body * 1.3));
-  const statusTag = txt(statusLbl, FS.small, statusColor, true, textW);
+  // One line too, for the same reason as the name: on a 360-wide phone "Injured 28m" wrapped and its
+  // second line landed on the heroes/troops sub-label (sweep screenshot, 2026-10-01).
+  let statusTag = txt(statusLbl, FS.small, statusColor, true);
+  if (statusTag.width > textW) {
+    const size = fitFont(FS.small, statusTag.width, textW);
+    statusTag.destroy({ texture: true, baseTexture: true });
+    statusTag = txt(statusLbl, size, statusColor, true, textW);
+  }
   statusTag.x = x + pad;
   statusTag.y = y + pad + lineH;
   core.paint.pageLayer.addChild(statusTag);
@@ -289,7 +304,7 @@ export function renderTeamCard(
     // which are the widest thing here and the only part that is neither a name nor a fixed
     // sentence). With the fixed allowance, a second line simply hung out of the card — and since
     // the band is pinned to the bottom of the screen, out of the canvas with it.
-    subLbl.y = Math.max(statusTag.y + lineH, y + cardH - pad - Math.ceil(subLbl.height));
+    subLbl.y = Math.max(statusTag.y + Math.max(lineH, Math.ceil(statusTag.height)), y + cardH - pad - Math.ceil(subLbl.height));
     core.paint.pageLayer.addChild(subLbl);
   }
 

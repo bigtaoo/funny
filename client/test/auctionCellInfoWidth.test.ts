@@ -32,17 +32,19 @@
 // A full-width (CJK) glyph is one advance in each cell of a monospace face: two half-widths.
 // Run: npm test
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { zh } from '../src/i18n/locales/zh';
 import { en } from '../src/i18n/locales/en';
 import { de } from '../src/i18n/locales/de';
 import { aucGrid, aucInfoColumnW, AUC_CELL_W_TARGET } from '../src/scenes/AuctionScene/types';
-import { fontFloorDesignPx } from '../src/render/fontScale';
+import { fontFloorDesignPx, setFontScale, resetFontScaleForTest, FS, MAX_BOOST } from '../src/render/fontScale';
+import { portraitDesignWidth } from '../src/layout/designSize';
 
 const DICTS: Record<string, Record<string, string>> = { zh, en, de };
 
 /**
- * The portrait phone, which is the shape §55.2 was measured on: the design box is a fixed 1080 wide
+ * The portrait phone AS IT WAS when §55.2 was measured (before 2026-10-01 portrait phones got a
+ * narrower design box, see the last describe below): the design box was a fixed 1080 wide
  * and the tab nav is a BOTTOM bar (§18), so the grid gets the whole width and fits three columns
  * into it, giving a 167.33-px column.
  */
@@ -162,4 +164,65 @@ describe('auction cell — the info column holds its one-line rows in every loca
       expect(widthOf(line)).toBeLessThanOrEqual(COLUMN_W);
     });
   }
+});
+
+// The phone type boost (fontScale.ts, UI_DESIGN_LOG_2026-10.md §72) is applied on exactly the
+// viewports this file was measured on, and it moves the premise: `FS.body` (the price line) is no
+// longer at the floor but at 25. The grid answers by widening its column target with the boost
+// (`typeWidth`), so the question here is whether the WIDER column holds the boosted lines — swept
+// over every contentW a phone can hand the grid in either orientation.
+// (The boosted price row is held by the layout sweep instead: it wraps, as it always could.)
+describe('auction cell — under the phone type boost', () => {
+  afterEach(() => resetFontScaleForTest());
+
+  it('drops portrait to two columns and keeps every boosted one-line row on one line', () => {
+    setFontScale(PHONE_SCALE);
+    expect(aucGrid(PORTRAIT_DESIGN_W).cols).toBe(2);
+
+    // Every contentW a boosted phone can produce: portrait's 1080, and landscape phones (design
+    // height 1080, width from the aspect) with the sidebar rail taken off.
+    const RAIL = Math.round(1080 * 0.2);
+    const reachable = [PORTRAIT_DESIGN_W];
+    for (let designW = 1920; designW <= 2592; designW++) reachable.push(designW - RAIL);
+    let worst = Infinity;
+    for (const contentW of reachable) worst = Math.min(worst, aucInfoColumnW(aucGrid(contentW).cellW));
+
+    // The three one-line rows are FS.tiny, which on a phone is still the floor (the boost lifts it
+    // to 18, under the floor's 20). The price row is NOT one of them — it was always allowed two
+    // lines (see the header) — so its boost to FS.body is the cell height's problem, not this one's.
+    const tinyAdv = FS.tiny * 0.55;
+    for (const dict of Object.values(DICTS)) {
+      expect(widthOf(`${dict['auction.myBid']}: ${WIDEST_PRICE}`) / ADVANCE * tinyAdv).toBeLessThanOrEqual(worst);
+      expect(widthOf(fill(dict, 'auction.buyoutAt', { price: WIDEST_PRICE })) / ADVANCE * tinyAdv).toBeLessThanOrEqual(worst);
+      expect(widthOf(fill(dict, 'auction.timeLeft', { d: '2', h: '23', m: '59', s: '59' })) / ADVANCE * tinyAdv)
+        .toBeLessThanOrEqual(worst);
+    }
+    expect(MAX_BOOST).toBe(1.4);   // the sweep this is derived from ran at the cap
+  });
+});
+
+// Portrait phones no longer get a 1080-wide design (layout/designSize.ts, 2026-10-01): a 360–539
+// CSS-px-wide phone gets `availW / 0.5` (720–1078) at a ~0.5 scale, so the floor drops to 16 and the
+// boost to ~1.1. The grid's target now boosts only the text part of the cell (types.ts `aucGrid`),
+// which is what keeps these phones at two columns — and the question is again whether the columns
+// that produces hold the one-line rows.
+describe('auction cell — on the narrow portrait design', () => {
+  afterEach(() => resetFontScaleForTest());
+
+  it('keeps every phone width at two or more columns with the one-line rows on one line', () => {
+    for (let availW = 360; availW < 540; availW++) {
+      const designW = portraitDesignWidth(availW);
+      setFontScale(availW / designW);
+      const grid = aucGrid(designW);
+      expect(grid.cols, `${availW} css px`).toBeGreaterThanOrEqual(2);
+      const col = aucInfoColumnW(grid.cellW);
+      const adv = FS.tiny * 0.55;
+      const w = (s: string): number => widthOf(s) / ADVANCE * adv;
+      for (const dict of Object.values(DICTS)) {
+        expect(w(`${dict['auction.myBid']}: ${WIDEST_PRICE}`)).toBeLessThanOrEqual(col);
+        expect(w(fill(dict, 'auction.buyoutAt', { price: WIDEST_PRICE }))).toBeLessThanOrEqual(col);
+        expect(w(fill(dict, 'auction.timeLeft', { d: '2', h: '23', m: '59', s: '59' }))).toBeLessThanOrEqual(col);
+      }
+    }
+  });
 });

@@ -79,10 +79,13 @@ export class SkinsPanel {
 
     // Masonry: each character card can be a different height (more skins → more tile rows), so
     // columns are packed independently — every card goes into whichever column is currently shortest.
-    // No PIXI mask backs this grid (draw-cull only, see renderSkinCard) — a card is either drawn in
-    // full or skipped entirely, never cropped, so the cull/clamp/indicator use the naive `availH`
-    // rather than a peekViewportH-shrunk value (that shrink is for masked grids; here it would just
-    // exclude a card that'd otherwise render in full, see the roster-grid fix in list.ts).
+    // Cards are culled whole (see renderSkinCard), and the ones that survive are clipped to the
+    // scroll viewport by a plain rect mask (2026-10-01). Before that a card straddling the bottom
+    // edge was drawn in full and simply ran off the canvas — invisible on a tall page, but on a
+    // phone held sideways (720 design px tall since ADR-105) a whole row of tile labels sat below
+    // the screen. The cull/clamp/indicator still use the naive `availH` rather than a
+    // peekViewportH-shrunk value (see the roster-grid fix in list.ts): a straddling card is meant
+    // to peek, not be excluded.
     //
     // Packed in a measure-only pass first, then drawn — the clamp below has to land BEFORE anything
     // is culled against scrollY. It used to run after the draw loop, so a scrollY carried in from
@@ -107,7 +110,12 @@ export class SkinsPanel {
     core.scrollRegionBottom = listY + availH;
     core.maxScroll = maxScroll;
 
-    for (const p of placed) this.renderSkinCard(p.def, p.x, p.y, cellW, p.h, owned, listY, availH);
+    const grid = new PIXI.Container();
+    const clip = new PIXI.Graphics().beginFill(0xffffff).drawRect(0, listY, w, availH).endFill();
+    grid.addChild(clip);
+    grid.mask = clip;
+    core.bodyLayer.addChild(grid);
+    for (const p of placed) this.renderSkinCard(grid, p.def, p.x, p.y, cellW, p.h, owned, listY, availH);
     drawScrollIndicator(core.bodyLayer, { x: left, y: listY, w: avail, h: availH }, core.scrollY, maxScroll);
   }
 
@@ -149,6 +157,7 @@ export class SkinsPanel {
 
   /** One character's wardrobe card: portrait + name on the left header, skin tiles wrapped to the right. */
   private renderSkinCard(
+    layer: PIXI.Container,
     def: CardDef,
     x: number,
     yUnscrolled: number,
@@ -170,7 +179,7 @@ export class SkinsPanel {
 
     const card = sketchPanel(cardW, cardH, { fill: 0xfaf9f5, border: C.mid, seed: seedFor(x, y, cardW) });
     card.x = x; card.y = y;
-    core.bodyLayer.addChild(card);
+    layer.addChild(card);
 
     // ── Left: portrait (capped height so a many-skin card doesn't stretch the art) ──
     const portraitH = Math.min(cardH - CARD_PAD * 2, PORTRAIT_MAX_H);
@@ -178,27 +187,28 @@ export class SkinsPanel {
     // background layer, this frame is a stroke-only outline.
     const frame = sketchPanel(portraitW, portraitH, { fill: 0xf0eee7, fillAlpha: 0, border: C.mid, seed: seedFor(x, y, portraitW) });
     frame.x = x + CARD_PAD; frame.y = y + CARD_PAD;
-    core.bodyLayer.addChild(frame);
+    layer.addChild(frame);
     const artUrl = unitPortraitUrl(unitType, equipped);
-    if (artUrl) core.drawArtFit(artUrl, x + CARD_PAD + 2, y + CARD_PAD + 2, portraitW - 4, core.bodyLayer, portraitH - 4);
+    if (artUrl) core.drawArtFit(artUrl, x + CARD_PAD + 2, y + CARD_PAD + 2, portraitW - 4, layer, portraitH - 4);
 
     // ── Right: name header (faction dot + name) + wrapped skin tile grid ──
     // Plain dot, not the full totem — too small to read the emblem; colour conveys faction.
     const dot = new PIXI.Graphics();
     dot.beginFill(FACTION_COLOR[def.faction]).drawCircle(0, 0, 5).endFill();
     dot.x = tileAreaX + 5; dot.y = y + CARD_PAD + 9;
-    core.bodyLayer.addChild(dot);
+    layer.addChild(dot);
 
     const nameLbl = txt(t(`card.${def.id}.name` as TranslationKey), FS.body, C.dark, true);
     nameLbl.x = tileAreaX + 16; nameLbl.y = y + CARD_PAD;
     if (nameLbl.width > tileAreaW - 16) nameLbl.scale.set((tileAreaW - 16) / nameLbl.width);
-    core.bodyLayer.addChild(nameLbl);
+    layer.addChild(nameLbl);
 
     const tileTop = y + CARD_PAD + HEADER_H;
     tiles.forEach((tile, i) => {
       const col = i % tilesPerRow;
       const row = Math.floor(i / tilesPerRow);
       this.renderSkinTile(
+        layer,
         tile,
         tileAreaX + col * (tileW + TILE_GAP),
         tileTop + row * (TILE_H + TILE_GAP),
@@ -210,6 +220,7 @@ export class SkinsPanel {
   }
 
   private renderSkinTile(
+    layer: PIXI.Container,
     tile: { id: string | null; label: string },
     x: number, y: number, w: number, h: number,
     isEquipped: boolean,
@@ -224,23 +235,23 @@ export class SkinsPanel {
     });
     box.x = x; box.y = y;
     sketchAccentBar(box, h, isEquipped ? C.green : C.accent, seedFor(x, h, 6));
-    core.bodyLayer.addChild(box);
+    layer.addChild(box);
 
     const icSize = Math.round(h * 0.34);
     const ic = buildIcon(tile.id === null ? 'pencils' : 'brush', icSize, isEquipped ? C.green : C.accent);
     ic.x = x + (w - icSize) / 2; ic.y = y + Math.round(h * 0.12);
-    core.bodyLayer.addChild(ic);
+    layer.addChild(ic);
 
     const name = txt(tile.label, snapFont(Math.round(h * 0.13)), C.dark, true);
     name.anchor.set(0.5, 0.5); name.x = x + w / 2; name.y = y + h * 0.62;
     fitOrWrap(name, w - 8);
     name.name = `skinTile:${tile.id ?? 'default'}`; // test hook: tiles no longer carry unique labels
-    core.bodyLayer.addChild(name);
+    layer.addChild(name);
 
     const status = txt(isEquipped ? t('collection.equipped') : t('collection.equip'),
       snapFont(Math.round(h * 0.11)), isEquipped ? C.green : C.gold, true);
     status.anchor.set(0.5, 0.5); status.x = x + w / 2; status.y = y + h * 0.84;
-    core.bodyLayer.addChild(status);
+    layer.addChild(status);
 
     if (!isEquipped) {
       core.hitRects.push({

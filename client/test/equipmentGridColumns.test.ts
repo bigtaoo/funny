@@ -4,12 +4,23 @@
 // The fallback path is never actually hit in-game today (portrait's fixed 1080 design width always
 // divides evenly into 3 columns — see the .ui.ts integration test), so this is the only place it's
 // exercised at all.
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
+import { setFontScale, resetFontScaleForTest } from '../src/render/fontScale';
 import { equipGridColumns, matIconKind, CELL_GAP_X, EQUIP_CELL_W_MIN, EQUIP_CELL_W_TARGET } from '../src/scenes/EquipmentScene/layout';
 import { EQUIPMENT_DEFS } from '../src/game/meta/equipmentDefs';
 import { INK_ICON_ART } from '../src/render/icons';
 
 describe('equipGridColumns', () => {
+  afterEach(() => resetFontScaleForTest());
+
+  it('portrait phone: the boosted type widens the cells to two columns instead of wrapping affixes', () => {
+    // 390x844 → design scale 0.361 → boost 1.4 (fontScale's phone type boost, UI_DESIGN_LOG_2026-10 §72).
+    setFontScale(390 / 1080);
+    const { cols, cellW } = equipGridColumns(1008, false);
+    expect(cols).toBe(2);
+    expect(cellW).toBeGreaterThanOrEqual(EQUIP_CELL_W_MIN * 1.4);
+  });
+
   it('portrait: packs 3 exact-fit columns at the real game\'s avail (~1008), no leftover / no offset', () => {
     const avail = 1008; // PortraitLayout's fixed DESIGN_W (1080) minus two CELL_GAP margins
     const { cols, cellW, offset } = equipGridColumns(avail, false);

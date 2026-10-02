@@ -42,11 +42,12 @@ const memStore = (() => {
 })();
 initI18n('en', memStore, ['zh', 'en', 'de']);
 
-// Screen px for each orientation; ILayout maps both down to the same design-space short
-// edge (1080), which is exactly the property under test.
+// Screen px for each orientation. The rail is pegged to the design-space short edge; at the
+// 1080 reference that is 216, and a phone held sideways (780 tall since ADR-105) gets 156.
 const PORTRAIT: [number, number] = [390, 844];
 const LANDSCAPE: [number, number] = [844, 390];
-const EXPECTED_RAIL_W = 216; // Math.round(1080 * 0.2) — the short edge in both orientations
+const EXPECTED_RAIL_W = 216; // Math.round(1080 * 0.2) — the short edge at the reference size
+const LANDSCAPE_RAIL_W = Math.round(createLayout(...LANDSCAPE).designHeight * 0.2);
 
 type Hit = { rect: { x: number; y: number; w: number; h: number }; fn: () => void };
 
@@ -122,7 +123,7 @@ describe('CardScene — [Hero Roster|Equipment] rail/bottom-bar by orientation',
     const { scene } = buildCardScene(...LANDSCAPE);
     const hits = (scene as unknown as { core: { hitRects: Hit[] } }).core.hitRects;
     const rect = hitRectForLabel(scene.container, hits, t('equip.title'));
-    expect(rect.w).toBe(EXPECTED_RAIL_W);
+    expect(rect.w).toBe(LANDSCAPE_RAIL_W);
     scene.destroy();
   });
 });
@@ -148,7 +149,7 @@ describe('EquipmentScene — [<peer>|Equipment] group rail/bottom-bar by orienta
     const landscapeScene = buildEquipmentScene(...LANDSCAPE);
     const landscapeHits = (landscapeScene as unknown as { core: { hitRects: Hit[] } }).core.hitRects;
     const landscapeRect = hitRectForLabel(landscapeScene.container, landscapeHits, t('roster.title'));
-    expect(landscapeRect.w).toBe(EXPECTED_RAIL_W);
+    expect(landscapeRect.w).toBe(LANDSCAPE_RAIL_W);
     landscapeScene.destroy();
   });
 

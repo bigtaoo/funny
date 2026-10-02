@@ -29,7 +29,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n, t } from '../../src/i18n';
-import { setFontScale, resetFontScaleForTest } from '../../src/render/fontScale';
+import { setFontScale, resetFontScaleForTest, fontFloorDesignPx } from '../../src/render/fontScale';
 import { DefenseEditorScene, type DefenseEditorCallbacks } from '../../src/scenes/DefenseEditorScene';
 import { makeNewSave } from '../../src/game/meta/SaveData';
 import type { WorldApiClient, PlayerWorldView } from '../../src/net/WorldApiClient';
@@ -47,8 +47,8 @@ initI18n('de', memStore, ['zh', 'en', 'de']);
 afterEach(() => resetFontScaleForTest());
 
 function buildScene(): DefenseEditorScene {
-  // What ScalingManager sets for a 360-wide portrait phone: 1080 design px at 1/3, floor 20.
-  setFontScale(1 / 3);
+  // What ScalingManager sets for a 360-wide portrait phone: a 720-wide design at 1/2 (ADR-105).
+  setFontScale(0.5, 720);
   const save = makeNewSave('acc_test');
   const defs = ['chenshou', 'lichuang', 'lena'];
   defs.forEach((defId, i) => { save.cardInv![`c${i}`] = { id: `c${i}`, defId, level: 9, gear: {}, locked: false }; });
@@ -86,7 +86,8 @@ describe('DefenseEditorScene attack mode — 360x640, German', () => {
     const scene = buildScene();
     const all = texts(scene.container).filter((l) => l.text.trim().length > 0 && l.visible);
     expect(all.length).toBeGreaterThan(10);
-    for (const l of all) expect(drawnSize(l, scene.container), `"${l.text}"`).toBeGreaterThanOrEqual(20 - 1e-6);
+    // The floor at 0.5 (a 720-wide design on a 360-wide phone, ADR-105).
+    for (const l of all) expect(drawnSize(l, scene.container), `"${l.text}"`).toBeGreaterThanOrEqual(fontFloorDesignPx(0.5) - 1e-6);
     scene.destroy();
   });
 
@@ -141,8 +142,10 @@ describe('DefenseEditorScene attack mode — 360x640, German', () => {
     const names = [LONG_NAME, t('card.lichuang.name'), t('card.lena.name')]
       .map((n) => texts(scene.container).find((l) => l.text === n));
     for (const n of names) expect(n, 'name drawn in full').toBeDefined();
-    // Three cards: two columns put the third on a second row, so two distinct x positions.
-    expect(new Set(names.map((n) => Math.round(n!.getGlobalPosition().x))).size).toBe(2);
+    // Three cards, fewer columns than three. Two in a real Chrome (sweep 2026-10-01, 720-wide design);
+    // this harness's flat 7-px-per-character measure makes the long name wider still and lands on
+    // one — either way the third card wraps rather than the names being squeezed.
+    expect(new Set(names.map((n) => Math.round(n!.getGlobalPosition().x))).size).toBeLessThanOrEqual(2);
     scene.destroy();
   });
 

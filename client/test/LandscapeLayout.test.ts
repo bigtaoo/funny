@@ -3,9 +3,10 @@ import { LandscapeLayout } from '../src/layout/LandscapeLayout';
 import { createLayout } from '../src/layout/ScalingManager';
 import { Side } from '../src/game';
 
-// The landscape design height is fixed at 1080; the width follows the *safe
+// The landscape design height is 1080 on screens >= 540 CSS px tall and 720–860 on phones held
+// sideways (ADR-105, designSize.ts); the width follows the *safe
 // drawable area* aspect (never below the classic 1920, and since 2026-08-25 never
-// above 2592 = 2.4:1) so fit-to-height scaling
+// above 2592 = 2.4:1, both scaled by designHeight/1080) so fit-to-height scaling
 // leaves no side letterbox on tall phones held sideways. Safe-area insets are
 // applied upstream in createLayout (which shrinks the area) and by ScalingManager
 // (which offsets the layer). Mirror of PortraitLayout.test.ts.
@@ -30,8 +31,9 @@ describe('LandscapeLayout dynamic width', () => {
   it('grows the design width on a tall phone held sideways so there is no letterbox', () => {
     // iPhone 13 landscape logical viewport: 844×390 (~19.5:9).
     const l = new LandscapeLayout(844, 390);
-    // designWidth must match the screen aspect: 1080 * 844/390 ≈ 2337.
-    expect(l.designWidth).toBe(Math.round(1080 * 844 / 390));
+    // Height 390 / 0.5 = 780; width matches the screen aspect: 780 * 844/390 = 1688.
+    expect(l.designHeight).toBe(780);
+    expect(l.designWidth).toBe(Math.round(780 * 844 / 390));
     // Fit-to-height scale (screenH/designHeight) === fit-to-width scale → no letterbox.
     const scaleW = 844 / l.designWidth;
     const scaleH = 390 / l.designHeight;
@@ -44,14 +46,16 @@ describe('LandscapeLayout dynamic width', () => {
     // height. Uncapped that asked for a 3000-wide design rect: 56% more empty paper flanking a
     // 1260-wide board, and 56% more pixels in every page-sized texture (see render/bake.ts).
     const l = new LandscapeLayout(750, 270);
-    expect(l.designWidth).toBe(2592);
+    // Height floors at 720 (270 / 0.5 = 540 is below it), so the cap is 2592 * 720/1080 = 1728.
+    expect(l.designHeight).toBe(720);
+    expect(l.designWidth).toBe(1728);
     // Past the cap it contains to height, so side bands appear — which is exactly what
     // ScalingManager's desk surround is for (it already does this on every iPad).
     const scale = Math.min(750 / l.designWidth, 270 / l.designHeight);
     expect(scale).toBe(270 / l.designHeight);
     expect(750 - l.designWidth * scale).toBeGreaterThan(2);
-    // The board still fits with room for both HUD columns (boardX >= 330 for every allowed width).
-    expect(l.boardRect.x).toBeGreaterThanOrEqual(330);
+    // The board still fits with room for both HUD columns (boardX >= 330k for every allowed width).
+    expect(l.boardRect.x).toBeGreaterThanOrEqual(Math.floor(330 * 720 / 1080));
     expect(l.hudBottomLeftRect.x).toBeGreaterThanOrEqual(0);
   });
 
@@ -59,7 +63,7 @@ describe('LandscapeLayout dynamic width', () => {
     // 16:9 through 21:9 (the widest shipping phone aspect) must still fill the width with no bands.
     for (const [w, h] of [[1920, 1080], [844, 390], [2340, 1080], [2520, 1080]] as const) {
       const l = new LandscapeLayout(w, h);
-      expect(l.designWidth).toBeLessThan(2592);
+      expect(l.designWidth).toBeLessThan(Math.round(2592 * l.designHeight / 1080));
       const scaleW = w / l.designWidth;
       const scaleH = h / l.designHeight;
       expect(Math.abs(scaleW - scaleH)).toBeLessThan(0.001);
@@ -93,7 +97,7 @@ describe('LandscapeLayout dynamic width', () => {
   it('routes createLayout to the landscape layout when width > height', () => {
     const l = createLayout(844, 390);
     expect(l.orientation).toBe('landscape');
-    expect(l.designWidth).toBe(Math.round(1080 * 844 / 390));
+    expect(l.designWidth).toBe(Math.round(780 * 844 / 390));
   });
 
   it('shrinks the design area for safe-area insets via createLayout', () => {
@@ -101,9 +105,38 @@ describe('LandscapeLayout dynamic width', () => {
     // reduce the drawable area, so the design width tracks the *safe* aspect.
     const noInset = createLayout(844, 390);
     const inset   = createLayout(844, 390, undefined, { top: 0, right: 0, bottom: 21, left: 47 });
-    // (844 − 47) × (390 − 21) → narrower design width than no-inset.
-    expect(inset.designWidth).toBe(Math.round(1080 * (844 - 47) / (390 - 21)));
+    // (844 − 47) × (390 − 21) → height 738, and a narrower design width than no-inset.
+    expect(inset.designHeight).toBe(738);
+    expect(inset.designWidth).toBe(Math.round(738 * (844 - 47) / (390 - 21)));
     expect(inset.designWidth).toBeLessThan(noInset.designWidth);
+  });
+
+  it('keeps the classic 1080-tall geometry on screens at least 540 CSS px tall', () => {
+    for (const [w, h] of [[1024, 768], [1280, 720], [960, 540]] as const) {
+      const l = new LandscapeLayout(w, h);
+      expect(l.designHeight).toBe(1080);
+      expect(l.cellSize).toBe(70);
+      expect(l.boardRect.y).toBe(60);
+      expect(l.handRect.h).toBe(180);
+    }
+  });
+
+  it('scales the battle geometry with the design height and stacks the bands exactly', () => {
+    for (const [w, h] of [[844, 390], [640, 360], [915, 412], [740, 360], [568, 320]] as const) {
+      const l = new LandscapeLayout(w, h);
+      const k = l.designHeight / 1080;
+      expect(l.designHeight).toBeGreaterThanOrEqual(720);
+      expect(l.designHeight).toBeLessThan(1080);
+      expect(l.cellSize).toBe(Math.floor(70 * k));
+      // Top HUD + board + bottom strip = the design height, to the pixel (auditBox predicts it).
+      expect(l.hudTopRect.h + l.boardRect.h + l.handRect.h).toBe(l.designHeight);
+      expect(l.handRect.y).toBe(l.boardRect.y + l.boardRect.h);
+      // The side columns still fit in the margins beside the board.
+      expect(l.hudBottomLeftRect.x).toBeGreaterThanOrEqual(0);
+      expect(l.hudBottomRightRect.x + l.hudBottomRightRect.w).toBeLessThanOrEqual(l.designWidth);
+      // The screen scale is now ~0.5 rather than ~0.36 (the whole point).
+      expect(Math.min(w / l.designWidth, h / l.designHeight)).toBeGreaterThan(0.43);
+    }
   });
 
   // Regression: the base *sprite* rect must sit exactly where gridToScreen renders
@@ -116,10 +149,12 @@ describe('LandscapeLayout dynamic width', () => {
     { side: Side.Bottom, ownRow: 0.5,  enemyRow: 16.5 },
     { side: Side.Top,    ownRow: 16.5, enemyRow: 0.5  },
   ])('anchors base sprite rects to gridToScreen for localSide=$side', ({ side, ownRow, enemyRow }) => {
-    const l = new LandscapeLayout(1920, 1080, side);
     const center = (r: { x: number; y: number; w: number; h: number }) => ({ x: r.x + r.w / 2, y: r.y + r.h / 2 });
-    expect(center(l.playerBaseRect())).toEqual(l.gridToScreen(5.5, ownRow));
-    expect(center(l.enemyBaseRect())).toEqual(l.gridToScreen(5.5, enemyRow));
+    for (const [w, h] of [[1920, 1080], [844, 390]] as const) {
+      const l = new LandscapeLayout(w, h, side);
+      expect(center(l.playerBaseRect())).toEqual(l.gridToScreen(5.5, ownRow));
+      expect(center(l.enemyBaseRect())).toEqual(l.gridToScreen(5.5, enemyRow));
+    }
   });
 
   it('round-trips grid ↔ screen coordinates through the shifted board origin', () => {

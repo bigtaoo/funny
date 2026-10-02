@@ -90,7 +90,8 @@ function one(container: PIXI.Container, s: string): PIXI.Text {
 
 describe('DailyScene checkin grid - portrait cell height (2026-09-14)', () => {
   it('portrait: the cell keeps the height the old formula spent on row gaps, so every glyph in it grows', async () => {
-    const scene = await buildCheckinTab(390, 844);
+    // 540x1169 = the 1080x2337 box a 390x844 phone had before ADR-105, which the numbers below are.
+    const scene = await buildCheckinTab(540, 1169);
     // The day number is `snapFont(ch * 0.32)`, so it IS the cell height, read through the one
     // number this harness reports faithfully. The old derivation pinned cellH at cellW*0.8 = 143
     // design px, i.e. snapFont(round(131.7 * 0.32)) = snapFont(42) = 42. Anything above that means

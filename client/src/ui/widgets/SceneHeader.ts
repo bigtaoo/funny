@@ -33,7 +33,7 @@ import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { getCachedDisplay } from './uiCache';
 import { buildIcon, buildRasterTabIcon, tabIconVariant, BACK_ARROW_ART, BACK_ARROW_ASPECT, type IconKind } from '../../render/icons';
-import { FS, fitFont } from '../../render/fontScale';
+import { FS, fitFont, currentFontFloor } from '../../render/fontScale';
 import { drawGuilloche } from './SceneHeader/guilloche';
 
 /**
@@ -409,7 +409,8 @@ export function drawSceneHeader(
     let leadW = icon ? icon.size + icon.gap : 0;
     if (icon && leadW + titleNode.width > usableBand) {
       const room = usableBand - titleNode.width - icon.gap;
-      if (room >= icon.size * 0.4) {
+      // Besides the 40% ratio, hold the icon to the legibility floor (layoutAudit `icon`) so it never shrinks to a speck.
+      if (room >= Math.max(icon.size * 0.4, currentFontFloor())) {
         iconScale = room / icon.size;
         leadW = Math.round(room + icon.gap);
       } else {

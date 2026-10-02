@@ -204,6 +204,33 @@ vitest 走 esbuild、webpack 也不做类型检查，且 `client/tsconfig.json` 
 - `cardFeedPaging.ui.ts` —— `CardScene/feed.ts` 携手成长素材弹窗专项回归：相同卡（同 defId+同等级）折叠为一行并带数量步进器（`[−] n / 总数 [+]`，行体点击 +1 循环）、Confirm 计数为各组数量之和、Confirm 只喂选中数量的 id；溢出时 Confirm/Cancel 仍在屏幕内且出现滚动条（无翻页箭头）；按住拖动列表使 `feedScrollPx` 增大；拖动起始于行上不触发步进。
 - `battlePassClaimOverlay.ui.ts` / `rechargeScene.ui.ts`（claim 遮罩 describe 块）/ `eventScene.ui.ts` —— **"Processing..." 遮罩卡死**回归（2026-07-26）：`update()` 只在 `BusyTracker.busy` 为 true 时才重绘（`bt.tick()` 一旦 `stop()` 就直接短路），所以领取/购买请求的每一条落地路径（成功、失败、超时）都必须在 `bt.stop()` 后**显式再调一次 `render()`**——BattlePassScene/RechargeScene 的 `doClaim` 曾经只在"非金币奖励"分支补了这次重绘，金币奖励分支和两个场景的 catch 分支、外加 BattlePassScene 的 `onBuy` catch、EventScene 的 `doClaim` catch 都漏了，遮罩会永久卡在屏幕上（背后请求其实已经成功）。三个测试文件断言遮罩层在每条分支落地后确实消失。
 
+## 拆分出来的小纯函数：「导出没人测」筛查（2026-10-01）
+
+文件拆分（500 行门禁）和排版修复会不断拆出小 helper，它们一般经由场景间接跑到，但**自己的规则没人钉**。筛法：列出近期改过的源文件 → 对每个 `export function/const` 在 `*.test.ts` / `*.spec.ts` / `*.ui.ts` 里 `git grep -w` → 引用数为 0 的再人工排除「已被 e2e 覆盖」的。2026-10-01 这一轮补了：
+
+- `test/ui/textFitHelpers.ui.ts`：
+  - `fitRowName`：先缩到 0.8，再加省略号截断，且永不低于字号下限。
+  - `widestTierLabelW`：取最宽档位标签，每个字号只量一次。
+  - `affixIconKind`：`MAIN_AFFIX_BY_SLOT` + `SUB_AFFIX_POOL` 里每个可掷出的词条都有图标，且图标在 `INK_ICON_ART` 里存在。新增词条忘了配图标，这条会红。
+  - `wrappedHeight`：换行后高度增长。
+  - headless 的 `measureText` 是固定 `length * 7`，所以只断言相对关系，不断言绝对像素。
+- 服务端两处（不在本文件范围，顺带记一笔）：
+  - `server/shared/test/platformAvatar.test.ts`：头像 URL 白名单的拒绝分支，包括 http、别的域名、子域名或后缀伪装、端口、userinfo、超长、非字符串。客户端那份规则另有 `client/test/platformAvatar.test.ts`。
+  - `server/botsvc/test/affordableBuilding.test.ts`：desk 门槛、满级跳过、轮转游标回绕、stickerShop 插队在建成后关闭。
+
+每条都做过一次「改坏源码 → 测试变红 → 还原」的反向确认。
+
+> 坑：客户端 `vitest.ui.config.ts` 里裸 `@nw/shared` 只别名到 `slg/index.ts`，装备常量要从 `@nw/shared/equipment` 引；用错的话收集阶段就报 `Cannot convert undefined or null to object`，不会给出模块找不到的提示。
+
+### 同日第二轮：覆盖率存量重量（第十轮）
+
+按配方（CLI 撑开 `--coverage.include='src/**'`，加 `--testTimeout=30000`）重量一次：整个 `src/` **36.66%（23669/64552），573 文件**；0% 且 ≥25 行 200 文件 / 30.0k 行，其中不直接 import PIXI 的 45 文件 / 4.4k 行。刨掉场景 Core 协作者（间接经 `sketchUi` 碰 PIXI）、`entries/**`、`testing/**`、生成代码、已决定不做的 `hostProbe.ts`，**真正可动的只有两个**，都已进覆盖率 include：
+
+- `scenes/worldmap/net/structures.ts` → `test/worldMapStructures.test.ts`（33 例）：箭塔/拒马建造与拆除、列表内放弃、国家改名此前**任何一层都没测过**；只清该格缓存 vs 清全部、响应缺 `me` 时保留旧值、哪个面板重绘、商店双击锁与超时释放。沿用 `push.ts`/`loaders.ts` 的假 ctx + 桩 `loaders`。
+- `render/textMetricsProbe.ts` → `test/textMetricsProbe.test.ts`（13 例）：两个调用方（微信入口、Playwright spec）都在覆盖率套件外。线性度按**中位数**算偏差、各失败路径不报 `ok`、`measureText` 中途抛错时保留已测样本并写明停在哪。
+
+覆盖率 scope：129 文件 / 7299/7388 行（98.79%）。变异 9 处，7 处首轮变红；存活的两处：拆除漏 `closeModal`（补了断言）、码点 vs UTF-16 计数——**语料全是 BMP 字符，两种计数相同，这条用例本来就测不出来，删掉了**，并在文件头注明没钉这一条。
+
 ## 缺口 A（已补）：GameScene / ReplayScene 冒烟
 
 对战场景驱动**完整 GameRenderer**（board/units/buildings/HUD/VFX）跑真 `IGameEngine`，是「逻辑对、一进去就崩」的高发区。`gameScenes.ui.ts` 把它纳入 headless 冒烟：

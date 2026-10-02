@@ -129,7 +129,10 @@ export class EventScene implements Scene {
     this.hits.push({ rect: hdr.backRect, sound: 'sfx.ui.back', fn: () => this.cb.onBack() });
 
     if (this.events.length === 0) {
-      const empty = txt(t('event.noEvents'), FS.headline, C.mid);
+      // Wrapped to the page: German's "Keine aktiven Events im Moment" at FS.headline is wider than
+      // a 720-wide portrait design (layout/designSize.ts).
+      const empty = txt(t('event.noEvents'), FS.headline, C.mid, false, Math.round(w * 0.86));
+      empty.style.align = 'center';
       empty.anchor.set(0.5, 0.5);
       empty.x = w / 2; empty.y = h * 0.5;
       this.container.addChild(empty);

@@ -3,7 +3,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
-import { FS } from '../../render/fontScale';
+import { FS, fitFont } from '../../render/fontScale';
 import { formatDuration } from '../worldmap/logic/formatDuration';
 import { serverNow } from '../../net/serverClock';
 import {
@@ -208,7 +208,43 @@ export class RenderPanel implements RenderHandlers {
     const queue = this.core.me?.buildQueue ?? [];
     const now = serverNow();
 
-    const panH = queue.length > 0 ? 72 : 51;
+    const hdr = txt(t('city.buildQueue'), FS.body, C.mid, true);
+    hdr.x = cx0 + 24;
+    hdr.y = startY + 14;
+
+    // The entry starts after the HEADER, not at a fixed 195 (2026-09-12). "Build queue" is 11
+    // characters and clears it; German's "Bauwarteschlange" is 16 and ran 12 design px into the
+    // entry beside it, printing as one run-on string ("BauwarteschlangeStadtmauer Lv.10 · …").
+    // Under the sweep's overlap threshold, so it was never reported — seen in the screenshots.
+    const entryX = Math.max(cx0 + 195, Math.ceil(hdr.x + hdr.width) + 12);
+    const BTN_W = 228;
+    const btnX = cx0 + w - 249;
+
+    // Built before the panel so the panel can grow to hold it (see below).
+    const entry = queue[0];
+    const secsLeft = entry ? Math.max(0, Math.ceil((entry.completeAt - now) / 1000)) : 0;
+    let entryLbl: PIXI.Text | null = null;
+    if (entry) {
+      const name = t(`city.bld.${entry.key}` as 'city.bld.desk');
+      const label = t('city.queueEntry')
+        .replace('{name}', name)
+        .replace('{to}', String(entry.toLevel))
+        .replace('{sec}', formatDuration(secsLeft));
+      // Fitted to the room left of the speed-up button, then wrapped if even the floor is too wide.
+      // On the narrow portrait design (layout/designSize.ts) the button is a third of the bar, and
+      // "Stadtmauer Lv.10 · noch 1:29:26" ran straight under it at full size.
+      const avail = (secsLeft > 0 ? btnX - 12 : cx0 + w - 24) - entryX;
+      entryLbl = txt(label, FS.bodyLg, C.dark, true);
+      if (entryLbl.width > avail) {
+        const size = fitFont(FS.bodyLg, entryLbl.width, avail);
+        entryLbl.destroy({ texture: true, baseTexture: true });
+        entryLbl = txt(label, size, C.dark, true, Math.max(40, avail));
+      }
+      entryLbl.x = entryX;
+      entryLbl.y = startY + 14;
+    }
+
+    const panH = entry ? Math.max(72, Math.ceil(entryLbl!.height) + 28) : 51;
     const pg = sketchPanel(w - 16, panH, {
       fill: C.paper,
       border: C.mid,
@@ -218,36 +254,15 @@ export class RenderPanel implements RenderHandlers {
     pg.x = cx0 + 8;
     pg.y = startY;
     this.core.paint.pageLayer.addChild(pg);
-
-    const hdr = txt(t('city.buildQueue'), FS.body, C.mid, true);
-    hdr.x = cx0 + 24;
-    hdr.y = startY + 14;
     this.core.paint.pageLayer.addChild(hdr);
 
-    // The entry starts after the HEADER, not at a fixed 195 (2026-09-12). "Build queue" is 11
-    // characters and clears it; German's "Bauwarteschlange" is 16 and ran 12 design px into the
-    // entry beside it, printing as one run-on string ("BauwarteschlangeStadtmauer Lv.10 · …").
-    // Under the sweep's overlap threshold, so it was never reported — seen in the screenshots.
-    const entryX = Math.max(cx0 + 195, Math.ceil(hdr.x + hdr.width) + 12);
-
-    if (queue.length === 0) {
+    if (!entry) {
       const empty = txt(t('city.queueEmpty'), FS.body, C.mid);
       empty.x = entryX;
       empty.y = startY + 14;
       this.core.paint.pageLayer.addChild(empty);
     } else {
-      const entry = queue[0]!;
-      const secsLeft = Math.max(0, Math.ceil((entry.completeAt - now) / 1000));
-      const name = t(`city.bld.${entry.key}` as 'city.bld.desk');
-      const label = t('city.queueEntry')
-        .replace('{name}', name)
-        .replace('{to}', String(entry.toLevel))
-        .replace('{sec}', formatDuration(secsLeft));
-
-      const entryLbl = txt(label, FS.bodyLg, C.dark, true);
-      entryLbl.x = entryX;
-      entryLbl.y = startY + 14;
-      this.core.paint.pageLayer.addChild(entryLbl);
+      this.core.paint.pageLayer.addChild(entryLbl!);
 
       if (secsLeft > 0) {
         const coins = Math.ceil(secsLeft / BUILD_SPEEDUP_SECS_PER_COIN);
@@ -258,9 +273,9 @@ export class RenderPanel implements RenderHandlers {
         // design px (sweep §50.12). At 58 the widget's two-line branch fits instead and the words
         // stack at full size; the 72-px queue panel already had the room.
         this.core.addBtn(
-          cx0 + w - 249,
+          btnX,
           startY + 4,
-          228,
+          BTN_W,
           58,
           speedLabel,
           0xffffff,

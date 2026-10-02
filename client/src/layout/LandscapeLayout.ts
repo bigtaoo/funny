@@ -1,6 +1,9 @@
 import { BOARD_COLS, BOARD_ROWS, BASE_COLS } from '@nw/engine/config';
 import { Side } from '../game';
 import { ILayout, Orientation, Rect } from './ILayout';
+import {
+  REFERENCE_SHORT, landscapeDesignHeight, landscapeDesignWidth,
+} from './designSize';
 
 // ── Design constants ──────────────────────────────────────────────────────────
 //
@@ -10,20 +13,13 @@ import { ILayout, Orientation, Rect } from './ILayout';
 //
 //  Player 0 (Side.Bottom) base is at game rows 0-1, so it appears on the
 //  LEFT side of the landscape screen.
+//
+//  All of these are at the classic 1080-tall reference. The design height now follows the screen
+//  (layout/designSize.ts — 720–860 on phones held sideways), and the battle geometry is scaled by
+//  `designHeight / 1080`, so the board and HUD strips cover the same share of the screen as before.
 
-const DESIGN_H  = 1080;
 const CELL      = 70;
-
 const HUD_TOP_H = 60;
-const BOT_H     = 180;
-
-// Board occupies: 18 columns (game rows) × 12 rows (game cols)
-const BOARD_W   = BOARD_ROWS * CELL;  // 18 × 70 = 1260
-const BOARD_H   = BOARD_COLS * CELL;  // 12 × 70 = 840
-const BOARD_Y   = HUD_TOP_H;          // 60 — vertical origin is fixed (height never grows)
-
-// Bottom strip y start
-const BOT_Y     = BOARD_Y + BOARD_H;  // 60 + 840 = 900
 
 // Bottom strip column widths (spec: ~300 / flexible middle / ~200)
 const BOT_LEFT_W  = 300;
@@ -35,36 +31,10 @@ const CARD_H   = 160;
 const CARD_MAR = 8;
 
 /**
- * Classic 16:9 design width. On screens with exactly this aspect the layout is
- * identical to the historical fixed 1920×1080 board. Wider screens (tall phones
- * held sideways = ~19.5:9, etc.) get a proportionally wider design space so the
- * game fills the full width instead of being letterboxed with dead bands left
- * and right — up to {@link MAX_W}, past which they letterbox again on purpose.
- */
-const REFERENCE_W = 1920;
-
-/**
- * Ceiling on the reclaimed design width — 2.4:1, i.e. 1080 * 2.4.
- *
- * The floor above stops a squat screen from being letterboxed; this stops an absurdly wide one from
- * inflating the design rect without bound. Every real phone held sideways lands under it: 16:9 is
- * 1.78, iPhone 13 is 2.16, and the widest shipping phone aspect (21:9, some Xperias) is 2.33.
- *
- * What is NOT a phone aspect is an in-app WebView that has been cropped by its host's chrome. The
- * viewport behind the 2026-08-25 crash loop was 750x270 CSS px — 2.78:1, because the notch safe
- * area took 94px off the width and the host app's bars took 120px off the height. Uncapped that
- * asked for a 3000x1080 design rect: 56% wider than the reference, all of it empty paper flanking a
- * board that is only 1260 wide, and 56% more pixels in every page-sized texture (see render/bake.ts).
- * Past this cap the game contains to height and `ScalingManager` fills the side bands with the desk
- * surround it already draws for iPads — a centred page on a desk, which is the intended reading of
- * "the screen is the wrong shape for the notebook".
- */
-const MAX_W = 2592;
-
-/**
- * Landscape layout — design height fixed at 1080; design width follows the aspect
- * of the *safe drawable area* (never narrower than {@link REFERENCE_W}, never wider
- * than {@link MAX_W}) so `ScalingManager`'s fit-to-height scaling leaves no side
+ * Landscape layout — design height from {@link landscapeDesignHeight} (1080 on tablets/desktop,
+ * 720–860 on phones held sideways); design width follows the aspect
+ * of the *safe drawable area* (never narrower than the scaled 1920, never wider
+ * than the scaled 2592) so `ScalingManager`'s fit-to-height scaling leaves no side
  * letterbox on any real phone. Safe-area insets are handled
  * once, by ScalingManager offsetting the whole game layer inside the safe region
  * — so this layout simply anchors to its own 0…designWidth edges and every scene
@@ -80,9 +50,9 @@ const MAX_W = 2592;
 export class LandscapeLayout implements ILayout {
   readonly orientation:  Orientation = 'landscape';
   readonly localSide:    Side;
-  readonly cellSize    = CELL;
+  readonly cellSize:     number;
   readonly designWidth:  number;
-  readonly designHeight = DESIGN_H;
+  readonly designHeight: number;
 
   readonly boardRect:          Rect;
   readonly hudTopRect:         Rect;
@@ -91,12 +61,15 @@ export class LandscapeLayout implements ILayout {
   /** The center section of the bottom strip — where 6 hand cards are rendered. */
   readonly handRect:           Rect;
 
-  readonly cardWidth  = CARD_W;
-  readonly cardHeight = CARD_H;
-  readonly cardMargin = CARD_MAR;
+  readonly cardWidth:  number;
+  readonly cardHeight: number;
+  readonly cardMargin: number;
 
-  // Board X origin in design space (instance-level — depends on the dynamic width).
+  // Board origin and size in design space (instance-level — depend on the dynamic width/height).
   private readonly boardX: number;
+  private readonly boardY: number;
+  private readonly boardW: number;
+  private readonly boardH: number;
 
   // Safe drawable area (CSS px) the layout was built for — retained so `mirrored()`
   // can rebuild an identical layout for the opposite side.
@@ -117,33 +90,44 @@ export class LandscapeLayout implements ILayout {
     this.availW = availW;
     this.availH = availH;
 
+    this.designHeight = landscapeDesignHeight(availH);
     // Design width matches the safe-area aspect (fit-to-height leaves no letterbox), clamped at both
-    // ends: a squat/near-4:3 landscape still gets the classic 1920 width, and a viewport wider than
-    // any real phone (see MAX_W) stops widening and letterboxes onto the desk surround instead.
-    const aspectW = Math.round(DESIGN_H * (availW / Math.max(1, availH)));
-    this.designWidth = Math.min(MAX_W, Math.max(REFERENCE_W, aspectW));
+    // ends: a squat/near-4:3 landscape still gets the scaled classic 1920 width, and a viewport wider
+    // than any real phone stops widening and letterboxes onto the desk surround instead.
+    this.designWidth = landscapeDesignWidth(availW, availH);
+    const k = this.designHeight / REFERENCE_SHORT;
+    // Whole design px per cell, so grid lines and hit-testing stay on integer boundaries.
+    const cell = Math.floor(CELL * k);
+    this.cellSize   = cell;
+    this.cardWidth  = Math.round(CARD_W * k);
+    this.cardHeight = Math.round(CARD_H * k);
+    this.cardMargin = Math.max(4, Math.round(CARD_MAR * k));
+    this.boardW = BOARD_ROWS * cell;
+    this.boardH = BOARD_COLS * cell;
+    this.boardY = Math.round(HUD_TOP_H * k);
+    // The bottom strip absorbs per-term rounding so the three bands stack to exactly designHeight.
+    const botY = this.boardY + this.boardH;
+    const botH = this.designHeight - botY;
+    const botLeftW  = Math.round(BOT_LEFT_W * k);
+    const botRightW = Math.round(BOT_RIGHT_W * k);
 
-    // Center the board horizontally in the (possibly widened) design space. The
-    // vertical layout is unchanged — height is fixed, only width is reclaimed.
-    this.boardX = Math.round((this.designWidth - BOARD_W) / 2);
+    // Center the board horizontally in the (possibly widened) design space.
+    this.boardX = Math.round((this.designWidth - this.boardW) / 2);
 
     // Anchor every HUD element to the board's own horizontal extent rather than
     // the (possibly much wider) design-space edges: the hand fills the board
     // width exactly, the ink/HP column sits in the left paper margin hugging the
     // board's left edge, and the refresh/upgrade column sits in the right margin
     // hugging the board's right edge. Each side margin is `boardX` wide, and
-    // boardX ≥ (1920−1260)/2 = 330 for every allowed design width — always enough
-    // for the 300px left column and the 200px right column. At the classic 16:9
-    // reference this pulls the four HUD corners in from the screen edges to the
-    // board edges (the old layout stranded them at x=0 / x=designWidth); on wider
-    // screens it keeps them locked to the board instead of drifting outward.
-    const boardRight = this.boardX + BOARD_W;
+    // boardX ≥ (1920−1260)/2 = 330 (scaled by k) for every allowed design width — always enough
+    // for the 300px left column and the 200px right column (same k).
+    const boardRight = this.boardX + this.boardW;
 
-    this.boardRect          = { x: this.boardX, y: BOARD_Y, w: BOARD_W, h: BOARD_H };
-    this.hudTopRect         = { x: 0, y: 0, w: this.designWidth, h: HUD_TOP_H };
-    this.hudBottomLeftRect  = { x: this.boardX - BOT_LEFT_W, y: BOT_Y, w: BOT_LEFT_W, h: BOT_H };
-    this.hudBottomRightRect = { x: boardRight,               y: BOT_Y, w: BOT_RIGHT_W, h: BOT_H };
-    this.handRect           = { x: this.boardX, y: BOT_Y, w: BOARD_W, h: BOT_H };
+    this.boardRect          = { x: this.boardX, y: this.boardY, w: this.boardW, h: this.boardH };
+    this.hudTopRect         = { x: 0, y: 0, w: this.designWidth, h: this.boardY };
+    this.hudBottomLeftRect  = { x: this.boardX - botLeftW, y: botY, w: botLeftW, h: botH };
+    this.hudBottomRightRect = { x: boardRight,             y: botY, w: botRightW, h: botH };
+    this.handRect           = { x: this.boardX, y: botY, w: this.boardW, h: botH };
   }
 
   // ── Coordinate transforms ──────────────────────────────────────────────────
@@ -151,40 +135,40 @@ export class LandscapeLayout implements ILayout {
   gridToScreen(col: number, row: number): { x: number; y: number } {
     if (this.localSide === Side.Bottom) {
       return {
-        x: this.boardX + row * CELL + CELL / 2,     // game row → screen X
-        y: BOARD_Y + col * CELL + CELL / 2,          // game col → screen Y
+        x: this.boardX + row * this.cellSize + this.cellSize / 2,  // game row → screen X
+        y: this.boardY + col * this.cellSize + this.cellSize / 2,  // game col → screen Y
       };
     }
     // Player 1: mirror both axes
     return {
-      x: this.boardX + (BOARD_ROWS - 1 - row) * CELL + CELL / 2,
-      y: BOARD_Y + (BOARD_COLS - 1 - col) * CELL + CELL / 2,
+      x: this.boardX + (BOARD_ROWS - 1 - row) * this.cellSize + this.cellSize / 2,
+      y: this.boardY + (BOARD_COLS - 1 - col) * this.cellSize + this.cellSize / 2,
     };
   }
 
   screenToCol(_sx: number, sy: number): number {
-    const raw = Math.floor((sy - BOARD_Y) / CELL);
+    const raw = Math.floor((sy - this.boardY) / this.cellSize);
     return this.localSide === Side.Bottom ? raw : BOARD_COLS - 1 - raw;
   }
 
   screenToRow(sx: number, _sy: number): number {
-    const raw = Math.floor((sx - this.boardX) / CELL);
+    const raw = Math.floor((sx - this.boardX) / this.cellSize);
     return this.localSide === Side.Bottom ? raw : BOARD_ROWS - 1 - raw;
   }
 
   isOutsideBoard(sx: number, sy: number): boolean {
-    return sx < this.boardX || sx > this.boardX + BOARD_W
-        || sy < BOARD_Y || sy > BOARD_Y + BOARD_H;
+    return sx < this.boardX || sx > this.boardX + this.boardW
+        || sy < this.boardY || sy > this.boardY + this.boardH;
   }
 
   playerBaseRect(): Rect {
     if (this.localSide === Side.Bottom) {
       // game rows 0-1 → leftmost X; game cols 5-6 → middle Y
       return {
-        x: this.boardX + 0 * CELL,
-        y: BOARD_Y + BASE_COLS[0] * CELL,
-        w: 2 * CELL,
-        h: 2 * CELL,
+        x: this.boardX + 0 * this.cellSize,
+        y: this.boardY + BASE_COLS[0] * this.cellSize,
+        w: 2 * this.cellSize,
+        h: 2 * this.cellSize,
       };
     }
     // Player 1 (joiner): gridToScreen mirrors the row axis, so the local player's
@@ -193,9 +177,9 @@ export class LandscapeLayout implements ILayout {
     // outline lands on the wrong castle.
     return {
       x: this.boardX,
-      y: BOARD_Y + (BOARD_COLS - 1 - BASE_COLS[1]) * CELL,
-      w: 2 * CELL,
-      h: 2 * CELL,
+      y: this.boardY + (BOARD_COLS - 1 - BASE_COLS[1]) * this.cellSize,
+      w: 2 * this.cellSize,
+      h: 2 * this.cellSize,
     };
   }
 
@@ -203,19 +187,19 @@ export class LandscapeLayout implements ILayout {
     if (this.localSide === Side.Bottom) {
       // Enemy rows 16-17 → rightmost X
       return {
-        x: this.boardX + (BOARD_ROWS - 2) * CELL,
-        y: BOARD_Y + BASE_COLS[0] * CELL,
-        w: 2 * CELL,
-        h: 2 * CELL,
+        x: this.boardX + (BOARD_ROWS - 2) * this.cellSize,
+        y: this.boardY + BASE_COLS[0] * this.cellSize,
+        w: 2 * this.cellSize,
+        h: 2 * this.cellSize,
       };
     }
     // Player 1 (joiner): mirrored, so the enemy base (game rows 0-1) renders at
     // the RIGHT (far side). Mirror image of the player rect above.
     return {
-      x: this.boardX + (BOARD_ROWS - 2) * CELL,
-      y: BOARD_Y + (BOARD_COLS - 1 - BASE_COLS[1]) * CELL,
-      w: 2 * CELL,
-      h: 2 * CELL,
+      x: this.boardX + (BOARD_ROWS - 2) * this.cellSize,
+      y: this.boardY + (BOARD_COLS - 1 - BASE_COLS[1]) * this.cellSize,
+      w: 2 * this.cellSize,
+      h: 2 * this.cellSize,
     };
   }
 

@@ -195,7 +195,7 @@ art-direction §5.4 本来就要「帧率保留手绘的跳跃感，不必追求
 字段：`scene` / `spanS` / `windows` / `fpsP50` / `fpsMin` / `fpsMax` / `maxFps` / `res` / `dpr` / **`dprCapped`** / `canvasW` / `canvasH` / `tickPerSec` / `paintPerSec` / `skipPct`。
 `dprCapped`（`dpr > res`）是「ADR-083 的 dpr 上限在这台设备上到底有没有生效」的那一位；`paintPerSec` vs `tickPerSec` 是「按需重绘有没有在工作」的那一对。
 
-量是有界的：**每会话最多 6 条**（首条约 30 秒，之后每约 5 分钟），且只统计全程可见的窗口——后台被节流的标签页会报出假的 4 fps。服务端 `analyticsvc` 里 `render_profile` 采样率 1.0（不采样，否则跨宿主对比就没意义了）。
+量是有界的：**每会话最多 6 条**（首条约 30 秒，之后每约 5 分钟），且只统计全程可见的窗口——后台被节流的标签页会报出假的 4 fps。**例外（ADR-106）**：会话还没报过、又出现过 ≥50 ms 的一帧时，第一次隐藏就把已有跨度提前报一条（`trigger: 'hide'`），这样跳过开场就走的冷首启也有数据。服务端 `analyticsvc` 里 `render_profile` 采样率 1.0（不采样，否则跨宿主对比就没意义了）。
 
 **⚠️ 2026-09-09 订正：那三个重绘字段一条都没发出去过（已修）。** 线上 `notebook_wars_analytics.events` 里到 2026-09-09 只有**一条** `render_profile`，`fpsP50`/`dprCapped`/`canvasW` 都在，`tickPerSec`/`paintPerSec`/`skipPct` **全缺**。`app.ts` 先构造 `PerfMonitor`（~97 行）、后装 `RenderPolicy`（~143 行），而计数器是后者发布的，于是 `install()` 里那次 `renderStats()` 恒为 `null`，基线为空 → 静默丢字段；第二条（约 5 分钟后）才带上。修法是 `onTick` 里**迟绑定基线**（不是去调 `app.ts` 的顺序——顺序不该由这个模块依赖）。查这类事的入口：
 
@@ -588,7 +588,7 @@ ADR-086 收尾后回头找「客户端还有什么能在本机量的」，量到
   读法：四项加起来接近 `rndMax` 就看哪项最大；远小于 `rndMax` 说明时间在这四类之外（绘制调用提交、GPU 同步）。
 - **为什么 fps 看不见**：PIXI ticker 把单帧 `deltaMS` 截到 100 ms（`maxElapsedMS`），PerfMonitor 的窗口按 `deltaMS` 累加，一次 2 s 的卡顿只算 100 ms。首启这类一次性卡顿只能靠 `rndMax` / `updMax` 看。
 - **本机复现配方**：Playwright 有头 Chrome，`viewport 390×844`、`deviceScaleFactor 3`、`isMobile`，CDP `Emulation.setCPUThrottlingRate 6`；开场故事不需要后端。init script 里包住 GL 原型方法和 `renderer.render` 逐帧记录，超过 10 ms 的 render 记 `new Error().stack`——烘焙渲染也走 `renderer.render`，栈能直接指到是谁在烘焙。
-- **边框图集**：`prewarmPanelFrame()` 在启动加载阶段建图集（发请求之后、`await` 之前）。进年龄门那一帧：CPU×6 下 256 ms（其中 `rndMaxGeo` 216）→ 桌面 24.7 ms（剩下 12 个文字纹理上传）。
+- **边框图集**：`prewarmPanelFrame()` 在启动加载阶段建图集：在发请求之后、`await` 之前登记，等第一次上屏之后在下一个任务里执行（ADR-107）。同步执行时它是整个会话的第一次 render，iPhone 上约 100 ms，`first_frame` 记的也是它。进年龄门那一帧：CPU×6 下 256 ms（其中 `rndMaxGeo` 216）→ 桌面 24.7 ms（剩下 12 个文字纹理上传）。
 - **地图节拍**：`MAP_ANIM_FPS = 30` 一个累加器，护盾每拍、小人每 3 拍（10 fps）。有护盾和行军时空闲 4 s：138 / 240 → 123 / 240（护盾 30 + HUD 1）；没护盾时约 10 次/秒。
 - **门禁**：`test/renderProfile.test.ts`（分项属于最长那次、50 ms 以下不带）、`test/renderCostProbe.test.ts` + `test/ui/renderCostProbe.ui.ts`（分桶、干净 Text 不读时钟）、`test/appAssetGateWiring.test.ts`（预热在发请求和 `await` 之间）、`test/ui/panelFrameAssembly.ui.ts`（预热后第一个面板不再烘焙）、`test/ui/worldMapOverlayCoalescing.ui.ts`（行军 9–11 次/秒；行军 + 护盾 ≤ 32，旧时钟是 36），均做过变异检查。
 - **还开着**：IntroScene 首启 735–2006 ms 的根因——等一份带新字段的 iPhone 首启报告（重装后打开一次）。

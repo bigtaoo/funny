@@ -24,7 +24,10 @@ import {
 
 initI18n('en');
 
-/** Landscape shapes: design height is always 1080, so only the column width changes. */
+/**
+ * Landscape shapes. Design height is 1080 on all but 844x390, a phone held sideways, which gets a
+ * 780-tall box since ADR-105 (layout/designSize.ts).
+ */
 const LANDSCAPE: ReadonlyArray<readonly [number, number]> = [[1920, 1080], [1280, 720], [844, 390], [2340, 1080], [1920, 900]];
 const PORTRAIT: ReadonlyArray<readonly [number, number]> = [[390, 844], [360, 640], [1080, 1920]];
 const LOCALES = ['en', 'zh', 'de'] as const;
@@ -98,6 +101,10 @@ describe('SettingsScene — landscape left column height budget', () => {
         setLocale(loc);
         const s = buildSettings(w, h);
         expect(s.pageMaxScroll).toBe(0);
+        // The row-of-slack budget is a desktop-window guard, sized at the classic 1080-tall box. A
+        // phone held sideways (780 tall since ADR-105) carries proportionally larger text and is
+        // only held to "does not scroll"; desktop windows are where an extra row would go unseen.
+        if (h < 540) return;
         const view = pageView(s);
         const del = findText(collectTexts(s.container), t('settings.deleteAccount'));
         const { rowMinH } = pageMetrics(view.w, view.y + view.h);

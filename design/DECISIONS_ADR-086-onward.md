@@ -474,3 +474,39 @@ docker compose -f docker-compose.cloud.yml --env-file .env config | grep MONGO_U
 - **实测**（claude-in-chrome，1920×911，e2e 构建，新旧两个 dev server 同一账号）：大厅、扭蛋（带左侧标签栏的红线位置）、世界地图三种页面，把背景节点单独渲染到纹理里取像素做 FNV 哈希——原尺寸、0.7371 倍 + 亚像素偏移、0.5 倍、1.3333 倍四种变换，新旧**逐字节相同**。节点：页面子节点 89 → 3（地图 87 → 2）。背景单独渲染一次（dev 构建）约 19–41 µs → 5.5–12.5 µs；加上变化检测少走的 ~86 个节点（§20 的 0.3–0.7 µs / 节点），每帧省约 0.05–0.08 ms，用户感觉不到，是减少常驻遍历成本的整理。多了 1 次绘制调用（横线 Mesh 顶点超过 `Mesh.BATCHABLE_SIZE`，单独画；红线 8 个顶点仍进批）。
 - **没测**：竖屏、真机 Canvas 回退（只有单元测试覆盖）。
 - **影响**：`client/src/render/paperRules.ts`、`render/bake.ts`（`bakeRendererIsCanvas`）、`render/sketchUi.ts`（注释）；测试 `test/ui/paperRules.ui.ts` 改成按网格顶点检查，新增「Mesh 与 Sprite 逐四边形顶点 / 纹理坐标一致」（四种尺寸与分辨率）、「同尺寸共享几何、销毁后可复用」、「Canvas 下仍是 Sprite」；`test/ui/sceneGeometryBudget.ui.ts` 设置页断言改为 2 个 Mesh。变异检查：竖线顶点左右写反、去掉 Canvas 分支、去掉几何复用，三处各自验红。
+
+## ADR-105 竖屏设计宽度跟着屏宽走：手机 720–860，平板及以上仍是 1080 — Accepted — 2026-10-01
+
+- **问题**：竖屏设计宽钉死 1080，390 宽 iPhone 整屏 0.36×、360 宽安卓 0.33×。字号已由可读性下限（§49）+ 手机放大系数（§72）按 CSS px 补回来，但**图标、格子、内边距、等级星都是写死的设计 px**，在手机上只有三分之一大；单独调大常数也没用——按宽度排的容器会原样缩回去（记忆 `icon-legibility-gate-2026-09-14`）。§72.2 当时列过这条路，判为「61 个场景竖屏重排、战斗棋盘重做」，没选；2026-10-01 用户改选这条。
+- **决策**：`client/src/layout/designSize.ts#portraitDesignWidth(availW) = clamp(偶数(availW / 0.5), 720, 1080)`——目标缩放 0.5，540 CSS px 及以上（平板、桌面竖窗）仍是 1080，一个像素不动；手机 360→720、390→780、430→860。横屏不动（它的定轴是 1080 高）。
+  - **战斗棋盘按 `k = 设计宽 / 1080` 等比缩**：格子 `floor(84k)`、顶/底 HUD、手牌区、卡牌尺寸都乘 k，棋盘在屏幕上占的比例和以前一样；四条带的取整误差由手牌区吸收，保证设计高 = `max(round(1920k), 宽×长宽比)`，和巡检的预测（`test/browser/lib/auditBox.ts` 直接 import 同一个函数）逐像素一致——差 1px 就会让缩放比和字号下限跟着偏，巡检会报一屏假的「字太小」（实测 360×640 一次 59 条）。
+  - **`snapFont` 的封顶随短边缩**（`fontScale.ts#snapCeilFor`）：按格高算出来的字号，以前在 2337 高的设计里一律被 `display`(60) 截住 ≈ 21 CSS px，这道截断其实一直在替许多窄格子兜底；设计变窄后同一个 60 = 30 CSS px，德语任务名、结算页按钮、顶栏金币全撑破了宽度没变的盒子。封顶 = 最近档(60 × 短边/1080)，手机上是 42（≈ 原来的 21 CSS px），短边 1080 的地方（全部横屏、平板、桌面）仍是 60。
+- **结果**：卡牌/装备/拍卖格子、图标、等级星在手机竖屏上约大 1.4×；文字基本不变（下限和放大系数本来就瞄 CSS px，缩放到 0.5 后补得少了）。逐站修掉的溢出见 `UI_DESIGN_LOG_2026-10.md` §73。
+- **代价**：手机竖屏一屏能看到的格子变少；拍卖格在最窄的手机上缩小商品图来保住两列；主城建造格最窄 0.7× 目标列宽，再窄就滚动。
+- **没做**：真机没跑过。（原写「手机横屏仍是 0.36×」——同日补做，见下条。）
+- **补充（同日，横屏）**：横屏的定轴是设计**高度**，套同一条规则：`landscapeDesignHeight(availH) = clamp(偶数(availH / 0.5), 720, 1080)`，宽度仍随安全区长宽比、上下界 1920 / 2592 同乘 `k = 设计高 / 1080`（`landscapeDesignWidth`）。≥ 540 CSS px 高（平板横、桌面窗口）一个像素不动；手机横握 844×390 → 1688×780，缩放 0.361 → 0.5；360 高 → 720 下限。棋盘格 `floor(70k)`、顶 HUD、左右栏、卡牌 ×k，底条吸收取整误差，三条带严格叠成设计高（巡检 `auditBox.ts` 直接调同两个函数）。逐站账见 `UI_DESIGN_LOG_2026-10.md` §73.6。
+- **影响**：`client/src/layout/{designSize,PortraitLayout,LandscapeLayout}.ts`、`layout/ScalingManager.ts`、`render/fontScale.ts`（`snapCeilFor`/`snapFontDown`）、`test/browser/lib/auditBox.ts`，以及 §73 列的各场景。
+
+## ADR-106 `render_profile` 隐藏时补发：短会话里出现过慢帧也报一条 — Accepted — 2026-10-01
+
+- **问题**：首条 `render_profile` 要攒满 15 个可见窗口（约 30 s）才发，页面隐藏时不补发。2026-09-30 测试 iPhone 重装后首启：2.4 s 跳过开场，不到 1 分钟就换了会话，**一条都没发**。ADR-098 加拆分仪器要等的正是这份「冷首启」报告，而只要玩家跳过开场就走，这种会话永远收不到。
+- **决策**：会话第一次隐藏时（web 的 `visibilitychange→hidden` / `beforeunload`、微信的 `wx.onHide`，统一走 `platform/appLifecycle.ts`），如果这次会话**还没发过** profile、并且见过 **`rndMax ≥ 50 ms`**（即 `RND_MAX_DETAIL_MS`，带拆分的门槛）的一帧，就把目前为止的跨度提前报出去，带 `trigger: 'hide'`。
+  - 正在采样的那个窗口先并进去：它到这一刻为止都是可见的，而 2 s 内就隐藏的会话只有这一个窗口，boot 的第一帧就在里面。并完之后清零，切回来不会重复计。
+  - 没有慢帧的短会话不报：没有要解释的东西，否则每次跳出都要多一行。
+  - 提前报的这一条计入每会话 6 条的上限，但**不算**那条约 30 s 的定时报告：切回来的会话仍在约 30 s 后发它，而不是约 5 分钟后。每个会话最多提前报一次。
+  - 监听要在把窗口锁存为隐藏的那个监听**之前**注册，也要在 `analytics.init()` 之前（`app.ts` 里 PerfMonitor 本来就装在前面）：这样才判断得出当前窗口是否可见，事件也才能在分析队列自己的隐藏刷新之前入队。两种宿主上监听都按注册顺序执行。
+- **影响**：`client/src/cache/PerfMonitor.ts`；测试 `test/renderProfile.test.ts`（新增「early report on hide」四条，桩 `document` 加了 `visibilityState`）。Grafana 里 `trigger` 字段缺失 = 定时报告，`'hide'` = 提前报的那条，算 `fpsP50` 时它的跨度可能只有零点几秒。
+
+## ADR-107 边框图集预烘焙挪到第一次上屏之后，`first_frame` 只认上屏的那次 render — Accepted — 2026-10-01
+
+- **问题**：2026-10-01 巡检里，测试 iPhone 登录页两条 `render_profile` 的 `rndMax` 是 108 / 116 ms，其中 `rndMaxGeo` 占 91 / 101，`rndMaxAt 0.4`、`rndMaxScene ""`。这一帧就是 ADR-098 的 `prewarmPanelFrame()`（约 41 万顶点的边框图集烘焙）：
+  - `bake()` 调的是 `app.renderer.render`，而 `app.ts` 已经把这个属性换成了计时包装，所以烘焙也会被计成一次 render。
+  - 它在 `startApp` 里同步执行，那时 ticker 一帧都还没跑，所以它是整个会话的**第一次 render**，`first_frame`（「白屏到第一帧」）记的其实是这次离屏烘焙的结束时刻。
+  - 在 iPhone 上，加载画面因此晚了约 100 ms 才画出来，这段时间屏幕是空白的。
+- **决策**：
+  1. 只有不带 `renderTexture` 的 render 才算上屏。`first_frame` 只在上屏的 render 上打点；烘焙仍记入 `rndMs` / `rndMax`，因为它确实占了主线程。
+  2. `prewarmPanelFrame` 不再同步调用，改为登记到 `afterFirstPaint`：第一次上屏 render 结束后，用 `setTimeout(…, 0)` 放到下一个任务里跑。代价从「加载画面晚 100 ms 出现」变成「进度条晚一帧更新」。
+  3. 如果资源先到、第一个面板先建好（缓存热，或标签页在后台打开、不出帧），图集就由那个面板按需烘焙，之后的预热调用什么也不做。这跟 ADR-098 之前的行为一样，只是不再提前。
+- **不改的**：烘焙仍然记在 `rndMax` 里。iPhone 会话的首个跨度大概率仍是约 100 ms、`rndMaxScene ""` 的这一次，所以 ADR-106 的 `rndMax ≥ 50 ms` 门槛几乎总会触发。读数时要按 `rndMaxScene` 区分；IntroScene 真正的首启卡顿（735–2006 ms）比它大得多，不会被它盖住。
+- **核对**：桌面 Chrome 测不到前台路径，因为这台机器上自动化用的窗口一直是 `visibilityState hidden`，不出帧。测到的是后台路径（第 3 条）：第一次上屏发生在年龄门建好之后，预热耗时 0 ms。前台路径的效果，以下次 iPhone 冷启动的 `first_frame` 为准：应比 375–442 ms 小约 100 ms，`rndMaxAt` 应落在 0.4 s 之后。
+- **影响**：`client/src/app.ts`；测试 `test/appAssetGateWiring.test.ts`（预热登记在发请求和 `await` 之间；离屏烘焙在 `first_frame` 打点之前就返回；`afterFirstPaint` 在打点之后执行）。文档 `design/game/ANALYTICS_DESIGN.md` §5.1b、`claudedocs/client-render-budget.md` §18。

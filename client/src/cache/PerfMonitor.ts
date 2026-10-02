@@ -4,6 +4,7 @@ import { reportAnomaly, getActiveScene, takeFrameCost, type RenderMaxDetail } fr
 import { debugNum } from '../debugFlags';
 import { framePacing, renderStats } from '../render/renderStats';
 import * as analytics from '../analytics';
+import { onAppLifecycleChange } from '../platform/appLifecycle';
 
 // Runtime CPU / main-thread saturation monitor: browsers expose no direct CPU usage API; the observable equivalent signal is "main thread fully occupied".
 // Two parallel sampling paths; if either sustains a threshold breach, one cpu anomaly is reported (reportAnomaly → full-volume channel → Loki):
@@ -65,6 +66,12 @@ const PROFILE_EVERY_WINDOWS = 150;  // ≈5min of visible sampling
 const MAX_PROFILES_PER_SESSION = 6;
 /** `rndMax` at or above this carries its split (`rndMaxTex/Sh/Txt/Geo/Scene/At`); 3+ frames at 60 Hz. */
 const RND_MAX_DETAIL_MS = 50;
+// The ≈30s wait above leaves one session blind: the one that leaves first. On 2026-09-30 a fresh
+// iPhone install skipped the intro after 2.4s and was gone within a minute, so the cold first launch
+// — the exact case ADR-099's split was built to explain — sent nothing. So on the first hide of a
+// session that has sent no profile yet AND has seen a render of at least RND_MAX_DETAIL_MS, the
+// span so far goes out early, tagged `trigger: 'hide'`. A short session without a slow frame stays
+// silent: there is nothing to explain, and every bounce would otherwise cost a row.
 
 
 
@@ -149,6 +156,9 @@ export class PerfMonitor {
   /** `renderStats()` at the last report, to diff paints/ticks into per-second rates. */
   private lastPaintCounters: { ticks: number; painted: number } | null = null;
   private profilesSent = 0;
+  /** Whether the FIRST_PROFILE_WINDOWS report has gone out. An early hide report does not count:
+   *  a session that comes back still owes its ≈30s steady-state profile, not one ≈5min later. */
+  private firstScheduledSent = false;
   private onVisibilityChange = (): void => { if (this.isHiddenNow()) this.hiddenSinceLastWindow = true; };
   private onFreeze = (): void => { this.hiddenSinceLastWindow = true; };
 
@@ -158,6 +168,12 @@ export class PerfMonitor {
     this.seedPaintCounters();
     ticker.add(this.onTick);
     this.installLongTaskObserver();
+    // Registered BEFORE the latch below, and before app.ts reaches analytics.init(): on hide the
+    // early report must (a) still see whether the window in progress was visible, i.e. run before
+    // `onVisibilityChange` latches it hidden, and (b) be queued before the analytics queue's own
+    // lifecycle listener flushes. Listeners run in registration order on both hosts. There is no
+    // unregister, hence the `ticker` guard.
+    onAppLifecycleChange((state) => { if (state !== 'visible' && this.ticker) this.reportEarlyOnHide(); });
     globalThis.document?.addEventListener?.('visibilitychange', this.onVisibilityChange);
     globalThis.document?.addEventListener?.('freeze', this.onFreeze);
   }
@@ -243,18 +259,7 @@ export class PerfMonitor {
       return;
     }
 
-    if (fps !== null) this.fpsSamples.push(fps);
-    this.profileIdleMs += Math.max(0, windowMs - fullMs);
-    // Divided by this window's TICK count, not by the number of calls: `updMs` sums one call per
-    // mounted scene (a scene plus its overlay is two), and `rndMs` sums only the ticks that actually
-    // painted. Both therefore read as "ms of this work per tick", directly comparable to the frame
-    // period 1000/fps — which is the comparison the whole field exists for.
-    this.updSamples.push(cost.updMs / frames);
-    this.rndSamples.push(cost.rndMs / frames);
-    if (cost.updMaxMs > this.updMaxMs) this.updMaxMs = cost.updMaxMs;
-    if (cost.rndMaxMs > this.rndMaxMs) { this.rndMaxMs = cost.rndMaxMs; this.rndMaxDetail = cost.rndMaxDetail ?? null; }
-    this.profileSpanMs += windowMs;
-    this.windowsSinceProfile += 1;
+    this.foldIntoProfile(windowMs, frames, fullMs, fps, cost);
     this.maybeReportProfile();
 
     // ① Long-task busy ratio: report immediately if the threshold is breached in a single window (a long task is hard evidence of a saturated main thread).
@@ -291,11 +296,53 @@ export class PerfMonitor {
    * Everything here is derived from samples the watchdog was already taking, plus a diff of
    * `renderStats()`, so a healthy session pays one array sort and one analytics event per report.
    */
+  private foldIntoProfile(windowMs: number, frames: number, fullMs: number, fps: number | null, cost: ReturnType<typeof takeFrameCost>): void {
+    if (fps !== null) this.fpsSamples.push(fps);
+    this.profileIdleMs += Math.max(0, windowMs - fullMs);
+    // Divided by this window's TICK count, not by the number of calls: `updMs` sums one call per
+    // mounted scene (a scene plus its overlay is two), and `rndMs` sums only the ticks that actually
+    // painted. Both therefore read as "ms of this work per tick", directly comparable to the frame
+    // period 1000/fps — which is the comparison the whole field exists for.
+    this.updSamples.push(cost.updMs / frames);
+    this.rndSamples.push(cost.rndMs / frames);
+    if (cost.updMaxMs > this.updMaxMs) this.updMaxMs = cost.updMaxMs;
+    if (cost.rndMaxMs > this.rndMaxMs) { this.rndMaxMs = cost.rndMaxMs; this.rndMaxDetail = cost.rndMaxDetail ?? null; }
+    this.profileSpanMs += windowMs;
+    this.windowsSinceProfile += 1;
+  }
+
   private maybeReportProfile(): void {
     if (this.profilesSent >= MAX_PROFILES_PER_SESSION) return;
-    const due = this.profilesSent === 0 ? FIRST_PROFILE_WINDOWS : PROFILE_EVERY_WINDOWS;
+    const due = this.firstScheduledSent ? PROFILE_EVERY_WINDOWS : FIRST_PROFILE_WINDOWS;
     if (this.windowsSinceProfile < due) return;
+    this.firstScheduledSent = true;
+    this.reportProfile();
+  }
 
+  /**
+   * The early report described at RND_MAX_DETAIL_MS's neighbour comment. The window in progress is
+   * folded in first — it was visible up to this moment (the latch has not run yet, see install()),
+   * and for a session that hides inside its first 2s it is the ONLY window, holding boot's first
+   * frame. Its accumulators are then reset like a closed window's, so nothing is counted twice when
+   * the page comes back.
+   */
+  private reportEarlyOnHide(): void {
+    if (this.profilesSent > 0) return;
+    if (this.frames > 0 && !this.hiddenSinceLastWindow) {
+      const fullMs = this.fullMs;
+      const fps = fullMs >= MIN_FULL_RATE_MS ? (this.fullFrames * 1000) / fullMs : null;
+      this.foldIntoProfile(this.accMs, this.frames, fullMs, fps, takeFrameCost());
+      this.accMs = 0;
+      this.frames = 0;
+      this.fullMs = 0;
+      this.fullFrames = 0;
+      this.longTaskMs = 0;
+    }
+    if (this.rndMaxMs < RND_MAX_DETAIL_MS) return;
+    this.reportProfile({ trigger: 'hide' });
+  }
+
+  private reportProfile(extra: Record<string, unknown> = {}): void {
     const sorted = [...this.fpsSamples].sort((a, b) => a - b);
     const spanS = this.profileSpanMs / 1000;
     const props: Record<string, unknown> = {
@@ -309,6 +356,7 @@ export class PerfMonitor {
       // Share of the span held at IDLE_FPS. Power is read here, smoothness from fpsP50: two
       // questions that used to share one number.
       idlePct: this.profileSpanMs > 0 ? Math.round((this.profileIdleMs / this.profileSpanMs) * 100) : 0,
+      ...extra,
     };
     // Full-rate stretches only (ADR-095). Absent, not 0, for a span that never ran at full rate.
     if (sorted.length) {

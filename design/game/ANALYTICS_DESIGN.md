@@ -365,7 +365,7 @@ Art 7(1) 的举证留痕，不是遥测。
 | 事件 | 时机 | 回答什么 |
 |---|---|---|
 | `boot` | 我们的第一行 JS 执行（`startApp` 首句） | 我们还不存在的那段时间花了多少：DNS/TLS/HTML/包体 |
-| `first_frame` | 第一次 `renderer.render()` 完成 | 白屏到第一帧 |
+| `first_frame` | 第一次画到屏幕上的 `renderer.render()` 完成（带 `renderTexture` 的离屏烘焙不算，ADR-107） | 白屏到第一帧 |
 | `load_time` | `core.start()` 返回，第一个真实场景建好 | 总时长，**按阶段拆开** |
 
 `boot` 与 `load_time` 的条数比 = **加载中途放弃的比例**，这拨人不进任何场景、不点任何按钮、
