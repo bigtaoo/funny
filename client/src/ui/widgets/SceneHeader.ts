@@ -409,9 +409,7 @@ export function drawSceneHeader(
     let leadW = icon ? icon.size + icon.gap : 0;
     if (icon && leadW + titleNode.width > usableBand) {
       const room = usableBand - titleNode.width - icon.gap;
-      // "Would not read as a picture any more" has a floor beside the 40%: the legibility floor the
-      // layout sweep holds icons to (layoutAudit `icon`). A 20-px glyph squeezed to 12 on a 780-wide
-      // portrait design cleared the ratio and still read as a speck.
+      // Besides the 40% ratio, hold the icon to the legibility floor (layoutAudit `icon`) so it never shrinks to a speck.
       if (room >= Math.max(icon.size * 0.4, currentFontFloor())) {
         iconScale = room / icon.size;
         leadW = Math.round(room + icon.gap);

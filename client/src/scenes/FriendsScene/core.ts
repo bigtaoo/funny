@@ -172,8 +172,7 @@ export class FriendsSceneCore {
   worldChatInput = '';
   worldChatActive = false;
   worldSending = false;
-  /** A family/sect create or join request is in flight (ADR-058) — locks and greys all four org
-   *  confirm/join buttons, since a second tap would POST again (sect creation also charges coins). */
+  /** Org create/join request in flight (ADR-058): greys all four org buttons so a second tap can't re-POST. */
   orgSending = false;
   /** Pin the world channel to the latest message; cleared once the user scrolls up to read history,
    *  re-armed when they drag back to the bottom, re-enter the tab, or post (see drawWorldTab). */
@@ -352,7 +351,6 @@ export class FriendsSceneCore {
   get totalUnreadChat(): number {
     return this.conversations.reduce((s, c) => s + (c.unread > 0 && !isBlocked(c.peer.publicId) ? c.unread : 0), 0);
   }
-
 
   onBack(): void {
     if (this.openMailItem) { this.openMailItem = null; this.render(); return; }
