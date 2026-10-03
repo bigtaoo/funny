@@ -406,14 +406,23 @@ export class LobbySceneCore {
     this.heroFigure = null;
     this.heroFigureClips = [];
     this.heroFigureSwapTimer = 0;
+    // The modal overlays are state, not layout: lift them out before the teardown and put them back
+    // on top afterwards. Destroying them here while their fields stayed set left the consent card
+    // invisible yet still swallowing every lobby tap until the player happened to hit one of its
+    // unseen buttons — on iOS a first login rebuilds once or twice right after entry (tab-icon
+    // art, the save adopted from the server), which is the "lobby dead for 80 s" report
+    // (IOS_RELEASE.md §10.7).
+    const modals = [this.settlementLayer, this.guideLayer, this.consentLayer]
+      .filter((l): l is PIXI.Container => !!l);
+    for (const l of modals) this.container.removeChild(l);
     tearDownChildren(this.container);
     this.toastLayer = null;
-    this.settlementLayer = null;
     this.achievementBadgeLayer = null;
     this.shopBadgeLayer = null;
     this.socialBadgeLayer = null;
     this.sideStripBadgeLayer = null;
     this.buildHook();
+    for (const l of modals) this.container.addChild(l);
   }
 
   destroy(): void {
