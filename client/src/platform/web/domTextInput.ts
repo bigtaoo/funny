@@ -84,12 +84,14 @@ const KEYBOARD_SETTLE_MS = 400;
  * field), where scrolling back would fight the scroll the new field needs.
  */
 function resetDocumentScroll(): void {
+  // The UI test harness runs scenes under Node with only a `document` stub: no window, no scroll.
+  if (typeof window === 'undefined' || typeof window.scrollTo !== 'function') return;
   const reset = (): void => {
     if (window.scrollX !== 0 || window.scrollY !== 0) window.scrollTo(0, 0);
   };
   reset();
   setTimeout(() => {
-    if (document.activeElement instanceof HTMLInputElement) return;
+    if (typeof HTMLInputElement !== 'undefined' && document.activeElement instanceof HTMLInputElement) return;
     reset();
   }, KEYBOARD_SETTLE_MS);
 }
