@@ -784,3 +784,7 @@ MMS 的 `killProcess` 就是 `await childprocess.once('exit')`——**这个事�
 **下次再挂时怎么看**：先找 `::warning::… exited before teardown` 那行的 code/signal；然后下载 artifact，
 看死前最后几十行和 `[harness …] mongodb-memory-server instanceError` 那行；如果 mongod 日志什么都没留就断了，
 再看 `dmesg` 那一步有没有 OOM。拿到证据再决定修法（调 mongod 参数，或者让 harness 在 mongod 死后重启它）。
+
+**同日复跑（run 37139205923，`workflow_dispatch` 到 `03.10.2026`，metaserver × 5）**：5 轮全绿，每轮 11–13 分钟，
+没出现 `exited before teardown`，没复现。结合 09-26 / 09-30 / 10-03 挂、10-02 绿，这是隔几天才出一次的问题，
+更像 runner 侧（内存压力等）而不是代码。上面的观测只有合进 `main` 后才会跟着 nightly 跑，等下一次挂了再看证据。
