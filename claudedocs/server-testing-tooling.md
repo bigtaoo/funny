@@ -751,3 +751,36 @@ MMS 的 `killProcess` 就是 `await childprocess.once('exit')`——**这个事�
 
 **规矩**（已写进 `CLAUDE.md`）：服务端测试的输出别接 `| head`，要截断就先写进文件再看。sweep 只是兜底，
 被打断的那一次跑还是白跑了，mongod 也被硬杀。
+
+## flake-hunt：metaserver 共用的 mongod 跑到约 5 分钟时死掉（2026-10-03，worktree `feat/flake-hunt-mongod-log`）
+
+**现象**（nightly run 37106811592）：metaserver 分片 **3 轮全挂**，每轮 38 个文件失败。三轮经过一模一样：
+跑到某个测试（三轮都是 `cards-fuse-unit.test.ts` 的 `duplicate material ids`，一个纯参数校验用例）时卡住约 17.5 秒，
+日志里是 MMS 的 `Server selection timed out after 5000 ms` → `didnt exit with signal SIGINT within 10 seconds, using SIGKILL`，
+之后每个测试都是 `ECONNREFUSED`。
+
+**不是那个测试的问题**：
+- 同一个 commit（`116370b40`）、同一个 runner 镜像，前一天（run 36981192797）3 轮全绿；
+- 这个文件本地单跑 19/19 全过；
+- **mongod 死的时间点跟测试无关，跟墙钟有关**：三轮分别在开跑后 4:57、4:47、4:46 死掉；09-26 那次（run 36225635515，3 轮里挂 1 轮）
+  也是 5:04，当时撞上的是 `economy-branch-subscriptions.test.ts`。17.5 秒 = MMS 的 `instanceError` → `stop()`
+  （5 秒连不上 + 10 秒等 SIGINT）。所以是 mongod 先出事、MMS 再去杀它，正好轮到哪个测试就算在谁头上。
+- 本地（Windows）开着 `DEBUG=MongoMS:MongoInstance` 跑全量，过了 10 分钟也没复现。
+
+**缺的是证据**：CI 里看不到 mongod 自己的输出，没法区分是 mongod 内部断言（`***aborting after …`，MMS 的 stdout 正则会
+抓到并杀进程）、自己崩了，还是被内核 OOM 杀了。所以这次**只加观测，不改行为**：
+
+- `server/scripts/testMongoHarness.ts` 新增 `watchMongodForRun`，从 setup 到 teardown 盯着每个 mongod：
+  - **常开**：teardown 之前 mongod 就退出了，打一条 `::warning::<pkg> test run: mongod pid … exited before teardown, Ns into the run — code=… signal=…`。
+    以后不用再从一堆 ECONNREFUSED 倒推。
+  - **开关 `NW_TEST_MONGO_LOG_DIR=<dir>`**：把 mongod 整轮的 stdout/stderr 追加到 `<dir>/<pkg>-<port>.log`，
+    再加上 MMS 的 `instanceError`（MMS 就是因为它才杀进程，原因平时只在 `DEBUG=MongoMS:*` 下才打印）。
+    体量约 3 MB / 20 秒，比 `DEBUG=MongoMS:*` 便宜（后者每行都走 debug 格式化，实测整轮慢约 4 倍）。
+  - 和 `NW_TEST_MONGO_SHUTDOWN_LOG` 互补：那个只覆盖关闭阶段，这个覆盖关闭之前的整轮。
+- `flake-hunt.yml` 的 server 分片每轮都设 `NW_TEST_MONGO_LOG_DIR=$RUNNER_TEMP/mongod-logs/iter<i>`，
+  这一轮过了就删，挂了就 gzip 保留；job 失败时上传成 artifact `flake-hunt-mongod-<shard>`（保留 14 天），
+  并打印 `dmesg` 里 OOM / segfault 相关的行。
+
+**下次再挂时怎么看**：先找 `::warning::… exited before teardown` 那行的 code/signal；然后下载 artifact，
+看死前最后几十行和 `[harness …] mongodb-memory-server instanceError` 那行；如果 mongod 日志什么都没留就断了，
+再看 `dmesg` 那一步有没有 OOM。拿到证据再决定修法（调 mongod 参数，或者让 harness 在 mongod 死后重启它）。
