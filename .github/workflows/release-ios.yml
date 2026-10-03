@@ -2,7 +2,8 @@ name: iOS - Build & Release
 
 # Builds the native iOS app (Capacitor shell wrapping client/dist) and uploads to App Store Connect.
 # Trigger: push a tag `ios-v*` (e.g. ios-v1.0.0), or run manually.
-# Flow: npm ci → build:mobile (bakes api.gamestao.com) → cap sync ios → xcodebuild archive/export → altool upload.
+# Flow: npm ci → build:mobile (bakes api.gamestao.com + the builtin bundle version) → cap sync ios →
+#       xcodebuild archive/export → altool upload.
 # Full setup + required secrets: design/game/IOS_RELEASE.md.
 #
 # Required repo secrets (Settings → Secrets and variables → Actions):
@@ -57,11 +58,35 @@ jobs:
         working-directory: client
         run: npm ci
 
+      # The builtin web bundle's version, which ota.ts compares against the OTA manifest (IOS_RELEASE.md
+      # §11.3). Without it the bundle is '0.0.0', which ota.ts treats as a dev build and never checks
+      # for updates -- that is how builds 11-14 shipped (§11.7). Scheme: <MARKETING_VERSION>.<build>,
+      # where <build> is the run number agvtool stamps as CFBundleVersion below. OTA bundles are
+      # versioned <shell version>.<n>, so every new shell outranks every OTA built for an older one,
+      # and a shell never "updates" itself back to an older web layer.
+      - name: Resolve builtin bundle version
+        id: ver
+        run: |
+          MV=$(grep -o 'MARKETING_VERSION = [^;]*' client/ios/App/App.xcodeproj/project.pbxproj | sort -u | sed 's/.* = //')
+          if ! echo "$MV" | grep -Eq '^[0-9]+\.[0-9]+$'; then
+            echo "MARKETING_VERSION must be a single X.Y across all configurations (got: $MV)"; exit 1
+          fi
+          V="$MV.${{ github.run_number }}"
+          # A live manifest at or above V would make this shell download that bundle on first launch
+          # and run older web code than it shipped with.
+          LIVE=$(curl -fsS --max-time 10 https://ota.gamestao.com/manifest.json | sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' || true)
+          if [ -n "$LIVE" ] && [ "$(printf '%s\n%s\n' "$LIVE" "$V" | sort -V | tail -1)" = "$LIVE" ]; then
+            echo "Live OTA manifest version $LIVE >= builtin $V; new shells would downgrade to it"; exit 1
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "Builtin bundle version: $V (live OTA manifest: ${LIVE:-unreachable})"
+
       # Outputs client/dist with production backend addresses baked in (webpack mobile target
       # defaults to api.gamestao.com; env here is an explicit override / documentation).
       - name: Build web bundle (mobile target)
         working-directory: client
         env:
+          NW_BUILD_VERSION: ${{ steps.ver.outputs.version }}
           NW_API_BASE: https://api.gamestao.com/api
           NW_GATEWAY_WS: wss://api.gamestao.com/gw
           NW_WORLD_BASE: https://api.gamestao.com

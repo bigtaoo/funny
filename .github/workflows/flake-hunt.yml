@@ -106,6 +106,11 @@ jobs:
           NW_REQUIRE_DB: '1'
           NW_REDIS_URL: redis://127.0.0.1:6379
           RUNS: ${{ github.event_name == 'workflow_dispatch' && inputs.runs || '3' }}
+          MONGOD_LOGS: ${{ runner.temp }}/mongod-logs
+        # mongod's own log for the whole run goes to $MONGOD_LOGS/iter<i>/ (NW_TEST_MONGO_LOG_DIR, see
+        # server/scripts/testMongoHarness.ts) and is kept, gzipped, only for iterations that failed.
+        # Added 2026-10-03: the shared metaserver mongod died ~5 min into 3 of 3 iterations and the
+        # vitest output only showed the ECONNREFUSED aftermath, never why mongod went away.
         run: |
           args=()
           for w in ${{ matrix.shard.workspaces }}; do args+=(-w "$w"); done
@@ -113,12 +118,15 @@ jobs:
           failed_iters=''
           for i in $(seq 1 "$RUNS"); do
             echo "::group::iteration $i/$RUNS — ${{ matrix.shard.name }}"
+            export NW_TEST_MONGO_LOG_DIR="$MONGOD_LOGS/iter$i"
             if npm run test:coverage "${args[@]}" --if-present; then
               echo "iteration $i: pass"
+              rm -rf "$NW_TEST_MONGO_LOG_DIR"
             else
               fail=1
               failed_iters="$failed_iters $i"
               echo "::warning::flake-hunt ${{ matrix.shard.name }}: iteration $i FAILED"
+              gzip -r "$NW_TEST_MONGO_LOG_DIR" 2>/dev/null || true
             fi
             echo '::endgroup::'
           done
@@ -128,6 +136,18 @@ jobs:
             exit 1
           fi
           echo "### ✅ flake-hunt \`${{ matrix.shard.name }}\`: $RUNS/$RUNS clean" >> "$GITHUB_STEP_SUMMARY"
+      # A mongod that vanished without a word in its own log was most likely OOM-killed by the kernel.
+      - name: kernel log on failure (${{ matrix.shard.name }})
+        if: failure() && steps.gate.outputs.run == 'true'
+        run: sudo dmesg -T | grep -iE 'oom|killed process|mongod|segfault' | tail -50 || true
+      - name: upload mongod logs of failed iterations (${{ matrix.shard.name }})
+        if: failure() && steps.gate.outputs.run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: flake-hunt-mongod-${{ matrix.shard.name }}
+          path: ${{ runner.temp }}/mongod-logs
+          if-no-files-found: ignore
+          retention-days: 14
       # Tests that only passed thanks to `retry: 1` — invisible in CI by design, collected here.
       - name: upload flaky-test report (${{ matrix.shard.name }})
         if: always() && steps.gate.outputs.run == 'true'

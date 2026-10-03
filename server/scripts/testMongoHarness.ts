@@ -15,7 +15,7 @@
 // reused offline forever after. MONGOD_VERSION is pinned on purpose — never let it float.
 import { MongoMemoryReplSet, MongoMemoryServer } from 'mongodb-memory-server';
 import { MongoClient } from 'mongodb';
-import { appendFileSync, writeFileSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs';
+import { appendFileSync, mkdirSync, writeFileSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs';
 import type { ChildProcess } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -57,6 +57,7 @@ export interface MongoHarness {
 export function createMongoHarness({ pkg, replSet }: MongoHarnessOptions): MongoHarness {
   const uriFile = mongoUriHandshakePath(pkg);
   let mongo: MongoMemoryReplSet | MongoMemoryServer | undefined;
+  let untapRun: () => void = () => {};
 
   return {
     async setup(): Promise<void> {
@@ -83,11 +84,15 @@ export function createMongoHarness({ pkg, replSet }: MongoHarnessOptions): Mongo
         uri = standalone.getUri();
       }
 
+      untapRun = watchMongodForRun(asStoppable(mongo).servers, pkg);
+
       process.env.NW_MONGO_URI = uri;
       writeFileSync(uriFile, uri, 'utf8');
     },
 
     async teardown(): Promise<void> {
+      // Detach before our own shutdown: from here on an exit is expected, not a crash.
+      untapRun();
       if (!mongo) {
         rmSync(uriFile, { force: true });
         return;
@@ -108,7 +113,16 @@ export interface MongoServerLike {
     ip: string;
     port: number;
     tmpDir?: string;
-    instance: { mongodProcess?: ChildProcess };
+    instance: {
+      mongodProcess?: ChildProcess;
+      /**
+       * MongoInstance is an EventEmitter; optional so plain test doubles still satisfy the type.
+       * `event: string`, not the literal: MMS types it as its `MongoInstanceEvents` string enum,
+       * which a literal is not assignable to, and the enum itself is not exported from the package root.
+       */
+      on?(event: string, listener: (err: unknown) => void): unknown;
+      off?(event: string, listener: (err: unknown) => void): unknown;
+    };
   };
 }
 
@@ -308,6 +322,79 @@ function tapShutdownLog(proc: ChildProcess): () => void {
   };
   proc.stdout.on('data', onData);
   return () => proc.stdout?.off('data', onData);
+}
+
+/**
+ * Whole-run watch on every mongod, between setup and teardown. Two parts:
+ *
+ * Always on: a mongod that exits BEFORE teardown is a crash (or a kill by mongodb-memory-server's
+ * `instanceError` handler), and it takes every remaining test file down with ECONNREFUSED. The
+ * vitest output only shows that aftermath, so name the death itself: exit code, signal, and when.
+ *
+ * Opt-in, `NW_TEST_MONGO_LOG_DIR=<dir>`: append mongod's own stdout/stderr for the entire run to
+ * `<dir>/<pkg>-<port>.log`, plus a line for each MMS `instanceError` (MMS kills mongod on those,
+ * and only logs why under `DEBUG=MongoMS:*`). Built for flake-hunt, where a shared mongod
+ * repeatedly died ~5 minutes into the metaserver suite on Linux with no trace of why (2026-10-03,
+ * see claudedocs/server-testing-tooling.md); the workflow keeps the file only for failed iterations.
+ *
+ * Returns the detach function. Behaviour-free either way.
+ */
+function watchMongodForRun(servers: readonly MongoServerLike[], pkg: string): () => void {
+  const dir = process.env.NW_TEST_MONGO_LOG_DIR;
+  const started = Date.now();
+  const detach: Array<() => void> = [];
+
+  for (const server of servers) {
+    const info = server.instanceInfo;
+    const proc = info?.instance.mongodProcess;
+    if (!info || !proc) continue;
+
+    let file: string | undefined;
+    if (dir) {
+      try {
+        mkdirSync(dir, { recursive: true });
+        file = join(dir, `${pkg}-${info.port}.log`);
+      } catch {
+        file = undefined;
+      }
+    }
+    const write = (text: string): void => {
+      if (!file) return;
+      try {
+        appendFileSync(file, text);
+      } catch {
+        // A diagnostic that cannot write must not be the thing that breaks the run.
+      }
+    };
+    const note = (msg: string): void => write(`[harness ${new Date().toISOString()}] ${msg}
+`);
+
+    const onData = (chunk: Buffer | string): void => write(String(chunk));
+    const onExit = (code: number | null, signal: NodeJS.Signals | null): void => {
+      const after = ((Date.now() - started) / 1000).toFixed(1);
+      const msg = `mongod pid ${proc.pid} (port ${info.port}) exited before teardown, ${after}s into the run — code=${code} signal=${signal}; every test after this point fails with ECONNREFUSED`;
+      note(msg);
+      console.log(`::warning::${pkg} test run: ${msg}`);
+    };
+    const onInstanceError = (err: unknown): void => note(`mongodb-memory-server instanceError (it kills mongod on this): ${message(err)}`);
+
+    note(`watching mongod pid ${proc.pid} on port ${info.port}`);
+    proc.stdout?.on('data', onData);
+    proc.stderr?.on('data', onData);
+    proc.once('exit', onExit);
+    info.instance.on?.('instanceError', onInstanceError);
+    detach.push(() => {
+      proc.stdout?.off('data', onData);
+      proc.stderr?.off('data', onData);
+      proc.off('exit', onExit);
+      info.instance.off?.('instanceError', onInstanceError);
+    });
+  }
+
+  return () => {
+    for (const d of detach) d();
+    detach.length = 0;
+  };
 }
 
 function hasExited(proc: ChildProcess): boolean {
