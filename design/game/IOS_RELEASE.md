@@ -671,7 +671,24 @@ ATT 那处矛盾能活六周，正是因为四处分别正确、没人一眼看�
 
 ### 11.3 版本号与产物
 
-- 沿用 `NW_BUILD_VERSION`（`webpack.config.js` 注入 `__NW_BUILD_VERSION__`）。OTA bundle 版本 = 这个值，需**单调递增**（如 `1.2.3`）。CI 从 tag `ota-v<version>` 解析后烘焙进包。
+- 沿用 `NW_BUILD_VERSION`（`webpack.config.js` 注入 `__NW_BUILD_VERSION__`）。`ota.ts` 拿 manifest 的 `version` 和**正在跑的包**烘进去的这个值比（`isNewer`，逐段数字比较，缺的段当 0）；值为 `0.0.0` 时视为 dev 包，整个 OTA 检查跳过。
+- **壳和 OTA 共用一条版本线**（2026-10-03 定，见 §11.7）：
+
+  | 产物 | 版本 | 由谁烘 | 例 |
+  |---|---|---|---|
+  | 壳内置包 | `<MARKETING_VERSION>.<build>` | `release-ios.yml`；`<build>` = `github.run_number`，也就是 `agvtool` 写进 `CFBundleVersion` 的那个号 | build 15 → `1.0.15` |
+  | OTA 包 | `<最新壳版本>.<n>` | `ota-publish.yml`，tag `ota-v<version>` 或手动输入 | `1.0.15.1`、`1.0.15.2` |
+
+  由此：OTA 一定比它所基于的壳（以及更老的壳）新，会被拉；而**下一个壳**（`1.0.16`）一定比任何为旧壳出的 OTA（`1.0.15.x`）新，不会被「更新」回更旧的 web 层。
+  Capgo 6.50 的 `resetWhenUpdate` 按 `CFBundleVersion` 判断原生升级（每个新 build 都会丢掉已下载的 OTA、回到内置包），再配合这条版本线，就不会出现新壳又去下旧包的情况。
+- **两条流水线各自的护栏**：
+  - `release-ios.yml` 的「Resolve builtin bundle version」步骤要求 `MARKETING_VERSION` 在 pbxproj 里只有**一个 `X.Y`** 值；如果线上 manifest 版本 ≥ 本次内置版本，就直接失败，否则新壳首启会降级。
+  - `ota-publish.yml` 的「Resolve version」步骤要求：
+    - 版本必须是**四段数字**；
+    - 前三段**恰好等于**最新一次成功的 `release-ios.yml`（`gh run list` 查 run number）对应的壳版本；
+    - 版本必须**严格大于**线上 manifest。
+  - 单测 [`client/test/iosBuildVersion.test.ts`](../../client/test/iosBuildVersion.test.ts) 读两份 workflow 文本，断言两边都设了 `NW_BUILD_VERSION`、版本方案和这些护栏都还在，同时用 `isNewer` 验证排序假设。
+- `MARKETING_VERSION`（`CFBundleShortVersionString`，目前 `1.0`）只在 App Store 换大版本时改，**保持两段**。改成 `1.1` 后，新壳 `1.1.N` 自然高于一切 `1.0.*`。`minNativeVersion` 比的是这个两段值（`isNewer('1.0.0','1.0')` 为 false，所以 `MIN_NATIVE: 1.0.0` 放行 `1.0` 壳）。
 - OTA bundle = `build:mobile` 的 `client/dist` 整目录打成 zip。
 - `checksum`：manifest 里可选字段。**首版先不带**——Capgo 各大版本校验算法不同（v5 CRC32、v6 起 sha256），填错会让所有下载被拒、更新彻底卡死。上线跑通后，确认当前插件版本的算法再补，属硬化项而非阻塞项。
 
@@ -681,7 +698,7 @@ zip 包适合走 CDN 边缘缓存分发，而 Workers 静态资源不适合堆�
 
 | URL | 内容 |
 |---|---|
-| `https://ota.gamestao.com/manifest.json` | `{ "version": "1.2.3", "url": "https://ota.gamestao.com/1.2.3.zip", "minNativeVersion": "1.0.0" }`；**no-cache**（上传时 `--cache-control`） |
+| `https://ota.gamestao.com/manifest.json` | `{ "version": "1.0.15.1", "url": "https://ota.gamestao.com/1.0.15.1.zip", "minNativeVersion": "1.0.0" }`；**no-cache**（上传时 `--cache-control`） |
 | `https://ota.gamestao.com/<version>.zip` | 对应版本 `dist` 打包；版本化文件名，**可长缓存** |
 
 一次性设置（Cloudflare 后台）：建 R2 桶（默认名 `nivara-ota`）→ 桶 Settings 绑定自定义域 `ota.gamestao.com`（自动建 DNS + 边缘证书）→ 建一个有该桶写权限的 API Token。
@@ -721,12 +738,23 @@ OTA 管线**不需要 macOS runner**（无原生编译），`ubuntu-latest` 即�
 > 即：把部署目标抬到 **iOS 15 不再只是 StoreKit 2 的前提（§6 B 批），而是 2027 年春季起的**
 > **硬性上传要求**。两件事合成一件做，且有了截止日期。
 
-### 11.7 ⚠️ 现有 iOS 包实际上收不到 OTA（2026-10-03 发现，未修）
+### 11.7 build 11–14 收不到 OTA（2026-10-03 发现并修复）
 
-`release-ios.yml` 的 `build:mobile` 步骤**没有设 `NW_BUILD_VERSION`**，所以 App 内置包里的 `__NW_BUILD_VERSION__` 是 `'0.0.0'`
-（analyticsvc 里 build 14 的事件 `game_version=0.0.0` 可证）。`checkOtaUpdate()` 第一行就把 `0.0.0` 当 dev 包直接 return，
-连 `notifyAppReady()` 都不调。也就是说 **TestFlight/App Store 上的每一个壳都不会去拉 manifest**；R2 上的 manifest 还停在 2026-08-02 的 `1.0.2`。
-修法要定版本号策略（内置包要烘一个 ≤ 后续 OTA 版本的真版本），属于发布管线的改动，单独处理。在那之前，**任何 web 层修复都只能靠出新 build 送到手机**。
+**现象**：`release-ios.yml` 的 `build:mobile` 步骤当时**没有设 `NW_BUILD_VERSION`**，所以 App 内置包里的 `__NW_BUILD_VERSION__` 是 `'0.0.0'`。analyticsvc 里 build 14 的事件 `game_version=0.0.0` 可以证明。
+`checkOtaUpdate()` 第一行就把 `0.0.0` 当 dev 包直接 return，连 `notifyAppReady()` 都不调。也就是说 **build 11–14 都不会去拉 manifest**。
+
+**修复**：采用 §11.3 的版本线，`release-ios.yml` 现在烘 `<MARKETING_VERSION>.<run_number>`，并加了单测门禁。
+
+**这些老壳收不到修复**：它们的内置包里写死了 `0.0.0`，只能靠用户装新 build。**从 build 15 起**，OTA 才真正生效。
+
+**附带影响**：
+- `crashSentinel` 同样跳过 `0.0.0`，所以 iOS 崩溃上报从 build 15 起才会出现；
+- analytics 的 `game_version` 从 build 15 起才有意义。
+
+**R2 上的旧 manifest 不用动**：它还停在 2026-08-02 的 `1.0.2`（八月的老包）。版本线里 `1.0.2 < 1.0.15`，build 15 不会被它降级。
+下次真要发 OTA 时，按 §11.3 用 `1.0.<最新 build>.1`，它会自然把旧 manifest 盖掉。
+
+**首次真机演练**（§11.6 那三项未勾的验证）要等 build 15 上了 TestFlight 再做。
 
 ## 12. 待办 checklist
 
