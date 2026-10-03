@@ -604,6 +604,8 @@ ATT 那处矛盾能活六周，正是因为四处分别正确、没人一眼看�
 
 ### 10.6 键盘收起后页面没滚回来，大厅「所有按钮点了没反应」（2026-10-03）
 
+> **⚠️ 同日晚更正**：本节修的滚动偏移是真问题，但不是「大厅点不动」的根因——build 15/16 修好它之后症状照旧。真正的根因见 §10.7。
+
 **现象**：TestFlight build 14 新装，手动输入账号密码登录后进大厅，点什么都没反应；切后台再回来（WKWebView 重新加载）就好了。
 桌面网页、无痕窗口都正常。
 
@@ -626,6 +628,32 @@ ATT 那处矛盾能活六周，正是因为四处分别正确、没人一眼看�
 **真机复核没做**：要出 build 15 才能验——这是 web 层改动，但 iOS 包实际上收不到 OTA（见 §11.7）。
 
 > **为什么只在新装后出现**：只有走登录页手动输入的那一次会弹键盘。老测试机一直是 token 自动登录，所以审核前没撞上——不是这周的改动引入的。
+
+### 10.7 新装后首次登录，大厅约 80 秒点不动（2026-10-03，已修）
+
+**现象**：build 14/15/16 新装后手动登录，进大厅后所有按钮没反应，等十几秒到一分半自己好了，不用重启。
+同一安装第二次登录起再也复现不了。画面一直正常（`render_profile` 60 fps）。
+
+**怎么查到的**：临时在 build 17 里埋了逐层探针（window 捕获 → `InputManager` → 大厅路由，事件 `input_probe`，查完已删）。
+卡死窗口里每一次点击都完整走到了大厅的 `handleDown`，而且都带着 `consentLayer != null`——
+**Apple 退款消耗数据同意卡（§4.1b）的状态还在，画面上却没有这张卡**。
+
+**根因**：[`LobbySceneCore.rebuild()`](../../client/src/scenes/LobbyScene/core.ts) 用 `tearDownChildren` 拆掉整个容器重画，
+同意卡 / 功能引导 / 赛季结算这三个弹层也一起被销毁，但 `consentLayer` / `guideLayer` 字段没清（`settlementLayer` 清了，等于把结算弹层悄悄丢了）。
+同意卡的规则是「只有两个按钮能关，其它点击一律吞掉」，于是玩家面对一个看不见的弹层，点哪都没反应，
+直到恰好点中某个看不见的按钮——这就是时长每次都不一样的原因（这一次也就等于替玩家随手作答了）。
+
+**为什么只在新装后的首次登录出现**：同意卡只问付过钱的 iOS 玩家一次，「问过了」记在本地存储里，删 App 就清掉；
+而进大厅后马上会有一次 `rebuild()`（标签页图标贴图加载完、从服务器采用存档都会触发），正好把刚弹出的卡拆掉。
+web 和新号都不弹这张卡，所以一直只有这台测试机能复现。
+
+**修法**：`rebuild()` 拆之前先把三个弹层从容器里摘下来，重画完再按原顺序加回最上层，字段保持不变。
+回归：[`client/test/render/lobbyRebuildTeardown.test.ts`](../../client/test/render/lobbyRebuildTeardown.test.ts)（旧代码会把三个弹层一起销毁，这条在旧代码上失败）。
+
+**排查中顺带的发现**：
+- §10.6 的滚动偏移和这里无关（见上面的更正）；「顶号」和通知权限弹框也都排除了。
+- `ota.gamestao.com`（R2）此前**没配 CORS**，WKWebView（源 `capacitor://localhost`）读 manifest 被拦，`ota.ts` 静默吞掉——OTA 从上线起就没在真机上生效过。
+  2026-10-03 给 R2 加了 CORS 规则（允许 `capacitor://localhost` 的 GET/HEAD）后立刻生效，详见 §11.7。
 
 ## 11. OTA 热更新（Capgo 自托管，路线 B）
 
@@ -755,6 +783,12 @@ OTA 管线**不需要 macOS runner**（无原生编译），`ubuntu-latest` 即�
 下次真要发 OTA 时，按 §11.3 用 `1.0.<最新 build>.1`，它会自然把旧 manifest 盖掉。
 
 **首次真机演练**（§11.6 那三项未勾的验证）要等 build 15 上了 TestFlight 再做。
+
+**第二道坎：R2 没配 CORS（2026-10-03 晚发现并修复）**。版本修好后 build 15/16 仍然收不到 OTA：WKWebView 的页面源是 `capacitor://localhost`，
+读 `ota.gamestao.com/manifest.json` 是跨域请求，而 R2 桶没有 CORS 规则，请求被拦，`ota.ts` 的 catch 把它当「这次不更新」静默吞掉。
+在 Cloudflare R2 的桶设置里加了 CORS 规则：`AllowedOrigins: ["capacitor://localhost"]`，`AllowedMethods: ["GET","HEAD"]`。
+验证：`curl -sI -H 'Origin: capacitor://localhost' https://ota.gamestao.com/manifest.json` 要带 `access-control-allow-origin`。
+加上后 OTA `1.0.16.1` 当场在真机上下载、下次冷启动生效。**换桶或换域名时这条规则要跟着带过去**，否则 OTA 会再次静默失效。
 
 ## 12. 待办 checklist
 

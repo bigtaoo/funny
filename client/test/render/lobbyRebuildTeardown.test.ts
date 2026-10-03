@@ -106,9 +106,16 @@ import { tearDownChildren } from '../../src/render/sketchUi';
  * this test doesn't need — only `rebuild()`'s teardown-then-buildHook() sequence).
  */
 class FakeLobbySceneCore {
-  container = { removeChildren: (): unknown[] => [] as unknown[] };
+  container = {
+    children: [] as unknown[],
+    addChild(c: unknown): unknown { this.children.push(c); return c; },
+    removeChild(c: unknown): void { this.children = this.children.filter((k) => k !== c); },
+    removeChildren(): unknown[] { const kids = this.children; this.children = []; return kids; },
+  };
   toastLayer: unknown = null;
   settlementLayer: unknown = null;
+  guideLayer: unknown = null;
+  consentLayer: unknown = null;
   achievementBadgeLayer: unknown = null;
   shopBadgeLayer: unknown = null;
   socialBadgeLayer: unknown = null;
@@ -160,5 +167,35 @@ describe('LobbyScene rebuild() — titleBoil/heroFigure teardown (freeze regress
     const container = { removeChildren: (): unknown[] => [child] };
     tearDownChildren(container as unknown as Parameters<typeof tearDownChildren>[0]);
     expect(child.destroy).toHaveBeenCalledWith({ children: true });
+  });
+});
+
+// 2026-10-03: rebuild() used to destroy the modal overlays with the rest of the layout but leave
+// their fields set. A rebuild right after lobby entry (tab-icon art, adopted save) then left the
+// Apple consent card invisible yet still swallowing every tap — the iOS "lobby dead for 80 s" bug.
+describe('LobbyScene rebuild() — modal overlays survive (dead-lobby regression)', () => {
+  it('keeps the consent / guide / settlement layers alive, set, and on top of the new layout', () => {
+    const core = new FakeLobbySceneCore();
+    const destroyed: string[] = [];
+    const layer = (name: string): { name: string; destroy(): void } =>
+      ({ name, destroy: () => { destroyed.push(name); } });
+    const consent = layer('consent');
+    const guide = layer('guide');
+    const settlement = layer('settlement');
+    const oldLayout = layer('oldLayout');
+    core.container.children = [oldLayout, settlement, guide, consent];
+    core.consentLayer = consent;
+    core.guideLayer = guide;
+    core.settlementLayer = settlement;
+    const newLayout = layer('newLayout');
+    core.buildHook.mockImplementation(() => { core.container.addChild(newLayout); });
+
+    core.rebuild();
+
+    expect(destroyed).toEqual(['oldLayout']);
+    expect(core.consentLayer).toBe(consent);
+    expect(core.guideLayer).toBe(guide);
+    expect(core.settlementLayer).toBe(settlement);
+    expect(core.container.children).toEqual([newLayout, settlement, guide, consent]);
   });
 });
