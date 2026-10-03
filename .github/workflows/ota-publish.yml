@@ -4,7 +4,11 @@ name: iOS OTA - Publish hot-update
 # Does NOT touch the App Store — this ships web-layer changes only. Native changes go through
 # release-ios.yml (tag ios-v*) instead. No macOS runner needed (no native compile).
 #
-# Trigger: push a tag `ota-v<version>` (e.g. ota-v1.2.3) or run manually with an explicit version.
+# Trigger: push a tag `ota-v<version>` or run manually with an explicit version.
+# Version scheme (IOS_RELEASE.md §11.3): <shell version>.<n>, e.g. ota-v1.0.15.1, where the shell
+# version is the builtin bundle version of the newest release-ios.yml build (<MARKETING_VERSION>.<run
+# number>). That makes every OTA outrank the shell it was built for, and every newer shell outrank it.
+# The "Resolve version" step enforces both that and "strictly above the live manifest".
 # Flow: npm ci → build:mobile (NW_BUILD_VERSION baked from the tag) → zip dist → upload the zip and
 # a refreshed manifest.json to the R2 bucket served at ota.gamestao.com.
 #
@@ -25,7 +29,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Bundle version, e.g. 1.2.3 (must be > the running bundle to be picked up)'
+        description: 'Bundle version <shell version>.<n>, e.g. 1.0.15.1 (shell version = newest iOS build)'
         required: true
         type: string
 
@@ -33,6 +37,10 @@ env:
   # Bump this when a bundle starts depending on native capability shipped in a newer shell.
   MIN_NATIVE: '1.0.0'
   OTA_R2_BUCKET: ${{ vars.OTA_R2_BUCKET || 'nivara-ota' }}
+
+permissions:
+  contents: read
+  actions: read # gh run list on release-ios.yml, to find the newest shell build
 
 jobs:
   publish:
@@ -43,6 +51,8 @@ jobs:
 
       - name: Resolve version
         id: ver
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           if [ -n "${{ github.event.inputs.version }}" ]; then
             V="${{ github.event.inputs.version }}"
@@ -52,8 +62,24 @@ jobs:
           if [ -z "$V" ] || [ "$V" = "$GITHUB_REF_NAME" ]; then
             echo "Could not resolve a version (ref=$GITHUB_REF_NAME)"; exit 1
           fi
+          if ! echo "$V" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "OTA version must be <shell version>.<n> with four numeric parts (got: $V)"; exit 1
+          fi
+          # The shell part must be the newest iOS build exactly: older, and that build ignores this
+          # bundle; newer, and the next shell would bake a lower version and download this one.
+          MV=$(grep -o 'MARKETING_VERSION = [^;]*' client/ios/App/App.xcodeproj/project.pbxproj | sort -u | sed 's/.* = //')
+          BUILD=$(gh run list -R "$GITHUB_REPOSITORY" --workflow release-ios.yml --status success --limit 1 --json number -q '.[0].number')
+          if [ -z "$BUILD" ]; then echo "Could not find a successful release-ios.yml run"; exit 1; fi
+          if [ "${V%.*}" != "$MV.$BUILD" ]; then
+            echo "OTA version $V must start with the newest shell version $MV.$BUILD (e.g. $MV.$BUILD.1)"; exit 1
+          fi
+          LIVE=$(curl -fsS --max-time 10 https://ota.gamestao.com/manifest.json | sed -n 's/.*"version": *"\([^"]*\)".*/\1/p')
+          if [ -z "$LIVE" ]; then echo "Could not read the live manifest version"; exit 1; fi
+          if [ "$LIVE" = "$V" ] || [ "$(printf '%s\n%s\n' "$LIVE" "$V" | sort -V | tail -1)" != "$V" ]; then
+            echo "OTA version $V must be strictly above the live manifest version $LIVE"; exit 1
+          fi
           echo "version=$V" >> "$GITHUB_OUTPUT"
-          echo "Publishing OTA bundle version: $V"
+          echo "Publishing OTA bundle version: $V (shell $MV.$BUILD, replacing live $LIVE)"
 
       - name: Set up Node.js
         uses: actions/setup-node@v5
