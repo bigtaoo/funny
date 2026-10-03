@@ -34,6 +34,7 @@ export function openDomTextInput(opts: TextInputOptions): ITextInput {
     if (closed) return;
     closed = true;
     el.remove();
+    resetDocumentScroll();
     opts.onComplete();
   };
 
@@ -61,4 +62,34 @@ export function openDomTextInput(opts: TextInputOptions): ITextInput {
       finish();
     },
   };
+}
+
+/** How long after the input closes to re-check the scroll: iOS animates the keyboard away over
+ *  ~250 ms and can land its own scroll adjustment after an immediate reset. */
+const KEYBOARD_SETTLE_MS = 400;
+
+/**
+ * Undo the scroll iOS applied to keep the input above the soft keyboard.
+ *
+ * The game page never scrolls on purpose (`html, body { overflow: hidden }`), but WKWebView scrolls
+ * the document anyway when a focused field sits under the keyboard — and this field is pinned to
+ * the bottom edge, so it always does. When the keyboard closes the scroll is not reliably undone,
+ * leaving the canvas shifted up with a paper-coloured band below it, which is hard to see and
+ * which shifted every tap off its button (TestFlight build 14, 2026-10-03: a fresh install that had
+ * just typed its login got a lobby where nothing responded). WebAdapter now maps taps against the
+ * canvas rect, so they stay correct either way; this puts the picture back where it belongs.
+ *
+ * Done twice: now, and once the keyboard has finished animating away. The second pass is skipped
+ * if another text field has taken focus in between (tapping from the login field to the password
+ * field), where scrolling back would fight the scroll the new field needs.
+ */
+function resetDocumentScroll(): void {
+  const reset = (): void => {
+    if (window.scrollX !== 0 || window.scrollY !== 0) window.scrollTo(0, 0);
+  };
+  reset();
+  setTimeout(() => {
+    if (document.activeElement instanceof HTMLInputElement) return;
+    reset();
+  }, KEYBOARD_SETTLE_MS);
 }

@@ -602,6 +602,31 @@ iOS 上玩家点购买时才 `not a function`）。
 ATT 那处矛盾能活六周，正是因为四处分别正确、没人一眼看全，而且**任何运行时测试都看不见**（App 两种情况都跑得好好的）。
 产品口径若改回个性化广告，这个文件就是要同步翻转的清单。
 
+### 10.6 键盘收起后页面没滚回来，大厅「所有按钮点了没反应」（2026-10-03）
+
+**现象**：TestFlight build 14 新装，手动输入账号密码登录后进大厅，点什么都没反应；切后台再回来（WKWebView 重新加载）就好了。
+桌面网页、无痕窗口都正常。
+
+**证据**（analyticsvc `events`，UA 不带 `Safari/` = App 内 WKWebView，同一 `device_id`）：
+登录那次会话 17:06:28 进 `LobbyScene`，到 17:07:04 切后台，**36 秒零条 `ui_click`**，`render_profile` 显示 `tickPerSec` 58——主线程没卡；
+下一次会话是 token 自动登录（没弹过键盘），2 秒内 `lobby.campaign` 就点进去了。
+
+**根因**：两件事叠在一起。
+1. 隐藏的文本 `<input>`（[`domTextInput.ts`](../../client/src/platform/web/domTextInput.ts)）钉在页面底边。iOS 弹键盘时把**整页往上滚**，让它露在键盘上方；
+   键盘收起后 WKWebView **不一定滚回来**（`html, body { overflow: hidden }` 挡不住这次滚动）。画布于是整体上移，底下露出一条和纸张同色的空带，肉眼几乎看不出来。
+2. [`WebAdapter`](../../client/src/inputSystem/WebAdapter.ts) 直接用 `clientX/Y`（相对视口）换算设计坐标，假设画布左上角永远在视口原点。
+   页面一滚，每次点击都偏离玩家看到的按钮整整一个滚动距离，落进空白处。
+
+**修法**：
+- `WebAdapter` 改成按画布自己的 `getBoundingClientRect()` 取局部坐标——画布在哪，点击就跟到哪（兜底，与滚动原因无关）；
+- `domTextInput` 关闭时 `scrollTo(0, 0)`，键盘动画结束后（400 ms）再复位一次；若这时焦点已经移到另一个输入框（账号框→密码框）则跳过第二次，免得和新输入框需要的滚动打架。
+
+**回归**：[`client/test/webAdapter.test.ts`](../../client/test/webAdapter.test.ts)——画布 `top:-336` 时点击仍落在画布上的正确位置（旧代码在这条上失败）。
+桌面 Chrome 里给画布加 `top:-150px` 复现了手机上的画面（顶部被截、底部空带），修复后点画面上的「战役」能正常进入。
+**真机复核没做**：要出 build 15 才能验——这是 web 层改动，但 iOS 包实际上收不到 OTA（见 §11.7）。
+
+> **为什么只在新装后出现**：只有走登录页手动输入的那一次会弹键盘。老测试机一直是 token 自动登录，所以审核前没撞上——不是这周的改动引入的。
+
 ## 11. OTA 热更新（Capgo 自托管，路线 B）
 
 > 目标：改 JS / web 资源（战斗逻辑、UI、数值、美术）后，玩家**下次冷启动即自动拿到新版**，无需过 App Store 审核；同时保留本地包做离线兜底。**只能热更 web 层**——任何原生改动（新增 Capacitor 插件、`Info.plist`、`AppDelegate.swift` 的 IAP 桥、图标/启动图、**`capacitor.config.ts` 里的 `ios.*`**，逐条见 §5.1）仍必须走 §5 的二进制发布。
@@ -695,6 +720,13 @@ OTA 管线**不需要 macOS runner**（无原生编译），`ubuntu-latest` 即�
 >
 > 即：把部署目标抬到 **iOS 15 不再只是 StoreKit 2 的前提（§6 B 批），而是 2027 年春季起的**
 > **硬性上传要求**。两件事合成一件做，且有了截止日期。
+
+### 11.7 ⚠️ 现有 iOS 包实际上收不到 OTA（2026-10-03 发现，未修）
+
+`release-ios.yml` 的 `build:mobile` 步骤**没有设 `NW_BUILD_VERSION`**，所以 App 内置包里的 `__NW_BUILD_VERSION__` 是 `'0.0.0'`
+（analyticsvc 里 build 14 的事件 `game_version=0.0.0` 可证）。`checkOtaUpdate()` 第一行就把 `0.0.0` 当 dev 包直接 return，
+连 `notifyAppReady()` 都不调。也就是说 **TestFlight/App Store 上的每一个壳都不会去拉 manifest**；R2 上的 manifest 还停在 2026-08-02 的 `1.0.2`。
+修法要定版本号策略（内置包要烘一个 ≤ 后续 OTA 版本的真版本），属于发布管线的改动，单独处理。在那之前，**任何 web 层修复都只能靠出新 build 送到手机**。
 
 ## 12. 待办 checklist
 
