@@ -31,6 +31,8 @@ import lenaFramesUrl from '../../assets/units/frames/lena.png';
 import lenaFramesJson from '../../assets/units/frames/lena.json';
 import maraFramesUrl from '../../assets/units/frames/mara.png';
 import maraFramesJson from '../../assets/units/frames/mara.json';
+import shieldBearerFramesUrl from '../../assets/units/frames/shieldbearer.png';
+import shieldBearerFramesJson from '../../assets/units/frames/shieldbearer.json';
 import type { FrameSheetJson } from '../frames/frameSheet';
 
 /**
@@ -66,6 +68,7 @@ export const FRAME_ASSETS: Partial<Record<UnitType, { png: string; json: FrameSh
   framesDisabled() ? {} : {
     [UnitType.Lena]: { png: lenaFramesUrl as unknown as string, json: lenaFramesJson as unknown as FrameSheetJson },
     [UnitType.Mara]: { png: maraFramesUrl as unknown as string, json: maraFramesJson as unknown as FrameSheetJson },
+    [UnitType.ShieldBearer]: { png: shieldBearerFramesUrl as unknown as string, json: shieldBearerFramesJson as unknown as FrameSheetJson },
   };
 
 function framesDisabled(): boolean {

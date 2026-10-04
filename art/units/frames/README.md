@@ -1,4 +1,4 @@
-# Frame-sheet units (pilot: Lena, Mara)
+# Frame-sheet units (Lena, Mara, Shieldbearer)
 
 Specs for `tools/unit-frames/bake.py`, one folder per unit. Each `<unit>.json` warps the unit's
 existing full-body drawing (`art/units/<unit>/<unit>.png`) into its battle clips and writes

@@ -32,7 +32,9 @@ export async function startUnitLab(canvas: HTMLCanvasElement): Promise<void> {
     view: canvas, antialias: true, resolution: window.devicePixelRatio || 1, autoDensity: true, // dom-ok: web-only dev bench, booted from entries/web.ts
   });
 
-  const types = Object.keys(FRAME_ASSETS) as UnitType[];
+  // `&unit=shieldbearer,max` limits the bench to those types, since it only fits about two per screen
+  const only = params.get('unit')?.split(',');
+  const types = (Object.keys(FRAME_ASSETS) as UnitType[]).filter((t) => !only || only.includes(t));
   const figures: Array<{ runtime: UnitRuntime; clip: (typeof CLIPS)[number] }> = [];
   const colW = 120 * zoom / 3 + 40;
   let y = 30;
