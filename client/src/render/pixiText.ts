@@ -151,8 +151,8 @@ const NO_LINE_END = /^[（「『《〈【‘“([{]$/u;
  * stair of half-empty lines. Here every full-width character is a token of its own, a run of
  * Latin (or any non-full-width) characters stays one token, and kinsoku glues closing punctuation
  * to the character before it and opening punctuation to the one after. Spaces and newlines are
- * single tokens, as in Pixi's version. U+00A0 is not a breaking space, so "Apple ID" stays
- * together.
+ * single tokens, as in Pixi's version. U+00A0 is not a breaking space, so "Apple ID" written
+ * with a no-break space stays together.
  */
 export function cjkTokenize(text: string): string[] {
   const tokens: string[] = [];

@@ -140,6 +140,9 @@ const PATH_ALLOW_HISTORICAL = new Map([
   ['tools/animator/scripts/anim-sync.mjs', 'workspace-sync experiment, taken down 2026-08-02'],
   ['client/src/game/meta/campaignRewards.ts', 'moved to server/engine/src/campaign/stars.ts, 2026-09-26 (5aa4134b3), passage names both paths'],
   ['server/botsvc/test/bot.scanRadius.test.ts', 'deleted with the scan-radius rework, 2026-09-26 (7894b3106), passage explains the deletion'],
+  ['tools/ops/src/pages/promo.ts', 'deleted with promo codes, ADR-108 (2026-10-04); passages are marked as history'],
+  ['tools/ops/test/promo.test.ts', 'deleted with promo codes, ADR-108 (2026-10-04); passages are marked as history'],
+  ['server/admin/test/promo.test.ts', 'deleted with promo codes, ADR-108 (2026-10-04); passages are marked as history'],
 ]);
 
 const allowReason = (p) => {
