@@ -1,4 +1,5 @@
-"""Bake a battle unit's animation clips into one frame sheet, by warping whole drawings.
+"""Bake a battle unit's animation clips into one frame sheet, from warped whole drawings or a
+posed cutout rig (rig.py).
 usage: python bake.py <spec.json> [--debug <clip> <out.png>] [--preview <out.png>]
 
 Battle units are 46-81 design px tall, too small for a bone rig to read; what reads is the
@@ -34,6 +35,9 @@ and fades out over the outer `feather` fraction of the radius. f is a number,
 {"sin": amp, "phase": p, "bias": b, "cycles": n} or {"keys": [[t, v], ...]} (cosine-eased; a
 looping clip wraps its keys, a one-shot clip holds the first and last value).
 A one-shot clip samples t = i / (frames - 1) so its last frame is the end pose.
+
+A source with "parts" instead of "file" is a cutout rig; its clips are keyframed poses rendered
+by rig.py (see that file for the format). Both kinds share the outline, trim and packing below.
 """
 import json
 import math
@@ -46,6 +50,7 @@ from PIL import Image
 
 sys.path.insert(0, os.path.dirname(__file__))
 from cutout import cutout  # noqa: E402
+import rig  # noqa: E402
 
 SUPER = 2          # warp at this multiple of the output size, then shrink (anti-aliasing)
 PACK_W = 1024      # sheet width
@@ -140,6 +145,8 @@ def scale_f(f, k):
 
 
 def load_source(base, src):
+    if "parts" in src:
+        return rig.load(base, src)
     path = os.path.join(base, src["file"])
     im = Image.open(path)
     if im.mode == "RGBA" and np.array(im)[:, :, 3].min() < 10:
@@ -234,7 +241,11 @@ def bake(spec, base):
     for name, clip in spec["clips"].items():
         src = spec["sources"][clip["source"]]
         frames = []
-        for f, (ax, ay) in bake_clip(clip, sources[clip["source"]], src, height):
+        if "parts" in src:
+            baked = rig.bake_clip(clip, sources[clip["source"]], src, height, SUPER)
+        else:
+            baked = bake_clip(clip, sources[clip["source"]], src, height)
+        for f, (ax, ay) in baked:
             if f.shape[0] < 2:
                 continue
             ring = outline(f, OUTLINE_GAP_PX * k_screen, OUTLINE_WIDTH_PX * k_screen)

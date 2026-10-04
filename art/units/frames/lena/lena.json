@@ -5,68 +5,80 @@
   "points": {"hit": [0.05, -0.68]},
   "shadow": [0.36, 0.09],
   "sources": {
-    "base": {"file": "../../lena/lena.png", "ground": [345, 1335], "crown": 10}
+    "rig": {
+      "parts": "parts/parts.json",
+      "ground": [345, 1335],
+      "crown": 10,
+      "parent": {
+        "boot_b": "shin_b", "shin_b": "thigh_b",
+        "boot_f": "shin_f", "shin_f": "thigh_f",
+        "head": "torso", "shield": "torso", "sword": "torso",
+        "arm_u": "torso", "arm_l": "arm_u", "hand": "arm_l"
+      },
+      "soles": [["boot_b", [40, 1300]], ["boot_b", [225, 1312]], ["boot_f", [525, 1362]], ["boot_f", [655, 1366]]]
+    }
   },
   "clips": {
     "idle": {
-      "source": "base", "frames": 8, "fps": 8, "loop": true,
-      "body": {"sy": {"sin": 0.012, "bias": 1}, "sx": {"sin": -0.006, "bias": 1}},
-      "deform": [
-        {"type": "move", "region": {"c": [420, 120], "r": [170, 150], "feather": 0.5}, "dy": {"sin": 6, "phase": 0.15}},
-        {"type": "rotate", "region": {"c": [665, 580], "r": [240, 330], "feather": 0.25}, "pivot": [560, 330],
-         "angle": {"sin": 1.2, "phase": 0.3}},
-        {"type": "wave", "region": {"c": [220, 300], "r": [120, 170], "feather": 0.4}, "root": [300, 160],
-         "dir": [-0.6, 1], "length": 260, "wavelength": 400, "amp": 8}
+      "source": "rig", "frames": 8, "fps": 8, "loop": true, "plant": true,
+      "keys": [
+        {"t": 0, "pose": {"torso": 0, "head": 0, "shield.y": 0, "shield": 0, "arm_u": 0, "arm_l": 0, "sword": 0, "thigh_f": 0, "shin_f": 0, "thigh_b": 0, "shin_b": 0}},
+        {"t": 0.5, "pose": {"torso": 1.6, "head": -1.5, "shield.y": 6, "shield": 1, "arm_u": -2, "arm_l": -3, "sword": -1.5, "thigh_f": -1.5, "shin_f": 3, "thigh_b": 1.5, "shin_b": 3}}
       ]
     },
     "walk": {
-      "source": "base", "frames": 10, "fps": 12, "loop": true,
-      "body": {
-        "dy": {"keys": [[0, 0], [0.25, -22], [0.5, 0], [0.75, -22]]},
-        "sy": {"keys": [[0, 0.97], [0.25, 1.015], [0.5, 0.97], [0.75, 1.015]]},
-        "sx": {"keys": [[0, 1.02], [0.25, 0.99], [0.5, 1.02], [0.75, 0.99]]},
-        "rot": {"sin": 1.2, "cycles": 2}
-      },
-      "deform": [
-        {"type": "rotate", "region": {"c": [170, 1140], "r": [170, 300], "a": 22, "feather": 0.15}, "pivot": [265, 905],
-         "angle": {"sin": 11}},
-        {"type": "rotate", "region": {"c": [540, 1140], "r": [150, 290], "a": -14, "feather": 0.15}, "pivot": [470, 905],
-         "angle": {"sin": -11}},
-        {"type": "rotate", "region": {"c": [140, 700], "r": [110, 170], "feather": 0.4}, "pivot": [180, 560],
-         "angle": {"sin": -9}},
-        {"type": "rotate", "region": {"c": [665, 580], "r": [240, 330], "feather": 0.25}, "pivot": [560, 330],
-         "angle": {"sin": 2.5, "cycles": 2, "phase": 0.2}},
-        {"type": "move", "region": {"c": [420, 120], "r": [170, 150], "feather": 0.5}, "dy": {"sin": 6, "cycles": 2, "phase": 0.6}},
-        {"type": "wave", "region": {"c": [220, 300], "r": [120, 170], "feather": 0.4}, "root": [300, 160],
-         "dir": [-0.6, 1], "length": 260, "wavelength": 300, "amp": 14, "cycles": 2}
+      "source": "rig", "frames": 10, "fps": 12, "loop": true, "plant": true,
+      "keys": [
+        {"t": 0, "pose": {
+          "thigh_f": -17, "shin_f": 4, "boot_f": -8,
+          "thigh_b": 14, "shin_b": 12, "boot_b": 6,
+          "torso": 3, "head": -1, "arm_u": -16, "arm_l": -10, "hand": -4,
+          "shield": -1, "shield.y": 0, "sword": -3}},
+        {"t": 0.25, "pose": {
+          "thigh_f": -4, "shin_f": 6, "boot_f": 0,
+          "thigh_b": -8, "shin_b": 52, "boot_b": 14,
+          "torso": 5, "head": -3, "arm_u": 0, "arm_l": -4, "hand": 0,
+          "shield": 1, "shield.y": -8, "sword": 2}},
+        {"t": 0.5, "pose": {
+          "thigh_b": -17, "shin_b": 4, "boot_b": -8,
+          "thigh_f": 14, "shin_f": 12, "boot_f": 6,
+          "torso": 3, "head": -1, "arm_u": 16, "arm_l": 2, "hand": 4,
+          "shield": -1, "shield.y": 0, "sword": 3}},
+        {"t": 0.75, "pose": {
+          "thigh_b": -4, "shin_b": 6, "boot_b": 0,
+          "thigh_f": -8, "shin_f": 52, "boot_f": 14,
+          "torso": 5, "head": -3, "arm_u": 0, "arm_l": -4, "hand": 0,
+          "shield": 1, "shield.y": -8, "sword": -2}}
       ]
     },
     "attack": {
-      "source": "base", "frames": 10, "fps": 12, "loop": false, "hitAt": 0.5,
-      "body": {
-        "dx": {"keys": [[0, 0], [0.3, -40], [0.5, 70], [0.65, 60], [1, 0]]},
-        "rot": {"keys": [[0, 0], [0.3, -5], [0.5, 7], [0.65, 6], [1, 0]]},
-        "sx": {"keys": [[0, 1], [0.3, 0.96], [0.5, 1.05], [0.7, 1.0], [1, 1]]},
-        "sy": {"keys": [[0, 1], [0.3, 1.03], [0.5, 0.96], [0.7, 1.0], [1, 1]]}
-      },
-      "deform": [
-        {"type": "move", "region": {"c": [665, 580], "r": [250, 340], "feather": 0.25},
-         "dx": {"keys": [[0, 0], [0.3, -30], [0.5, 80], [0.65, 70], [1, 0]]},
-         "dy": {"keys": [[0, 0], [0.3, 10], [0.5, -20], [1, 0]]}},
-        {"type": "rotate", "region": {"c": [140, 700], "r": [110, 170], "feather": 0.4}, "pivot": [180, 560],
-         "angle": {"keys": [[0, 0], [0.3, 25], [0.5, -20], [1, 0]]}},
-        {"type": "rotate", "region": {"c": [540, 1140], "r": [150, 290], "a": -14, "feather": 0.15}, "pivot": [470, 905],
-         "angle": {"keys": [[0, 0], [0.3, 0], [0.5, -10], [0.7, -8], [1, 0]]}}
+      "source": "rig", "frames": 10, "fps": 12, "loop": false, "hitAt": 0.5, "plant": true,
+      "keys": [
+        {"t": 0, "pose": {"torso": 0, "head": 0, "shield": 0, "shield.x": 0, "shield.y": 0, "arm_u": 0, "arm_l": 0,
+                          "thigh_f": 0, "shin_f": 0, "thigh_b": 0, "shin_b": 0, "boot_f": 0, "dx": 0, "sword": 0}},
+        {"t": 0.3, "ease": "in", "pose": {"torso": -7, "head": 3, "shield": -6, "shield.x": -30, "shield.y": 4, "arm_u": 18, "arm_l": 8,
+                          "thigh_f": -10, "shin_f": 8, "thigh_b": 8, "shin_b": 10, "boot_f": -4, "dx": -18, "sword": 4}},
+        {"t": 0.5, "ease": "linear", "pose": {"torso": 13, "head": 5, "shield": 7, "shield.x": 85, "shield.y": -10, "arm_u": -28, "arm_l": -18,
+                          "thigh_f": -30, "shin_f": 12, "thigh_b": 24, "shin_b": 18, "boot_f": -6, "dx": 40, "sword": -6}},
+        {"t": 0.62, "pose": {"torso": 11, "head": 3, "shield": 6, "shield.x": 78, "shield.y": -8, "arm_u": -24, "arm_l": -15,
+                          "thigh_f": -28, "shin_f": 12, "thigh_b": 22, "shin_b": 16, "boot_f": -5, "dx": 36, "sword": 2}},
+        {"t": 1, "pose": {"torso": 0, "head": 0, "shield": 0, "shield.x": 0, "shield.y": 0, "arm_u": 0, "arm_l": 0,
+                          "thigh_f": 0, "shin_f": 0, "thigh_b": 0, "shin_b": 0, "boot_f": 0, "dx": 0, "sword": 0}}
       ]
     },
     "death": {
-      "source": "base", "frames": 9, "fps": 12, "loop": false,
-      "body": {
-        "rot": {"keys": [[0, 0], [0.2, 8], [1, -88]]},
-        "dx": {"keys": [[0, 0], [0.2, 20], [1, -120]]},
-        "dy": {"keys": [[0, 0], [0.2, -30], [0.75, 0], [0.85, -25], [1, 0]]},
-        "sy": {"keys": [[0, 1], [0.2, 1.04], [0.8, 1], [1, 0.95]]}
-      }
+      "source": "rig", "frames": 9, "fps": 12, "loop": false,
+      "keys": [
+        {"t": 0, "pose": {"rot": 0, "dx": 0, "dy": 0, "torso": 0, "head": 0, "shield": 0, "shield.x": 0, "arm_u": 0, "arm_l": 0,
+                          "thigh_f": 0, "shin_f": 0, "thigh_b": 0, "shin_b": 0}},
+        {"t": 0.22, "ease": "in", "pose": {"rot": 6, "dx": 20, "dy": -20, "torso": -14, "head": -18, "shield": 12, "shield.x": 20, "arm_u": -35, "arm_l": -20,
+                          "thigh_f": -12, "shin_f": 22, "thigh_b": 8, "shin_b": 18}},
+        {"t": 0.8, "ease": "out", "pose": {"rot": -84, "dx": -110, "dy": 0, "torso": -8, "head": -14, "shield": 30, "shield.x": 40, "arm_u": -70, "arm_l": -30,
+                          "thigh_f": -30, "shin_f": 30, "thigh_b": -10, "shin_b": 25}},
+        {"t": 0.9, "pose": {"rot": -88, "dy": -18}},
+        {"t": 1, "pose": {"rot": -88, "dx": -120, "dy": 0, "torso": -6, "head": -10, "shield": 34, "arm_u": -75, "arm_l": -25,
+                          "thigh_f": -26, "shin_f": 22, "thigh_b": -6, "shin_b": 18}}
+      ]
     }
   }
 }
