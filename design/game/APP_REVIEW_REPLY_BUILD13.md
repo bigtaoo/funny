@@ -1,15 +1,15 @@
 # App Review 回复草稿：build 12 拒审（3.1.1 + 1.2）
 
-> 状态：**草稿，待核对后发送**（2026-09-29 起草）。Submission ID `ed186ff4-7b13-4c46-b5ca-5063de561f1f`。
+> 状态：**草稿，待核对后发送**（2026-09-29 起草，2026-10-04 改为 build 19：兑换码已全平台移除、录屏已上线）。Submission ID `ed186ff4-7b13-4c46-b5ca-5063de561f1f`。
 > 背景与实现见 `IOS_RELEASE.md §9.2 / §9.3`、`CONTENT_MODERATION_DESIGN.md §9.6`。
 
 ## 发送前检查
 
-- [ ] 服务端已部署，VPS 上 socialsvc 已配 `NW_ALERT_WEBHOOK_URL`，发一条测试举报确认告警能到群里
-- [ ] build 13 已上传并在 ASC 里替换 build 12
-- [ ] 真机录屏已完成，链接可公开访问（不需要登录）
+- [x] 服务端已部署，VPS 上 socialsvc 已配 `NW_ALERT_WEBHOOK_URL`，发一条测试举报确认告警能到群里（2026-09-30，Discord）
+- [ ] build 19 已上传（2026-10-04）；在 ASC 里把版本的 build 换成 19
+- [x] 真机录屏已完成，随官网部署公开发布：https://nivara.gamestao.com/review/app-review-build19.mp4（源文件 `client/public/web/review/`；以后新录屏换新文件名，不覆盖旧链接）
 - [ ] 录屏链接同时写进 ASC「App Review Information → Notes」（以后每次提审都保留）
-- [ ] 把下面英文稿里的 `[link]` 换成录屏链接
+- [x] 下面英文稿里的录屏链接已填好
 
 ## 录屏脚本（真机）
 
@@ -23,9 +23,9 @@
 
 > Hello,
 >
-> Thank you for the review. We have addressed both issues in build 13:
+> Thank you for the review. We have addressed both issues in build 19:
 >
-> **Guideline 3.1.1**: Promo-code redemption has been removed from the iOS app entirely, and our server now rejects redemption requests from iOS clients. Any future promotions on iOS will use App Store Offer Codes.
+> **Guideline 3.1.1**: Promo-code redemption has been removed from the app on every platform, and the redemption endpoint no longer exists on our server. Any future promotions on iOS will use App Store Offer Codes.
 >
 > **Guideline 1.2**:
 > - Users must agree to our Terms of Use (EULA) before registering or logging in. The terms state that there is zero tolerance for objectionable content or abusive users.
@@ -34,15 +34,15 @@
 > - Users can block abusive users. Blocking immediately removes that user's content from the blocker's feed and notifies our moderation team.
 > - Every report and block alerts our team in real time. We act within 24 hours by removing the content and ejecting the offending user.
 >
-> A screen recording on a physical device, showing the EULA before login, flagging content and blocking a user, is here: [link]
+> A screen recording on a physical device, showing the EULA before login, flagging content and blocking a user, is here: https://nivara.gamestao.com/review/app-review-build19.mp4
 >
 > Best regards
 
 ## 中文对照（仅供核对，不发送）
 
-> 您好，感谢审核。两个问题已在 build 13 中解决：
+> 您好，感谢审核。两个问题已在 build 19 中解决：
 >
-> **3.1.1**：iOS 应用中的兑换码功能已完全移除，服务端也会拒绝来自 iOS 客户端的兑换请求。今后 iOS 上的促销将使用 App Store Offer Codes。
+> **3.1.1**：兑换码功能已在所有平台移除，服务端的兑换接口也已删除。今后 iOS 上的促销将使用 App Store Offer Codes。
 >
 > **1.2**：
 > - 用户注册或登录前必须同意我们的使用条款（EULA），条款写明对不良内容和滥用用户零容忍。
@@ -51,4 +51,4 @@
 > - 用户可以屏蔽滥用者；屏蔽后对方内容立即从屏蔽者的信息流中移除，并通知我们的审核团队。
 > - 每次举报和屏蔽都会实时通知团队，我们会在 24 小时内处理：删除内容并驱逐违规用户。
 >
-> 真机录屏（展示登录前的 EULA、举报内容、屏蔽用户）：[link]
+> 真机录屏（展示登录前的 EULA、举报内容、屏蔽用户）：https://nivara.gamestao.com/review/app-review-build19.mp4
