@@ -70,6 +70,7 @@ jobs:
             ^server/engine/src/
             ^server/shared/src/slg/
             ^wrangler/client\.jsonc$
+            ^wrangler/worker\.client\.js$
             ^\.github/workflows/client-deploy\.yml$
             ^\.github/actions/paths-changed-since/
 
