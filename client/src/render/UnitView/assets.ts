@@ -39,6 +39,18 @@ import infantryFramesUrl from '../../assets/units/frames/infantry.png';
 import infantryFramesJson from '../../assets/units/frames/infantry.json';
 import archerFramesUrl from '../../assets/units/frames/archer.png';
 import archerFramesJson from '../../assets/units/frames/archer.json';
+import ironcladFramesUrl from '../../assets/units/frames/ironclad.png';
+import ironcladFramesJson from '../../assets/units/frames/ironclad.json';
+import runnerFramesUrl from '../../assets/units/frames/runner.png';
+import runnerFramesJson from '../../assets/units/frames/runner.json';
+import harpyFramesUrl from '../../assets/units/frames/harpy.png';
+import harpyFramesJson from '../../assets/units/frames/harpy.json';
+import medicFramesUrl from '../../assets/units/frames/medic.png';
+import medicFramesJson from '../../assets/units/frames/medic.json';
+import berserkerFramesUrl from '../../assets/units/frames/berserker.png';
+import berserkerFramesJson from '../../assets/units/frames/berserker.json';
+import splitterFramesUrl from '../../assets/units/frames/splitter.png';
+import splitterFramesJson from '../../assets/units/frames/splitter.json';
 import type { FrameSheetJson } from '../frames/frameSheet';
 
 /**
@@ -78,6 +90,12 @@ export const FRAME_ASSETS: Partial<Record<UnitType, { png: string; json: FrameSh
     [UnitType.Max]:          { png: maxFramesUrl as unknown as string, json: maxFramesJson as unknown as FrameSheetJson },
     [UnitType.Infantry]:     { png: infantryFramesUrl as unknown as string, json: infantryFramesJson as unknown as FrameSheetJson },
     [UnitType.Archer]:       { png: archerFramesUrl as unknown as string, json: archerFramesJson as unknown as FrameSheetJson },
+    [UnitType.Ironclad]:     { png: ironcladFramesUrl as unknown as string, json: ironcladFramesJson as unknown as FrameSheetJson },
+    [UnitType.Runner]:       { png: runnerFramesUrl as unknown as string, json: runnerFramesJson as unknown as FrameSheetJson },
+    [UnitType.Harpy]:        { png: harpyFramesUrl as unknown as string, json: harpyFramesJson as unknown as FrameSheetJson },
+    [UnitType.Medic]:        { png: medicFramesUrl as unknown as string, json: medicFramesJson as unknown as FrameSheetJson },
+    [UnitType.Berserker]:    { png: berserkerFramesUrl as unknown as string, json: berserkerFramesJson as unknown as FrameSheetJson },
+    [UnitType.Splitter]:     { png: splitterFramesUrl as unknown as string, json: splitterFramesJson as unknown as FrameSheetJson },
   };
 
 function framesDisabled(): boolean {

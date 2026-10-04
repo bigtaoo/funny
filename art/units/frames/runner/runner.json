@@ -1,0 +1,413 @@
+{
+ "out": "../../../../client/src/assets/units/frames/runner",
+ "height": 120,
+ "screenHeight": 46,
+ "points": {
+  "hit": [
+   0.0,
+   -0.427
+  ]
+ },
+ "shadow": [
+  0.475,
+  0.076
+ ],
+ "sources": {
+  "rig": {
+   "parts": "parts/parts.json",
+   "ground": [
+    400,
+    827
+   ],
+   "crown": -44,
+   "parent": {
+    "shin_rf": "thigh_rf",
+    "shin_ff": "thigh_ff",
+    "shin_rn": "thigh_rn",
+    "shin_fn": "thigh_fn",
+    "thigh_rf": "body",
+    "thigh_ff": "body",
+    "thigh_rn": "body",
+    "thigh_fn": "body",
+    "tail": "body",
+    "neck": "body",
+    "head": "neck"
+   },
+   "soles": [
+    [
+     "shin_rn",
+     [
+      85,
+      827
+     ]
+    ],
+    [
+     "shin_rn",
+     [
+      170,
+      827
+     ]
+    ],
+    [
+     "shin_rf",
+     [
+      232,
+      827
+     ]
+    ],
+    [
+     "shin_rf",
+     [
+      312,
+      827
+     ]
+    ],
+    [
+     "shin_ff",
+     [
+      515,
+      827
+     ]
+    ],
+    [
+     "shin_ff",
+     [
+      600,
+      827
+     ]
+    ],
+    [
+     "shin_fn",
+     [
+      625,
+      827
+     ]
+    ],
+    [
+     "shin_fn",
+     [
+      715,
+      827
+     ]
+    ]
+   ]
+  }
+ },
+ "colors": 64,
+ "clips": {
+  "idle": {
+   "source": "rig",
+   "frames": 8,
+   "fps": 8,
+   "loop": true,
+   "plant": true,
+   "keys": [
+    {
+     "t": 0,
+     "pose": {
+      "body": 0,
+      "neck": 0,
+      "head": 0,
+      "tail": -4,
+      "dx": 0,
+      "thigh_rn": 0,
+      "thigh_rf": 0,
+      "thigh_fn": 0,
+      "thigh_ff": 0,
+      "shin_rn": 0,
+      "shin_rf": 0,
+      "shin_fn": 0,
+      "shin_ff": 0
+     }
+    },
+    {
+     "t": 0.5,
+     "pose": {
+      "body": -0.5,
+      "neck": 3,
+      "head": -4,
+      "tail": 6,
+      "dx": 0,
+      "thigh_rn": 0,
+      "thigh_rf": 0,
+      "thigh_fn": 0,
+      "thigh_ff": 0,
+      "shin_rn": 0,
+      "shin_rf": 0,
+      "shin_fn": 0,
+      "shin_ff": 0
+     }
+    }
+   ]
+  },
+  "walk": {
+   "source": "rig",
+   "frames": 8,
+   "fps": 14,
+   "loop": true,
+   "plant": true,
+   "keys": [
+    {
+     "t": 0,
+     "pose": {
+      "thigh_rn": -22,
+      "shin_rn": 4,
+      "thigh_ff": -22,
+      "shin_ff": 4,
+      "thigh_rf": 20,
+      "shin_rf": 10,
+      "thigh_fn": 20,
+      "shin_fn": 10,
+      "neck": -4,
+      "head": 2,
+      "tail": -10,
+      "body": -1
+     }
+    },
+    {
+     "t": 0.25,
+     "pose": {
+      "thigh_rn": 2,
+      "shin_rn": 2,
+      "thigh_ff": 2,
+      "shin_ff": 2,
+      "thigh_rf": -6,
+      "shin_rf": 50,
+      "thigh_fn": -6,
+      "shin_fn": 50,
+      "neck": 2,
+      "head": -2,
+      "tail": 4,
+      "body": 0
+     }
+    },
+    {
+     "t": 0.5,
+     "pose": {
+      "thigh_rf": -22,
+      "shin_rf": 4,
+      "thigh_fn": -22,
+      "shin_fn": 4,
+      "thigh_rn": 20,
+      "shin_rn": 10,
+      "thigh_ff": 20,
+      "shin_ff": 10,
+      "neck": -4,
+      "head": 2,
+      "tail": -10,
+      "body": 1
+     }
+    },
+    {
+     "t": 0.75,
+     "pose": {
+      "thigh_rf": 2,
+      "shin_rf": 2,
+      "thigh_fn": 2,
+      "shin_fn": 2,
+      "thigh_rn": -6,
+      "shin_rn": 50,
+      "thigh_ff": -6,
+      "shin_ff": 50,
+      "neck": 2,
+      "head": -2,
+      "tail": 4,
+      "body": 0
+     }
+    }
+   ]
+  },
+  "attack": {
+   "source": "rig",
+   "frames": 9,
+   "fps": 12,
+   "loop": false,
+   "hitAt": 0.5,
+   "plant": true,
+   "keys": [
+    {
+     "t": 0,
+     "pose": {
+      "body": 0,
+      "neck": 0,
+      "head": 0,
+      "tail": 0,
+      "dx": 0,
+      "thigh_rn": 0,
+      "thigh_rf": 0,
+      "thigh_fn": 0,
+      "thigh_ff": 0,
+      "shin_rn": 0,
+      "shin_rf": 0,
+      "shin_fn": 0,
+      "shin_ff": 0
+     }
+    },
+    {
+     "t": 0.3,
+     "ease": "in",
+     "pose": {
+      "body": 0,
+      "neck": -14,
+      "head": -8,
+      "tail": 14,
+      "dx": -22,
+      "thigh_rn": 10,
+      "thigh_rf": 10,
+      "thigh_fn": 8,
+      "thigh_ff": 8,
+      "shin_rn": 12,
+      "shin_rf": 12,
+      "shin_fn": 0,
+      "shin_ff": 0
+     }
+    },
+    {
+     "t": 0.5,
+     "ease": "out",
+     "pose": {
+      "body": 0,
+      "neck": 22,
+      "head": 18,
+      "tail": -12,
+      "dx": 40,
+      "thigh_rn": 24,
+      "thigh_rf": 22,
+      "thigh_fn": -18,
+      "thigh_ff": -14,
+      "shin_rn": 6,
+      "shin_rf": 6,
+      "shin_fn": 6,
+      "shin_ff": 0
+     }
+    },
+    {
+     "t": 0.68,
+     "pose": {
+      "body": 0,
+      "neck": 18,
+      "head": 14,
+      "tail": -8,
+      "dx": 34,
+      "thigh_rn": 20,
+      "thigh_rf": 18,
+      "thigh_fn": -14,
+      "thigh_ff": -11,
+      "shin_rn": 6,
+      "shin_rf": 6,
+      "shin_fn": 6,
+      "shin_ff": 0
+     }
+    },
+    {
+     "t": 1,
+     "pose": {
+      "body": 0,
+      "neck": 0,
+      "head": 0,
+      "tail": 0,
+      "dx": 0,
+      "thigh_rn": 0,
+      "thigh_rf": 0,
+      "thigh_fn": 0,
+      "thigh_ff": 0,
+      "shin_rn": 0,
+      "shin_rf": 0,
+      "shin_fn": 0,
+      "shin_ff": 0
+     }
+    }
+   ]
+  },
+  "death": {
+   "source": "rig",
+   "frames": 9,
+   "fps": 12,
+   "loop": false,
+   "keys": [
+    {
+     "t": 0,
+     "pose": {
+      "body": 0,
+      "neck": 0,
+      "head": 0,
+      "tail": 0,
+      "dx": 0,
+      "thigh_rn": 0,
+      "thigh_rf": 0,
+      "thigh_fn": 0,
+      "thigh_ff": 0,
+      "shin_rn": 0,
+      "shin_rf": 0,
+      "shin_fn": 0,
+      "shin_ff": 0,
+      "rot": 0,
+      "dy": 0
+     }
+    },
+    {
+     "t": 0.3,
+     "ease": "in",
+     "pose": {
+      "body": 0,
+      "neck": -18,
+      "head": -10,
+      "tail": 20,
+      "dx": 0,
+      "thigh_rn": -20,
+      "thigh_rf": -20,
+      "thigh_fn": 10,
+      "thigh_ff": 10,
+      "shin_rn": 40,
+      "shin_rf": 40,
+      "shin_fn": 0,
+      "shin_ff": 0,
+      "rot": -6,
+      "dy": -24
+     }
+    },
+    {
+     "t": 0.75,
+     "ease": "out",
+     "pose": {
+      "body": 0,
+      "neck": 30,
+      "head": 20,
+      "tail": 30,
+      "dx": 0,
+      "thigh_rn": -60,
+      "thigh_rf": -60,
+      "thigh_fn": 50,
+      "thigh_ff": 50,
+      "shin_rn": 110,
+      "shin_rf": 110,
+      "shin_fn": -100,
+      "shin_ff": -100,
+      "rot": 4,
+      "dy": 80
+     }
+    },
+    {
+     "t": 1,
+     "pose": {
+      "body": 0,
+      "neck": 36,
+      "head": 24,
+      "tail": 34,
+      "dx": 0,
+      "thigh_rn": -62,
+      "thigh_rf": -62,
+      "thigh_fn": 52,
+      "thigh_ff": 52,
+      "shin_rn": 112,
+      "shin_rf": 112,
+      "shin_fn": -102,
+      "shin_ff": -102,
+      "rot": 6,
+      "dy": 85
+     }
+    }
+   ]
+  }
+ }
+}
