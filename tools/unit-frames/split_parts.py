@@ -14,7 +14,9 @@ spec.json:
        "grow": 6,                         #   range, grown into dark outline pixels by this many px
        "exclude": [[[x, y], ...], ...],   # optional: areas removed from the part
        "exclude_parts": ["skirt"],        # optional: pixels owned by other parts, removed
-       "hidden": [[[x, y], ...], ...],    # optional: areas covered by other parts, filled in
+       "hidden": [[[x, y], ...], ...],    # optional: areas covered by other parts, filled in;
+                                          #   an entry may be {"poly": [...], "clone": [dx, dy]}
+                                          #   to copy the part's own texture from that offset
        "pivot": [x, y]}                   # joint position in source pixels
     ]
   }
@@ -105,7 +107,8 @@ def split(spec_path, out_dir):
             own = np.minimum(own, owned[other] ^ 255)
         # hidden areas are covered by other parts at rest, so they never reach past the
         # silhouette
-        hidden = np.minimum(np.array(poly_mask(src.size, part.get("hidden", []))), fg)
+        entries = [h if isinstance(h, dict) else {"poly": h} for h in part.get("hidden", [])]
+        hidden = np.minimum(np.array(poly_mask(src.size, [h["poly"] for h in entries])), fg)
         rgba = rgb.copy()
         alpha = np.maximum(own, hidden)
         fill = (hidden > 0) & (own <= 200)
@@ -115,6 +118,22 @@ def split(spec_path, out_dir):
             known = (own > 200) & (hsv[..., 2] >= DARK)
             painted = cv2.inpaint(rgba, (~known).astype(np.uint8) * 255, 5, cv2.INPAINT_TELEA)
             rgba[fill] = painted[fill]
+            # inpainting smears a large area into a flat grey; where the spec names an offset,
+            # tile the part's own paint from there instead (chain mail stays chain mail)
+            for h in entries:
+                if "clone" not in h:
+                    continue
+                todo = fill & (np.array(poly_mask(src.size, [h["poly"]])) > 0)
+                ys, xs = np.nonzero(todo)
+                dx, dy = h["clone"]
+                for step in range(1, 6):
+                    if not len(ys):
+                        break
+                    sx, sy = xs + step * dx, ys + step * dy
+                    ok = (sx >= 0) & (sx < src.width) & (sy >= 0) & (sy < src.height)
+                    ok[ok] = known[sy[ok], sx[ok]]
+                    rgba[ys[ok], xs[ok]] = rgb[sy[ok], sx[ok]]
+                    ys, xs = ys[~ok], xs[~ok]
             # where the filled area becomes the part's edge, draw the sticker outline again
             solid = (alpha > 127).astype(np.uint8)
             k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * OUTLINE + 1,) * 2)
