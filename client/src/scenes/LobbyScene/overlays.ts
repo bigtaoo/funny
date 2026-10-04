@@ -6,7 +6,8 @@
 import * as PIXI from 'pixi.js-legacy';
 import { t, TranslationKey } from '../../i18n';
 import { buildIcon, IconKind } from '../../render/icons';
-import { makeText } from '../../render/pixiText';
+import { makeText, wrapMixedText } from '../../render/pixiText';
+import { txtFit } from '../../render/sketchUi';
 import { C, txt, sketchPanel, type LobbySceneCore } from './core';
 import { snapFont } from '../../render/fontScale';
 
@@ -89,29 +90,30 @@ export class OverlaysPanel {
     backdrop.beginFill(0x000000, 0.6).drawRect(0, 0, w, h).endFill();
     layer.addChild(backdrop);
 
+    // Sizes come from a nominal card height; the real height grows to fit the wrapped body, so a
+    // long translation on a narrow portrait screen pushes the button down instead of under it.
     const cw = Math.round(w * 0.8);
-    const ch = Math.round(h * 0.34);
+    const unit = Math.round(h * 0.34);
+    const bodyLbl = wrappedBody(t(bodyKey), snapFont(Math.round(unit * 0.092)), cw);
+    const btnW = Math.round(cw * 0.4);
+    const btnH = Math.round(unit * 0.2);
+    const bodyTop = Math.round(unit * 0.32);
+    const ch = Math.max(unit, bodyTop + Math.ceil(bodyLbl.height) + Math.round(unit * 0.08) + btnH + Math.round(unit * 0.1));
     const cx = (w - cw) / 2;
-    const cy = (h - ch) / 2;
+    const cy = Math.round((h - ch) / 2);
     const card = sketchPanel(cw, ch, { fill: C.paper, border: C.accent, width: 2.6, seed: 91 });
     card.x = cx; card.y = cy;
     layer.addChild(card);
 
-    const titleLbl = txt(t(titleKey), snapFont(Math.round(ch * 0.13)), C.dark, true);
-    titleLbl.anchor.set(0.5, 0); titleLbl.x = w / 2; titleLbl.y = cy + Math.round(ch * 0.1);
+    const titleLbl = txt(t(titleKey), snapFont(Math.round(unit * 0.13)), C.dark, true);
+    titleLbl.anchor.set(0.5, 0); titleLbl.x = w / 2; titleLbl.y = cy + Math.round(unit * 0.1);
     layer.addChild(titleLbl);
 
-    const bodyLbl = makeText(t(bodyKey), {
-      fontSize: snapFont(Math.round(ch * 0.092)), fill: C.mid, fontFamily: 'monospace',
-      wordWrap: true, wordWrapWidth: cw - Math.round(cw * 0.12), align: 'center',
-    });
-    bodyLbl.anchor.set(0.5, 0); bodyLbl.x = w / 2; bodyLbl.y = cy + Math.round(ch * 0.32);
+    bodyLbl.x = w / 2; bodyLbl.y = cy + bodyTop;
     layer.addChild(bodyLbl);
 
-    const btnW = Math.round(cw * 0.4);
-    const btnH = Math.round(ch * 0.2);
     const btnX = (w - btnW) / 2;
-    const btnY = cy + ch - btnH - Math.round(ch * 0.1);
+    const btnY = cy + ch - btnH - Math.round(unit * 0.1);
     const btn = new PIXI.Graphics();
     btn.beginFill(C.dark).drawRoundedRect(btnX, btnY, btnW, btnH, Math.round(btnH * 0.3)).endFill();
     layer.addChild(btn);
@@ -151,31 +153,32 @@ export class OverlaysPanel {
     backdrop.beginFill(0x000000, 0.6).drawRect(0, 0, w, h).endFill();
     layer.addChild(backdrop);
 
+    // Same grow-to-fit rule as the feature guide: this body is the longest text any lobby card
+    // carries, and at a fixed height it ran under the buttons on a portrait phone.
     const cw = Math.round(w * 0.8);
-    const ch = Math.round(h * 0.42);
+    const unit = Math.round(h * 0.42);
+    const bodyLbl = wrappedBody(t('iap.consentBody'), snapFont(Math.round(unit * 0.075)), cw);
+    const btnH = Math.round(unit * 0.17);
+    const bodyTop = Math.round(unit * 0.26);
+    const ch = Math.max(unit, bodyTop + Math.ceil(bodyLbl.height) + Math.round(unit * 0.07) + btnH + Math.round(unit * 0.09));
     const cx = (w - cw) / 2;
-    const cy = (h - ch) / 2;
+    const cy = Math.round((h - ch) / 2);
     const card = sketchPanel(cw, ch, { fill: C.paper, border: C.accent, width: 2.6, seed: 137 });
     card.x = cx; card.y = cy;
     layer.addChild(card);
 
-    const titleLbl = txt(t('iap.consentTitle'), snapFont(Math.round(ch * 0.11)), C.dark, true);
-    titleLbl.anchor.set(0.5, 0); titleLbl.x = w / 2; titleLbl.y = cy + Math.round(ch * 0.08);
+    const titleLbl = txtFit(t('iap.consentTitle'), snapFont(Math.round(unit * 0.11)), C.dark, true, cw - Math.round(cw * 0.08));
+    titleLbl.anchor.set(0.5, 0); titleLbl.x = w / 2; titleLbl.y = cy + Math.round(unit * 0.08);
     layer.addChild(titleLbl);
 
-    const bodyLbl = makeText(t('iap.consentBody'), {
-      fontSize: snapFont(Math.round(ch * 0.075)), fill: C.mid, fontFamily: 'monospace',
-      wordWrap: true, wordWrapWidth: cw - Math.round(cw * 0.12), align: 'center',
-    });
-    bodyLbl.anchor.set(0.5, 0); bodyLbl.x = w / 2; bodyLbl.y = cy + Math.round(ch * 0.26);
+    bodyLbl.x = w / 2; bodyLbl.y = cy + bodyTop;
     layer.addChild(bodyLbl);
 
     // Two buttons side by side, each 40% of the card: "Allow" carries the accent, "Not now" is
     // plain, and neither is pre-selected — the honest presentation of a question we must not lead.
     const btnW = Math.round(cw * 0.4);
-    const btnH = Math.round(ch * 0.17);
     const gap = Math.round(cw * 0.04);
-    const btnY = cy + ch - btnH - Math.round(ch * 0.09);
+    const btnY = cy + ch - btnH - Math.round(unit * 0.09);
     const yesX = cx + cw / 2 - gap / 2 - btnW;
     const noX = cx + cw / 2 + gap / 2;
 
@@ -183,7 +186,7 @@ export class OverlaysPanel {
       const btn = new PIXI.Graphics();
       btn.beginFill(fill).drawRoundedRect(bx, btnY, btnW, btnH, Math.round(btnH * 0.3)).endFill();
       layer.addChild(btn);
-      const lbl = txt(label, snapFont(Math.round(btnH * 0.4)), labelColor, true);
+      const lbl = txtFit(label, snapFont(Math.round(btnH * 0.4)), labelColor, true, btnW - Math.round(btnW * 0.1));
       lbl.anchor.set(0.5, 0.5); lbl.x = bx + btnW / 2; lbl.y = btnY + btnH / 2;
       layer.addChild(lbl);
     };
@@ -287,4 +290,20 @@ export class OverlaysPanel {
     core.toastRect = null;
     if (core.toastLayer) { core.toastLayer.destroy({ children: true }); core.toastLayer = null; }
   }
+}
+
+/**
+ * A card's wrapped body paragraph, anchored top-centre. Broken by `wrapMixedText`, not Pixi's
+ * `wordWrap`: Pixi only breaks at spaces, so a Chinese sentence was one unbreakable "word" drawn
+ * as a single line straight through the card's edges.
+ */
+function wrappedBody(text: string, fontSize: number, cardW: number): PIXI.Text {
+  const style = new PIXI.TextStyle({
+    fontSize, fill: C.mid, fontFamily: 'monospace', align: 'center',
+    lineHeight: Math.round(fontSize * 1.4),
+  });
+  const maxW = cardW - Math.round(cardW * 0.12);
+  const lbl = makeText(wrapMixedText(text, maxW, (s) => PIXI.TextMetrics.measureText(s, style).width), style);
+  lbl.anchor.set(0.5, 0);
+  return lbl;
 }

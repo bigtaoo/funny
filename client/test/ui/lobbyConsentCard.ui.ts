@@ -95,6 +95,10 @@ function rects(scene: LobbyScene): { yes: PIXI.Rectangle; no: PIXI.Rectangle } {
   };
 }
 
+/** The body is drawn with explicit line breaks (pixiText.ts `wrapMixedText`): compare words, not layout. */
+const sameWords = (drawn: string, source: string): boolean =>
+  drawn.replace(/\s+/g, '') === source.replace(/\s+/g, '');
+
 const tap = (scene: LobbyScene, x: number, y: number): void => {
   (scene as unknown as { build: { handleDown(x: number, y: number): void } }).build.handleDown(x, y);
 };
@@ -123,7 +127,7 @@ describe('the consent card fits', () => {
     try {
       const { scene } = build();
       const { yes } = rects(scene);
-      const body = texts(scene.container).find((n) => n.text === t('iap.consentBody'));
+      const body = texts(scene.container).find((n) => sameWords(n.text, t('iap.consentBody')));
       expect(body).toBeDefined();
       // The paragraph is the thing that grows between locales; the buttons are fixed fractions of the
       // card. German is the longest, and this is where an overflow would land.
@@ -138,7 +142,7 @@ describe('the consent card fits', () => {
     const { scene } = build();
     const all = texts(scene.container).map((n) => n.text);
     expect(all).toContain(t('iap.consentTitle'));
-    expect(all).toContain(t('iap.consentBody'));
+    expect(all.some((s) => sameWords(s, t('iap.consentBody')))).toBe(true);
     expect(all).toContain(t('iap.consentAllow'));
     expect(all).toContain(t('iap.consentDecline'));
   });
