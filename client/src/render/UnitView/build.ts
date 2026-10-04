@@ -8,6 +8,9 @@ import type { Unit } from '@nw/engine/Unit';
 import { ObjectPool } from '../../cache/ObjectPool';
 import { StickmanRuntime } from '../stickman/StickmanRuntime';
 import type { TaoAsset } from '../stickman/StickmanRuntime';
+import { FrameRuntime } from '../frames/FrameRuntime';
+import type { FrameSheet } from '../frames/frameSheet';
+import type { UnitRuntime, UnitRuntimeOptions } from '../unitRuntime';
 import { fx } from '../theme';
 import { drawStickmanDraft, draftTexture } from '../stickmanDraft';
 import { targetScreenHeight } from '../unitSize';
@@ -19,14 +22,16 @@ import {
 
 export interface BuildHost {
   readonly pool: ObjectPool<PIXI.Container>;
-  readonly stickmanPools: Map<string, Array<{ wrapper: PIXI.Container; runtime: StickmanRuntime }>>;
+  readonly stickmanPools: Map<string, Array<{ wrapper: PIXI.Container; runtime: UnitRuntime }>>;
   readonly stickmanPoolKeys: Map<number, string>;
-  readonly stickmanRuntimes: Map<number, StickmanRuntime>;
+  readonly stickmanRuntimes: Map<number, UnitRuntime>;
+  /** Baked frame sheets (FRAME_ASSETS) that have loaded; they win over the type's default .tao. */
+  readonly frameSheets: Map<UnitType, FrameSheet>;
   readonly localSkinAssets: Map<UnitType, TaoAsset>;
   readonly opponentSkinAssets: Map<UnitType, TaoAsset>;
   readonly assets: Map<UnitType, TaoAsset>;
   readonly localSide: Side;
-  applyGear(runtime: StickmanRuntime, unit: Unit): void;
+  applyGear(runtime: UnitRuntime, unit: Unit): void;
 }
 
 /**
@@ -48,8 +53,15 @@ function renderSide(host: BuildHost, unit: Unit): Side {
 export function acquireSprite(host: BuildHost, unit: Unit): PIXI.Container {
   const isLocal = unit.side === host.localSide;
   const skinned = (isLocal ? host.localSkinAssets : host.opponentSkinAssets).get(unit.unitType);
+  // An equipped skin is still a .tao, so it keeps the bone rig; otherwise a baked sheet wins.
+  const sheet = skinned ? undefined : host.frameSheets.get(unit.unitType);
+  if (sheet) {
+    return buildStickmanContainer(host, unit, `${unit.unitType}:frames`, o => new FrameRuntime(sheet, o));
+  }
   const asset = skinned ?? host.assets.get(unit.unitType);
-  if (asset) return buildStickmanContainer(host, unit, asset, isLocal);
+  if (asset) {
+    return buildStickmanContainer(host, unit, poolKey(host, unit.unitType, isLocal), o => new StickmanRuntime(asset, o));
+  }
   return buildCircleContainer(host, unit);
 }
 
@@ -67,11 +79,12 @@ function poolKey(host: BuildHost, unitType: UnitType, isLocal: boolean): string 
 
 // ─── Stickman container (unit type with a loaded .tao asset) ───────────────
 
-function buildStickmanContainer(host: BuildHost, unit: Unit, asset: TaoAsset, isLocal: boolean): PIXI.Container {
+function buildStickmanContainer(
+  host: BuildHost, unit: Unit, key: string, create: (options: UnitRuntimeOptions) => UnitRuntime,
+): PIXI.Container {
   const side    = renderSide(host, unit);
   const mirrorX = side === Side.Top;
   const targetHeight = targetScreenHeight(unit.unitType);
-  const key = poolKey(host, unit.unitType, isLocal);
   host.stickmanPoolKeys.set(unit.id, key);
 
   // Reuse a pooled (wrapper + runtime) pair of the same bucket when available.
@@ -101,7 +114,7 @@ function buildStickmanContainer(host: BuildHost, unit: Unit, asset: TaoAsset, is
   const markerSprite = new PIXI.Sprite(); markerSprite.name = 'factionMarkerSprite'; markerSprite.anchor.set(0.5);
   const markerGfx     = new PIXI.Graphics(); markerGfx.name = 'factionMarker';
 
-  const runtime = new StickmanRuntime(asset, { mirrorX, targetHeight });
+  const runtime = create({ mirrorX, targetHeight });
   host.stickmanRuntimes.set(unit.id, runtime);
   host.applyGear(runtime, unit);
   drawUnitMarker(markerSprite, markerGfx, runtime, side);
@@ -150,7 +163,7 @@ function buildCircleContainer(host: BuildHost, unit: Unit): PIXI.Container {
  * (slightly larger than the shadow so it reads as a colored patch under it).
  * Falls back to a default ground ellipse when the shadow ground is unavailable.
  */
-function drawUnitMarker(markerSprite: PIXI.Sprite, markerGfx: PIXI.Graphics, runtime: StickmanRuntime, side: Side): void {
+function drawUnitMarker(markerSprite: PIXI.Sprite, markerGfx: PIXI.Graphics, runtime: UnitRuntime, side: Side): void {
   const g = runtime.getShadowGround();
   if (g) paintMarker(markerSprite, markerGfx, side, g.x, g.y, g.rx * 1.3, g.ry * 1.3);
   else   paintMarker(markerSprite, markerGfx, side, 0, MARKER_Y, 12, 4.4);

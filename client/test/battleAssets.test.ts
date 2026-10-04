@@ -42,10 +42,18 @@ vi.mock('../src/render/atlas/decorMergedAtlas', () => ({
   decorMergedAtlas: { load: vi.fn(() => { decorAtlasCalls.push(1); return Promise.resolve(); }) },
 }));
 
+// Frame sheets (art-direction §4.3.1) are warmed by the same gate; the real loader would wait on a
+// PIXI decode of the stubbed png, so it is mocked like the rigs.
+const frameSheetCalls: string[] = [];
+vi.mock('../src/render/frames/frameSheet', () => ({
+  loadFrameSheet: vi.fn((png: string) => { frameSheetCalls.push(png); return Promise.resolve({}); }),
+}));
+
 // Imported AFTER vi.mock (vitest hoists mock registration above all imports regardless of
 // physical order — see marchTokenScale.ui.ts for the same pattern).
 import { ensureBattleAssets } from '../src/assets/battleAssets';
 import { STICKMAN_ASSETS, resolveSkinOverrides } from '../src/render/UnitView';
+import { FRAME_ASSETS } from '../src/render/UnitView/assets';
 
 describe('ensureBattleAssets', () => {
   it('warms every default unit .tao plus L1 card art and the decor atlas when no skins are equipped', async () => {
@@ -57,6 +65,13 @@ describe('ensureBattleAssets', () => {
     for (const url of Object.values(STICKMAN_ASSETS)) expect(urls.has(url as string)).toBe(true);
     expect(cardArtCalls.length).toBe(1);
     expect(decorAtlasCalls.length).toBe(1);
+  });
+
+  it('warms every frame sheet too, so frame units never spawn as their rig first', async () => {
+    frameSheetCalls.length = 0;
+    await ensureBattleAssets({});
+    expect(Object.keys(FRAME_ASSETS).length).toBeGreaterThan(0);
+    for (const { png } of Object.values(FRAME_ASSETS)) expect(frameSheetCalls).toContain(png);
   });
 
   it('also warms local + opponent equipped-skin overrides', async () => {
@@ -92,7 +107,7 @@ describe('ensureBattleAssets', () => {
     // asset stub), `total` degenerates to 1 + 2 and the assertions below hold no matter what
     // `ensureBattleAssets` does.
     expect(uniqueUrls.size).toBeGreaterThan(1);
-    const total = uniqueUrls.size + 2; // + card art step + decor atlas step
+    const total = uniqueUrls.size + Object.keys(FRAME_ASSETS).length + 2; // + frame sheets + card art + decor atlas
     const seen: Array<[number, number]> = [];
     await ensureBattleAssets({}, (done, t) => seen.push([done, t]));
     expect(seen[0]).toEqual([0, total]);

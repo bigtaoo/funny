@@ -8,6 +8,7 @@
 client/          主游戏（TS + PixiJS，port 9090）
 tools/           animator(9091) / level-editor(9092) / ops(9093) / vfx-editor(9094) / map-editor(9095)
                  audio-pipeline/（Python，无端口：音频素材的抓取 → 审计 → 转换 → 峰值对齐）
+                 unit-frames/（Python，无端口：战斗单位的形变烘焙序列帧 + Mistral 出图脚本 → design/product/art-direction.md §4.3.1）
                  desktop-shell/（Electron 工具壳，设计中 → design/tools/desktop-shell/DESIGN.md）
                  gimp-export-layers/（GIMP 图层批导出插件 + despeckle.py 去杂点 CLI，无端口 → design/tools/gimp-export-layers/DESIGN.md）
                  scripts/（跨工具杂项脚本）
@@ -52,6 +53,7 @@ claudedocs/      模块级快查文档（本目录）
 | 文件格式 | [`file-formats.md`](file-formats.md) | — |
 | 并行开发（worktree） | [`worktrees.md`](worktrees.md) | — |
 | 音频素材管线 | [`../tools/audio-pipeline/README.md`](../tools/audio-pipeline/README.md) | `design/game/AUDIO_DESIGN.md` §0.4 / §7 |
+| 单位序列帧管线 | [`../tools/unit-frames/README.md`](../tools/unit-frames/README.md) | `design/product/art-direction.md` §4.3.1 |
 
 > **本表是全量**（15 份 + 本文）。2026-09-03 审计时它漏了自己 6 份——四份 `server-testing*`、`server-audits.md`、`client-testing-log.md`。
 > 新增 `claudedocs/*.md` 必须同时往本表加一行。

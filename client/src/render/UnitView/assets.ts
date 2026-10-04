@@ -27,6 +27,11 @@ import skinShieldBearerTaoUrl from '../../assets/units/skins/skin_shieldbearer.t
 import skinLenaTaoUrl from '../../assets/units/skins/skin_lena.tao';
 import skinMaraTaoUrl from '../../assets/units/skins/skin_mara.tao';
 import skinMaxTaoUrl from '../../assets/units/skins/skin_max.tao';
+import lenaFramesUrl from '../../assets/units/frames/lena.png';
+import lenaFramesJson from '../../assets/units/frames/lena.json';
+import maraFramesUrl from '../../assets/units/frames/mara.png';
+import maraFramesJson from '../../assets/units/frames/mara.json';
+import type { FrameSheetJson } from '../frames/frameSheet';
 
 /**
  * .tao skeletal-animation bundle URL per unit type. Types listed here render as
@@ -50,6 +55,23 @@ export const STICKMAN_ASSETS: Partial<Record<UnitType, string>> = {
   [UnitType.Berserker]: berserkerTaoUrl as unknown as string,
   [UnitType.Splitter]:  splitterTaoUrl as unknown as string,
 };
+
+/**
+ * Unit types drawn from a baked frame sheet (tools/unit-frames) instead of their bone rig —
+ * the 2026-10 pilot (design/product/art-direction.md §4.3). The .tao in STICKMAN_ASSETS stays the
+ * fallback until the sheet loads, and keeps drawing equipped skins, the lobby and the world map.
+ * `?frames=0` turns the sheets off on web, to compare against the rig.
+ */
+export const FRAME_ASSETS: Partial<Record<UnitType, { png: string; json: FrameSheetJson }>> =
+  framesDisabled() ? {} : {
+    [UnitType.Lena]: { png: lenaFramesUrl as unknown as string, json: lenaFramesJson as unknown as FrameSheetJson },
+    [UnitType.Mara]: { png: maraFramesUrl as unknown as string, json: maraFramesJson as unknown as FrameSheetJson },
+  };
+
+function framesDisabled(): boolean {
+  const search = (globalThis as { location?: { search?: string } }).location?.search ?? '';
+  return /[?&]frames=0\b/.test(search);
+}
 
 /**
  * Skin → per-type .tao override (S3-4). Each equipped skin (SaveData.equipped, one slot per
