@@ -265,7 +265,7 @@ tactics,pvp,multiplayer,card battle,lane,army,castle,sketch,doodle,paper,rts
 | Version | `1.0`（与 `client/ios/App/App.xcodeproj/project.pbxproj` 的 `MARKETING_VERSION = 1.0` 一致） |
 | Copyright | `2026 Tao Wang`（运营主体见 `terms.html §1`：德国个体经营，非公司） |
 | Routing App Coverage File | 留空（不是导航类 App） |
-| Build | 选 **CFBundleVersion = 11** 那个（2026-09-23，run `35864608992`，head `2fd328b47`，36.6 MB）——含 t099/t199 币档 + mobileOnly UI 修复的最新包；此前 CFBundleVersion=7（2026-09-08）已停用 |
+| Build | **19**（2026-10-04，build 12 被拒 3.1.1 + 1.2 后的返工包；此前 11 / 7 已停用） |
 | Export Compliance | **不会问**：`client/ios/App/App/Info.plist` 已有 `ITSAppUsesNonExemptEncryption = false` |
 | Version Release | Manually release this version（自己控制放出时机） |
 
@@ -325,38 +325,53 @@ iOS/web 拿不到 token 就 `goLogin()`，落在 `LoginScene` 的三个按钮上
 知道旧口令时可用，2026-09-08 就是这么换的），彻底忘了则走 admin 的账号管理重设
 （`server/admin/src/service/accounts.ts`）。
 
-#### App Review Information → Notes（直接贴）
+#### App Review Information → Notes（直接贴；2026-10-04 build 19 版，加了录屏与 1.2 / 3.1.1 两段）
 
 ```
+SCREEN RECORDING (physical device, build 19)
+https://nivara.gamestao.com/review/app-review-build19.mp4
+It shows the Terms of Use (EULA) before login, reporting a message, and blocking a user.
+
 ACCOUNT / SIGN-IN
 The first screen is a login screen (Log in / Sign up / Play offline). Please use the demo
-account above — "Play offline" reaches only the single-player campaign and cannot test
+account above. "Play offline" reaches only the single-player campaign and cannot test
 in-app purchases, PvP, the open world, or chat.
 
-FIRST LAUNCH — two gates before the lobby
+FIRST LAUNCH - gates before the lobby
 1. A neutral age-declaration screen (self-declared, no identity verification). Enter any
    adult age to continue.
-2. A privacy / terms consent dialog. Both links open in Safari.
+2. A Terms of Use (EULA) / privacy consent screen. The terms state zero tolerance for
+   objectionable content and abusive users. Both links open in Safari.
+The login form also states that logging in means agreeing to the Terms of Use.
 Then you land on the lobby; the bottom tab bar reaches everything.
 
+USER-GENERATED CONTENT (Guideline 1.2)
+- Chat, announcements, mail and friend-request messages are filtered for objectionable
+  content.
+- Report: tap any chat message, or any player name to open their profile popup ->
+  Report -> choose a reason category -> Submit. Also available from mail.
+- Block: same popup -> Block -> confirm. The blocked user's messages disappear
+  immediately. Unblock from Settings -> "Help" -> Blocked players.
+- Every report and block alerts our moderation team in real time. We act within 24 hours
+  by removing the content and ejecting the offending user.
+
+IN-APP PURCHASES (Guideline 3.1.1)
+- Store tab -> Coins / Packs. All purchases go through StoreKit 2. The native build
+  contains no web checkout and no link that steers to one.
+- Promo-code redemption has been removed on every platform and the server endpoint no
+  longer exists. Future iOS promotions will use App Store Offer Codes.
+- Paid random items (loot box) odds: Store tab -> Gacha -> the (i) button at the top
+  right of the banner -> full per-rarity draw rates and pity guarantees.
+
 WHERE TO FIND WHAT YOU USUALLY CHECK
-- Privacy Policy / Terms: tap your name at the top of the lobby to open Settings -> "Help"
-  -> Privacy Policy / Terms of Use (EULA). Also on the first-launch consent screen and below
-  the login form. All of them open in Safari.
-- Blocked players: Settings -> "Help" -> Blocked players (unblock from there).
-  https://nivara.gamestao.com/privacy and /terms
+- Privacy Policy / Terms of Use (EULA): tap your name at the top of the lobby to open
+  Settings -> "Help". Also at https://nivara.gamestao.com/privacy and /terms
 - Account deletion (5.1.1(v)): Profile -> Account -> "Delete Account" (red), with a second
   confirmation. 7-day grace period, then permanent.
-- Paid random items (loot box) odds (3.1.1): Store tab -> Gacha -> the (i) button at the
-  top right of the banner -> full per-rarity draw rates and pity guarantees.
-- Report / block a player (1.2): tap any player name to open their profile popup ->
-  Report / Block. Reports go to a human review queue; blocking is immediate.
-- In-app purchases: Store tab -> Coins / Packs. All purchases go through StoreKit 2.
-  The native build contains no web checkout and no link that steers to one.
 
 CONTENT
 - Real-time lane-pushing battles (tower defense), a single-player campaign, and a shared
-  open-world map. Matches are server-authoritative and sync inputs, not outcomes.
+  open-world map. Matches are server-authoritative.
 - Player-chosen nicknames are visible to other players. There is 1:1 friend chat and group
   chat inside families/sects. No feed, no sharing or amplification, no discovery.
 - Rewarded video ads via AdMob, non-personalized only (npa=1). No ATT prompt, no IDFA

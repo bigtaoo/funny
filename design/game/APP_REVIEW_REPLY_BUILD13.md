@@ -1,14 +1,16 @@
 # App Review 回复草稿：build 12 拒审（3.1.1 + 1.2）
 
-> 状态：**草稿，待核对后发送**（2026-09-29 起草，2026-10-04 改为 build 19：兑换码已全平台移除、录屏已上线）。Submission ID `ed186ff4-7b13-4c46-b5ca-5063de561f1f`。
+> 状态：**已发送并重新提交，2026-10-04 Waiting for Review**（2026-09-29 起草，2026-10-04 改为 build 19：兑换码已全平台移除、录屏已上线）。Submission ID `ed186ff4-7b13-4c46-b5ca-5063de561f1f`。
 > 背景与实现见 `IOS_RELEASE.md §9.2 / §9.3`、`CONTENT_MODERATION_DESIGN.md §9.6`。
 
 ## 发送前检查
 
 - [x] 服务端已部署，VPS 上 socialsvc 已配 `NW_ALERT_WEBHOOK_URL`，发一条测试举报确认告警能到群里（2026-09-30，Discord）
-- [ ] build 19 已上传（2026-10-04）；在 ASC 里把版本的 build 换成 19
+- [x] build 19 已上传，ASC 版本已换成 build 19（2026-10-04）
 - [x] 真机录屏已完成，随官网部署公开发布：https://nivara.gamestao.com/review/app-review-build19.mp4（源文件 `client/public/web/review/`；以后新录屏换新文件名，不覆盖旧链接）
-- [ ] 录屏链接同时写进 ASC「App Review Information → Notes」（以后每次提审都保留）
+- [x] 录屏链接同时写进 ASC「App Review Information → Notes」（2026-10-04，整段新 Notes 见 `store-assets-checklist §1.2b`；以后每次提审都保留）
+- [x] 回复已发，版本已 Resubmit，状态 Waiting for Review（2026-10-04）
+- [ ] 未确认：ASC 英文 Description 末尾的 EULA 链接仍是 Apple 标准 EULA，而回复/Notes 说的是我们自己的零容忍条款；若再因 1.2 被问，改成 `https://nivara.gamestao.com/terms`（前提是该页覆盖订阅条款）
 - [x] 下面英文稿里的录屏链接已填好
 
 ## 录屏脚本（真机）
