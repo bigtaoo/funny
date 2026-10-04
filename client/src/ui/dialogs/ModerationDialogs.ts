@@ -140,8 +140,14 @@ abstract class ModerationCard {
     return this.text(fitToWidth(label, fitted, cardW * 0.86, true), y, cardW, fitted, palette.pencil, true);
   }
 
+  /**
+   * A HUD button with a centred label. The label shrinks to fit; past the font floor it is cut with
+   * an ellipsis, unless `wrap` is set — then it breaks onto a second line instead (the report
+   * categories: "Harassment / bullying" on a landscape phone was cut to "Harassment / bullyi…").
+   */
   protected button(
     label: string, x: number, y: number, bw: number, bh: number, variant: HudButtonVariant, onTap: (() => void) | null,
+    wrap = false,
   ): void {
     const g = new PIXI.Graphics();
     drawHudButton(g, bw, bh, onTap ? variant : 'disabled', { radius: 8 });
@@ -157,9 +163,14 @@ abstract class ModerationCard {
     this.card.addChild(g);
     const size = snapFont(Math.round(bh * 0.38));
     const fitted = fitFont(size, monospaceWidth(label, size), bw * 0.9);
-    const lbl = makeText(fitToWidth(label, fitted, bw * 0.92, true), {
-      fontSize: fitted, fill: hudButtonText(onTap ? variant : 'disabled'), fontWeight: 'bold', fontFamily: 'monospace',
-    });
+    const style = { fontSize: fitted, fill: hudButtonText(onTap ? variant : 'disabled'), fontWeight: 'bold' as const, fontFamily: 'monospace' };
+    // Decided on the MEASURED width (fitToWidth), not the monospace estimate: iOS resolves
+    // 'monospace' to Menlo (~0.6 em bold) where the estimate assumes 0.54 em, so only a real
+    // measurement sees the overflow.
+    const single = fitToWidth(label, fitted, bw * 0.92, true);
+    const lbl = wrap && single !== label
+      ? makeText(label, { ...style, wordWrap: true, wordWrapWidth: bw * 0.92, breakWords: true, align: 'center', lineHeight: Math.round(fitted * 1.15) })
+      : makeText(single, style);
     lbl.anchor.set(0.5, 0.5);
     lbl.x = x + bw / 2; lbl.y = y + bh / 2;
     this.card.addChild(lbl);
@@ -236,7 +247,7 @@ export class ReportDialog extends ModerationCard {
         const row = Math.floor(i / cols);
         const label = this.sending === cat ? t('moderation.sending') : t(CATEGORY_KEY[cat]);
         this.button(label, x0 + col * (bw + gap), y + row * (bh + gap), bw, bh, 'danger',
-          this.sending ? null : () => void this.pick(cat));
+          this.sending ? null : () => void this.pick(cat), true);
       });
       y += Math.ceil(REPORT_CATEGORIES.length / cols) * (bh + gap) - gap;
 
