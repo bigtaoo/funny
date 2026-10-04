@@ -19,7 +19,13 @@ spec.json:
                                           #   (e.g. a bowstring the rig draws itself)
        "hidden": [[[x, y], ...], ...],    # optional: areas covered by other parts, filled in;
                                           #   an entry may be {"poly": [...], "clone": [dx, dy]}
-                                          #   to copy the part's own texture from that offset
+                                          #   to copy the part's own texture from that offset, or
+                                          #   {"poly": [...], "image": "old.png", "at": [x, y]}
+                                          #   to copy an older cutout placed at (x, y) in source px
+       "from": {"image": "old.png", "at": [x, y]},  # optional: cut this part from an older
+                                          #   cutout of the same drawing placed at (x, y) (e.g. a
+                                          #   bone rig's limb, already painted where it was covered)
+                                          #   instead of the source; no poly = the whole cutout
        "flip": true,                      # optional: mirror the part about its pivot
        "pivot": [x, y]}                   # joint position in source pixels
     ]
@@ -63,6 +69,8 @@ def poly_mask(size, polys):
 def region_mask(src, hsv, part):
     """Pixels a part claims before other parts are subtracted (uint8 array, 0 or 255)."""
     m = poly_mask(src.size, [part["poly"]] if "poly" in part else [])
+    if "from" in part and not any(k in part for k in ("poly", "stroke", "discs")):
+        m = Image.new("L", src.size, 255)  # the whole older cutout
     if "stroke" in part:
         d = ImageDraw.Draw(m)
         pts = [tuple(v) for v in part["stroke"]["line"]]
@@ -108,11 +116,27 @@ def split(spec_path, out_dir):
     fg[(np.array(poly_mask(src.size, spec.get("background", []))) > 0) & paper] = 0
     line_w = spec.get("outline", {}).get("width", OUTLINE)
     line_rgb = spec.get("outline", {}).get("rgb", OUTLINE_RGB)
-    owned = {p["name"]: np.minimum(region_mask(src, hsv, p), fg) for p in spec["parts"]}
+    base = (rgb, hsv, fg)
+
+    def layer(part):
+        """The pixels a part is cut from: the source, or an older cutout of it placed in register."""
+        if "from" not in part:
+            return base
+        im = Image.open(os.path.join(os.path.dirname(spec_path), part["from"]["image"])).convert("RGBA")
+        canvas = Image.new("RGBA", src.size, (0, 0, 0, 0))
+        canvas.paste(im, tuple(part["from"].get("at", (0, 0))))
+        a = np.array(canvas)
+        c = np.ascontiguousarray(a[..., :3])
+        return c, cv2.cvtColor(c, cv2.COLOR_RGB2HSV), a[..., 3].copy()
+
+    layers_of = {p["name"]: layer(p) for p in spec["parts"]}
+    owned = {p["name"]: np.minimum(region_mask(src, layers_of[p["name"]][1], p), layers_of[p["name"]][2])
+             for p in spec["parts"]}
     os.makedirs(out_dir, exist_ok=True)
     meta, layers = [], []
     for part in spec["parts"]:
         own = owned[part["name"]]
+        rgb, hsv, fg = layers_of[part["name"]]
         for other in part.get("exclude_parts", []):
             own = np.minimum(own, owned[other] ^ 255)
         if "open" in part:
@@ -146,6 +170,19 @@ def split(spec_path, out_dir):
                     ok[ok] = known[sy[ok], sx[ok]]
                     rgba[ys[ok], xs[ok]] = rgb[sy[ok], sx[ok]]
                     ys, xs = ys[~ok], xs[~ok]
+            # an older cutout of the same drawing (e.g. a bone rig's torso) may already have the
+            # covered area painted; where the spec names one, copy it in register
+            for h in entries:
+                if "image" not in h:
+                    continue
+                im = np.array(Image.open(os.path.join(os.path.dirname(spec_path), h["image"])).convert("RGBA"))
+                ox, oy = h.get("at", (0, 0))
+                todo = fill & (np.array(poly_mask(src.size, [h["poly"]])) > 0)
+                ys, xs = np.nonzero(todo)
+                sx, sy = xs - ox, ys - oy
+                ok = (sx >= 0) & (sx < im.shape[1]) & (sy >= 0) & (sy < im.shape[0])
+                ok[ok] = im[sy[ok], sx[ok], 3] > 200
+                rgba[ys[ok], xs[ok]] = im[sy[ok], sx[ok], :3]
             # where the filled area becomes the part's edge, draw the sticker outline again
             solid = (alpha > 127).astype(np.uint8)
             k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * line_w + 1,) * 2)

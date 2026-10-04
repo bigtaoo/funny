@@ -1,0 +1,373 @@
+{
+ "out": "../../../../client/src/assets/units/frames/berserker",
+ "height": 140,
+ "screenHeight": 64,
+ "points": {
+  "hit": [
+   0.039,
+   -0.39
+  ]
+ },
+ "shadow": [
+  0.296,
+  0.07
+ ],
+ "sources": {
+  "rig": {
+   "parts": "parts/parts.json",
+   "ground": [
+    700,
+    1838
+   ],
+   "crown": -326,
+   "parent": {
+    "leg_b": null,
+    "boot_b": "leg_b",
+    "leg_f": null,
+    "boot_f": "leg_f",
+    "head": "torso",
+    "upper": "torso",
+    "forearm": "torso",
+    "hand": "forearm"
+   },
+   "soles": [
+    [
+     "boot_b",
+     [
+      180,
+      1838
+     ]
+    ],
+    [
+     "boot_b",
+     [
+      450,
+      1838
+     ]
+    ],
+    [
+     "boot_f",
+     [
+      990,
+      1838
+     ]
+    ],
+    [
+     "boot_f",
+     [
+      1400,
+      1830
+     ]
+    ]
+   ]
+  }
+ },
+ "colors": 64,
+ "clips": {
+  "idle": {
+   "source": "rig",
+   "frames": 8,
+   "fps": 8,
+   "loop": true,
+   "plant": true,
+   "keys": [
+    {
+     "t": 0,
+     "pose": {
+      "torso": 0,
+      "head": 0,
+      "upper": 0,
+      "forearm": 0,
+      "hand": 0,
+      "leg_b": 0,
+      "boot_b": 0,
+      "leg_f": 0,
+      "boot_f": 0,
+      "dx": 0
+     }
+    },
+    {
+     "t": 0.5,
+     "pose": {
+      "torso": 1.5,
+      "head": -2,
+      "upper": 0.1,
+      "forearm": 0.5,
+      "hand": 1.0,
+      "leg_b": 0,
+      "boot_b": 0,
+      "leg_f": 0,
+      "boot_f": 0,
+      "dx": 0
+     }
+    }
+   ]
+  },
+  "walk": {
+   "source": "rig",
+   "frames": 10,
+   "fps": 11,
+   "loop": true,
+   "plant": true,
+   "keys": [
+    {
+     "t": 0,
+     "pose": {
+      "leg_f": -18,
+      "boot_f": 6,
+      "leg_b": 16,
+      "boot_b": -8,
+      "torso": 3,
+      "head": -2,
+      "forearm": -9,
+      "hand": 1,
+      "upper": -2.7
+     }
+    },
+    {
+     "t": 0.25,
+     "pose": {
+      "leg_f": 0,
+      "boot_f": 0,
+      "leg_b": -4,
+      "boot_b": -14,
+      "torso": 1,
+      "head": -1,
+      "forearm": -1,
+      "hand": 0,
+      "upper": -0.3
+     }
+    },
+    {
+     "t": 0.5,
+     "pose": {
+      "leg_b": -18,
+      "boot_b": 6,
+      "leg_f": 16,
+      "boot_f": -8,
+      "torso": 3,
+      "head": -2,
+      "forearm": 5,
+      "hand": -1,
+      "upper": 1.5
+     }
+    },
+    {
+     "t": 0.75,
+     "pose": {
+      "leg_b": 0,
+      "boot_b": 0,
+      "leg_f": -4,
+      "boot_f": -14,
+      "torso": 1,
+      "head": -1,
+      "forearm": -1,
+      "hand": 0,
+      "upper": -0.3
+     }
+    }
+   ]
+  },
+  "attack": {
+   "source": "rig",
+   "frames": 10,
+   "fps": 11,
+   "loop": false,
+   "hitAt": 0.5,
+   "plant": true,
+   "keys": [
+    {
+     "t": 0,
+     "pose": {
+      "torso": 0,
+      "head": 0,
+      "upper": 0,
+      "forearm": 0,
+      "hand": 0,
+      "leg_b": 0,
+      "boot_b": 0,
+      "leg_f": 0,
+      "boot_f": 0,
+      "dx": 0
+     }
+    },
+    {
+     "t": 0.35,
+     "ease": "in",
+     "pose": {
+      "torso": -8,
+      "head": 4,
+      "upper": -55.5,
+      "forearm": -185,
+      "hand": 22,
+      "leg_b": 6,
+      "boot_b": 0,
+      "leg_f": -6,
+      "boot_f": 0,
+      "dx": -16
+     }
+    },
+    {
+     "t": 0.5,
+     "ease": "linear",
+     "pose": {
+      "torso": 10,
+      "head": 4,
+      "upper": -25.8,
+      "forearm": -86,
+      "hand": 120,
+      "leg_b": 12,
+      "boot_b": -6,
+      "leg_f": -16,
+      "boot_f": 6,
+      "dx": 34
+     }
+    },
+    {
+     "t": 0.65,
+     "pose": {
+      "torso": 9,
+      "head": 3,
+      "upper": -23.7,
+      "forearm": -79,
+      "hand": 124,
+      "leg_b": 11,
+      "boot_b": -6,
+      "leg_f": -15,
+      "boot_f": 6,
+      "dx": 30
+     }
+    },
+    {
+     "t": 1,
+     "pose": {
+      "torso": 0,
+      "head": 0,
+      "upper": 0,
+      "forearm": 0,
+      "hand": 0,
+      "leg_b": 0,
+      "boot_b": 0,
+      "leg_f": 0,
+      "boot_f": 0,
+      "dx": 0
+     }
+    }
+   ]
+  },
+  "death": {
+   "source": "rig",
+   "frames": 9,
+   "fps": 11,
+   "loop": false,
+   "keys": [
+    {
+     "t": 0,
+     "pose": {
+      "torso": 0,
+      "head": 0,
+      "upper": 0,
+      "forearm": 0,
+      "hand": 0,
+      "leg_b": 0,
+      "boot_b": 0,
+      "leg_f": 0,
+      "boot_f": 0,
+      "dx": 0,
+      "rot": 0,
+      "dy": 0
+     }
+    },
+    {
+     "t": 0.125,
+     "pose": {
+      "dy": -82.4
+     }
+    },
+    {
+     "t": 0.25,
+     "ease": "in",
+     "pose": {
+      "torso": -8,
+      "head": -14,
+      "upper": -3.0,
+      "forearm": -10,
+      "hand": 47,
+      "leg_b": 8,
+      "boot_b": 0,
+      "leg_f": -10,
+      "boot_f": 0,
+      "dx": 8,
+      "rot": 5,
+      "dy": -268.7
+     }
+    },
+    {
+     "t": 0.375,
+     "pose": {
+      "dy": -270.4
+     }
+    },
+    {
+     "t": 0.5,
+     "pose": {
+      "dy": -283.6
+     }
+    },
+    {
+     "t": 0.625,
+     "pose": {
+      "dy": -390.1
+     }
+    },
+    {
+     "t": 0.75,
+     "pose": {
+      "dy": -801.7
+     }
+    },
+    {
+     "t": 0.8,
+     "ease": "out",
+     "pose": {
+      "torso": -4,
+      "head": -10,
+      "upper": 11.4,
+      "forearm": 38,
+      "hand": 57,
+      "leg_b": 4,
+      "boot_b": 0,
+      "leg_f": 6,
+      "boot_f": 0,
+      "dx": -60,
+      "rot": -82,
+      "dy": -300
+     }
+    },
+    {
+     "t": 0.875,
+     "pose": {
+      "dy": -1127.7
+     }
+    },
+    {
+     "t": 1,
+     "pose": {
+      "torso": -4,
+      "head": -10,
+      "upper": 12.0,
+      "forearm": 40,
+      "hand": 57,
+      "leg_b": 4,
+      "boot_b": 0,
+      "leg_f": 6,
+      "boot_f": 0,
+      "dx": -64,
+      "rot": -86,
+      "dy": -1133.7
+     }
+    }
+   ]
+  }
+ }
+}

@@ -1,4 +1,4 @@
-# Frame-sheet units (Lena, Mara, Shieldbearer, Max, Infantry, Archer)
+# Frame-sheet units (all 12 battle units)
 
 Specs for `tools/unit-frames/bake.py`, one folder per unit. Each `<unit>.json` warps the unit's
 existing full-body drawing (`art/units/<unit>/<unit>.png`) into its battle clips and writes
