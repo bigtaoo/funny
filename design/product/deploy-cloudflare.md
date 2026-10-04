@@ -118,6 +118,7 @@ docker compose -f docker-compose.cloud.yml --env-file .env up -d --build
 
 - animator → `wrangler/animator.jsonc`（Worker `animator`）
 - client → `wrangler/client.jsonc`（Worker `nivara-client`，`routes.custom_domain=true` 自动建 DNS+边缘证书，橙云）
+  - **`/review/*` 先过 Worker（`wrangler/worker.client.js`，2026-10-04）**：静态资源对 `Range` 一律回整份 200（实测全站如此，缓存命中与否都一样），Safari（Mac/iOS）不播这种 MP4；`/review/` 放的是 ASC Review Notes 里链接的审核录屏，所以 Worker 自己切 206 / 416。其余路径不经 Worker，游戏与官网页照旧纯静态。测试：`client/test/clientWorkerRange.test.ts`。
 
 **首次上线记录（2026-06-24，✅ 已验证）**：CF 账号 `tao.wang.go@gmail.com`（Account ID `e64b61f1...`）；`wrangler login`（OAuth，凭证存本机）→ `wrangler deploy -c wrangler/client.jsonc` 一次成功，上传 14 个静态资源，`custom_domain` 自动建好 `a.gamestao.com`；外网 `https://a.gamestao.com` HTTP 200、证书有效、可登录开局并连到 `api.gamestao.com`。以后更新只需「重构建 → deploy」两条命令，无需再登录。
 
@@ -191,7 +192,7 @@ cd .. && npx wrangler deploy -c wrangler/client.jsonc
 
 #### 自动发布（GitHub Action，免手敲命令）
 
-`.github/workflows/client-deploy.yml`：CI（`ci.yml` 的 build-test + e2e）在 `main` 上跑绿、且 `client/**` / `server/engine/src/**` / `server/shared/src/slg/**` / `wrangler/client.jsonc` / 该 workflow / `.github/actions/paths-changed-since/` 这些路径**相对「上次真正部署成功的那个 commit」有差异**时自动 `npm ci → build:web（地址烘焙到 api.gamestao.com）→ wrangler deploy`；也可在 Actions 页手动 Run（`workflow_dispatch`，跳过 CI 门禁与路径判断）。**2026-08-12 起改为 `workflow_run` 触发**（原先是 `push: branches:[main]` 直触发，与 CI 完全并行、不等结果——CI 的 e2e job 最长 25 分钟，deploy 几分钟就跑完，红码可能先于 CI 报错就已上线；详见 `.github/actions/paths-changed-since`，该改动同时把 8 个 `*-deploy.yml` 的路径过滤从 `push.paths`（`workflow_run` 不支持）挪进了 job 内的 `git diff` 判断）。与 ops-deploy 同套路：
+`.github/workflows/client-deploy.yml`：CI（`ci.yml` 的 build-test + e2e）在 `main` 上跑绿、且 `client/**` / `server/engine/src/**` / `server/shared/src/slg/**` / `wrangler/client.jsonc` / `wrangler/worker.client.js` / 该 workflow / `.github/actions/paths-changed-since/` 这些路径**相对「上次真正部署成功的那个 commit」有差异**时自动 `npm ci → build:web（地址烘焙到 api.gamestao.com）→ wrangler deploy`；也可在 Actions 页手动 Run（`workflow_dispatch`，跳过 CI 门禁与路径判断）。**2026-08-12 起改为 `workflow_run` 触发**（原先是 `push: branches:[main]` 直触发，与 CI 完全并行、不等结果——CI 的 e2e job 最长 25 分钟，deploy 几分钟就跑完，红码可能先于 CI 报错就已上线；详见 `.github/actions/paths-changed-since`，该改动同时把 8 个 `*-deploy.yml` 的路径过滤从 `push.paths`（`workflow_run` 不支持）挪进了 job 内的 `git diff` 判断）。与 ops-deploy 同套路：
 
 1. **复用 ops 那套 secrets**：`CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` 已配（同一 CF 账号 `e64b61f1...`，"Edit Cloudflare Workers" token 是账号级 Workers 写权限，覆盖 `nivara-client`，**无需新建 token**）。
 2. **开关**：设 repo variable `CLIENT_DEPLOY_ENABLED = true`（未设则 job 跳过）。
