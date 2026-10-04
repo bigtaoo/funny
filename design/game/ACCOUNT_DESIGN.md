@@ -268,7 +268,7 @@ initI18n
 | social | socialsvc | 退出家族（族长→自动传位 / 独自一人→解散）、好友边（释放对方好友位）、好友申请、黑名单、私聊会话+消息、收件箱、自己发出的玩家邮件、家族消息、入族申请；**被举报的**举报单删除、**自己提交的**举报单保留但 `reporterId='deleted-account'` | worldsvc 要按 socialsvc 清除后的家族状态修门派 |
 | world | worldsvc | 所有分服：行军/占领/驻军强制清空（含 Redis occ/cover）、被其争夺的地块解除争夺、其发起的攻城伤害、国家槽位 `$unset` 归属、门派/国家/旧家族频道消息、赛季榜单昵称置空、转服记录；门派对账（见下）；最后删地块+`playerWorld`、分服人口 −1 | 依赖 social 的家族结果；自身的 `playerWorld` 放最后删，重试时还能找到门派镜像 |
 | auction | auctionsvc | 其无人出价的在售拍品直接关闭（`cancelled`+`settledAt`，物品不退回——退回也是退进一个即将被删的库存）；无挂起后删每日额度、出价记录、其已结算的历史挂单 | 可能返回 `done:false`：其挂单已有人出价、其是当前最高出价者、有未终结的交易日志行、有未结算的已关闭挂单——**对手方的币和物品绝不因此损失**，等正常到期结算后再清。必须在钱包删除前完成 |
-| commercial | commercial | 删 `wallets`（月卡/年卡/首充/里程碑都在钱包文档上）、`gachaHistory`、`promoRedemptions`、`appleAccountTokens`、`appleConsumptionConsents`；**保留**交易记录（见下「留存」） | 等拍卖结算完成后才能删钱包 |
+| commercial | commercial | 删 `wallets`（月卡/年卡/首充/里程碑都在钱包文档上）、`gachaHistory`、`appleAccountTokens`、`appleConsumptionConsents`；**保留**交易记录（见下「留存」） | 等拍卖结算完成后才能删钱包 |
 | analytics | analyticsvc | 删 `events`/`sessions`：`user_id` = 该账号；同设备上无 `user_id` 的登录前记录（设备号由 meta 传入，最多 20 个）；以及事件里带该账号的会话的匿名行 | 设备号只存在 meta 账号行上，必须在 meta 步骤之前 |
 | meta | 本地 | 删 saves、pveStamina、卡牌/装备/皮肤/材料实例、各类幂等账本、replayShares、stateReplayShares、adsTokens、活动参与、天梯赛季快照、反馈、申诉、PvE 校验/拒绝、反作弊审核、旧 `mail`；`matches.players[]` 里该账号的 `displayName`/`publicId` 快照置空（对手的对局历史保留） | 账号行持有租约和设备号，最后处理 |
 

@@ -346,9 +346,6 @@ class FakeCommercial implements CommercialClient {
     return { ok: true as const, coinsAfter: this.bal(a.accountId), credited: a.amount };
   }
   async victoryCredit(): Promise<never> { throw new Error('not used by paddle routes'); }
-  async createPromoCode(): Promise<never> { throw new Error('not used by paddle routes'); }
-  async redeemPromoCode(): Promise<never> { throw new Error('not used by paddle routes'); }
-  async listPromoCodes(): Promise<never[]> { return []; }
   async createCustomPool(): Promise<never> { throw new Error('not used by paddle routes'); }
   async closeLimitedPool(): Promise<never> { throw new Error('not used by paddle routes'); }
   async listLimitedPools(): Promise<never[]> { return []; }
@@ -363,7 +360,6 @@ class FakeCommercial implements CommercialClient {
   async rechargeVerify(): Promise<never> { throw new Error('FakeCommercial.rechargeVerify is not stubbed in this test'); }
   async verifyNonCoinReceipt(): Promise<never> { throw new Error('FakeCommercial.verifyNonCoinReceipt is not stubbed in this test'); }
   async adsCredit(): Promise<never> { throw new Error('FakeCommercial.adsCredit is not stubbed in this test'); }
-  async promoRedeem(): Promise<never> { throw new Error('FakeCommercial.promoRedeem is not stubbed in this test'); }
   async listPaddleEvents(): Promise<never> { throw new Error('FakeCommercial.listPaddleEvents is not stubbed in this test'); }
 }
 

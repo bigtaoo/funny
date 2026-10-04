@@ -24,9 +24,9 @@ describe('visibleNav', () => {
 
   it('keeps NAV_ENTRIES order regardless of the order capabilities were granted in', () => {
     // The first visible entry is the page the shell lands on, so this order is user-visible.
-    const caps: AdminCapability[] = ['admin.manage', 'monitor.view', 'promo.manage'];
-    expect(visibleNav(caps).map((n) => n.id)).toEqual(['monitor', 'promo', 'accounts']);
-    expect(visibleNav([...caps].reverse()).map((n) => n.id)).toEqual(['monitor', 'promo', 'accounts']);
+    const caps: AdminCapability[] = ['admin.manage', 'monitor.view', 'gacha.pools.manage'];
+    expect(visibleNav(caps).map((n) => n.id)).toEqual(['monitor', 'gacha-pools', 'accounts']);
+    expect(visibleNav([...caps].reverse()).map((n) => n.id)).toEqual(['monitor', 'gacha-pools', 'accounts']);
   });
 
   it('shows both pages that share analytics.view', () => {

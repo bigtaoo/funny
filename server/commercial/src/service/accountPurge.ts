@@ -7,7 +7,7 @@
 // answer is to keep the minimum set and cut it loose from identity: `accountId` stays on the retained
 // rows as an opaque id, but metaserver reduces the account row it points at to a tombstone with no
 // personal data, so the id no longer leads to a person. What this file removes is everything that is
-// NOT a payment record — balances, draw history, promo use, Apple routing tokens and consent — plus the
+// NOT a payment record — balances, draw history, Apple routing tokens and consent — plus the
 // bulky raw provider payloads on the rows that are kept.
 //
 // How long they are kept is not this file's concern: every payment record — purged account or not — is
@@ -44,7 +44,6 @@ export interface AccountPurgeResult {
   removed: {
     wallets: number;
     gachaHistory: number;
-    promoRedemptions: number;
     appleAccountTokens: number;
     appleConsumptionConsents: number;
   };
@@ -65,10 +64,9 @@ export class AccountPurgeService {
     // Pipeline $set so the FIRST purge time survives re-runs ($ifNull keeps an existing stamp).
     const stamp = { accountPurgedAt: { $ifNull: ['$accountPurgedAt', now] } };
 
-    const [wallets, gachaHistory, promoRedemptions, appleAccountTokens, appleConsumptionConsents] = await Promise.all([
+    const [wallets, gachaHistory, appleAccountTokens, appleConsumptionConsents] = await Promise.all([
       cols.wallets.deleteMany({ _id: accountId }),
       cols.gachaHistory.deleteMany({ accountId }),
-      cols.promoRedemptions.deleteMany({ accountId }),
       cols.appleAccountTokens.deleteMany({ accountId }),
       cols.appleConsumptionConsents.deleteMany({ _id: accountId }),
     ]);
@@ -93,7 +91,6 @@ export class AccountPurgeService {
       removed: {
         wallets: wallets.deletedCount,
         gachaHistory: gachaHistory.deletedCount,
-        promoRedemptions: promoRedemptions.deletedCount,
         appleAccountTokens: appleAccountTokens.deletedCount,
         appleConsumptionConsents: appleConsumptionConsents.deletedCount,
       },

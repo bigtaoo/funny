@@ -7,7 +7,7 @@ import {
   buildLabel, buildTitle, LOGGED_OUT_MESSAGE, type NavEntry, NO_CAPABILITIES_MESSAGE,
   SESSION_EXPIRED_MESSAGE, visibleNav, whoText,
 } from './logic/nav';
-import { pageAccounts, pageAnalytics, pageAppeals, pageAudit, pageAuctionAudit, pageEvents, pageFeedback, pageFlags, pageGachaPools, pageLadderSeason, pageModerationWordlist, pageMonitor, pagePaddleEvents, pagePlayer, pagePromo, pagePvpBalance, pageReports, pageSLGSeason, pageSlgShop, pageSuspicions, pageTickets } from './pages';
+import { pageAccounts, pageAnalytics, pageAppeals, pageAudit, pageAuctionAudit, pageEvents, pageFeedback, pageFlags, pageGachaPools, pageLadderSeason, pageModerationWordlist, pageMonitor, pagePaddleEvents, pagePlayer, pagePvpBalance, pageReports, pageSLGSeason, pageSlgShop, pageSuspicions, pageTickets } from './pages';
 import type { Session } from './types';
 
 type PageRender = (ctx: {
@@ -36,7 +36,6 @@ const RENDERERS: Record<string, PageRender> = {
   ladder: pageLadderSeason,
   events: pageEvents,
   'gacha-pools': pageGachaPools,
-  promo: pagePromo,
   'slg-shop': pageSlgShop,
   flags: pageFlags,
   'moderation-wordlist': pageModerationWordlist,

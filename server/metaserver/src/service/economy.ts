@@ -1,6 +1,6 @@
 // Economy handlers (S5): meta orchestrates → commercial deducts/randomizes → delivery → mirror
 // push-back. Shop, gacha pools/draw, fate redemption, monthly/year subscription cards, starter packs,
-// rewarded ads, IAP receipt verification, and promo codes.
+// rewarded ads, and IAP receipt verification.
 //
 // Independent sibling class (2026-08-11 mixin-chain split, claudedocs/server.md's "拆分形态的优先级"
 // 形态②): holds `core: MetaCore` — assembled by composition in ../service.ts. Every handler here just
@@ -15,7 +15,7 @@
 // - economy/gacha.ts:         getGachaPools + gachaDraw + redeemFate (GACHA_DESIGN §2/§7)
 // - economy/subscriptions.ts: monthlyCardBuy/yearCardBuy/monthlyCardClaim + claimRechargeMilestone (§5/§13)
 // - economy/starter.ts:       starterBuy (§6)
-// - economy/adsPromo.ts:      adsReward + iapVerify + redeemPromoCode
+// - economy/adsIap.ts:        adsReward + iapVerify
 import type { MetaHandlers } from '../generated/routes.gen.js';
 import { type MetaCore } from './base.js';
 import { getShopItemsHandler, shopBuyHandler } from './economy/shop.js';
@@ -29,13 +29,13 @@ import {
   setAppleConsumptionConsentHandler,
 } from './economy/subscriptions.js';
 import { starterBuyHandler } from './economy/starter.js';
-import { adsRewardHandler, iapVerifyHandler, redeemPromoCodeHandler } from './economy/adsPromo.js';
+import { adsRewardHandler, iapVerifyHandler } from './economy/adsIap.js';
 
 type EconomyHandlers = Pick<
   MetaHandlers,
   | 'getShopItems' | 'getGachaPools' | 'shopBuy' | 'gachaDraw' | 'redeemFate'
   | 'monthlyCardBuy' | 'yearCardBuy' | 'monthlyCardClaim' | 'claimRechargeMilestone' | 'starterBuy'
-  | 'adsReward' | 'iapVerify' | 'iapAppleSync' | 'setAppleConsumptionConsent' | 'redeemPromoCode'
+  | 'adsReward' | 'iapVerify' | 'iapAppleSync' | 'setAppleConsumptionConsent'
 >;
 
 export class EconomyService {
@@ -95,9 +95,5 @@ export class EconomyService {
 
     async setAppleConsumptionConsent(...args: Parameters<EconomyHandlers['setAppleConsumptionConsent']>) {
       return setAppleConsumptionConsentHandler(this.core, ...args);
-    }
-
-    async redeemPromoCode(...args: Parameters<EconomyHandlers['redeemPromoCode']>) {
-      return redeemPromoCodeHandler(this.core, ...args);
     }
 }

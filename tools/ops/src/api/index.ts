@@ -37,7 +37,6 @@ import type {
   PaddleEventView,
   PlayerProfile,
   PlayerSummary,
-  PromoCodeView,
   PvpCardStatRow,
   ReportView,
   PurgeAuthorView,
@@ -338,24 +337,6 @@ export class Api extends ApiTransport {
   }
   async deleteEvent(id: string): Promise<void> {
     await this.req('DELETE', `/admin/events/${encodeURIComponent(id)}`);
-  }
-
-  // ── Promo codes (B-PROMO, promo.manage) ──
-  // Mint-and-list only: there is no edit or delete. A code lives in commercial keyed on its own uppercase
-  // text, and players may already have redeemed it, so the only safe way to retire one early is to let it
-  // expire or hit its total limit.
-  async promoCodes(): Promise<PromoCodeView[]> {
-    const r = await this.req<{ codes: PromoCodeView[] }>('GET', '/admin/promo/codes');
-    return r.codes;
-  }
-  async createPromoCode(input: {
-    code: string;
-    coins: number;
-    expiresAt?: number;
-    totalLimit?: number;
-    note?: string;
-  }): Promise<{ code: string }> {
-    return this.req<{ code: string }>('POST', '/admin/promo/codes', input);
   }
 
   // ── Custom gacha pool management (GACHA_DESIGN §12, gacha.pools.manage) ──

@@ -15,7 +15,7 @@ import { AdminService } from '../src/service';
 import type { AdminServiceDeps } from '../src/service/base';
 
 const DOMAIN_FIELDS = [
-  'events', 'gacha', 'promo', 'paddleEvents', 'ladder', 'world', 'mapTemplates', 'slgAudit',
+  'events', 'gacha', 'paddleEvents', 'ladder', 'world', 'mapTemplates', 'slgAudit',
   'auth', 'accounts', 'tickets', 'analytics', 'flags', 'shop', 'moderation', 'reports', 'appeals', 'feedback',
 ] as const;
 

@@ -1,4 +1,4 @@
-// Shop / ads / IAP / web recharge / promo (S2, requires login token).
+// Shop / ads / IAP / web recharge (S2, requires login token).
 import type { SaveData } from '../../game/meta/SaveData';
 import type { ApiClientCore } from './core';
 import type { ShopItem } from './types';
@@ -18,10 +18,9 @@ export interface ShopApi {
    */
   setAppleConsumptionConsent(consented: boolean): Promise<{ consented: boolean }>;
   paddleCheckout(tierId: string): Promise<{ transactionId: string }>;
-  redeemPromoCode(code: string): Promise<{ save: SaveData; granted: number }>;
 }
 
-/** Shop/ads/IAP/promo domain (see ../ApiClient.ts assembly + ./core.ts for the shared transport). */
+/** Shop/ads/IAP domain (see ../ApiClient.ts assembly + ./core.ts for the shared transport). */
 export class ShopService implements ShopApi {
   constructor(private readonly core: ApiClientCore) {}
 
@@ -99,13 +98,5 @@ export class ShopService implements ShopApi {
    */
   async paddleCheckout(tierId: string): Promise<{ transactionId: string }> {
     return this.core.post<{ transactionId: string }>('/shop/paddle/checkout', { tierId });
-  }
-
-  /**
-   * Promo code redemption (B-PROMO): validates code → credits coins → pushes back authoritative save.
-   * Invalid/expired code → ApiError('PROMO_NOT_FOUND'); already used → ApiError('PROMO_ALREADY_USED').
-   */
-  async redeemPromoCode(code: string): Promise<{ save: SaveData; granted: number }> {
-    return this.core.post<{ save: SaveData; granted: number }>('/promo/redeem', { code });
   }
 }

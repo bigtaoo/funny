@@ -1,8 +1,8 @@
-// Branch-coverage backfill for src/service/economy/{starter,adsPromo}.ts (2026-09-03). Adds the
+// Branch-coverage backfill for src/service/economy/{starter,adsIap}.ts (2026-09-03). Adds the
 // branches test/economy-service-unit.test.ts's route-level scenarios never take: the second half of
 // each `!a || !b` input guard (a route schema rejects those before the handler sees them), a
 // non-ALREADY_PURCHASED starter refusal, a starter purchase whose post-buy wallet read fails, a
-// signed non-dev ad platform, a non-string promo `code`, and a promo error absent from the status map.
+// signed non-dev ad platform.
 // Handlers are called directly (see test/economy-branch-fakes.ts) against real Mongo (rs0, DB
 // nw_meta_grpC_branch_test) because the starter_draw path delivers through deliverOrder.
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
@@ -12,7 +12,7 @@ import {
   PRODUCT_STARTER_GROWTH, GROWTH_PACK_WINDOW_DAYS, ADS_REWARD_COINS, ADS_DAILY_CAP, ADS_MIN_INTERVAL_MS,
 } from '@nw/shared';
 import { starterBuyHandler } from '../src/service/economy/starter.js';
-import { adsRewardHandler, iapVerifyHandler, redeemPromoCodeHandler } from '../src/service/economy/adsPromo.js';
+import { adsRewardHandler, iapVerifyHandler } from '../src/service/economy/adsIap.js';
 import { BranchCommercial, makeCore, mkReply, mkReq } from './economy-branch-fakes.js';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
@@ -31,7 +31,7 @@ async function tryConnect(): Promise<MongoHandle | null> {
 const mongo = await tryConnect();
 if (!mongo) console.warn(`[economy-branch-starter-ads] Mongo unreachable (${URI}) — skipping.`);
 
-describe.skipIf(!mongo)('service/economy/{starter,adsPromo}.ts branch backfill', () => {
+describe.skipIf(!mongo)('service/economy/{starter,adsIap}.ts branch backfill', () => {
   const m = mongo!;
   let accountId: string;
   let comm: BranchCommercial;
@@ -190,7 +190,7 @@ describe.skipIf(!mongo)('service/economy/{starter,adsPromo}.ts branch backfill',
     });
   });
 
-  // ── adsPromo.ts: adsRewardHandler ──────────────────────────────────────────────────────────────
+  // ── adsIap.ts: adsRewardHandler ──────────────────────────────────────────────────────────────
   describe('adsRewardHandler', () => {
     const watch = (body: unknown, c = core) => {
       const { reply, get } = mkReply();
@@ -270,7 +270,7 @@ describe.skipIf(!mongo)('service/economy/{starter,adsPromo}.ts branch backfill',
     });
   });
 
-  // ── adsPromo.ts: iapVerifyHandler ──────────────────────────────────────────────────────────────
+  // ── adsIap.ts: iapVerifyHandler ──────────────────────────────────────────────────────────────
   describe('iapVerifyHandler', () => {
     const verify = (body: unknown, c = core) => {
       const { reply, get } = mkReply();
@@ -304,57 +304,6 @@ describe.skipIf(!mongo)('service/economy/{starter,adsPromo}.ts branch backfill',
       expect(other.sent?.payload.error?.code).toBe('BAD_REQUEST');
       expect(other.sent?.payload.error?.message).toBe('STORE_UNREACHABLE');
       expect(comm.bal(accountId)).toBe(0);
-    });
-  });
-
-  // ── adsPromo.ts: redeemPromoCodeHandler ────────────────────────────────────────────────────────
-  describe('redeemPromoCodeHandler', () => {
-    const redeem = (body: unknown, c = core) => {
-      const { reply, get } = mkReply();
-      return redeemPromoCodeHandler(c, mkReq(accountId, body), reply).then((out) => ({ out, sent: get() }));
-    };
-
-    it('commercial not configured -> 503', async () => {
-      const { sent } = await redeem({ code: 'X' }, downCore());
-      expect(sent?.code).toBe(503);
-    });
-
-    it('missing code -> 400', async () => {
-      expect((await redeem({})).sent?.code).toBe(400);
-    });
-
-    it('a non-string code -> 400 rather than being forwarded to commercial as-is', async () => {
-      // Only reachable by calling the handler directly; the route schema types `code` as a string.
-      const { sent } = await redeem({ code: 12345 });
-      expect(sent?.code).toBe(400);
-      expect(sent?.payload.error?.message).toBe('code required');
-      expect(comm.bal(accountId)).toBe(0);
-    });
-
-    it('each mapped rejection keeps its documented HTTP status', async () => {
-      for (const [error, code] of [
-        ['PROMO_NOT_FOUND', 404], ['PROMO_EXPIRED', 400], ['PROMO_EXHAUSTED', 400], ['PROMO_ALREADY_USED', 400],
-      ] as const) {
-        comm.nextPromoError = error;
-        const { sent } = await redeem({ code: 'WELCOME' });
-        expect(sent?.code).toBe(code);
-        expect(sent?.payload.error?.message).toBe(error);
-      }
-    });
-
-    it('an unmapped rejection falls back to 400 instead of leaking a 200 or a 500', async () => {
-      comm.nextPromoError = 'PROMO_REGION_LOCKED';
-      const { sent } = await redeem({ code: 'WELCOME' });
-      expect(sent?.code).toBe(400);
-      expect(sent?.payload.error?.message).toBe('PROMO_REGION_LOCKED');
-      expect(comm.bal(accountId)).toBe(0);
-    });
-
-    it('happy path credits the coins and mirrors the balance', async () => {
-      const { out, sent } = await redeem({ code: 'WELCOME' });
-      expect(sent).toBeUndefined();
-      expect(data(out).coinsGranted).toBe(100);
-      expect((data(out).save as unknown as SaveData).wallet.coins).toBe(100);
     });
   });
 });

@@ -2,7 +2,7 @@
 // Off-platform-purchased coins (Paddle/Stripe on web) must not be spendable inside Apple/Google's native apps
 // (and vice versa) — each store's anti-circumvention IAP terms require that in-app content only be unlockable
 // through that store's own purchases. WalletDoc.coins stays a single free pool (spendable everywhere: earned via
-// ads/victory/promo/refund, or legacy pre-migration recharges); WalletDoc.recharged tags real-money top-ups by
+// ads/victory/refund, or legacy pre-migration recharges); WalletDoc.recharged tags real-money top-ups by
 // the channel they were bought through, spendable only when the request's client platform maps to that channel.
 export type RechargeChannel = 'web' | 'apple' | 'google';
 

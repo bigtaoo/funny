@@ -111,7 +111,6 @@ class FakeCommercial implements CommercialClient {
   async victoryCredit(): Promise<never> { throw new Error('not used'); }
   async spend(): Promise<never> { throw new Error('not used'); }
   async grant(): Promise<never> { throw new Error('not used'); }
-  async promoRedeem(): Promise<never> { throw new Error('not used'); }
   async paddleComplete(): Promise<never> { throw new Error('not used'); }
   async recordPaddleEvent(): Promise<never> { throw new Error('not used'); }
   async paddleRefund(): Promise<never> { throw new Error('not used'); }
@@ -119,8 +118,6 @@ class FakeCommercial implements CommercialClient {
   // CommercialClient members this suite never exercises. They throw rather than answer: each was
   // simply absent before test/** was type-checked, so any call already crashed — this keeps that
   // truth while naming what happened.
-  async createPromoCode(): Promise<never> { throw new Error('FakeCommercial.createPromoCode is not stubbed in this test'); }
-  async listPromoCodes(): Promise<never> { throw new Error('FakeCommercial.listPromoCodes is not stubbed in this test'); }
   async listPaddleEvents(): Promise<never> { throw new Error('FakeCommercial.listPaddleEvents is not stubbed in this test'); }
 }
 

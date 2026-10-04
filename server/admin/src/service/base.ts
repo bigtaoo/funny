@@ -17,7 +17,7 @@ import {
   type AuditAction,
 } from '@nw/shared';
 import type { AdminCollections, AuditDoc } from '../db';
-import type { StatsClient, PlayerClient, AntiCheatClient, MismatchClient, PvpCardStatsClient, SuspiciousPveClient, MailDispatcher, AnalyticsClient, WorldClient, AuctionClient, LadderClient, EventsClient, GachaPoolsClient, PromoClient, PaddleEventsClient, ReportsClient, AppealsClient, EnforcementClient, FeedbackClient, ModerationClient } from '../clients';
+import type { StatsClient, PlayerClient, AntiCheatClient, MismatchClient, PvpCardStatsClient, SuspiciousPveClient, MailDispatcher, AnalyticsClient, WorldClient, AuctionClient, LadderClient, EventsClient, GachaPoolsClient, PaddleEventsClient, ReportsClient, AppealsClient, EnforcementClient, FeedbackClient, ModerationClient } from '../clients';
 import { nullModerationClient } from '../clients/moderation';
 import { AdminError } from './errors';
 
@@ -46,7 +46,6 @@ export interface AdminServiceDeps {
   ladder: LadderClient;
   events: EventsClient;
   gachaPools: GachaPoolsClient;
-  promo: PromoClient;
   paddleEvents: PaddleEventsClient;
   reports: ReportsClient;
   appeals: AppealsClient;
@@ -90,7 +89,6 @@ export class AdminCore {
   readonly ladder: LadderClient;
   readonly events: EventsClient;
   readonly gachaPools: GachaPoolsClient;
-  readonly promo: PromoClient;
   readonly paddleEvents: PaddleEventsClient;
   readonly reports: ReportsClient;
   readonly appeals: AppealsClient;
@@ -114,7 +112,6 @@ export class AdminCore {
     this.ladder = deps.ladder;
     this.events = deps.events;
     this.gachaPools = deps.gachaPools;
-    this.promo = deps.promo;
     this.paddleEvents = deps.paddleEvents;
     this.reports = deps.reports;
     this.appeals = deps.appeals;

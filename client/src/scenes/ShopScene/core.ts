@@ -3,7 +3,7 @@
 // ShopSceneCore holds every instance field (all `public`, so the domain classes below keep
 // referencing them via `this.core.xxx`: this.core.tab, this.core.items, this.core.bt, …) + the
 // constructor, the layer scaffold, the shared header/tab/card/button rendering primitives, and the
-// hidden-input + input/lifecycle plumbing — but NOT the render() dispatcher, which lives on the
+// input/lifecycle plumbing — but NOT the render() dispatcher, which lives on the
 // outer ../ShopScene.ts assembly since only it knows about both domain classes (Core takes a
 // `render` callback injected at construction instead of owning render() itself). Unlike
 // DefenseEditorScene, Core wires input.onDown/onMove/onUp/onWheel itself: handleDown/handleMove/
@@ -13,7 +13,7 @@
 // drawCard/drawButton (the product-card cell renderer, shared by both tabs) live in ./card.ts as
 // free functions taking `core` explicitly (2026-08-11, form ① per claudedocs/client-modules.md's
 // split-form priority note) purely to keep this file under the 500-line convention. The network
-// actions (buy/redeem/recharge/…) live in ./actions.ts's ActionsPanel — an independent class over
+// actions (buy/recharge/…) live in ./actions.ts's ActionsPanel — an independent class over
 // `core` with no dependency on either tab, referenced by both tabs through the narrow ActionHandlers
 // interface it already implements 1:1 (2026-08-11: converted from the former `XMixin(Base)`
 // inheritance chain — the upward calls this used to reach via interface declaration merging are now
@@ -34,11 +34,6 @@ import { BusyTracker } from '../../ui/busyTracker';
 import { ScrollTapGesture } from '../../ui/scrollTapGesture';
 import { wheelScrollY } from '../../ui/wheelScroll';
 import { hitAction, type Hit } from '../../ui/hits';
-import type { IPlatform, ITextInput } from '../../platform/IPlatform';
-
-// Client-side sanity cap — there's no server-validated promo-code max length constant to mirror
-// (unlike CHAT_BODY_MAX etc.), same reasoning as ChatScene/AppealDialog's hardcoded maxes.
-const PROMO_CODE_MAX = 32;
 
 /** Outcome of a buy — ok, or a message key to surface as a toast. */
 export type ShopActionResult =
@@ -47,9 +42,6 @@ export type ShopActionResult =
 
 export interface ShopSceneCallbacks {
   onBack(): void;
-  /** Free-text entry surface (ASSET_PACKAGING §4.3/§4.4 item 1) — see IPlatform.openTextInput.
-   *  Used by the promo-code field. */
-  openTextInput: IPlatform['openTextInput'];
   /** Current server-authoritative coin balance (read from SaveData). */
   getCoins(): number;
   /**
@@ -65,8 +57,6 @@ export interface ShopSceneCallbacks {
   buy(itemId: string, qty?: number): Promise<ShopActionResult>;
   /** Dev-only virtual top-up. Not rendered in production; exposed for E2E tests. */
   recharge?(code: string): Promise<ShopActionResult>;
-  /** Promo-code redemption (B-PROMO). Absent = row not shown (offline / not logged in). */
-  redeemPromo?(code: string): Promise<ShopActionResult>;
   openGacha(): void;
   /**
    * Battle Pass entry point (LOBBY_IA_REDESIGN §3: paid main axis merged into the "shop" tab,
@@ -193,12 +183,6 @@ export class ShopSceneCore {
   /** Set by handleMove instead of rendering inline — see EquipmentSceneBase.scrollDirty for why. */
   private scrollDirty = false;
 
-  // ── Promo-code state ──────────────────────────────────────────────────────
-  promoCode = '';
-  promoFocused = false;
-  /** The promo field's text-entry session, or null when not focused. */
-  private textInput: ITextInput | null = null;
-
   /** @param render Injected by the outer ShopScene assembly (which owns the actual render
    *  dispatcher, since it's the only thing that knows about both tab-domain classes) — Core calls
    *  `this.render()` wherever the old flattened class called its own `render()` method verbatim. */
@@ -229,48 +213,7 @@ export class ShopSceneCore {
   destroy(): void {
     this.destroyed = true;
     this.unsubs.forEach((u) => u());
-    this.textInput?.close();
     this.container.destroy({ children: true });
-  }
-
-  // ── Text input (promo-code capture) ─────────────────────────────────────────
-  // Opened lazily on first tap (unlike the old eagerly-constructed hidden <input>) — nothing to
-  // pre-build since IPlatform.openTextInput() both creates and focuses in one call.
-
-  /** @param onConfirm Wired by the caller (ShopScene/coins.ts, which holds ActionsPanel) since
-   *  ActionsPanel.onRedeem doesn't exist at Core-construction time — same two-phase-construction
-   *  shape as `render`, see this file's header comment. */
-  focusPromo(onConfirm?: () => void): void {
-    if (!this.textInput) {
-      const handle = this.cb.openTextInput({
-        value: this.promoCode,
-        maxLength: PROMO_CODE_MAX,
-        onInput: (value) => {
-          this.promoCode = value.toUpperCase();
-          if (this.promoCode !== value) handle.setValue(this.promoCode);
-          this.render();
-        },
-        onConfirm: onConfirm ? () => onConfirm() : undefined,
-        onComplete: () => {
-          if (this.textInput === handle) { this.textInput = null; this.promoFocused = false; this.render(); }
-        },
-      });
-      this.textInput = handle;
-    }
-    this.promoFocused = true;
-    this.render();
-  }
-
-  blurPromo(): void {
-    this.promoFocused = false;
-    this.textInput?.close();
-    this.render();
-  }
-
-  /** Overwrite the promo field's live value without closing it (e.g. clearing it after a
-   *  successful redeem) — a no-op while the field isn't open. */
-  setPromoValue(value: string): void {
-    this.textInput?.setValue(value);
   }
 
   // ── Input ─────────────────────────────────────────────────────────────────
@@ -280,10 +223,7 @@ export class ShopSceneCore {
     // Capture the hit action and defer it to pointer-up — if the pointer drags past the threshold
     // it becomes a scroll and the tap is dropped, so a drag starting on a shop card scrolls the
     // list instead of instantly firing that card.
-    const hit = hitAction(this.hits, x, y);
-    // No hit — blur the promo field if it was focused (matches the old miss-only behaviour).
-    if (!hit && this.promoFocused) this.blurPromo();
-    this.gesture.down(this.scrollY, y, hit);
+    this.gesture.down(this.scrollY, y, hitAction(this.hits, x, y));
   }
 
   private handleMove(y: number): void {

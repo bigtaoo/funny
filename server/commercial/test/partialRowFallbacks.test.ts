@@ -216,7 +216,7 @@ describe('redeemFate — wallet with no fatePoints field after the decrement', (
   });
 });
 
-// ── orderDelivered / promoRedeem: the row changed between two reads ──────────
+// ── orderDelivered: the row changed between two reads ──────────
 describe('orderDelivered — the order disappears between the status CAS and the re-read', () => {
   it('reports ok without healing anything', async () => {
     // Losing the `status:'charged'` CAS normally means another caller delivered it, and the re-read
@@ -235,18 +235,3 @@ describe('orderDelivered — the order disappears between the status CAS and the
   });
 });
 
-describe('promoRedeem — the winner\'s redemption row is readable and fresh', () => {
-  it('reports PROMO_ALREADY_USED without touching the wallet', async () => {
-    const r = await svc(
-      stubCols({
-        promoCodes: { findOne: replies({ _id: 'FRESH', coins: 250, redeemed: 0, createdBy: 'admin', createdAt: 0 }) },
-        promoRedemptions: {
-          findOne: replies(null, { _id: 'acc:FRESH', accountId: 'acc', code: 'FRESH', coinsGranted: 250, ts: NOW }),
-          insertOne: throws(dupKey('promoRedemptions')),
-        },
-      }),
-    ).promoRedeem({ accountId: 'acc', code: 'FRESH' });
-
-    expect(r).toEqual({ ok: false, error: 'PROMO_ALREADY_USED' });
-  });
-});

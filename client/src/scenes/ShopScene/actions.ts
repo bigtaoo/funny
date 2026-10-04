@@ -1,4 +1,4 @@
-// Network actions for the shop: initial item load, skin buy, promo redemption, coin recharge, and the
+// Network actions for the shop: initial item load, skin buy, coin recharge, and the
 // generic monetization-deal runner. Each mutating action wraps the callback in a BusyTracker guard,
 // surfaces a success/error toast, and re-renders. The economy is server-authoritative — every buy
 // returns a fresh SaveData that the app adopts.
@@ -16,7 +16,6 @@ export interface ActionHandlers {
   loadItems(): Promise<void>;
   onBuy(itemId: string, itemName: string): Promise<void>;
   onBuyBulk(itemId: string, itemName: string, qty: number): Promise<void>;
-  onRedeem(): Promise<void>;
   onRecharge(tierId: string): Promise<void>;
   runDeal(action: () => Promise<ShopActionResult>, okKey: TranslationKey, itemName?: string): Promise<void>;
   runUnboundedDeal(action: () => Promise<ShopActionResult>, okKey: TranslationKey, itemName?: string): Promise<void>;
@@ -45,7 +44,6 @@ export class ActionsPanel implements ActionHandlers {
   async onBuy(itemId: string, itemName: string): Promise<void> {
     const core = this.core;
     if (core.bt.busy) return;
-    core.blurPromo();
     core.bt.start();
     core.render();
     try {
@@ -80,7 +78,6 @@ export class ActionsPanel implements ActionHandlers {
   async onBuyBulk(itemId: string, itemName: string, qty: number): Promise<void> {
     const core = this.core;
     if (core.bt.busy || qty < 1) return;
-    core.blurPromo();
     core.bt.start();
     core.render();
     try {
@@ -99,42 +96,14 @@ export class ActionsPanel implements ActionHandlers {
     }
   }
 
-  // ── Promo redemption ──────────────────────────────────────────────────────
-
-  async onRedeem(): Promise<void> {
-    const core = this.core;
-    if (core.bt.busy || !core.cb.redeemPromo) return;
-    const code = core.promoCode.trim();
-    if (!code) return;
-    core.blurPromo();
-    core.bt.start();
-    core.render();
-    try {
-      const res = await withTimeout(core.cb.redeemPromo(code));
-      if (res.ok) {
-        core.promoCode = '';
-        core.setPromoValue('');
-        showToastMessage(t('shop.promoSuccess'), 'success');
-      } else {
-        showToastMessage(t(res.key), 'error');
-      }
-    } catch (e) {
-      showToastMessage(t(e instanceof TimeoutError ? 'common.networkTimeout' : 'shop.promoError'), 'error');
-    } finally {
-      core.bt.stop();
-      core.render();
-    }
-  }
-
   // ── Recharge ─────────────────────────────────────────────────────────────
 
   async onRecharge(tierId: string): Promise<void> {
     const core = this.core;
     if (core.bt.busy || !core.cb.rechargeCoins) return;
-    core.blurPromo();
     core.bt.start();
     core.render();
-    // No blanket withTimeout here (unlike buy/redeem): recharge opens a user-paced payment UI
+    // No blanket withTimeout here (unlike buy): recharge opens a user-paced payment UI
     // (Paddle overlay / native store sheet) that may stay open for minutes. The callback bounds its
     // own network calls internally and always resolves with a result key, so the spinner still clears.
     try {
@@ -161,7 +130,6 @@ export class ActionsPanel implements ActionHandlers {
   async runDeal(action: () => Promise<ShopActionResult>, okKey: TranslationKey, itemName?: string): Promise<void> {
     const core = this.core;
     if (core.bt.busy) return;
-    core.blurPromo();
     core.bt.start();
     core.render();
     try {
@@ -184,7 +152,6 @@ export class ActionsPanel implements ActionHandlers {
   async runUnboundedDeal(action: () => Promise<ShopActionResult>, okKey: TranslationKey, itemName?: string): Promise<void> {
     const core = this.core;
     if (core.bt.busy) return;
-    core.blurPromo();
     core.bt.start();
     core.render();
     try {

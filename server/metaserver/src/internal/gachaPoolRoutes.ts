@@ -1,42 +1,13 @@
-// Promo code management (B-PROMO) + limited/custom gacha pool management (GACHA_DESIGN §2.2, §12).
-// Both are ops-authored configs stored via commercial; these are admin-only endpoints (X-Internal-Key).
+// Limited/custom gacha pool management (GACHA_DESIGN §2.2, §12): ops-authored configs stored via
+// commercial; admin-only endpoints (X-Internal-Key).
 import type { FastifyInstance } from 'fastify';
 import { createLogger, catalogByCategory, validateCustomPool, type CustomPoolConfig, type CustomPoolCategory } from '@nw/shared';
 import type { InternalCtx } from './context.js';
 
 const log = createLogger('meta:internal');
 
-export function registerPromoGachaRoutes(app: FastifyInstance, ctx: InternalCtx): void {
+export function registerGachaPoolRoutes(app: FastifyInstance, ctx: InternalCtx): void {
   const { authed, commercial } = ctx;
-
-  // ── Promo code management ──────────────────────────────────────────────
-  // GET /admin/promo/codes — list all promo codes.
-  app.get('/admin/promo/codes', async (req, reply) => {
-    if (!authed(req.headers)) return reply.code(401).send({ ok: false, error: 'unauthorized' });
-    if (!commercial.available) return reply.code(503).send({ ok: false, error: 'commercial unavailable' });
-    const codes = await commercial.listPromoCodes();
-    return reply.send({ ok: true, codes });
-  });
-  // POST /admin/promo/codes — create a promo code. body = { code, coins, expiresAt?, totalLimit?, note?, createdBy }
-  app.post('/admin/promo/codes', async (req, reply) => {
-    if (!authed(req.headers)) return reply.code(401).send({ ok: false, error: 'unauthorized' });
-    if (!commercial.available) return reply.code(503).send({ ok: false, error: 'commercial unavailable' });
-    const b = req.body as Record<string, unknown>;
-    const code = typeof b.code === 'string' ? b.code.trim().toUpperCase() : '';
-    const coins = typeof b.coins === 'number' ? b.coins : 0;
-    if (!code || coins <= 0) return reply.code(400).send({ ok: false, error: 'code + coins required' });
-    const r = await commercial.createPromoCode({
-      code,
-      coins,
-      expiresAt: typeof b.expiresAt === 'number' ? b.expiresAt : undefined,
-      totalLimit: typeof b.totalLimit === 'number' ? b.totalLimit : undefined,
-      note: typeof b.note === 'string' ? b.note : undefined,
-      createdBy: typeof b.createdBy === 'string' ? b.createdBy : 'unknown',
-    });
-    if (!r.ok) return reply.code(409).send({ ok: false, error: r.error });
-    log.info('POST /admin/promo/codes', { code: r.code, coins });
-    return reply.send({ ok: true, code: r.code });
-  });
 
   // ── Limited gacha pool management ──────────────────────────────────────
   // GET /admin/gacha/pools — list all limited pool configs.

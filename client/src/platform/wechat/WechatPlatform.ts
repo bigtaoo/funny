@@ -368,7 +368,7 @@ export class WechatPlatform implements IPlatform {
 
   // ── In-app coin recharge ────────────────────────────────────────────────────
   // WeChat Pay (wx.requestPayment) is a separate channel left as a TODO — the shop's
-  // Coins tab stays hidden here, and promo codes remain the only in-client top-up.
+  // Coins tab stays hidden here, so there is no in-client top-up on WeChat yet.
   iapKind(): IapKind | null { return null; }
   openPaddleCheckout(): Promise<{ completed: boolean }> {
     return Promise.reject(new Error('paddle checkout not supported on WeChat'));

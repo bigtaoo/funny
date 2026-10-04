@@ -5,8 +5,8 @@
 //
 // The handlers are called as plain functions with a hand-built FastifyRequest/FastifyReply (the idiom
 // test/liveops-achievements-unit.test.ts already uses) rather than through app.inject, because several of
-// the branches being covered here sit *behind* the openapi request schema: `qty: 0`, a non-string promo
-// `code`, an entirely absent request body. A schema-validated route can never deliver those to the
+// the branches being covered here sit *behind* the openapi request schema: `qty: 0`, an entirely absent
+// request body. A schema-validated route can never deliver those to the
 // handler, so a route-level test cannot reach the guards that exist for them.
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { Collections } from '@nw/shared';
@@ -64,7 +64,6 @@ export class BranchCommercial implements CommercialClient {
   nextSubscriptionError: string | null = null;
   nextStarterError: string | null = null;
   nextFateError: string | null = null;
-  nextPromoError: string | null = null;
   nextRechargeVerifyError: string | null = null;
   nextAdsCreditError: string | null = null;
   fateGained = 0;
@@ -221,16 +220,6 @@ export class BranchCommercial implements CommercialClient {
     return { ok: true as const, coinsAfter: this.bal(a.accountId) };
   }
 
-  async promoRedeem(a: { accountId: string }) {
-    if (this.nextPromoError) {
-      const e = this.nextPromoError;
-      this.nextPromoError = null;
-      return { ok: false as const, error: e };
-    }
-    this.coins.set(a.accountId, this.bal(a.accountId) + 100);
-    return { ok: true as const, coinsAfter: this.bal(a.accountId), coinsGranted: 100 };
-  }
-
   async grant(a: { accountId: string; amount: number; reason: string; orderId: string }) {
     if (this.grantThrows) throw new Error('commercial unreachable');
     this.grantCalls.push({ accountId: a.accountId, amount: a.amount, reason: a.reason, orderId: a.orderId });
@@ -265,8 +254,6 @@ export class BranchCommercial implements CommercialClient {
   async createCustomPool(): Promise<never> { throw new Error('BranchCommercial.createCustomPool is not stubbed'); }
   async closeLimitedPool(): Promise<never> { throw new Error('BranchCommercial.closeLimitedPool is not stubbed'); }
   async listLimitedPools(): Promise<never> { throw new Error('BranchCommercial.listLimitedPools is not stubbed'); }
-  async createPromoCode(): Promise<never> { throw new Error('BranchCommercial.createPromoCode is not stubbed'); }
-  async listPromoCodes(): Promise<never> { throw new Error('BranchCommercial.listPromoCodes is not stubbed'); }
   async paddleComplete(): Promise<never> { throw new Error('BranchCommercial.paddleComplete is not stubbed'); }
   async paddleRefund(): Promise<never> { throw new Error('BranchCommercial.paddleRefund is not stubbed'); }
   async recordPaddleEvent(): Promise<never> { throw new Error('BranchCommercial.recordPaddleEvent is not stubbed'); }

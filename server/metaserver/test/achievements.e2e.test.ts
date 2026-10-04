@@ -102,9 +102,6 @@ class FakeCommercial implements CommercialClient {
   async monthlyCardClaim(): Promise<never> { throw new Error('FakeCommercial.monthlyCardClaim is not stubbed in this test'); }
   async starterBuy(): Promise<never> { throw new Error('FakeCommercial.starterBuy is not stubbed in this test'); }
   async verifyNonCoinReceipt(): Promise<never> { throw new Error('FakeCommercial.verifyNonCoinReceipt is not stubbed in this test'); }
-  async promoRedeem(): Promise<never> { throw new Error('FakeCommercial.promoRedeem is not stubbed in this test'); }
-  async createPromoCode(): Promise<never> { throw new Error('FakeCommercial.createPromoCode is not stubbed in this test'); }
-  async listPromoCodes(): Promise<never> { throw new Error('FakeCommercial.listPromoCodes is not stubbed in this test'); }
   async paddleComplete(): Promise<never> { throw new Error('FakeCommercial.paddleComplete is not stubbed in this test'); }
   async paddleRefund(): Promise<never> { throw new Error('FakeCommercial.paddleRefund is not stubbed in this test'); }
   async recordPaddleEvent(): Promise<never> { throw new Error('FakeCommercial.recordPaddleEvent is not stubbed in this test'); }

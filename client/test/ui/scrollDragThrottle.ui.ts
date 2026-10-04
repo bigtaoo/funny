@@ -243,7 +243,6 @@ describe('scroll-drag render throttle (2026-07-15 perf fix)', () => {
       buy: async () => ({ ok: true }),
       recharge: async () => ({ ok: true }),
       openGacha() {},
-      openTextInput: createFakeTextInput().openTextInput,
     }) as any;
     assertScrollDragThrottled(scene, input);
   });
