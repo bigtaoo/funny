@@ -90,7 +90,6 @@ describe('HttpCommercialClient — degraded upstream', () => {
     const client = new HttpCommercialClient(base, KEY);
     expect(await client.listLimitedPools()).toEqual([]);
     expect(await client.undeliveredOrders('a')).toEqual([]);
-    expect(await client.listPromoCodes()).toEqual([]);
     expect(await client.listPaddleEvents({ accountId: 'a' })).toEqual([]);
     expect(await client.auditCoinGains('2026-09-03', 100)).toEqual([]);
   });

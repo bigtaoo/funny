@@ -5,7 +5,7 @@
 // sites depend on, including the fallback each one chose.
 //
 // The datetime-local pair is the ops console's ms ↔ `<input type="datetime-local">` bridge, used by
-// the timed-event, gacha-pool and promo-code forms. Deliberately LOCAL time, so the assertions are
+// the timed-event and gacha-pool forms. Deliberately LOCAL time, so the assertions are
 // built from local Date getters rather than hardcoded strings — a fixed literal would only pass in
 // whichever timezone it was written in.
 import { describe, expect, it } from 'vitest';

@@ -1,5 +1,5 @@
-// Rewarded ads, IAP receipt verification, promo codes (C2/B-PROMO). Split out of service/economy.ts
-// (2026-08-10, 独立函数模块 form — see economy.ts's facade comment). All three handlers take `core:
+// Rewarded ads and IAP receipt verification (C2). Split out of service/economy.ts
+// (2026-08-10, 独立函数模块 form — see economy.ts's facade comment). Both handlers take `core:
 // MetaCore` directly (2026-08-11 ctx-bind cleanup — see base.ts's header, for `core.ensureCommercial`).
 // No behavior change.
 import type { FastifyReply, FastifyRequest } from 'fastify';
@@ -72,33 +72,4 @@ export async function iapVerifyHandler(core: MetaCore, req: FastifyRequest, repl
   }
   const save = await mirrorCoins(cols, accountId, v.coinsAfter, now());
   return ok({ save, granted: v.coinsGranted });
-}
-
-/** Promo code redemption (B-PROMO): validate → grant coins → push back save. */
-export async function redeemPromoCodeHandler(core: MetaCore, req: FastifyRequest, reply: FastifyReply) {
-  if (!core.ensureCommercial(reply)) return;
-  const accountId = accountIdOf(req);
-  const { code } = req.body as { code: string };
-  if (!code || typeof code !== 'string') {
-    return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'code required'));
-  }
-  // App Store builds must not unlock anything outside IAP (App Review 3.1.1, IOS_RELEASE.md §9.2). The
-  // client already hides the promo row there; this also closes it for iOS builds shipped before that.
-  if (clientPlatformOf(req) === 'ios') {
-    return reply.code(403).send(err(ErrorCode.BAD_REQUEST, 'PROMO_UNAVAILABLE_ON_PLATFORM'));
-  }
-  const { cols, commercial, now } = core.deps;
-  const v = await commercial.promoRedeem({ accountId, code, clientPlatform: clientPlatformOf(req) });
-  if (!v.ok) {
-    const statusMap: Record<string, number> = {
-      PROMO_NOT_FOUND: 404,
-      PROMO_EXPIRED: 400,
-      PROMO_EXHAUSTED: 400,
-      PROMO_ALREADY_USED: 400,
-    };
-    const status = statusMap[v.error] ?? 400;
-    return reply.code(status).send(err(ErrorCode.BAD_REQUEST, v.error));
-  }
-  const save = await mirrorCoins(cols, accountId, v.coinsAfter, now());
-  return ok({ coinsAfter: v.coinsAfter, coinsGranted: v.coinsGranted, save });
 }

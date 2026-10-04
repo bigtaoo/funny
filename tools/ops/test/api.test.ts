@@ -385,11 +385,6 @@ const CASES: EndpointCase[] = [
     path: '/admin/events/e%201', body: { title: 't', windowStart: 1, windowEnd: 2, tasks: [], rewards: [] }, reply: { event: {} }, returns: {} },
   { name: 'deleteEvent', call: (a) => a.deleteEvent('e-1'), method: 'DELETE', path: '/admin/events/e-1' },
 
-  // Promo codes
-  { name: 'promoCodes', call: (a) => a.promoCodes(), method: 'GET', path: '/admin/promo/codes', reply: { codes: [] }, returns: [] },
-  { name: 'createPromoCode', call: (a) => a.createPromoCode({ code: 'WELCOME', coins: 100 }), method: 'POST', path: '/admin/promo/codes',
-    body: { code: 'WELCOME', coins: 100 }, reply: { code: 'WELCOME' } },
-
   // Gacha
   { name: 'gachaPools', call: (a) => a.gachaPools(), method: 'GET', path: '/admin/gacha/pools', reply: { pools: [] }, returns: [] },
   { name: 'gachaCatalog', call: (a) => a.gachaCatalog(), method: 'GET', path: '/admin/gacha/catalog', reply: { catalog: { material: [] } }, returns: { material: [] } },

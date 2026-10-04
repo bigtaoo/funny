@@ -22,4 +22,3 @@ export { pageReports } from './pages/reports';
 export { pageAppeals } from './pages/appeals';
 export { pageModerationWordlist } from './pages/moderationWordlist';
 export { pageFeedback } from './pages/feedback';
-export { pagePromo } from './pages/promo';

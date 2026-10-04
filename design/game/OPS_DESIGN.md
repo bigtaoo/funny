@@ -84,7 +84,6 @@ interface AdminAccountDoc {
 | `appeals.action` 裁定申诉（approve/deny，撤销 mute/ban） | ✓ | ✓ | – | – |
 | `feedback.view` 查玩家反馈（无裁定；`SERVER_API.md §2.13`） | ✓ | ✓ | ✓ | ✓ |
 | `feedback.action` 标已读 / 写 ops 备注（`SERVER_API.md §2.13.1`，仍非裁定） | ✓ | ✓ | – | – |
-| `promo.manage` 兑换码发码 / 查码（B-PROMO，见 `META_TASKS.md`） | ✓ | ✓ | – | – |
 | `moderation.wordlist.manage` 管理敏感词库外部覆盖表 | ✓ | ✓ | – | – |
 | `audit.view.all` 看全部审计 | ✓ | – | – | – |
 | `audit.view.self` 看自己操作（登录即有） | ✓ | ✓ | ✓ | ✓ |
@@ -262,11 +261,6 @@ DELETE /admin/moderation/wordlists/{region}/words/{word}     → { doc }        
 # 内部端点（X-Internal-Key，非 admin JWT）：meta/social/worldsvc 不连 admin 库，轮询此端点拉原始覆盖记录，本地与 REGION_WORDLISTS 合并
 GET    /admin/internal/moderation-wordlists          → { items: [...] }                // 原样返回，WordlistCache 60s 轮询 + 本地 effectiveWordlist 叠加
 
-# 兑换码（B-PROMO；promo.manage）——发码入口，玩家侧兑换走 metaserver `POST /promo/redeem`
-GET  /admin/promo/codes                              → { codes: [...] }                // 列全部码；`_id`→`code` 在 admin client 侧改名（commercial 原样返回文档）
-POST /admin/promo/codes  { code, coins, expiresAt?, totalLimit?, note? }
-                                                     → { code }                        // 码 + coins 必填（否则 400），转发 meta→commercial；重复码 409；落审计 promo.create
-
 # 玩家反馈（无裁定/无状态机，只有已读+备注痕迹；SERVER_API.md §2.13）
 GET  /admin/feedback?limit=                          → { feedback: [...] }             // feedback.view，代理 meta GET /internal/feedback
 POST /admin/feedback/{id}/review     { note? }       → { ok: true }                    // feedback.action，标已读 / 写备注；note 省略=只标已读（保留原备注），note:''=清空
@@ -400,6 +394,8 @@ admin 后端（G7）已全部就绪；补完 `tools/ops` 对应的两个前端�
 - **验证**：`tools/ops` `tsc --noEmit`（src+test）全绿 + 前端单测 58→77 例全绿；起 worktree 自己的 ops dev server 打真实 admin 进程（Docker 栈 `funny-admin-1` + `nw-local-mongo`）走查：加中文词 `刷钻代充` 到 `cn`（生效数 10→11）、加 `phish` 到 `global` 后 cn/de/en 三个 region 的生效数**同时** +1 而各自覆盖数仍为 0（继承正确）、`Scammer` 对 `en` 与 `phishing-site` 对 `de` 均正确报"blocks nothing new"并指出覆盖来源（大小写归一化生效）、重复词按钮置灰报红、删词后计数回落且 `de` 仍保留继承来的那 1 个；回查 Mongo 确认 `moderationWordlists` 文档与 6 条 `moderation.wordlist.update` 审计 summary 均正确、中文无乱码，走查数据事后清理干净。
 
 ### 兑换码发码页（B-PROMO 补顶层，2026-08-20）
+
+> **已移除（2026-10-04，ADR-108）**：兑换码整条链连同这个页面、`promo.manage` 能力点和 `promo.create` 审计动作一起删了。本节留作历史。
 
 与同日另两节（玩家反馈页、敏感词覆盖表页）**同一类缺口、但成因相反**——那两例都是"后端齐全、没人写前端"；兑换码这条链**当初是完整的**（`META_TASKS.md` B-PROMO，2026-06-29 落地，admin 的 `GET/POST /admin/promo/codes` 就在其中），却在 2026-07-28 的死内部端点清理（`COMM_AUDIT_INTERNAL_2026-07-28` batch G，commit `6942481a`）里被删掉了——理由写得很明白：「no ops-frontend page calls any of them」，同时保留了下面的 service/client 层「in case they're wired up later」。于是形成一个自锁的环：路由因为没有前端而被删，前端因为没有路由而没人写。
 

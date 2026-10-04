@@ -130,7 +130,6 @@ POST /starter/buy       { receipt }       → { save, granted }   // 新手包�
 POST /monthly-card/buy | /monthly-card/claim              // 月卡购买 / 每日领取
 POST /year-card/buy                                       // 年卡购买
 POST /fate/redeem       { }               → { save, granted }   // 命运点兑换
-POST /promo/redeem      { code }          → { save, granted }   // 兑换码
 ```
 
 - **`/recharge/claim`**：进度 `totalRechargeCents` 由服务器从 `save.monetization` 读取，本端点**只记领取 + 发货**，不自行累加充值额（充值额只能由 IAP 验单链路写，§2.6/§9）。幂等键 = `accountId + milestoneId`。

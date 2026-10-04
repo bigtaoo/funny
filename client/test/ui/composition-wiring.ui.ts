@@ -213,7 +213,6 @@ describe('ShopScene composition wiring', () => {
     const scene = new ShopScene(createLayout(800, 1280), new InputManager(), {
       onBack() {}, getCoins: () => 1000, getOwnedSkins: () => [],
       loadItems: async () => [], buy: async () => ({ ok: true }), openGacha() {},
-      openTextInput: createFakeTextInput().openTextInput,
     }) as unknown as Record<string, unknown>;
     const core = scene.core;
     expect(core).toBeDefined();

@@ -114,7 +114,6 @@ describe('header title follows the active tab — rails that contain other pages
         buy: async () => ({ ok: true }),
         openGacha() {},
         rechargeCoins: async () => ({ ok: true }),
-        openTextInput: createFakeTextInput().openTextInput,
         initialTab,
       };
       return new ShopScene(createLayout(W, H), new InputManager(), cb);

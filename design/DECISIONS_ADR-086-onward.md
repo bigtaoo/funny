@@ -510,3 +510,16 @@ docker compose -f docker-compose.cloud.yml --env-file .env config | grep MONGO_U
 - **不改的**：烘焙仍然记在 `rndMax` 里。iPhone 会话的首个跨度大概率仍是约 100 ms、`rndMaxScene ""` 的这一次，所以 ADR-106 的 `rndMax ≥ 50 ms` 门槛几乎总会触发。读数时要按 `rndMaxScene` 区分；IntroScene 真正的首启卡顿（735–2006 ms）比它大得多，不会被它盖住。
 - **核对**：桌面 Chrome 测不到前台路径，因为这台机器上自动化用的窗口一直是 `visibilityState hidden`，不出帧。测到的是后台路径（第 3 条）：第一次上屏发生在年龄门建好之后，预热耗时 0 ms。前台路径的效果，以下次 iPhone 冷启动的 `first_frame` 为准：应比 375–442 ms 小约 100 ms，`rndMaxAt` 应落在 0.4 s 之后。
 - **影响**：`client/src/app.ts`；测试 `test/appAssetGateWiring.test.ts`（预热登记在发请求和 `await` 之间；离屏烘焙在 `first_frame` 打点之前就返回；`afterFirstPaint` 在打点之后执行）。文档 `design/game/ANALYTICS_DESIGN.md` §5.1b、`claudedocs/client-render-budget.md` §18。
+
+## ADR-108 兑换码整体移除，奖励改走邮件 — Accepted — 2026-10-04
+
+- **背景**：B-PROMO（META_TASKS.md）让玩家在商店金币页输入一串码换金币。2026-09-29 Apple 以 3.1.1 拒了 build 12（IOS_RELEASE.md §9.2），当时只在 iOS 上把入口藏起来、服务端对 `x-nw-platform: ios` 回 403。其它平台（Web / 微信 / CrazyGames / Android）照旧开着。
+- **决策**：全平台移除兑换码，不留开关。理由（用户 2026-10-04）：各平台都不喜欢这种绕过充值拿货币的入口，iOS 拒审只是第一个表态的；要给玩家发奖励，用已有的邮件附件（admin 补偿工单 → 邮件）就够了，而且邮件是逐个账号定向发的，不会被转卖或公开传播。
+- **删掉的**：
+  - 客户端：金币页的兑换行（输入框 + 兑换按钮）、`ShopSceneCallbacks.redeemPromo` / `openTextInput`（商店里只有它用）、`ApiClient.redeemPromoCode`、`shop.promo*` 五条文案、`promo_redeem` 埋点。
+  - metaserver：`POST /promo/redeem`（契约 + 生成路由，93 → 92 个 operation）、`/admin/promo/codes`；`economy/adsPromo.ts` 改名 `adsIap.ts`，`internal/promoGachaRoutes.ts` 改名 `gachaPoolRoutes.ts`。
+  - commercial：`PromoService`、`/internal/promo/{redeem,codes}`、`promoCodes` / `promoRedemptions` 两个集合的类型和索引、账号清除里对 `promoRedemptions` 的删除、`PROMO_*` 错误码。
+  - admin / shared / ops：`promo.manage` 能力点、`promo.create` 审计动作、发码页和它的 client / service。
+  - analyticsvc：`promo_redeem` 事件配置。
+- **没动的**：生产库里已有的 `promoCodes` / `promoRedemptions` 文档还在（代码不再读写）；要不要 drop 由用户决定。历史账本行里 reason 为 `promo` 的记录保持原样。
+- **影响**：旧客户端如果还画着兑换行，点下去会拿到 404，按通用失败 toast 处理。iOS build ≤ 12 早就不画了，Web 发版即生效。微信本来就没有金币页（`iapKind() === null`），兑换行在那里从来不可见，所以这次移除并没有让微信少一条充值路径。

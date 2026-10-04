@@ -30,7 +30,6 @@ export function createShopNav(ctx: AppCtx): ShopNav {
     const shopLoggedIn = !state.offlineMode && !!platform.storage.getItem(TOKEN_KEY);
     views.showShop({
       ...(initialTab ? { initialTab } : {}),
-      openTextInput: (opts) => platform.openTextInput(opts),
       onBack() {
         analytics.track('shop_close', { converted, time_sec: Math.round((Date.now() - shopOpenTs) / 1000) });
         if (onBack) onBack(); else nav.goLobby();
@@ -71,24 +70,6 @@ export function createShopNav(ctx: AppCtx): ShopNav {
         // t099/t199 are mobile-only (ShopSceneCallbacks.includeMobileOnlyCoinTiers's doc comment) —
         // viable on iOS/Android's flat store cut, uneconomic through Paddle's fixed per-txn fee.
         includeMobileOnlyCoinTiers: platform.iapKind() === 'apple' || platform.iapKind() === 'google',
-      } : {}),
-      // Promo-code redemption (B-PROMO): only available when online + logged in, and never in the
-      // App Store build — App Review rejected it under 3.1.1 (IOS_RELEASE.md §9.2); discounts there go
-      // through App Store offer codes instead.
-      ...(shopLoggedIn && platform.iapKind() !== 'apple' ? {
-        async redeemPromo(code: string) {
-          try {
-            const { save } = await client.redeemPromoCode(code);
-            saveManager.adoptServer(save);
-            analytics.track('promo_redeem', { code });
-            return { ok: true as const };
-          } catch (e) {
-            const errCode = e instanceof ApiError ? e.code : '';
-            const key = errCode === 'PROMO_NOT_FOUND' || errCode === 'PROMO_ALREADY_USED'
-              ? 'shop.promoInvalid' : 'shop.promoError';
-            return { ok: false as const, key };
-          }
-        },
       } : {}),
       // Monetization deals (GACHA_DESIGN §5–§6): monthly/year card + starter packs.
       // getMonetization/claimMonthlyCard are read/claim-only (safe regardless of purchase capability) and

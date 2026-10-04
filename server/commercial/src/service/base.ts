@@ -92,7 +92,7 @@ export class WalletCore {
 
   /**
    * Grace window before an idempotency-key row reserved but not yet credited/delivered (recharges /
-   * promoRedemptions / orders, all claimed via a unique-index insert BEFORE the costly side of the
+   * orders, all claimed via a unique-index insert BEFORE the costly side of the
    * operation runs) is treated as abandoned by a crashed attempt and safe to resume/heal. Concurrent
    * duplicate submissions of the SAME key (the common case — client retries a slow request, or the
    * network duplicates it) lose the unique-insert race within milliseconds while the true winner is
@@ -154,7 +154,7 @@ export class WalletCore {
    * the (possibly doubled) coins granted.
    * `ref.channel`, when present, funds `recharged.<channel>` instead of the free `coins` pool — set only by
    * genuinely channel-verified real-money credits (recharge/paddleComplete); every other credit reason (ads,
-   * victory, promo, refund, grant, subscription daily claim) stays on the free pool, spendable everywhere.
+   * victory, refund, grant, subscription daily claim) stays on the free pool, spendable everywhere.
    */
   async credit(
     accountId: string,

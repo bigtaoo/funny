@@ -23,7 +23,6 @@ import { GachaDrawService } from './service/gachaDraw';
 import { SubscriptionService } from './service/subscription';
 import { StarterService } from './service/starter';
 import { RechargeService } from './service/recharge';
-import { PromoService } from './service/promo';
 import { RewardsService } from './service/rewards';
 import { OrdersService } from './service/orders';
 import { AuditService } from './service/audit';
@@ -46,7 +45,6 @@ export class CommercialService {
   private readonly subscription: SubscriptionService;
   private readonly starter: StarterService;
   private readonly recharge: RechargeService;
-  private readonly promo: PromoService;
   private readonly rewards: RewardsService;
   private readonly orders: OrdersService;
   private readonly audit: AuditService;
@@ -64,7 +62,6 @@ export class CommercialService {
     this.subscription = new SubscriptionService(this.core);
     this.starter = new StarterService(this.core);
     this.recharge = new RechargeService(this.core);
-    this.promo = new PromoService(this.core);
     this.rewards = new RewardsService(this.core);
     this.orders = new OrdersService(this.core);
     this.audit = new AuditService(this.core);
@@ -115,11 +112,6 @@ export class CommercialService {
   paddleRefund(...args: Parameters<RechargeService['paddleRefund']>) { return this.recharge.paddleRefund(...args); }
   recordPaddleEvent(...args: Parameters<RechargeService['recordPaddleEvent']>) { return this.recharge.recordPaddleEvent(...args); }
   listPaddleEvents(...args: Parameters<RechargeService['listPaddleEvents']>) { return this.recharge.listPaddleEvents(...args); }
-
-  // ── promo ──
-  createPromoCode(...args: Parameters<PromoService['createPromoCode']>) { return this.promo.createPromoCode(...args); }
-  listPromoCodes(...args: Parameters<PromoService['listPromoCodes']>) { return this.promo.listPromoCodes(...args); }
-  promoRedeem(...args: Parameters<PromoService['promoRedeem']>) { return this.promo.promoRedeem(...args); }
 
   // ── rewards ──
   adsCredit(...args: Parameters<RewardsService['adsCredit']>) { return this.rewards.adsCredit(...args); }

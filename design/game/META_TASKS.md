@@ -316,7 +316,9 @@
 
 > 来源：2026-06-29 全项目体检。下列为已确认的未完成项（功能缺口 / 美术阻塞 / 收尾），尚未排期。复杂项另起专文，简单项就地记录。
 
-### B-PROMO 优惠码兑换系统（替代已删除的 dev 魔术码）✅（2026-06-29 已实现；客户端 UI ✅ 2026-07-01；ops 发码页 ✅ 2026-08-20）
+### B-PROMO 优惠码兑换系统（替代已删除的 dev 魔术码）❌ **已整体移除（2026-10-04，ADR-108）**
+
+> 2026-10-04 起全平台不再有兑换码：客户端兑换行、`POST /promo/redeem`、admin/ops 发码页、commercial `PromoService` 与 `promoCodes`/`promoRedemptions` 两个集合的代码全部删掉。给玩家发奖励改走邮件附件（admin 补偿工单）。下面是当初的实现记录，留作历史。
 
 取代 S2-6 已删除的「魔术码充值」dev 桩（仅 dev、生产 fail-closed；2026-06-29 已整条删除：客户端 `ShopScene` 充值入口 + `createAppCore.rechargeTier`（`taowang*`）+ 相关 i18n）。新系统由后台显式发码，可控、可审计、每人一次：
 
@@ -334,7 +336,7 @@
 - [x] **worldsvc publicId 解析** ✅（2026-06-30）：`getMap`/`getTile`/`pushTile`/`under_attack` 已有 meta.getProfile 反查；本次修复 `sect_msg`/`nation_msg` push payload 的 `fromPublicId` 仍用 accountId 的缺口——`SectService` 和 `NationChannelService` 各加 `meta?: WorldMetaClient` dep，`sendMessage` best-effort 解析 publicId，无 meta 时 fallback 空字符串；index.ts 接线；新增测试 `nation-channel.e2e.test.ts` + sect 追加用例。
 - [x] **实时赛季号下行** ✅（2026-07-01）：`createAppCore.ts` 已动态调用 `worldApi.getActiveSeason()`，`CURRENT_SEASON` 硬编码已去掉，赛季号由 metaserver 下行。
 - [x] **VFX `emitter` 图元** ✅（2026-08-03）：`client/src/render/vfx/{types,primitives}.ts` 实现为纯矢量粒子群（无位图资产），见 `design/tools/vfx-editor/DESIGN.md` §13；vfx-editor 已接入。
-- [ ] **真实 IAP 客户端 SDK**：服务端 `commercial/iap.ts` 验单（Apple/Google/微信/Stripe）已就绪且生产 fail-closed；客户端尚无真实下单 SDK 接入（魔术码删除后暂无任何充值入口，等本项或 B-PROMO）。
+- [ ] **真实 IAP 客户端 SDK**：服务端 `commercial/iap.ts` 验单（Apple/Google/微信/Stripe）已就绪且生产 fail-closed；客户端尚无真实下单 SDK 接入（魔术码删除后暂无任何充值入口，等本项；B-PROMO 已于 2026-10-04 移除）。
 
 > 说明：worldsvc `/family` 迁移残骸 + `openapi-world.yml` `/family` 契约漂移由另一会话（worktree）单独清理，不在此清单。
 

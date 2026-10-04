@@ -1,12 +1,12 @@
-// Unit-style coverage backfill for src/service/economy/{adsPromo,gacha,shop,starter,subscriptions}.ts
+// Unit-style coverage backfill for src/service/economy/{adsIap,gacha,shop,starter,subscriptions}.ts
 // (2026-08-13 test-coverage task). These handlers' business logic is already exercised end-to-end by
 // test/economy.e2e.test.ts, but that file imports `buildApp` from '../dist/app.js' — vitest's v8
 // coverage provider only source-map-attributes execution of modules it itself loaded via its Vite
 // transform, so running the *compiled* dist/*.js through Node's own ESM loader records zero coverage
 // against the src/*.ts lines that actually ran. This file imports directly from '../src/...' so the
 // exact same kind of request-level exercise gets attributed correctly, and adds the error/edge branches
-// the e2e file's happy-path-oriented scenarios don't reach (invalid input, POOL_UNAVAILABLE, promo
-// expired/exhausted, ALREADY_ACTIVE, ad cooldown/replay/signature, wallet-unavailable, ...).
+// the e2e file's happy-path-oriented scenarios don't reach (invalid input, POOL_UNAVAILABLE,
+// ALREADY_ACTIVE, ad cooldown/replay/signature, wallet-unavailable, ...).
 //
 // Real Mongo (rs0), same convention as economy.e2e.test.ts — deliverGrant/deliverMailGrant rely on
 // $addToSet-with-$each + $push-with-$each/$slice + a `{$ne: orderId}` filter guard, none of which
@@ -46,9 +46,9 @@ interface OrderRow {
 
 /**
  * Configurable fake commercial client. Mirrors economy.e2e.test.ts's FakeCommercial for the happy-path
- * plumbing (wallet/orders/pity/subscriptions/starter/fate/promo), plus a handful of `next*Error`/`force*`
+ * plumbing (wallet/orders/pity/subscriptions/starter/fate), plus a handful of `next*Error`/`force*`
  * knobs so individual tests can steer a call down a specific error branch the e2e file never needed
- * (POOL_UNAVAILABLE, PROMO_EXPIRED/EXHAUSTED, ALREADY_ACTIVE, wallet-unavailable, fateGained>0, ...).
+ * (POOL_UNAVAILABLE, ALREADY_ACTIVE, wallet-unavailable, fateGained>0, ...).
  */
 class FakeCommercial implements CommercialClient {
   // Unused here; only present to satisfy `implements CommercialClient` (the webhook has its own tests).
@@ -77,7 +77,6 @@ class FakeCommercial implements CommercialClient {
   starterUsed = new Map<string, string[]>();
   totalRecharge = new Map<string, number>();
   orders = new Map<string, OrderRow>();
-  promoCodes = new Map<string, { coins: number; usedBy: Set<string>; status?: 'expired' | 'exhausted' }>();
   activeLimitedPools: Array<Record<string, unknown>> = [];
   activeLimitedPoolsThrow = false;
 
@@ -306,24 +305,12 @@ class FakeCommercial implements CommercialClient {
     return { ok: true as const, coinsAfter: this.bal(a.accountId), subscriptionExpiry: expiry, ...wallet };
   }
 
-  async promoRedeem(a: { accountId: string; code: string }) {
-    const entry = this.promoCodes.get(a.code);
-    if (!entry) return { ok: false as const, error: 'PROMO_NOT_FOUND' };
-    if (entry.status === 'expired') return { ok: false as const, error: 'PROMO_EXPIRED' };
-    if (entry.status === 'exhausted') return { ok: false as const, error: 'PROMO_EXHAUSTED' };
-    if (entry.usedBy.has(a.accountId)) return { ok: false as const, error: 'PROMO_ALREADY_USED' };
-    entry.usedBy.add(a.accountId);
-    this.coins.set(a.accountId, this.bal(a.accountId) + entry.coins);
-    return { ok: true as const, coinsAfter: this.bal(a.accountId), coinsGranted: entry.coins };
-  }
   // CommercialClient members this suite never exercises. They throw rather than answer: each was
   // simply absent before test/** was type-checked, so any call already crashed — this keeps that
   // truth while naming what happened.
   async createCustomPool(): Promise<never> { throw new Error('FakeCommercial.createCustomPool is not stubbed in this test'); }
   async closeLimitedPool(): Promise<never> { throw new Error('FakeCommercial.closeLimitedPool is not stubbed in this test'); }
   async listLimitedPools(): Promise<never> { throw new Error('FakeCommercial.listLimitedPools is not stubbed in this test'); }
-  async createPromoCode(): Promise<never> { throw new Error('FakeCommercial.createPromoCode is not stubbed in this test'); }
-  async listPromoCodes(): Promise<never> { throw new Error('FakeCommercial.listPromoCodes is not stubbed in this test'); }
   async paddleComplete(): Promise<never> { throw new Error('FakeCommercial.paddleComplete is not stubbed in this test'); }
   async paddleRefund(): Promise<never> { throw new Error('FakeCommercial.paddleRefund is not stubbed in this test'); }
   async recordPaddleEvent(): Promise<never> { throw new Error('FakeCommercial.recordPaddleEvent is not stubbed in this test'); }
@@ -365,7 +352,7 @@ describe.skipIf(!mongo)('economy service handlers (src import, coverage backfill
     await m.close();
   });
 
-  // ── adsPromo.ts: adsRewardHandler ──────────────────────────────────────────────────────────────
+  // ── adsIap.ts: adsRewardHandler ──────────────────────────────────────────────────────────────
   describe('POST /ads/reward', () => {
     it('happy path: credits coins and mirrors the wallet', async () => {
       const r = body(await app.inject({ method: 'POST', url: '/ads/reward', headers: auth(), payload: { adToken: 'tok-1' } }));
@@ -437,7 +424,7 @@ describe.skipIf(!mongo)('economy service handlers (src import, coverage backfill
     });
   });
 
-  // ── adsPromo.ts: iapVerifyHandler ──────────────────────────────────────────────────────────────
+  // ── adsIap.ts: iapVerifyHandler ──────────────────────────────────────────────────────────────
   describe('POST /iap/verify', () => {
     it('happy path: mirrors granted coins', async () => {
       const r = body(await app.inject({ method: 'POST', url: '/iap/verify', headers: auth(), payload: { platform: 'web', receipt: 'tier:t499' } }));
@@ -465,59 +452,6 @@ describe.skipIf(!mongo)('economy service handlers (src import, coverage backfill
       expect(r.statusCode).toBe(400);
       expect(body(r).error.code).toBe('BAD_REQUEST');
       expect(body(r).error.message).toBe('SOME_OTHER_ERROR');
-    });
-  });
-
-  // ── adsPromo.ts: redeemPromoCodeHandler ────────────────────────────────────────────────────────
-  describe('POST /promo/redeem', () => {
-    it('happy path grants coins and mirrors the new balance', async () => {
-      comm.promoCodes.set('WELCOME10', { coins: 100, usedBy: new Set() });
-      const before = comm.bal(accountId);
-      const r = body(await app.inject({ method: 'POST', url: '/promo/redeem', headers: auth(), payload: { code: 'WELCOME10' } }));
-      expect(r.ok).toBe(true);
-      expect(r.data.coinsGranted).toBe(100);
-      expect(r.data.save.wallet.coins).toBe(before + 100);
-    });
-
-    it('missing / non-string code -> 400', async () => {
-      const r1 = await app.inject({ method: 'POST', url: '/promo/redeem', headers: auth(), payload: {} });
-      expect(r1.statusCode).toBe(400);
-    });
-
-    it('unknown code -> 404 PROMO_NOT_FOUND', async () => {
-      const r = await app.inject({ method: 'POST', url: '/promo/redeem', headers: auth(), payload: { code: 'NOPE' } });
-      expect(r.statusCode).toBe(404);
-      expect(body(r).error.message).toBe('PROMO_NOT_FOUND');
-    });
-
-    it('already used by this account -> 400 PROMO_ALREADY_USED', async () => {
-      comm.promoCodes.set('ONE-SHOT', { coins: 50, usedBy: new Set() });
-      await app.inject({ method: 'POST', url: '/promo/redeem', headers: auth(), payload: { code: 'ONE-SHOT' } });
-      const r = await app.inject({ method: 'POST', url: '/promo/redeem', headers: auth(), payload: { code: 'ONE-SHOT' } });
-      expect(r.statusCode).toBe(400);
-      expect(body(r).error.message).toBe('PROMO_ALREADY_USED');
-    });
-
-    it('expired code -> 400 PROMO_EXPIRED', async () => {
-      comm.promoCodes.set('STALE', { coins: 50, usedBy: new Set(), status: 'expired' });
-      const r = await app.inject({ method: 'POST', url: '/promo/redeem', headers: auth(), payload: { code: 'STALE' } });
-      expect(r.statusCode).toBe(400);
-      expect(body(r).error.message).toBe('PROMO_EXPIRED');
-    });
-
-    it('exhausted code -> 400 PROMO_EXHAUSTED', async () => {
-      comm.promoCodes.set('GONE', { coins: 50, usedBy: new Set(), status: 'exhausted' });
-      const r = await app.inject({ method: 'POST', url: '/promo/redeem', headers: auth(), payload: { code: 'GONE' } });
-      expect(r.statusCode).toBe(400);
-      expect(body(r).error.message).toBe('PROMO_EXHAUSTED');
-    });
-
-    it('iOS client -> 403 and the code is not consumed (App Review 3.1.1)', async () => {
-      comm.promoCodes.set('IOS-TRY', { coins: 50, usedBy: new Set() });
-      const r = await app.inject({ method: 'POST', url: '/promo/redeem', headers: { ...auth(), 'x-nw-platform': 'ios' }, payload: { code: 'IOS-TRY' } });
-      expect(r.statusCode).toBe(403);
-      expect(body(r).error.message).toBe('PROMO_UNAVAILABLE_ON_PLATFORM');
-      expect(comm.promoCodes.get('IOS-TRY')!.usedBy.size).toBe(0);
     });
   });
 

@@ -314,7 +314,7 @@ export class ApiClient {
     return this.equipmentSvc.reforgeEquipment(targetId, materialId, idempotencyKey);
   }
 
-  // ── Shop / ads / IAP / promo (./ApiClient/shop.ts) ────────────────────────
+  // ── Shop / ads / IAP (./ApiClient/shop.ts) ────────────────────────
   getShopItems(): Promise<ShopItem[]> {
     return this.shopSvc.getShopItems();
   }
@@ -341,10 +341,6 @@ export class ApiClient {
 
   paddleCheckout(tierId: string): Promise<{ transactionId: string }> {
     return this.shopSvc.paddleCheckout(tierId);
-  }
-
-  redeemPromoCode(code: string): Promise<{ save: SaveData; granted: number }> {
-    return this.shopSvc.redeemPromoCode(code);
   }
 
   // ── Gacha / monetized card products (./ApiClient/gacha.ts) ───────────────

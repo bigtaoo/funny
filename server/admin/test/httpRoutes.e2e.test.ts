@@ -37,7 +37,6 @@ import type {
   MismatchClient,
   PaddleEventsClient,
   PlayerClient, PlayerProfile,
-  PromoClient, PromoCodeView,
   PvpCardStatsClient,
   ReportsClient, ReportRow,
   StatsClient,
@@ -220,26 +219,6 @@ class FakeGachaPools implements GachaPoolsClient {
   }
   async close(id: string) { const p = this.pools.get(id); if (p) p.closedAt = now(); return { id }; }
 }
-// Stateful (unlike the original static stub) so the promo routes can be exercised as a real
-// create -> list round trip: the mint side is the whole point of restoring them, and a create that
-// never shows up in the list is exactly the failure the ops page would hit. Uppercase normalization
-// and the duplicate-code conflict both live in commercial, so they are mirrored here.
-class FakePromo implements PromoClient {
-  available = true;
-  codes = new Map<string, PromoCodeView>();
-  async list(): Promise<PromoCodeView[]> { return [...this.codes.values()]; }
-  async create(args: { code: string; coins: number; expiresAt?: number; totalLimit?: number; note?: string; createdBy: string }) {
-    const code = args.code.trim().toUpperCase();
-    if (this.codes.has(code)) throw new EventsClientError(409, 'BAD_REQUEST');
-    this.codes.set(code, {
-      code, coins: Math.floor(args.coins), redeemed: 0, createdBy: args.createdBy, createdAt: now(),
-      ...(args.expiresAt !== undefined ? { expiresAt: args.expiresAt } : {}),
-      ...(args.totalLimit !== undefined ? { totalLimit: Math.floor(args.totalLimit) } : {}),
-      ...(args.note ? { note: args.note } : {}),
-    });
-    return { code };
-  }
-}
 const stubPaddleEvents: PaddleEventsClient = {
   available: true,
   list: async () => [{ transactionId: 'txn1', eventType: 'transaction.completed', rawEvent: '{}', ts: 1 }],
@@ -304,7 +283,6 @@ describe.skipIf(!mongo)('admin ops HTTP routes e2e', () => {
   let suspiciousPve: FakeSuspiciousPve;
   let events: FakeEvents;
   let gachaPools: FakeGachaPools;
-  let promo: FakePromo;
   let reports: FakeReports;
   let appeals: FakeAppeals;
   let feedback: FakeFeedback;
@@ -314,10 +292,6 @@ describe.skipIf(!mongo)('admin ops HTTP routes e2e', () => {
   let rootToken: string;
   let opsToken: string;
   let csToken: string;
-  // Accounts are keyed on a randomUUID `_id`, and that is what lands in `createdBy`/audit `actor` —
-  // never the username. Captured here so the promo assertions can name the right value.
-  let rootId: string;
-  let opsId: string;
 
   async function call(token: string | null, method: string, path: string, body?: unknown): Promise<{ status: number; json: Record<string, unknown> }> {
     const res = await fetch(`${base}${path}`, {
@@ -342,7 +316,6 @@ describe.skipIf(!mongo)('admin ops HTTP routes e2e', () => {
     suspiciousPve = new FakeSuspiciousPve();
     events = new FakeEvents();
     gachaPools = new FakeGachaPools();
-    promo = new FakePromo();
     reports = new FakeReports();
     appeals = new FakeAppeals();
     feedback = new FakeFeedback();
@@ -353,13 +326,12 @@ describe.skipIf(!mongo)('admin ops HTTP routes e2e', () => {
       cols: m.collections, now,
       stats: stubStats, players: stubPlayer, antiCheat, mismatches: stubMismatches, pvpCardStats: stubPvpCardStats,
       suspiciousPve, mail, analytics, world, auction: stubAuction, ladder: stubLadder, events, gachaPools,
-      promo, paddleEvents: stubPaddleEvents, reports, appeals, enforcement: stubEnforcement, feedback,
+      paddleEvents: stubPaddleEvents, reports, appeals, enforcement: stubEnforcement, feedback,
     });
 
     await seedSuperAdmin(m.collections, 'root', 'rootpass', now);
     const root = await actorOf(svc, 'root');
-    rootId = root.adminId;
-    opsId = (await svc.createAccount(root, { username: 'ops2', password: 'ops2pass', role: 'ops', displayName: 'Ops Two' })).id;
+    await svc.createAccount(root, { username: 'ops2', password: 'ops2pass', role: 'ops', displayName: 'Ops Two' });
     await svc.createAccount(root, { username: 'csuser', password: 'cspass', role: 'support', displayName: 'CS' });
 
     server = startHttpApi({ host: '127.0.0.1', port: 0, jwt: { secret: JWT_SECRET }, internalAuth: loadInternalAuth(INTERNAL_KEY) }, svc);
@@ -802,58 +774,6 @@ describe.skipIf(!mongo)('admin ops HTTP routes e2e', () => {
 
   // ── commerceRoutes: Paddle event log, limited-time events, custom gacha pools ──
   describe('commerceRoutes', () => {
-    // ── Promo codes (B-PROMO): restored 2026-08-20 after the 2026-07-28 dead-endpoint sweep deleted
-    // them for having no ops-frontend caller. These cases are what makes that sweep's premise false in
-    // future, so the routes are not "unreachable" again on the next audit.
-    it('promo: create → list reflects it (code stored uppercase, note/limit/expiry carried through)', async () => {
-      expect((await call(rootToken, 'GET', '/admin/promo/codes')).json.codes).toEqual([]);
-      const create = await call(rootToken, 'POST', '/admin/promo/codes', {
-        code: 'welcome2026', coins: 250, totalLimit: 500, expiresAt: 9_000_000_000_000, note: 'launch week',
-      });
-      expect(create.status).toBe(200);
-      expect(create.json.code).toBe('WELCOME2026');
-      const list = await call(rootToken, 'GET', '/admin/promo/codes');
-      expect(list.status).toBe(200);
-      expect(list.json.codes).toMatchObject([
-        { code: 'WELCOME2026', coins: 250, totalLimit: 500, expiresAt: 9_000_000_000_000, note: 'launch week', redeemed: 0, createdBy: rootId },
-      ]);
-    });
-    it('promo: creating writes a promo.create audit entry naming the code + coin amount', async () => {
-      await call(rootToken, 'POST', '/admin/promo/codes', { code: 'AUDITED', coins: 42 });
-      const audit = await call(rootToken, 'GET', '/admin/audit');
-      const entry = (audit.json.entries as Array<{ action: string; target?: string; summary?: string }>)
-        .find((e) => e.action === 'promo.create' && e.target === 'AUDITED');
-      expect(entry).toMatchObject({ actor: rootId, summary: '42 coins' });
-    });
-    it('promo: a duplicate code surfaces the 409 from commercial rather than a generic 500', async () => {
-      expect((await call(rootToken, 'POST', '/admin/promo/codes', { code: 'DUPE', coins: 10 })).status).toBe(200);
-      const again = await call(rootToken, 'POST', '/admin/promo/codes', { code: 'dupe', coins: 10 });
-      expect(again.status).toBe(409);
-    });
-    // Guarding here (not only in commercial) keeps a typo'd form from costing a round trip, and stops a
-    // 0-coin code — which commercial rejects with an opaque 'BAD_REQUEST' — from ever being sent.
-    it('promo: missing code or non-positive coins → 400 before any client call', async () => {
-      expect((await call(rootToken, 'POST', '/admin/promo/codes', { coins: 100 })).status).toBe(400);
-      expect((await call(rootToken, 'POST', '/admin/promo/codes', { code: 'FREE', coins: 0 })).status).toBe(400);
-      expect((await call(rootToken, 'POST', '/admin/promo/codes', { code: 'FREE', coins: -5 })).status).toBe(400);
-      const bad = await call(rootToken, 'POST', '/admin/promo/codes', { code: '', coins: 100 });
-      expect(bad.status).toBe(400);
-      expect(bad.json).toMatchObject({ ok: false, code: 'bad_request' });
-    });
-    // promo.manage is super/ops only — minting currency must not be reachable by support/CS.
-    it('promo: a role without promo.manage gets 403 on both read and mint', async () => {
-      expect((await call(csToken, 'GET', '/admin/promo/codes')).status).toBe(403);
-      const post = await call(csToken, 'POST', '/admin/promo/codes', { code: 'SNEAKY', coins: 100 });
-      expect(post.status).toBe(403);
-      expect(post.json).toMatchObject({ ok: false, code: 'forbidden' });
-      expect(promo.codes.has('SNEAKY')).toBe(false);
-    });
-    it('promo: an ops-role actor (which does hold promo.manage) can mint', async () => {
-      const r = await call(opsToken, 'POST', '/admin/promo/codes', { code: 'OPSMADE', coins: 5 });
-      expect(r.status).toBe(200);
-      expect(promo.codes.get('OPSMADE')).toMatchObject({ coins: 5, createdBy: opsId });
-    });
-
     it('GET /admin/paddle/events', async () => {
       const r = await call(rootToken, 'GET', '/admin/paddle/events?accountId=acc-1');
       expect(r.status).toBe(200);

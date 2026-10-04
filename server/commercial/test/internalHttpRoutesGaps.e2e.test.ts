@@ -2,10 +2,10 @@
 // internalHttp.e2e.test.ts). That file only ever drives GET /internal/wallet, POST
 // /internal/recharge/verify, POST /internal/shop/charge, GET /internal/orders/undelivered, and the
 // 401/404 boundary — the other ~20 routes (spend/grant/gacha draw/order delivered/non-coin receipt/ads
-// credit/victory credit/promo codes+redeem/paddle complete+refund+event+events list/custom gacha pool
+// credit/victory credit/paddle complete+refund+event+events list/custom gacha pool
 // create+close/fate redeem/monthly+year card buy+claim/starter buy/gacha pools list/audit coin-gains)
 // were only ever exercised by calling CommercialService methods directly (service.e2e.test.ts,
-// service-idempotency.e2e.test.ts, promo.test.ts, audit.e2e.test.ts, ...) — never through the actual
+// service-idempotency.e2e.test.ts, audit.e2e.test.ts, ...) — never through the actual
 // node:http request parsing + route-matching layer in internalHttp.ts. This file drives each of them
 // through the real HTTP surface at least once; business-rule depth is already covered by those files.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -127,32 +127,6 @@ describe.skipIf(!mongo)('commercial internalHttp routes gap-fill e2e', () => {
     const r = await post('/internal/victory/credit', { accountId: 'victory-a', amount: 5, dayKey: '2026-08-14' });
     expect(r.status).toBe(200);
     expect(await jsonBody(r)).toMatchObject({ ok: true });
-  });
-
-  describe('promo codes + redeem', () => {
-    it('GET /internal/promo/codes: empty initially', async () => {
-      const r = await get('/internal/promo/codes');
-      expect(r.status).toBe(200);
-      expect((await jsonBody(r)).codes).toEqual([]);
-    });
-
-    it('POST /internal/promo/codes: creates a code, then GET lists it', async () => {
-      const r = await post('/internal/promo/codes', { code: 'GAPCODE', coins: 150, createdBy: 'admin-gap' });
-      expect(r.status).toBe(200);
-      expect(await jsonBody(r)).toMatchObject({ ok: true, code: 'GAPCODE' });
-      const list = await jsonBody(await get('/internal/promo/codes'));
-      expect(list.codes.some((c: { _id: string }) => c._id === 'GAPCODE')).toBe(true);
-    });
-
-    it('POST /internal/promo/redeem: credits the account, rejects unknown codes', async () => {
-      const r = await post('/internal/promo/redeem', { accountId: 'promo-gap-a', code: 'gapcode' }); // lowercase — case-insensitive
-      expect(r.status).toBe(200);
-      expect(await jsonBody(r)).toMatchObject({ ok: true, coinsGranted: 150 });
-
-      const bad = await post('/internal/promo/redeem', { accountId: 'promo-gap-a', code: 'NO-SUCH-CODE' });
-      expect(bad.status).toBe(200);
-      expect(await jsonBody(bad)).toMatchObject({ ok: false });
-    });
   });
 
   describe('paddle', () => {

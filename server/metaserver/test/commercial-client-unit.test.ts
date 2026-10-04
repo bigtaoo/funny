@@ -57,8 +57,6 @@ const GENERIC_OK = {
   decrementedCents: 3,
   events: [{ transactionId: 't1', eventType: 'x', rawEvent: '{}', ts: 1 }],
   accounts: [{ accountId: 'a', nonRechargeGain: 10 }],
-  codes: [{ code: 'c1', coins: 5, redeemed: 0, createdBy: 'x', createdAt: 1 }],
-  code: 'c1',
 };
 
 beforeAll(async () => {
@@ -137,8 +135,6 @@ describe('HttpCommercialClient — POST-only Body<T> wrapper methods', () => {
       },
       { path: '/internal/ads/credit', call: () => client.adsCredit({ accountId: 'a', amount: 1, dayKey: 'd' }) },
       { path: '/internal/victory/credit', call: () => client.victoryCredit({ accountId: 'a', amount: 1, dayKey: 'd' }) },
-      { path: '/internal/promo/redeem', call: () => client.promoRedeem({ accountId: 'a', code: 'c' }) },
-      { path: '/internal/promo/codes', call: () => client.createPromoCode({ code: 'c', coins: 1, createdBy: 'ops' }) },
       { path: '/internal/paddle/complete', call: () => client.paddleComplete({ accountId: 'a', transactionId: 't', coins: 1 }) },
       { path: '/internal/paddle/refund', call: () => client.paddleRefund({ transactionId: 't' }) },
     ];
@@ -263,17 +259,6 @@ describe('HttpCommercialClient — GET-based methods', () => {
     const before = requestCount;
     const nullClient = new HttpCommercialClient(null, KEY);
     expect(await nullClient.undeliveredOrders('a')).toEqual([]);
-    expect(requestCount).toBe(before);
-  });
-
-  it('listPromoCodes: parses codes array; baseUrl=null → [] with no request', async () => {
-    const client = new HttpCommercialClient(base, KEY);
-    const codes = await client.listPromoCodes();
-    expect(codes).toEqual(GENERIC_OK.codes);
-
-    const before = requestCount;
-    const nullClient = new HttpCommercialClient(null, KEY);
-    expect(await nullClient.listPromoCodes()).toEqual([]);
     expect(requestCount).toBe(before);
   });
 

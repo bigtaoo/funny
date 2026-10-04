@@ -19,7 +19,6 @@ const EXPECTED_CLIENTS = [
   'HttpLadderClient',
   'HttpEventsClient',
   'HttpGachaPoolsClient',
-  'HttpPromoClient',
   'HttpReportsClient',
   'HttpAppealsClient',
   'HttpEnforcementClient',

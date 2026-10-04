@@ -9,11 +9,10 @@ import type {
   GachaPoolView,
   CoinGainRow,
   PaddleEventView,
-  PromoCodeView,
 } from './commercialClient/views.js';
 
 // Re-exported so existing `from '../commercialClient.js'` imports keep resolving after the split.
-export type { GachaResultEntry, UndeliveredOrder, WalletView, GachaPoolView, CoinGainRow, PaddleEventView, PromoCodeView };
+export type { GachaResultEntry, UndeliveredOrder, WalletView, GachaPoolView, CoinGainRow, PaddleEventView };
 
 /** meta-side commercial client interface (allows injecting a fake implementation in unit tests). */
 export interface CommercialClient {
@@ -165,20 +164,6 @@ export interface CommercialClient {
     dayKey: string;
     clientPlatform?: string;
   }): Promise<Body<{ coinsAfter: number; credited: number; capped: boolean }>>;
-  promoRedeem(args: {
-    accountId: string;
-    code: string;
-    clientPlatform?: string;
-  }): Promise<Body<{ coinsAfter: number; coinsGranted: number }>>;
-  createPromoCode(args: {
-    code: string;
-    coins: number;
-    expiresAt?: number;
-    totalLimit?: number;
-    note?: string;
-    createdBy: string;
-  }): Promise<Body<{ code: string }>>;
-  listPromoCodes(): Promise<PromoCodeView[]>;
   /** Credit coins from a verified Paddle transaction (signature already checked by metaserver). */
   paddleComplete(args: {
     accountId: string;
@@ -401,27 +386,6 @@ export class HttpCommercialClient implements CommercialClient {
       '/internal/victory/credit',
       args,
     );
-  }
-
-  promoRedeem(args: { accountId: string; code: string; clientPlatform?: string }) {
-    return this.post<{ coinsAfter: number; coinsGranted: number }>('/internal/promo/redeem', args);
-  }
-
-  createPromoCode(args: {
-    code: string;
-    coins: number;
-    expiresAt?: number;
-    totalLimit?: number;
-    note?: string;
-    createdBy: string;
-  }) {
-    return this.post<{ code: string }>('/internal/promo/codes', args);
-  }
-
-  async listPromoCodes(): Promise<PromoCodeView[]> {
-    if (!this.baseUrl) return [];
-    const b = await this.getJson<{ codes: PromoCodeView[] }>('/internal/promo/codes');
-    return b?.ok ? b.codes : [];
   }
 
   paddleComplete(args: { accountId: string; transactionId: string; coins: number; usdCents?: number }) {

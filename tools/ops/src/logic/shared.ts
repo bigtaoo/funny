@@ -47,7 +47,7 @@ export function pct(rate: number): string {
 }
 
 // ── ms ↔ `<input type="datetime-local">` ("YYYY-MM-DDTHH:mm", local timezone) ──
-// Shared by the timed-event, gacha-pool and promo-code forms. Local time on purpose: an operator
+// Shared by the timed-event and gacha-pool forms. Local time on purpose: an operator
 // scheduling a festival window thinks in their own clock, and the value is converted back through
 // localInputToMs on save.
 
