@@ -808,8 +808,9 @@ OTA 管线**不需要 macOS runner**（无原生编译），`ubuntu-latest` 即�
 
 ## 12. 待办 checklist
 
-- [ ] **build 12 拒审（3.1.1 兑换码 + 1.2 UGC）的返工**（2026-09-29，§9.2 / §9.3）：代码已合；剩部署服务端 +
-      VPS 配 socialsvc `NW_ALERT_WEBHOOK_URL`、出 build 13、真机录屏写进 Review Notes、回复 Apple 后重新提交
+- [x] **build 12 拒审（3.1.1 兑换码 + 1.2 UGC）的返工**（2026-09-29，§9.2 / §9.3）：**2026-10-04 以 build 19 重新提交，
+      Waiting for Review**。录屏 `https://nivara.gamestao.com/review/app-review-build19.mp4`（随官网部署，
+      `/review/*` 走 Worker 支持 Range，Safari 才能播），回复见 [`APP_REVIEW_REPLY_BUILD13.md`](APP_REVIEW_REPLY_BUILD13.md)
 
 - [x] Apple Developer：建 App ID（勾 IAP）+ ASC App 记录
 - [x] 生成 Distribution 证书 `.p12` / App Store 描述文件 / ASC API Key `.p8`
