@@ -116,12 +116,12 @@ async function derive(srcRel, outAbs, maxLongEdge) {
 }
 
 for (const [name, src] of Object.entries(UNITS)) {
-  // medic's master is only a .xcf in art/ (no flattened png), so its export cannot be re-derived.
+  // A unit whose master png is missing keeps its committed export.
   if (!fs.existsSync(path.join(ROOT, src))) { console.log(`${name}.png`.padEnd(24) + ' (no master png — kept as committed)'); continue; }
   await derive(src, path.join(OUT_DIR, `${name}.png`), UNIT_MAX_LONG_EDGE);
 }
-// Thumbnails come from the committed full exports, not the masters: every unit has one (medic has no
-// master png), and the thumbnail is then guaranteed to be the same picture that ships at full size.
+// Thumbnails come from the committed full exports, not the masters: every unit has one, and the
+// thumbnail is then guaranteed to be the same picture that ships at full size.
 // Skipped where the export is already within 25% of the thumbnail size: the copy would save nothing
 // and cardArt.ts falls back to the full url for a unit without a thumbnail.
 for (const name of Object.keys(UNITS)) {
