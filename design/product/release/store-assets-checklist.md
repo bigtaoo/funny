@@ -314,7 +314,9 @@ iOS/web 拿不到 token 就 `goLogin()`，落在 `LoginScene` 的三个按钮上
 整段只需切一次数字面板；`MIN_PASSWORD_LEN` 是 6，所以还有很大余量。
 
 抵御暴力猜测靠的不是口令强度，而是另外两件事：服务端的 `allowAuthAttempt` 认证限流（`429 RATE_LIMITED`），
-以及**过审后轮换或停用这个账号**（loginId 在 ASC 里对 Apple 可见，别让它长期挂着一个弱口令）。
+账号本身**永久保留、不轮换不停用**（2026-10-04 订正）：以后每次更新提审，ASC「Sign-In」都得填一个能登录的账号，
+停掉只会让下次提审重建一遍；账号里没有值钱的东西，被人登进去也只是个新手号。只有口令确实泄露才改，改完在下次提审前同步 ASC。
+每次提审前在网页版登录一次确认它还能用。
 
 **存放**：**不进 git**。2026-09-30 起存在加密凭证库 `D:\secrets`（`github.com/bigtaoo/secrets`）的
 `secrets/infra/access.yaml`，键 `funny-appstore-review`，用 `sops -d secrets/infra/access.yaml` 查看。
