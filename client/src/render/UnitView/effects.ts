@@ -6,7 +6,7 @@
 // plain readonly references — every mutation on them is in-place (.set/.delete/.add), never a
 // wholesale reassignment of the collection itself, so no getter/setter needed for those.
 import * as PIXI from 'pixi.js-legacy';
-import type { StickmanRuntime } from '../stickman/StickmanRuntime';
+import type { UnitRuntime } from '../unitRuntime';
 import { fx } from '../theme';
 
 const SPELL_TARGET_COLOR = fx.meteor;
@@ -18,7 +18,7 @@ export const NO_SPELL_TARGETS: ReadonlySet<number> = new Set();
 
 export interface EffectsHost {
   readonly sprites: Map<number, PIXI.Container>;
-  readonly stickmanRuntimes: Map<number, StickmanRuntime>;
+  readonly stickmanRuntimes: Map<number, UnitRuntime>;
   readonly hpTimers: Map<number, number>;
   readonly effectTicks: Set<() => void>;
   previewUnitIds: ReadonlySet<number>;

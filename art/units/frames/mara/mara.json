@@ -1,0 +1,69 @@
+{
+  "out": "../../../../client/src/assets/units/frames/mara",
+  "height": 104,
+  "screenHeight": 46,
+  "points": {"hit": [0.0, -0.66]},
+  "shadow": [0.3, 0.08],
+  "sources": {
+    "base": {"file": "../../mara/mara.png", "ground": [375, 1425], "crown": 40}
+  },
+  "clips": {
+    "idle": {
+      "source": "base", "frames": 8, "fps": 8, "loop": true,
+      "body": {"sy": {"sin": 0.01, "bias": 1}, "sx": {"sin": -0.005, "bias": 1}},
+      "deform": [
+        {"type": "move", "region": {"c": [400, 150], "r": [130, 130], "feather": 0.5}, "dy": {"sin": 5, "phase": 0.15}},
+        {"type": "wave", "region": {"c": [230, 420], "r": [120, 220], "feather": 0.4}, "root": [300, 200],
+         "dir": [-0.35, 1], "length": 380, "wavelength": 500, "amp": 9},
+        {"type": "rotate", "region": {"c": [560, 700], "r": [260, 230], "feather": 0.35}, "pivot": [520, 330],
+         "angle": {"sin": 1.5, "phase": 0.3}}
+      ]
+    },
+    "walk": {
+      "source": "base", "frames": 10, "fps": 13, "loop": true,
+      "body": {
+        "dy": {"keys": [[0, 0], [0.25, -26], [0.5, 0], [0.75, -26]]},
+        "sy": {"keys": [[0, 0.975], [0.25, 1.012], [0.5, 0.975], [0.75, 1.012]]},
+        "sx": {"keys": [[0, 1.015], [0.25, 0.992], [0.5, 1.015], [0.75, 0.992]]},
+        "rot": {"sin": 1.0, "cycles": 2}
+      },
+      "deform": [
+        {"type": "rotate", "region": {"c": [270, 1110], "r": [110, 380], "a": 9, "feather": 0.15}, "pivot": [335, 760],
+         "angle": {"sin": 8}},
+        {"type": "rotate", "region": {"c": [490, 1110], "r": [110, 380], "a": -10, "feather": 0.15}, "pivot": [425, 760],
+         "angle": {"sin": -8}},
+        {"type": "rotate", "region": {"c": [560, 700], "r": [260, 230], "feather": 0.35}, "pivot": [520, 330],
+         "angle": {"sin": -4}},
+        {"type": "move", "region": {"c": [400, 150], "r": [130, 130], "feather": 0.5}, "dy": {"sin": 6, "cycles": 2, "phase": 0.6}},
+        {"type": "wave", "region": {"c": [230, 420], "r": [120, 220], "feather": 0.4}, "root": [300, 200],
+         "dir": [-0.35, 1], "length": 380, "wavelength": 340, "amp": 16, "cycles": 2}
+      ]
+    },
+    "attack": {
+      "source": "base", "frames": 10, "fps": 12, "loop": false, "hitAt": 0.6,
+      "body": {
+        "rot": {"keys": [[0, 0], [0.5, -4], [0.6, 2], [0.75, 1], [1, 0]]},
+        "dx": {"keys": [[0, 0], [0.5, -10], [0.6, -24], [1, 0]]},
+        "sy": {"keys": [[0, 1], [0.5, 1.02], [0.6, 0.97], [1, 1]]}
+      },
+      "deform": [
+        {"type": "move", "region": {"c": [395, 555], "r": [110, 90], "feather": 0.45},
+         "dx": {"keys": [[0, 0], [0.5, -70], [0.58, 15], [0.75, 0], [1, 0]]},
+         "dy": {"keys": [[0, 0], [0.5, -20], [0.58, 5], [1, 0]]}},
+        {"type": "rotate", "region": {"c": [560, 700], "r": [270, 240], "feather": 0.3}, "pivot": [600, 710],
+         "angle": {"keys": [[0, 0], [0.5, -8], [0.6, 7], [0.7, -3], [0.8, 1], [1, 0]]}},
+        {"type": "move", "region": {"c": [400, 150], "r": [130, 130], "feather": 0.5},
+         "dx": {"keys": [[0, 0], [0.5, -8], [0.6, 6], [1, 0]]}}
+      ]
+    },
+    "death": {
+      "source": "base", "frames": 9, "fps": 12, "loop": false,
+      "body": {
+        "rot": {"keys": [[0, 0], [0.2, 8], [1, -88]]},
+        "dx": {"keys": [[0, 0], [0.2, 20], [1, -140]]},
+        "dy": {"keys": [[0, 0], [0.2, -30], [0.75, 0], [0.85, -25], [1, 0]]},
+        "sy": {"keys": [[0, 1], [0.2, 1.04], [0.8, 1], [1, 0.95]]}
+      }
+    }
+  }
+}

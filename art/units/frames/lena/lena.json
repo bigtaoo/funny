@@ -1,0 +1,72 @@
+{
+  "out": "../../../../client/src/assets/units/frames/lena",
+  "height": 140,
+  "screenHeight": 64,
+  "points": {"hit": [0.05, -0.68]},
+  "shadow": [0.36, 0.09],
+  "sources": {
+    "base": {"file": "../../lena/lena.png", "ground": [345, 1335], "crown": 10}
+  },
+  "clips": {
+    "idle": {
+      "source": "base", "frames": 8, "fps": 8, "loop": true,
+      "body": {"sy": {"sin": 0.012, "bias": 1}, "sx": {"sin": -0.006, "bias": 1}},
+      "deform": [
+        {"type": "move", "region": {"c": [420, 120], "r": [170, 150], "feather": 0.5}, "dy": {"sin": 6, "phase": 0.15}},
+        {"type": "rotate", "region": {"c": [665, 580], "r": [240, 330], "feather": 0.25}, "pivot": [560, 330],
+         "angle": {"sin": 1.2, "phase": 0.3}},
+        {"type": "wave", "region": {"c": [220, 300], "r": [120, 170], "feather": 0.4}, "root": [300, 160],
+         "dir": [-0.6, 1], "length": 260, "wavelength": 400, "amp": 8}
+      ]
+    },
+    "walk": {
+      "source": "base", "frames": 10, "fps": 12, "loop": true,
+      "body": {
+        "dy": {"keys": [[0, 0], [0.25, -22], [0.5, 0], [0.75, -22]]},
+        "sy": {"keys": [[0, 0.97], [0.25, 1.015], [0.5, 0.97], [0.75, 1.015]]},
+        "sx": {"keys": [[0, 1.02], [0.25, 0.99], [0.5, 1.02], [0.75, 0.99]]},
+        "rot": {"sin": 1.2, "cycles": 2}
+      },
+      "deform": [
+        {"type": "rotate", "region": {"c": [170, 1140], "r": [170, 300], "a": 22, "feather": 0.15}, "pivot": [265, 905],
+         "angle": {"sin": 11}},
+        {"type": "rotate", "region": {"c": [540, 1140], "r": [150, 290], "a": -14, "feather": 0.15}, "pivot": [470, 905],
+         "angle": {"sin": -11}},
+        {"type": "rotate", "region": {"c": [140, 700], "r": [110, 170], "feather": 0.4}, "pivot": [180, 560],
+         "angle": {"sin": -9}},
+        {"type": "rotate", "region": {"c": [665, 580], "r": [240, 330], "feather": 0.25}, "pivot": [560, 330],
+         "angle": {"sin": 2.5, "cycles": 2, "phase": 0.2}},
+        {"type": "move", "region": {"c": [420, 120], "r": [170, 150], "feather": 0.5}, "dy": {"sin": 6, "cycles": 2, "phase": 0.6}},
+        {"type": "wave", "region": {"c": [220, 300], "r": [120, 170], "feather": 0.4}, "root": [300, 160],
+         "dir": [-0.6, 1], "length": 260, "wavelength": 300, "amp": 14, "cycles": 2}
+      ]
+    },
+    "attack": {
+      "source": "base", "frames": 10, "fps": 12, "loop": false, "hitAt": 0.5,
+      "body": {
+        "dx": {"keys": [[0, 0], [0.3, -40], [0.5, 70], [0.65, 60], [1, 0]]},
+        "rot": {"keys": [[0, 0], [0.3, -5], [0.5, 7], [0.65, 6], [1, 0]]},
+        "sx": {"keys": [[0, 1], [0.3, 0.96], [0.5, 1.05], [0.7, 1.0], [1, 1]]},
+        "sy": {"keys": [[0, 1], [0.3, 1.03], [0.5, 0.96], [0.7, 1.0], [1, 1]]}
+      },
+      "deform": [
+        {"type": "move", "region": {"c": [665, 580], "r": [250, 340], "feather": 0.25},
+         "dx": {"keys": [[0, 0], [0.3, -30], [0.5, 80], [0.65, 70], [1, 0]]},
+         "dy": {"keys": [[0, 0], [0.3, 10], [0.5, -20], [1, 0]]}},
+        {"type": "rotate", "region": {"c": [140, 700], "r": [110, 170], "feather": 0.4}, "pivot": [180, 560],
+         "angle": {"keys": [[0, 0], [0.3, 25], [0.5, -20], [1, 0]]}},
+        {"type": "rotate", "region": {"c": [540, 1140], "r": [150, 290], "a": -14, "feather": 0.15}, "pivot": [470, 905],
+         "angle": {"keys": [[0, 0], [0.3, 0], [0.5, -10], [0.7, -8], [1, 0]]}}
+      ]
+    },
+    "death": {
+      "source": "base", "frames": 9, "fps": 12, "loop": false,
+      "body": {
+        "rot": {"keys": [[0, 0], [0.2, 8], [1, -88]]},
+        "dx": {"keys": [[0, 0], [0.2, 20], [1, -120]]},
+        "dy": {"keys": [[0, 0], [0.2, -30], [0.75, 0], [0.85, -25], [1, 0]]},
+        "sy": {"keys": [[0, 1], [0.2, 1.04], [0.8, 1], [1, 0.95]]}
+      }
+    }
+  }
+}

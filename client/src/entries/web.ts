@@ -34,6 +34,12 @@ if (/[?&]sketch\b/.test(window.location.search)) {
     const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
     startSketchDemo(canvas);
   }).catch(console.error);
+} else if (/[?&]unitlab\b/.test(window.location.search)) {
+  // `?unitlab` plays each frame-sheet unit next to its bone rig (see render/unitLab.ts).
+  import('../render/unitLab').then(({ startUnitLab }) => {
+    const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
+    return startUnitLab(canvas);
+  }).catch(console.error);
 } else {
   startApp(new WebPlatform('game-canvas')).catch(console.error);
 }

@@ -6,6 +6,7 @@
 - **游戏逻辑**：纯 TS，固定点数（`@nw/engine/math/fixed`），与渲染解耦
 - **平台适配**：Web / 微信小游戏 / CrazyGames，多入口 webpack 构建
 - **骨骼动画 Runtime**：`StickmanRuntime`（`src/render/stickman/`），加载 `.tao` ZIP，驱动 PIXI Sprite
+- **序列帧 Runtime（2026-10 试点）**：`FrameRuntime`（`src/render/frames/`），播放 `tools/unit-frames/bake.py` 烘焙的图集；与 `StickmanRuntime` 共用 `src/render/unitRuntime.ts` 接口，`UnitView/assets.ts` 的 `FRAME_ASSETS` 决定哪些单位走它（现为 Lena、Mara）。`?unitlab` 把骨骼版和序列帧版并排播放（`src/render/unitLab.ts`），`?frames=0` 在战斗里关掉序列帧。设计见 `design/product/art-direction.md` §4.3.1
 - **确定性约束**：游戏逻辑（`@nw/engine` = `server/engine/src/`）内严禁 `Math.random()`，必须用 `Prng`（`@nw/engine/math/prng`）
 - **多语言（i18n）**：`zh.ts` 为键唯一来源（`TranslationKey`），`en`/`de` 声明为 `Record<TranslationKey, string>` 漏翻报错；`t(key, params?)` 取词，支持 `{param}` 插值
 - **网络协议 codegen**：`transport.proto`/`game.proto` → ts-proto via buf → `src/net/proto/`；`openapi.yml` → openapi-typescript → `src/net/openapi.ts`；改契约须重跑 `npm run proto:gen` / `npm run rest:gen`
