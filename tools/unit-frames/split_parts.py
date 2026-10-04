@@ -9,6 +9,7 @@ spec.json:
       {"name": "arm_r",
        "poly": [[x, y], ...],             # region of the source that belongs to this part
        "stroke": {"line": [[x, y], ...], "width": w},  # optional: thick polyline, added
+       "discs": [[x, y, r], ...],         # optional: round joint caps, added (see below)
        "hsv": [[h, s, v], [h, s, v]],     # optional: keep only pixels in this OpenCV HSV
        "grow": 6,                         #   range, grown into dark outline pixels by this many px
        "exclude": [[[x, y], ...], ...],   # optional: areas removed from the part
@@ -17,6 +18,10 @@ spec.json:
        "pivot": [x, y]}                   # joint position in source pixels
     ]
   }
+
+A limb cut flat at a joint shows the cut's corners as soon as the joint bends. Instead, cut
+both limbs at the pivot and give each a disc of the limb's half-width centred on the pivot:
+the two discs hold the same pixels, so the joint stays one round knee / elbow at any angle.
 
 Every part keeps only foreground pixels (see cutout.background_mask). Hidden areas are
 filled by OpenCV inpainting so a part still looks whole when a joint rotates.
@@ -35,6 +40,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from cutout import background_mask  # noqa: E402
 
 PAD = 4  # transparent margin around each exported part
+SPECK = 300  # px; smaller detached islands are dropped from a part
 DARK = 80  # HSV value below this counts as outline, not paint
 OUTLINE = 7  # px of outline redrawn along filled edges (matches the source art)
 OUTLINE_RGB = (28, 20, 16)
@@ -58,6 +64,10 @@ def region_mask(src, hsv, part):
         d.line(pts, fill=255, width=w)
         for x, y in pts:  # round joints
             d.ellipse([x - w / 2, y - w / 2, x + w / 2, y + w / 2], fill=255)
+    if "discs" in part:
+        d = ImageDraw.Draw(m)
+        for x, y, r in part["discs"]:
+            d.ellipse([x - r, y - r, x + r, y + r], fill=255)
     m = np.array(m)
     if "hsv" in part:
         lo, hi = (np.array(v, np.uint8) for v in part["hsv"])
@@ -110,6 +120,12 @@ def split(spec_path, out_dir):
             k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * OUTLINE + 1,) * 2)
             ring = (solid > 0) & (cv2.erode(solid, k) == 0) & fill
             rgba[ring] = OUTLINE_RGB
+        # drop specks a cut leaves behind (a neighbour's sliver, a fleck of shading), which
+        # would otherwise float off the part once it moves
+        n, labels, stats, _ = cv2.connectedComponentsWithStats((alpha > 127).astype(np.uint8))
+        for i in range(1, n):
+            if stats[i, cv2.CC_STAT_AREA] < SPECK:
+                alpha[labels == i] = 0
         im = Image.fromarray(np.dstack([rgba, alpha]).astype(np.uint8), "RGBA")
         x0, y0, x1, y1 = im.getbbox()
         x0, y0 = max(0, x0 - PAD), max(0, y0 - PAD)
