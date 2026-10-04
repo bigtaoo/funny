@@ -4,13 +4,13 @@
  "screenHeight": 46,
  "points": {
   "hit": [
-   0.1,
-   -0.6
+   0.095,
+   -0.57
   ]
  },
  "shadow": [
-  0.36,
-  0.09
+  0.342,
+  0.085
  ],
  "sources": {
   "rig": {
@@ -19,7 +19,7 @@
     300,
     652
    ],
-   "crown": 3,
+   "crown": -31,
    "parent": {
     "thigh_b": null,
     "shin_b": "thigh_b",
