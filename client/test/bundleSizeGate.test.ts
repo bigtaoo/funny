@@ -70,8 +70,8 @@ function writeDist(opts: { entryBytes?: number; gateAssetBytes?: number; incompr
   return { dist, budget };
 }
 
-function run(f: { dist: string; budget: string }): { code: number; out: string } {
-  const r = spawnSync(process.execPath, [GATE, `--dist=${f.dist}`, `--budget=${f.budget}`], { encoding: 'utf8' });
+function run(f: { dist: string; budget: string }, extra: string[] = []): { code: number; out: string } {
+  const r = spawnSync(process.execPath, [GATE, `--dist=${f.dist}`, `--budget=${f.budget}`, ...extra], { encoding: 'utf8' });
   return { code: r.status ?? 1, out: `${r.stdout}${r.stderr}` };
 }
 
@@ -110,6 +110,26 @@ describe('checkBundleSize gate', () => {
 
   it('fails when the whole dist blows its budget', () => {
     const r = run(writeDist({ budgets: { ...BUDGETS, 'dist.total': { maxBytes: 1024, reason: 'fixture' } } }));
+    expect(r.code).toBe(1);
+    expect(r.out).toMatch(/dist\.total/);
+  });
+
+  // Website pages (and the App Review recording) are emitted only by TARGET=web, so no package
+  // inherits them. Only top-level names that exist in the web-only source dir are skipped — the
+  // game's own index.html and anything under static/ still count.
+  it('leaves web-only site pages out of the whole-dist figure, but nothing else', () => {
+    const f = writeDist({ budgets: { ...BUDGETS, 'dist.total': { maxBytes: 200 * 1024, reason: 'fixture' } } });
+    const webSrc = path.join(tmp, 'web');
+    fs.mkdirSync(path.join(webSrc, 'review'), { recursive: true });
+    fs.writeFileSync(path.join(webSrc, 'index.html'), '');
+    fs.writeFileSync(path.join(webSrc, 'home.html'), '');
+    fs.mkdirSync(path.join(f.dist, 'review'));
+    fs.writeFileSync(path.join(f.dist, 'review', 'clip.mp4'), Buffer.alloc(300 * 1024));
+    fs.writeFileSync(path.join(f.dist, 'home.html'), Buffer.alloc(300 * 1024));
+    expect(run(f, [`--web-only=${webSrc}`]).code).toBe(0);
+    // The same bytes under static/ are package bytes and must still fail.
+    fs.writeFileSync(path.join(f.dist, 'static', 'clip.mp4'), Buffer.alloc(300 * 1024));
+    const r = run(f, [`--web-only=${webSrc}`]);
     expect(r.code).toBe(1);
     expect(r.out).toMatch(/dist\.total/);
   });
