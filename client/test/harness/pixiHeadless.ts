@@ -17,6 +17,7 @@
 // PIXI — settings is a singleton, so the patched ADAPTER is shared.
 
 import { settings } from 'pixi.js-legacy';
+import { installCjkWordWrap } from '../../src/render/pixiText';
 
 // PIXI.Ticker (used by BoilingSprite etc.) starts a requestAnimationFrame loop the
 // moment a listener is added. Node has no RAF — provide inert stubs so the ticker
@@ -158,3 +159,6 @@ settings.ADAPTER = {
   },
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 } as any;
+
+// Same CJK line breaking as app.ts installs at boot, so wrapped text lays out here as it does live.
+installCjkWordWrap();

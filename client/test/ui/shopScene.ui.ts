@@ -1,9 +1,8 @@
 // Regression coverage for the 2026-07-05 ShopScene rework (see design/game/LOBBY_IA_REDESIGN.md §9):
 // the [Shop|Coins|Gacha|BattlePass] group nav moved from a full-width horizontal strip to a vertical
 // sidebar stacked inside the left tab rail (`sidebarNavW` — widened from the notebook-margin gutter
-// by 997d589b to match every other hub), and the promo-code redemption row moved from the Shop tab
-// to the Coins tab. This guards both behaviors so a future edit can't silently squash the sidebar
-// back into a horizontal strip or leave the promo row orphaned.
+// by 997d589b to match every other hub). This guards that a future edit can't silently squash the
+// sidebar back into a horizontal strip.
 //
 // Portrait's sidebar became a bottom nav bar instead (LOBBY_IA_REDESIGN.md §18, 2026-07-30) — the
 // default `buildShop` layout below ([800, 1280]) is portrait, so its own group-nav test reflects a
@@ -28,7 +27,6 @@ import type { ShopSceneCore as ShopSceneCoreType } from '../../src/scenes/ShopSc
 // the exact URL the scene feeds to getArtTexture() — i.e. the same cached PIXI texture object.
 import infantryArtUrl from '../../src/assets/units/infantry.png';
 import { buildMaterialIcon } from '../../src/render/atlas/materialAtlas';
-import { createFakeTextInput } from '../harness/fakeTextInput';
 
 type Hit = { rect: { x: number; y: number; w: number; h: number }; fn: () => void };
 
@@ -117,7 +115,6 @@ const SHOP = t('shop.title');
 const COINS = t('shop.coinsTab');
 const GACHA = t('gacha.title');
 const BATTLEPASS = t('battlepass.title');
-const PROMO_PLACEHOLDER = t('shop.promoPlaceholder');
 
 function buildShop(cb: Partial<ShopSceneCallbacks>): ShopScene {
   return new ShopScene(createLayout(W, H), new InputManager(), {
@@ -127,7 +124,6 @@ function buildShop(cb: Partial<ShopSceneCallbacks>): ShopScene {
     loadItems: async () => [],
     buy: async () => ({ ok: true }),
     openGacha() {},
-    openTextInput: createFakeTextInput().openTextInput,
     ...cb,
   });
 }
@@ -651,44 +647,6 @@ describe('ShopScene — first-purchase 2× badge only shows while the bonus is s
   });
 });
 
-describe('ShopScene — promo-code redemption lives on the Coins tab', () => {
-  it('does not show the promo field on the Shop tab', () => {
-    const scene = buildShop({
-      rechargeCoins: async () => ({ ok: true }),
-      redeemPromo: async () => ({ ok: true }),
-    });
-    expect(findLabelPos(scene.container, PROMO_PLACEHOLDER)).toBeNull();
-    scene.destroy();
-  });
-
-  it('shows the promo field after switching to the Coins tab', () => {
-    const scene = buildShop({
-      rechargeCoins: async () => ({ ok: true }),
-      redeemPromo: async () => ({ ok: true }),
-    });
-    tapLabel(scene, COINS);
-    expect(findLabelPos(scene.container, PROMO_PLACEHOLDER)).not.toBeNull();
-    scene.destroy();
-  });
-
-  it('never shows the promo field when redeemPromo is not wired (offline / logged out)', () => {
-    const scene = buildShop({ rechargeCoins: async () => ({ ok: true }) });
-    tapLabel(scene, COINS);
-    expect(findLabelPos(scene.container, PROMO_PLACEHOLDER)).toBeNull();
-    scene.destroy();
-  });
-
-  it('starting on the Coins tab (initialTab) shows the promo field immediately', () => {
-    const scene = buildShop({
-      initialTab: 'coins',
-      rechargeCoins: async () => ({ ok: true }),
-      redeemPromo: async () => ({ ok: true }),
-    });
-    expect(findLabelPos(scene.container, PROMO_PLACEHOLDER)).not.toBeNull();
-    scene.destroy();
-  });
-});
-
 // Regression coverage for the 2026-07-16 fix: skin cards carry an `artUrl` placeholder (SKIN_PLACEHOLDER_ART),
 // but drawCard() used `PIXI.Sprite.from(url)` and set width/height *immediately* — against a texture whose
 // image had not decoded yet. On a still-loading (baseTexture.valid === false) texture that yields a garbage
@@ -800,7 +758,6 @@ describe('ShopScene — landscape shop grid is 3-up and the price never overlaps
     new ShopScene(createLayout(1920, 1080), new InputManager(), {
       onBack() {}, getCoins: () => 100_000_000, getOwnedSkins: () => [],
       loadItems: async () => [], buy: async () => ({ ok: true }), openGacha() {},
-      openTextInput: createFakeTextInput().openTextInput,
       ...cb,
     });
 
@@ -863,7 +820,6 @@ describe('ShopScene — Coins tab always peeks the next tier row, even on a wide
       loadItems: async () => [], buy: async () => ({ ok: true }), openGacha() {},
       initialTab: 'coins', rechargeCoins: async () => ({ ok: true }),
       getMonetization: () => ({ subscriptionExpiry: 0, starterUsed: [] }),
-      openTextInput: createFakeTextInput().openTextInput,
       ...cb,
     });
 

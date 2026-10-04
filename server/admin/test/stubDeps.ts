@@ -1,6 +1,5 @@
 // Shared stub `AdminServiceDeps` for the branch-coverage unit tests added in the 2026-09-03 pass
-// (validators / accounts / analytics / tickets / the `!available` degrade paths). Same precedent as
-// promo.test.ts: build the domain through the REAL `AdminService` constructor so `AdminCore.audit`,
+// (validators / accounts / analytics / tickets / the `!available` degrade paths): build the domain through the REAL `AdminService` constructor so `AdminCore.audit`,
 // `requireCap` and `actorNames` under test are the genuine implementations rather than fakes, and
 // stub only the deps a given branch actually reaches.
 //

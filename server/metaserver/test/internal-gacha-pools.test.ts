@@ -1,11 +1,11 @@
-// Route-level tests for internal/promoGachaRoutes.ts (split out of internal.ts):
-//   /admin/promo/codes, /admin/gacha/pools{,/custom,/close}, /admin/gacha/catalog.
+// Route-level tests for internal/gachaPoolRoutes.ts (split out of internal.ts):
+//   /admin/gacha/pools{,/custom,/close}, /admin/gacha/catalog.
 // These routes are pure pass-throughs to CommercialClient — no cols/Mongo involved.
-// Uses Fastify inject + a fake commercial client (in-memory promo/pool stores).
+// Uses Fastify inject + a fake commercial client (in-memory pool store).
 import { describe, it, expect } from 'vitest';
 import Fastify from 'fastify';
 import type { Collections } from '@nw/shared';
-import { registerPromoGachaRoutes } from '../src/internal/promoGachaRoutes.js';
+import { registerGachaPoolRoutes } from '../src/internal/gachaPoolRoutes.js';
 import type { InternalCtx } from '../src/internal/context.js';
 import { fakeGateway, fakeCommercial, ThrowingSocialsvc } from './helpers/fakeClients.js';
 import { AccountCache } from '../src/accountCache';
@@ -26,49 +26,9 @@ function build(commercialAvailable = true) {
     accountCache: new AccountCache(),
   };
   const app = Fastify();
-  registerPromoGachaRoutes(app, ctx);
+  registerGachaPoolRoutes(app, ctx);
   return { app, commercial };
 }
-
-describe('GET/POST /admin/promo/codes', () => {
-  it('no key → 401', async () => {
-    const { app } = build();
-    const res = await app.inject({ method: 'GET', url: '/admin/promo/codes' });
-    expect(res.statusCode).toBe(401);
-  });
-
-  it('commercial unavailable → 503', async () => {
-    const { app } = build(false);
-    const res = await app.inject({ method: 'GET', url: '/admin/promo/codes', headers: authHeaders });
-    expect(res.statusCode).toBe(503);
-  });
-
-  it('create + list round-trip', async () => {
-    const { app } = build();
-    const create = await app.inject({
-      method: 'POST', url: '/admin/promo/codes', headers: authHeaders,
-      payload: { code: 'welcome10', coins: 100, createdBy: 'ops1' },
-    });
-    expect(create.statusCode).toBe(200);
-    expect(JSON.parse(create.payload)).toEqual({ ok: true, code: 'WELCOME10' }); // normalized uppercase
-
-    const list = await app.inject({ method: 'GET', url: '/admin/promo/codes', headers: authHeaders });
-    expect(JSON.parse(list.payload).codes).toHaveLength(1);
-  });
-
-  it('missing code/coins → 400', async () => {
-    const { app } = build();
-    const res = await app.inject({ method: 'POST', url: '/admin/promo/codes', headers: authHeaders, payload: { code: 'x' } });
-    expect(res.statusCode).toBe(400);
-  });
-
-  it('duplicate code → 409', async () => {
-    const { app } = build();
-    await app.inject({ method: 'POST', url: '/admin/promo/codes', headers: authHeaders, payload: { code: 'dup', coins: 10 } });
-    const res = await app.inject({ method: 'POST', url: '/admin/promo/codes', headers: authHeaders, payload: { code: 'dup', coins: 10 } });
-    expect(res.statusCode).toBe(409);
-  });
-});
 
 // POST /admin/gacha/pools (creating a *limited* pool, as opposed to /pools/custom below) was removed
 // (comm-audit-internal-2026-07-28 P2): no caller anywhere in the codebase — admin's GachaPoolsClient

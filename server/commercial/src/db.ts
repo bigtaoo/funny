@@ -28,7 +28,7 @@ export interface WalletDoc {
    * Real-money top-up balance, tagged by payment-channel bucket (ADR-020, spendChannel.ts). Spendable only
    * when the request's client platform maps to that same bucket — prevents e.g. Paddle-bought coins being
    * spent inside the iOS app, which would violate Apple's anti-circumvention IAP terms. `coins` remains the
-   * always-spendable free pool (earned via ads/victory/promo/refund/grant, or grandfathered pre-migration
+   * always-spendable free pool (earned via ads/victory/refund/grant, or grandfathered pre-migration
    * recharges — this wallet shipped before channel tagging existed, so historical balances are not
    * retroactively split by channel). Absent/0 per key = no top-up on that channel yet.
    */
@@ -237,33 +237,6 @@ export interface GachaHistoryDoc {
   ts: number;
 }
 
-/** Promo code definition (B-PROMO). _id = code string (normalized to uppercase). */
-export interface PromoCodeDoc {
-  _id: string; // code (already normalized to uppercase)
-  coins: number; // coins granted on redemption
-  expiresAt?: number; // expiry timestamp (ms), defaults to never
-  totalLimit?: number; // global redemption cap (defaults to unlimited)
-  redeemed: number; // number of times redeemed (atomic $inc)
-  note?: string; // operator note
-  createdBy: string; // adminId
-  createdAt: number;
-}
-
-/** Promo code redemption record (B-PROMO). _id = `${accountId}:${code}` is naturally unique, preventing duplicate redemptions. */
-export interface PromoRedemptionDoc {
-  _id: string; // `${accountId}:${code}`
-  accountId: string;
-  code: string;
-  coinsGranted: number;
-  ts: number;
-  /**
-   * CAS guard (promo.ts's healOrRejectPromoReplay): set the instant a caller claims the exclusive right to
-   * heal this stale redemption's missed credit. Without it, two concurrent stale-claim healers both pass
-   * the isStaleClaim + ledger-absence reads and both call credit() — a double-grant.
-   */
-  healedAt?: number;
-}
-
 /**
  * Gacha pool config stored in `gachaPools`. Two kinds share the collection (discriminated by `kind`,
  * absent = 'derived' for backward compatibility with pre-§12 docs):
@@ -313,8 +286,6 @@ export interface CommercialCollections {
   appleAccountTokens: Collection<AppleAccountTokenDoc>;
   appleConsumptionConsents: Collection<AppleConsumptionConsentDoc>;
   gachaHistory: Collection<GachaHistoryDoc>;
-  promoCodes: Collection<PromoCodeDoc>;
-  promoRedemptions: Collection<PromoRedemptionDoc>;
   gachaPools: Collection<GachaPoolDoc>;
 }
 
@@ -355,8 +326,6 @@ export async function createCommercialMongo(
     appleAccountTokens: db.collection<AppleAccountTokenDoc>('appleAccountTokens'),
     appleConsumptionConsents: db.collection<AppleConsumptionConsentDoc>('appleConsumptionConsents'),
     gachaHistory: db.collection<GachaHistoryDoc>('gachaHistory'),
-    promoCodes: db.collection<PromoCodeDoc>('promoCodes'),
-    promoRedemptions: db.collection<PromoRedemptionDoc>('promoRedemptions'),
     gachaPools: db.collection<GachaPoolDoc>('gachaPools'),
   };
 
@@ -391,8 +360,6 @@ export async function createCommercialMongo(
     await collections.appleAccountTokens.createIndex({ accountId: 1 }, { unique: true });
     // appleConsumptionConsents._id = accountId is naturally unique; nothing scans it.
     // recharges._id = receiptId is naturally unique; wallets._id = accountId is naturally unique.
-    // promoCodes._id = code is naturally unique; promoRedemptions._id = accountId:code is naturally unique.
-    await collections.promoRedemptions.createIndex({ accountId: 1, ts: -1 });
     // gachaPools._id = pool id is naturally unique; index the active window for listing open limited pools.
     await collections.gachaPools.createIndex({ endAt: 1 });
   }

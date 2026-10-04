@@ -690,23 +690,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/promo/redeem": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Player redeems a promo code (once per player per code) */
-        post: operations["redeemPromoCode"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/equipment/craft": {
         parameters: {
             query?: never;
@@ -3501,45 +3484,6 @@ export interface operations {
                 };
             };
             400: components["responses"]["ErrorResp"];
-        };
-    };
-    redeemPromoCode: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    /** @description Promo code (case-insensitive) */
-                    code: string;
-                };
-            };
-        };
-        responses: {
-            /** @description Redemption successful */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        /** @enum {boolean} */
-                        ok: true;
-                        data: {
-                            coinsAfter: number;
-                            coinsGranted: number;
-                            save: components["schemas"]["SaveData"];
-                        };
-                    };
-                };
-            };
-            400: components["responses"]["ErrorResp"];
-            401: components["responses"]["ErrorResp"];
-            404: components["responses"]["ErrorResp"];
-            409: components["responses"]["ErrorResp"];
         };
     };
     craftEquipment: {

@@ -1,9 +1,9 @@
 /**
- * shopActions.test.ts — direct coverage of ShopScene/actions.ts's `onBuy`/`onRedeem`/`onRecharge`
+ * shopActions.test.ts — direct coverage of ShopScene/actions.ts's `onBuy`/`onRecharge`
  * busy-lock + real success/failure/timeout bodies. The 2026-08-05 client-test-audit flagged these
- * as untested at the method level: every existing reference to `cb.redeemPromo`/`cb.rechargeCoins`
+ * as untested at the method level: every existing reference to `cb.rechargeCoins`
  * in `client/test/ui/shopScene.ui.ts` only supplies them as constructor-stub callbacks to test
- * tab/field *visibility* — none of them tap the button or call `onRedeem()`/`onRecharge()` to
+ * tab *visibility* — none of them tap the button or call `onRecharge()` to
  * exercise the try/catch/finally body. `onBuy`'s success/failure paths already have real coverage
  * there; this file adds its catch/timeout branch and a busy-lock test (Shop had zero busy-lock
  * coverage of any kind — unlike Auction's dedicated `auctionActionBusyLock.ui.ts`, there wasn't
@@ -11,8 +11,7 @@
  *
  * ActionsPanel is now an independent class over `core` (2026-08-11 composition conversion — see
  * claudedocs/client-modules.md's split-form priority note), no PIXI needed since its body only
- * touches `core.bt`, `core.blurPromo()`, `core.render()`, `core.cb.*`, `core.promoCode`,
- * `core.setPromoValue()`. `buildScene()` binds ActionsPanel's methods onto the same fake-core object
+ * touches `core.bt`, `core.render()`, `core.cb.*`. `buildScene()` binds ActionsPanel's methods onto the same fake-core object
  * (mirrors sectActions.test.ts's / familySendButton.test.ts's flattened-fake pattern) so every
  * existing `scene.onBuy(...)`/`scene.cb`/`scene.bt` reference below keeps working unchanged.
  * `showToastMessage` is a real module function (not a `this.toast()` method), so it's spied via
@@ -39,19 +38,14 @@ initI18n('en', memStore, ['zh', 'en', 'de']);
 class FakeShopSceneCore {
   items: unknown[] | null = null;
   loading = true;
-  promoCode = '';
-  setPromoValue = vi.fn();
   bt = new BusyTracker();
   cb = {
     loadItems: vi.fn(async (): Promise<unknown[]> => []),
     buy: vi.fn(async (_id: string, _qty?: number): Promise<ShopActionResult> => ({ ok: true })),
-    redeemPromo: vi.fn(async (_code: string): Promise<ShopActionResult> => ({ ok: true })) as
-      ((code: string) => Promise<ShopActionResult>) | undefined,
     rechargeCoins: vi.fn(async (_tier: string): Promise<ShopActionResult> => ({ ok: true })) as
       ((tierId: string) => Promise<ShopActionResult>) | undefined,
   };
   render = vi.fn();
-  blurPromo = vi.fn();
 }
 
 function buildScene(overrides: Partial<FakeShopSceneCore> = {}): any {
@@ -62,7 +56,6 @@ function buildScene(overrides: Partial<FakeShopSceneCore> = {}): any {
     loadItems: actions.loadItems.bind(actions),
     onBuy: actions.onBuy.bind(actions),
     onBuyBulk: actions.onBuyBulk.bind(actions),
-    onRedeem: actions.onRedeem.bind(actions),
     onRecharge: actions.onRecharge.bind(actions),
     runDeal: actions.runDeal.bind(actions),
     runUnboundedDeal: actions.runUnboundedDeal.bind(actions),
@@ -189,78 +182,6 @@ describe('ShopScene — onBuyBulk() edge case: qty=0', () => {
     expect(spy).not.toHaveBeenCalled();
     expect(scene.cb.loadItems).not.toHaveBeenCalled();
     expect(scene.bt.busy).toBe(false);
-  });
-});
-
-// ── onRedeem (promo code) ─────────────────────────────────────────────────────
-
-describe('ShopScene — onRedeem() guards', () => {
-  it('does nothing while busy', async () => {
-    const scene = buildScene({ promoCode: 'CODE1' });
-    scene.bt.start();
-    await scene.onRedeem();
-    expect(scene.cb.redeemPromo).not.toHaveBeenCalled();
-  });
-
-  it('does nothing when redeemPromo is not injected (offline / not logged in)', async () => {
-    const scene = buildScene({ promoCode: 'CODE1', cb: { ...new FakeShopSceneCore().cb, redeemPromo: undefined } });
-    await scene.onRedeem();
-    expect(scene.render).not.toHaveBeenCalled();
-  });
-
-  it('does nothing for a blank/whitespace-only code', async () => {
-    const scene = buildScene({ promoCode: '   ' });
-    await scene.onRedeem();
-    expect(scene.cb.redeemPromo).not.toHaveBeenCalled();
-  });
-});
-
-describe('ShopScene — onRedeem() success', () => {
-  it('trims the code, clears the field (state + hidden input), and toasts success', async () => {
-    const scene = buildScene({ promoCode: '  CODE1  ' });
-    const spy = vi.spyOn(log, 'showToastMessage');
-
-    await scene.onRedeem();
-
-    expect(scene.cb.redeemPromo).toHaveBeenCalledWith('CODE1');
-    expect(scene.blurPromo).toHaveBeenCalledTimes(1);
-    expect(scene.promoCode).toBe('');
-    expect(scene.setPromoValue).toHaveBeenCalledWith('');
-    expect(spy).toHaveBeenCalledWith(t('shop.promoSuccess'), 'success');
-    expect(scene.bt.busy).toBe(false);
-  });
-});
-
-describe('ShopScene — onRedeem() failure', () => {
-  it('a rejected result (ok:false) toasts the mapped key and keeps the code in the field', async () => {
-    const scene = buildScene({ promoCode: 'DEAD1' });
-    scene.cb.redeemPromo!.mockResolvedValueOnce({ ok: false, key: 'shop.promoInvalid' as never });
-    const spy = vi.spyOn(log, 'showToastMessage');
-
-    await scene.onRedeem();
-
-    expect(spy).toHaveBeenCalledWith(t('shop.promoInvalid' as never), 'error');
-    expect(scene.promoCode).toBe('DEAD1'); // not cleared on failure
-  });
-
-  it('a thrown error maps to the promo-specific error toast (not the generic shop.error)', async () => {
-    const scene = buildScene({ promoCode: 'CODE1' });
-    scene.cb.redeemPromo!.mockRejectedValueOnce(new Error('network down'));
-    const spy = vi.spyOn(log, 'showToastMessage');
-
-    await scene.onRedeem();
-
-    expect(spy).toHaveBeenCalledWith(t('shop.promoError'), 'error');
-  });
-
-  it('a TimeoutError still maps to the shared network-timeout toast', async () => {
-    const scene = buildScene({ promoCode: 'CODE1' });
-    scene.cb.redeemPromo!.mockRejectedValueOnce(new TimeoutError());
-    const spy = vi.spyOn(log, 'showToastMessage');
-
-    await scene.onRedeem();
-
-    expect(spy).toHaveBeenCalledWith(t('common.networkTimeout'), 'error');
   });
 });
 

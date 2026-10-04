@@ -125,16 +125,7 @@ class FakeCommercial implements CommercialClient {
   async verifyNonCoinReceipt() {
     return { ok: false as const, error: 'NOT_IMPL' };
   }
-  async promoRedeem() {
-    return { ok: false as const, error: 'NOT_IMPL' };
-  }
   async auditCoinGains() {
-    return [];
-  }
-  async createPromoCode() {
-    return { ok: false as const, error: 'NOT_IMPL' };
-  }
-  async listPromoCodes() {
     return [];
   }
   // CommercialClient members this suite never exercises. They throw rather than answer: each was

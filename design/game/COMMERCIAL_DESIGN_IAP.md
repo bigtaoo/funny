@@ -95,7 +95,7 @@ metaserver /paddle/webhook（HMAC 校验后）
 - **存储**：commercial 库新增 `paddleEvents` 集合（`_id = transactionId:eventType` 天然幂等，Paddle 的 at-least-once
   重投不会重复记录），字段：`transactionId`/`eventType`/`status?`/`accountId?`/`rawEvent`（原始 JSON）/`ts`。索引
   `{accountId,ts↓}` + `{transactionId}`。无 TTL（比照 `recharges`/`orders`/`ledger`，财务类记录）；**订正 2026-09-29**：财务类记录保留 10 个完整日历年后由 `transactionRetention.ts` 删除（新增 `{ts:1}` 索引），见 `COMPLIANCE_GLOBAL.md §3.5`。
-- **查询链路**：与 promo 码管理同一条内部调用链（`admin → metaserver /admin/paddle/events → commercial /internal/paddle/events`），
+- **查询链路**：与 gacha 池管理同一种内部调用链（`admin → metaserver /admin/paddle/events → commercial /internal/paddle/events`），
   两层鉴权：服务间 `X-Internal-Key` + ops 前端的 session+能力位 `paddle.events.view`（`super`/`ops`/`support` 三个角色都有，
   客服排查场景不需要 `ops`/`super`）。
 - **ops 前端**：新页面 "Paddle Events"（`tools/ops/src/pages/paddleEvents.ts`），按 accountId/transactionId 搜索，点击一行展开
@@ -234,7 +234,7 @@ ShopScene → buyMonthlyCard()/buyYearCard() → createAppCore.doBuySubscription
 
 评估过两个方向：
 
-1. **钱包按支付渠道拆分可花池**（本方案，已实现）：`wallets.coins` 保持为免费池（广告/胜场/兑换码/退款等非充值
+1. **钱包按支付渠道拆分可花池**（本方案，已实现）：`wallets.coins` 保持为免费池（广告/胜场/退款等非充值
    来源，处处可花），新增 `wallets.recharged: {web?, apple?, google?}` 按渠道标记的充值池，只有请求平台匹配的
    渠道才可花/可见。
 2. **iOS/Android 各自独立部署**（照搬微信的隔离模式）：否决。理由——
@@ -245,7 +245,7 @@ ShopScene → buyMonthlyCard()/buyYearCard() → createAppCore.doBuySubscription
    - `IOS_RELEASE.md §4.2` 的既定计划本就是原生 IAP 复用同一套 VPS commercial 服务（只改 `NW_IAP_BUNDLE`），
      若改独立部署是对已成型上线计划的大改，收益（隔离更彻底）不及成本（部署复杂度、账号体验倒退）。
    - 实际改造范围也比预想小：debit（花费）侧集中在 `shop.ts`/`gachaDraw.ts` 两处原子扣款，credit（充值）侧只有
-     `recharge.ts`/`subscription.ts`/`starter.ts` 三处真实来自付费渠道，其余（ads/victory/promo/refund/grant）
+     `recharge.ts`/`subscription.ts`/`starter.ts` 三处真实来自付费渠道，其余（ads/victory/refund/grant；promo 已于 2026-10-04 移除）
      天然是免费池，无需改造。
 
 ### 11.2 数据结构
@@ -258,7 +258,7 @@ type RechargeChannel = 'web' | 'apple' | 'google';        // 微信不进这张�
 recharged?: Partial<Record<RechargeChannel, number>>;       // 按渠道标记的充值余额；缺省/历史钱包 = {} 全 0
 ```
 
-- **`coins`（既有字段）语义不变**：免费获得的币（广告奖励/胜场奖励/兑换码/退款/邮件补偿/月卡每日签到等），任何
+- **`coins`（既有字段）语义不变**：免费获得的币（广告奖励/胜场奖励/退款/邮件补偿/月卡每日签到等），任何
   平台随时可花——这也是**迁移前存量余额的归属**：本功能上线前累积的 `coins` 一律留在免费池，不回溯拆分到具体
   渠道（不可能精确复原历史来源，且上线时 Apple/Google 真实充值余额为 0，这个简化零风险）。
 - **`recharged.<channel>`**：只有下列三处真金白银的入账会写入，其余一律进免费池：
@@ -302,7 +302,7 @@ effectiveCoins(wallet, channel) = wallet.coins + (wallet.recharged?.[channel] ??
 - `server/commercial/src/db.ts`：`WalletDoc.recharged` 字段。
 - `server/commercial/src/service/base.ts`：`credit()`/新增 `debitEffective()`/`getWallet()`/`applySubscription()`/
   `subscriptionCardBuy()` 均加 `channel`（充值目标渠道）+ `clientPlatform`（展示/花费渠道）参数。
-- `server/commercial/src/service/{shop,gachaDraw,recharge,subscription,starter,rewards,promo}.ts`：所有扣款/加币
+- `server/commercial/src/service/{shop,gachaDraw,recharge,subscription,starter,rewards}.ts`：所有扣款/加币
   调用点穿透上述参数；`internalHttp.ts` 对应端点解析 `clientPlatform`/`rechargePlatform` 请求体字段。
 - `server/metaserver/src/service/base.ts`：新增 `clientPlatformOf(req)`（读 `X-NW-Platform`）。`economy.ts`/
   `auth.ts`（改名扣币）/`progression.ts`（战令购买）/`pve.ts`（体力购买）/`equipment.ts`（强化/重铸扣币）/

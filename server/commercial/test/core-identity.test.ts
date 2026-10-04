@@ -11,7 +11,7 @@ import { CommercialService } from '../src/service';
 import type { CommercialDeps } from '../src/service/base';
 
 const DOMAIN_FIELDS = [
-  'gachaPool', 'shop', 'gachaDrawSvc', 'subscription', 'starter', 'recharge', 'promo', 'rewards', 'orders', 'audit',
+  'gachaPool', 'shop', 'gachaDrawSvc', 'subscription', 'starter', 'recharge', 'rewards', 'orders', 'audit',
 ] as const;
 
 describe('CommercialService composition wiring: one shared WalletCore (2026-08-11 chain→composition pass)', () => {

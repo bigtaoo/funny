@@ -1,7 +1,7 @@
 // src/logic/suspicions.ts — the anti-cheat page's pure helpers. `fmtStats` renders a statKey→count map for the review table's
 // pvp_overclaim detail column; the rest belong to the two read-only signal sections restored on
 // 2026-08-20 (C3 mismatches, C4 suspicious-PvE roster). pageSuspicions() itself builds DOM, untested —
-// same split as promo.test.ts / feedback.test.ts.
+// same split as feedback.test.ts.
 import { describe, it, expect } from 'vitest';
 import {
   banConfirm, canResolveReview, fmtStats, mismatchPlayerLabel, mismatchPlayersText, mismatchRepeats,

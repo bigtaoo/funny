@@ -130,16 +130,7 @@ class FakeCommercial implements CommercialClient {
   async verifyNonCoinReceipt() {
     return { ok: false as const, error: 'NOT_IMPL' };
   }
-  async promoRedeem() {
-    return { ok: false as const, error: 'NOT_IMPL' };
-  }
   async auditCoinGains() {
-    return [];
-  }
-  async createPromoCode() {
-    return { ok: false as const, error: 'NOT_IMPL' };
-  }
-  async listPromoCodes() {
     return [];
   }
   // Paddle surface added to CommercialClient later; this suite is retention check-ins only, so throw

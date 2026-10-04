@@ -414,11 +414,6 @@ export const zh = {
   'shop.item.material.capReached': '今日已达上限',
   'shop.loading': '加载中…',
   'shop.empty': '暂无商品',
-  'shop.promoPlaceholder': '输入兑换码',
-  'shop.promoRedeem': '兑换',
-  'shop.promoSuccess': '兑换成功',
-  'shop.promoInvalid': '兑换码无效或已使用',
-  'shop.promoError': '兑换失败，请重试',
   'shop.coinsTab': '充值',
   'shop.bestValue': '★ 超值推荐',
   'shop.firstDouble': '首充双倍',
@@ -437,7 +432,7 @@ export const zh = {
   'subDisclosure.priceMonthly': '价格：{price} / 月',
   'subDisclosure.priceYearly': '价格：{price} / 年',
   'subDisclosure.includes': '包含：立得 {now} 金币\n生效期间每天可领 {daily} 金币',
-  // "Apple ID" / "App Store": no-break space keeps each name on one line (SubscriptionDisclosureDialog.wrapMixed).
+  // "Apple ID" / "App Store": no-break space keeps each name on one line (render/pixiText.ts cjkTokenize).
   'subDisclosure.terms': '确认后从你的 Apple ID 扣费。除非在周期结束前至少 24 小时取消，否则自动续期。可在 App Store 账户设置中管理或取消。',
   'subDisclosure.eula': '使用条款（EULA）',
   'subDisclosure.subscribe': '订阅',

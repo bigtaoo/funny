@@ -64,7 +64,6 @@ describe.skipIf(!mongo)('commercial account purge', () => {
     await c.appleAccountTokens.insertOne({ _id: `tok-${acc}`, accountId: acc, createdAt: 1 });
     await c.appleConsumptionConsents.insertOne({ _id: acc, consented: true, ts: 1 });
     await c.gachaHistory.insertOne({ accountId: acc, poolId: 'std', orderId: `g-${acc}`, results: [], pityBefore: 0, pityAfter: 1, ts: 1 });
-    await c.promoRedemptions.insertOne({ _id: `${acc}:WELCOME`, accountId: acc, code: 'WELCOME', coinsGranted: 10, ts: 1 });
   }
 
   beforeEach(async () => {
@@ -78,13 +77,12 @@ describe.skipIf(!mongo)('commercial account purge', () => {
     const r = await svc.purgeAccount('gone');
     expect(r).toEqual({
       done: true,
-      removed: { wallets: 1, gachaHistory: 1, promoRedemptions: 1, appleAccountTokens: 1, appleConsumptionConsents: 1 },
+      removed: { wallets: 1, gachaHistory: 1, appleAccountTokens: 1, appleConsumptionConsents: 1 },
       minimized: { recharges: 1, paddleEvents: 1, appleTransactionLinks: 1 },
     });
 
     expect(await c.wallets.findOne({ _id: 'gone' })).toBeNull();
     expect(await c.gachaHistory.countDocuments({ accountId: 'gone' })).toBe(0);
-    expect(await c.promoRedemptions.countDocuments({ accountId: 'gone' })).toBe(0);
     expect(await c.appleAccountTokens.countDocuments({ accountId: 'gone' })).toBe(0);
     expect(await c.appleConsumptionConsents.findOne({ _id: 'gone' })).toBeNull();
 
@@ -124,7 +122,7 @@ describe.skipIf(!mongo)('commercial account purge', () => {
     const again = await svc.purgeAccount('gone');
     expect(again).toEqual({
       done: true,
-      removed: { wallets: 0, gachaHistory: 0, promoRedemptions: 0, appleAccountTokens: 0, appleConsumptionConsents: 0 },
+      removed: { wallets: 0, gachaHistory: 0, appleAccountTokens: 0, appleConsumptionConsents: 0 },
       minimized: { recharges: 0, paddleEvents: 0, appleTransactionLinks: 0 },
     });
 

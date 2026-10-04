@@ -223,49 +223,6 @@ describe.skipIf(!mongo)('commercial internalHttp request parsing', () => {
       expect((await m.collections.wallets.findOne({ _id: 'plat-ios' }))?.coins).toBe(0);
     });
 
-    it('promo/codes: expiresAt / totalLimit / note omitted are stored as absent, not as undefined values', async () => {
-      const r = await post('/internal/promo/codes', { code: 'BAREBONES', coins: 50, createdBy: 'admin1' });
-      expect(await jsonBody(r)).toEqual({ ok: true, code: 'BAREBONES' });
-      const doc = await m.collections.promoCodes.findOne({ _id: 'BAREBONES' });
-      expect(doc).toMatchObject({ coins: 50, redeemed: 0, createdBy: 'admin1' });
-      expect(Object.keys(doc!)).not.toContain('expiresAt');
-      expect(Object.keys(doc!)).not.toContain('totalLimit');
-      expect(Object.keys(doc!)).not.toContain('note');
-    });
-
-    it('promo/codes: expiresAt / totalLimit / note supplied are stored (totalLimit floored)', async () => {
-      const r = await post('/internal/promo/codes', {
-        code: 'FULLY_SPECD',
-        coins: 50,
-        createdBy: 'admin1',
-        expiresAt: 9_000_000,
-        totalLimit: 10.7,
-        note: 'summer campaign',
-      });
-      expect(await jsonBody(r)).toEqual({ ok: true, code: 'FULLY_SPECD' });
-      expect(await m.collections.promoCodes.findOne({ _id: 'FULLY_SPECD' })).toMatchObject({
-        expiresAt: 9_000_000,
-        totalLimit: 10,
-        note: 'summer campaign',
-      });
-    });
-
-    it('promo/codes: wrongly-typed optional fields are dropped rather than stored', async () => {
-      const r = await post('/internal/promo/codes', {
-        code: 'TYPO',
-        coins: 50,
-        createdBy: 'admin1',
-        expiresAt: 'tomorrow',
-        totalLimit: '10',
-        note: 42,
-      });
-      expect(await jsonBody(r)).toEqual({ ok: true, code: 'TYPO' });
-      const doc = await m.collections.promoCodes.findOne({ _id: 'TYPO' });
-      expect(Object.keys(doc!)).not.toContain('expiresAt');
-      expect(Object.keys(doc!)).not.toContain('totalLimit');
-      expect(Object.keys(doc!)).not.toContain('note');
-    });
-
     it('paddle/event: status and accountId omitted still logs the event', async () => {
       const r = await post('/internal/paddle/event', {
         transactionId: 'txn_min',

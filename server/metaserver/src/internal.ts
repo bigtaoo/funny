@@ -5,7 +5,7 @@
 // ELO settlement / archive logic migrated from gameserver (M19): ladder authority consolidated into meta. room_id is idempotent (matches unique).
 //
 // Route registration is split by domain under ./internal/* (accounts, mail, match report, economy transfers,
-// ladder/season, event admin, promo+gacha admin) — this file only wires up the shared context and composes them.
+// ladder/season, event admin, gacha pool admin) — this file only wires up the shared context and composes them.
 import type { FastifyInstance } from 'fastify';
 import type { Collections, RedisLike } from '@nw/shared';
 import { createInternalAuth } from '@nw/shared';
@@ -20,7 +20,7 @@ import { registerMatchReportRoutes } from './internal/matchReport.js';
 import { registerEconomyRoutes } from './internal/economyRoutes.js';
 import { registerLadderRoutes } from './internal/ladderRoutes.js';
 import { registerEventAdminRoutes } from './internal/eventAdminRoutes.js';
-import { registerPromoGachaRoutes } from './internal/promoGachaRoutes.js';
+import { registerGachaPoolRoutes } from './internal/gachaPoolRoutes.js';
 import { registerPaddleEventRoutes } from './internal/paddleEventRoutes.js';
 import { registerTokenRevocationRoutes } from './tokenRevocations.js';
 
@@ -68,7 +68,7 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
   registerEconomyRoutes(app, ctx);
   registerLadderRoutes(app, ctx);
   registerEventAdminRoutes(app, ctx);
-  registerPromoGachaRoutes(app, ctx);
+  registerGachaPoolRoutes(app, ctx);
   registerPaddleEventRoutes(app, ctx);
   registerTokenRevocationRoutes(app, ctx);
 }

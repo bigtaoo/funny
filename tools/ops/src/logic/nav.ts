@@ -33,7 +33,6 @@ export const NAV_ENTRIES: readonly NavEntry[] = [
   { id: 'ladder', label: 'Ladder Season', cap: 'ladder.season.manage' },
   { id: 'events', label: 'Timed Events', cap: 'events.manage' },
   { id: 'gacha-pools', label: 'Gacha Pools', cap: 'gacha.pools.manage' },
-  { id: 'promo', label: 'Promo Codes', cap: 'promo.manage' },
   { id: 'slg-shop', label: 'SLG Shop Prices', cap: 'slg.shop.manage' },
   { id: 'flags', label: 'Feature Flags', cap: 'config.manage' },
   { id: 'moderation-wordlist', label: 'Word Lists', cap: 'moderation.wordlist.manage' },

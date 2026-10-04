@@ -1,5 +1,5 @@
-// Branch-coverage backfill for internal/promoGachaRoutes.ts — the input shapes and refusal paths
-// internal-promo-gacha.test.ts never sends. Three families:
+// Branch-coverage backfill for internal/gachaPoolRoutes.ts — the input shapes and refusal paths
+// internal-gacha-pools.test.ts never sends. Three families:
 //   (a) the degraded-commercial side of every *write* endpoint (must fail loudly with 503, never
 //       silently accept an ops-authored config that was not persisted anywhere),
 //   (b) the absent/malformed-field fallbacks: these handlers forward the parsed JSON body verbatim, so
@@ -10,7 +10,7 @@ import { describe, it, expect } from 'vitest';
 import Fastify from 'fastify';
 import type { Collections } from '@nw/shared';
 import type { CommercialClient } from '../src/commercialClient.js';
-import { registerPromoGachaRoutes } from '../src/internal/promoGachaRoutes.js';
+import { registerGachaPoolRoutes } from '../src/internal/gachaPoolRoutes.js';
 import type { InternalCtx } from '../src/internal/context.js';
 import { fakeGateway, fakeCommercial, ThrowingSocialsvc } from './helpers/fakeClients.js';
 import { AccountCache } from '../src/accountCache.js';
@@ -32,7 +32,7 @@ function build(opts: { available?: boolean; overrides?: Partial<CommercialClient
     accountCache: new AccountCache(),
   };
   const app = Fastify();
-  registerPromoGachaRoutes(app, ctx);
+  registerGachaPoolRoutes(app, ctx);
   return { app, commercial };
 }
 
@@ -44,97 +44,6 @@ const customPool = (extra: Record<string, unknown> = {}) => ({
   endAt: 2000,
   categories: [{ category: 'skin', weight: 1, items: [{ itemId: 'skin_e1', weight: 1 }] }],
   ...extra,
-});
-
-describe('POST /admin/promo/codes — refusal paths', () => {
-  it('no key → 401 (the write endpoint, not just the listing one)', async () => {
-    const { app } = build();
-    const res = await app.inject({ method: 'POST', url: '/admin/promo/codes', payload: { code: 'x', coins: 1 } });
-    expect(res.statusCode).toBe(401);
-  });
-
-  // Degraded commercial must refuse the *write* loudly: a 503 tells the operator the code was not
-  // created, where a silent 200 would leave them believing a promo code exists that nobody can redeem.
-  it('commercial unavailable → 503 and nothing is stored', async () => {
-    const { app, commercial } = build({ available: false });
-    const res = await app.inject({
-      method: 'POST', url: '/admin/promo/codes', headers: authHeaders,
-      payload: { code: 'welcome10', coins: 100 },
-    });
-    expect(res.statusCode).toBe(503);
-    expect(JSON.parse(res.payload)).toEqual({ ok: false, error: 'commercial unavailable' });
-    expect(commercial.promoCodes.size).toBe(0);
-  });
-
-  // `typeof b.code === 'string' ? … : ''` — a non-string `code` (an operator sending a bare number, or a
-  // form posting JSON null) must land in the same 400 as an omitted one, not reach commercial as "123".
-  it('non-string code → 400, never forwarded to commercial', async () => {
-    const { app, commercial } = build();
-    for (const code of [123, null, { v: 'x' }, ['x']]) {
-      const res = await app.inject({
-        method: 'POST', url: '/admin/promo/codes', headers: authHeaders,
-        payload: { code, coins: 100 },
-      });
-      expect(res.statusCode).toBe(400);
-      expect(JSON.parse(res.payload)).toEqual({ ok: false, error: 'code + coins required' });
-    }
-    expect(commercial.promoCodes.size).toBe(0);
-  });
-
-  it('whitespace-only code trims to empty → 400', async () => {
-    const { app } = build();
-    const res = await app.inject({
-      method: 'POST', url: '/admin/promo/codes', headers: authHeaders,
-      payload: { code: '   ', coins: 100 },
-    });
-    expect(res.statusCode).toBe(400);
-  });
-
-  it('non-positive / non-number coins → 400', async () => {
-    const { app } = build();
-    for (const coins of [0, -5, '100']) {
-      const res = await app.inject({
-        method: 'POST', url: '/admin/promo/codes', headers: authHeaders,
-        payload: { code: 'promo', coins },
-      });
-      expect(res.statusCode).toBe(400);
-    }
-  });
-});
-
-describe('POST /admin/promo/codes — optional fields are forwarded when present', () => {
-  // expiresAt/totalLimit/note are all `typeof … === '…' ? … : undefined`; the existing suite only ever
-  // omits them, so the *present* side (the one an ops console actually posts for a limited-run code)
-  // was never exercised. An expiry/limit silently dropped here is a promo code that never expires.
-  it('numeric expiresAt + totalLimit and a string note reach commercial verbatim', async () => {
-    const { app, commercial } = build();
-    const res = await app.inject({
-      method: 'POST', url: '/admin/promo/codes', headers: authHeaders,
-      payload: {
-        code: 'launch', coins: 500, expiresAt: 1893456000000, totalLimit: 1000,
-        note: 'launch week, marketing request #42', createdBy: 'ops1',
-      },
-    });
-    expect(res.statusCode).toBe(200);
-    expect(commercial.promoCodes.get('LAUNCH')).toMatchObject({
-      coins: 500, expiresAt: 1893456000000, totalLimit: 1000,
-      note: 'launch week, marketing request #42', createdBy: 'ops1',
-    });
-  });
-
-  it('wrong-typed optional fields are dropped (undefined), not forwarded as-is', async () => {
-    const { app, commercial } = build();
-    const res = await app.inject({
-      method: 'POST', url: '/admin/promo/codes', headers: authHeaders,
-      payload: { code: 'sloppy', coins: 10, expiresAt: '2026-01-01', totalLimit: '50', note: 7, createdBy: 9 },
-    });
-    expect(res.statusCode).toBe(200);
-    const stored = commercial.promoCodes.get('SLOPPY') as Record<string, unknown>;
-    expect(stored.expiresAt).toBeUndefined();
-    expect(stored.totalLimit).toBeUndefined();
-    expect(stored.note).toBeUndefined();
-    expect(stored.createdBy).toBe('unknown'); // non-string createdBy → attributed to 'unknown', not 9
-  });
 });
 
 describe('POST /admin/gacha/pools/custom — refusal paths', () => {

@@ -330,7 +330,6 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
         buy: async () => ({ ok: true }),
         recharge: async () => ({ ok: true }),
         openGacha() {},
-        openTextInput: createFakeTextInput().openTextInput,
       }),
   },
   {

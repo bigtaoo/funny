@@ -1,8 +1,8 @@
-// ShopScene (S2-6 + B-PROMO) — direct-purchase shop. Thin assembly file.
+// ShopScene (S2-6) — direct-purchase shop. Thin assembly file.
 //
 // The scene is split by domain — each part lives in ./ShopScene/*.ts and is composed here over
 // ShopSceneCore (./ShopScene/core.ts, which owns all instance state + the constructor + the shared
-// card/button/toast primitives + hidden-input + input/lifecycle, but NOT the render() dispatcher —
+// card/button/toast primitives + input/lifecycle, but NOT the render() dispatcher —
 // see core.ts's header comment). To add a handler: find the matching domain class (shop / coins /
 // actions) or add a new one — do NOT grow this file. ShopSceneCallbacks / ShopActionResult are
 // re-exported so existing importers (`from './ShopScene'`) keep resolving to this file, not the

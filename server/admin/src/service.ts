@@ -19,7 +19,6 @@ import { ADMIN_ROLES } from '@nw/shared';
 import { AdminCore, type AdminServiceDeps } from './service/base';
 import { EventsService } from './service/events';
 import { GachaService } from './service/gacha';
-import { PromoService } from './service/promo';
 import { PaddleEventsService } from './service/paddleEvents';
 import { LadderService } from './service/ladder';
 import { WorldService } from './service/world';
@@ -48,7 +47,6 @@ export class AdminService {
   private readonly core: AdminCore;
   private readonly events: EventsService;
   private readonly gacha: GachaService;
-  private readonly promo: PromoService;
   private readonly paddleEvents: PaddleEventsService;
   private readonly ladder: LadderService;
   private readonly world: WorldService;
@@ -71,7 +69,6 @@ export class AdminService {
     this.core = new AdminCore(deps);
     this.events = new EventsService(this.core);
     this.gacha = new GachaService(this.core);
-    this.promo = new PromoService(this.core);
     this.paddleEvents = new PaddleEventsService(this.core);
     this.ladder = new LadderService(this.core);
     this.world = new WorldService(this.core);
@@ -103,10 +100,6 @@ export class AdminService {
   gachaCatalog(...args: Parameters<GachaService['gachaCatalog']>) { return this.gacha.gachaCatalog(...args); }
   createCustomPool(...args: Parameters<GachaService['createCustomPool']>) { return this.gacha.createCustomPool(...args); }
   closeGachaPool(...args: Parameters<GachaService['closeGachaPool']>) { return this.gacha.closeGachaPool(...args); }
-
-  // ── promo ──
-  listPromoCodes(...args: Parameters<PromoService['listPromoCodes']>) { return this.promo.listPromoCodes(...args); }
-  createPromoCode(...args: Parameters<PromoService['createPromoCode']>) { return this.promo.createPromoCode(...args); }
 
   // ── paddleEvents ──
   listPaddleEvents(...args: Parameters<PaddleEventsService['listPaddleEvents']>) { return this.paddleEvents.listPaddleEvents(...args); }

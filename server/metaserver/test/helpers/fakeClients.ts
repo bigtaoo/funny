@@ -18,22 +18,19 @@ export function fakeGateway(opts: { available?: boolean; res?: JudgeRes } = {}):
 
 interface GrantCall { accountId: string; amount: number; reason: string; orderId: string }
 
-/** Fake commercial client: records grant/victoryCredit calls; promo/gacha admin methods are in-memory stores. */
+/** Fake commercial client: records grant/victoryCredit calls; gacha pool admin methods are in-memory stores. */
 export function fakeCommercial(available = true): CommercialClient & {
   grantCalls: GrantCall[];
-  promoCodes: Map<string, unknown>;
   pools: Map<string, unknown>;
   /** Seedable per-dayKey result for auditCoinGains (tests set this directly instead of a real ledger). */
   coinGainsByDay: Map<string, Array<{ accountId: string; nonRechargeGain: number }>>;
 } {
   const grantCalls: GrantCall[] = [];
-  const promoCodes = new Map<string, unknown>();
   const pools = new Map<string, unknown>();
   const coinGainsByDay = new Map<string, Array<{ accountId: string; nonRechargeGain: number }>>();
   return {
     available,
     grantCalls,
-    promoCodes,
     pools,
     coinGainsByDay,
     async auditCoinGains(dayKey: string, minGain: number) {
@@ -45,15 +42,6 @@ export function fakeCommercial(available = true): CommercialClient & {
     },
     async victoryCredit(a: { accountId: string; amount: number; dayKey: string }) {
       return { ok: true as const, coinsAfter: 0, credited: a.amount, capped: false };
-    },
-    async createPromoCode(a: Record<string, unknown>) {
-      const code = a.code as string;
-      if (promoCodes.has(code)) return { ok: false as const, error: 'DUPLICATE' };
-      promoCodes.set(code, { ...a, redeemedCount: 0 });
-      return { ok: true as const, code };
-    },
-    async listPromoCodes() {
-      return [...promoCodes.values()] as never[];
     },
     async createCustomPool(a: { config: Record<string, unknown>; createdBy: string }) {
       pools.set(a.config.id as string, { ...a.config, kind: 'custom', createdBy: a.createdBy });
@@ -70,8 +58,7 @@ export function fakeCommercial(available = true): CommercialClient & {
     },
   } as unknown as CommercialClient & {
     grantCalls: GrantCall[];
-    promoCodes: Map<string, unknown>;
-    pools: Map<string, unknown>;
+      pools: Map<string, unknown>;
     coinGainsByDay: Map<string, Array<{ accountId: string; nonRechargeGain: number }>>;
   };
 }

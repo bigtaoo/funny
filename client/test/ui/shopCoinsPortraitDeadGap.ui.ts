@@ -69,7 +69,6 @@ describe('ShopScene Coins tab — portrait squat-aspect dead-gap regression (202
       buy: async () => ({ ok: true }),
       openGacha() {},
       rechargeCoins: async () => ({ ok: true }),
-      redeemPromo: async () => ({ ok: true }),
       initialTab: 'coins',
     } as any) as unknown as ShopSceneInternals & { destroy(): void };
 
@@ -106,7 +105,6 @@ describe('ShopScene Coins tab — portrait squat-aspect dead-gap regression (202
       buy: async () => ({ ok: true }),
       openGacha() {},
       rechargeCoins: async () => ({ ok: true }),
-      redeemPromo: async () => ({ ok: true }),
       initialTab: 'coins',
     } as any) as unknown as ShopSceneInternals & { destroy(): void };
 

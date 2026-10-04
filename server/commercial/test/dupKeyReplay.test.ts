@@ -1,9 +1,9 @@
 // What the LOSER of an idempotency-key race reports back — the E11000 catch blocks and their `??`
 // fallbacks, plus the non-duplicate rethrow beside each one.
 //
-// Nine call sites in this package reserve their idempotency key with an insert BEFORE the costly side of
+// Eight call sites in this package reserve their idempotency key with an insert BEFORE the costly side of
 // the operation (shop.ts's shopCharge/spend/grant, gachaDraw.ts's gachaDraw/redeemFate, recharge.ts's
-// rechargeVerify/verifyNonCoinReceipt/paddleComplete, promo.ts's promoRedeem, base.ts's
+// rechargeVerify/verifyNonCoinReceipt/paddleComplete, base.ts's
 // subscriptionCardBuy). Each pairs a pre-check read with a `catch (e) { if (code === 11000) … }` for the
 // case where a concurrent caller claimed the same key in between. The e2e suites drive the pre-check side
 // heavily (an already-existing row) but reaching the catch needs two callers inside the same few
@@ -408,44 +408,6 @@ describe('paddleComplete — lost the transactionId insert race', () => {
   it('propagates a non-duplicate insert failure', async () => {
     await expect(
       complete(stubCols({ recharges: { findOne: replies(null), insertOne: throws(DRIVER_DOWN) } })),
-    ).rejects.toThrow(DRIVER_DOWN);
-  });
-});
-
-// ── promo.ts: promoRedeem / createPromoCode ──────────────────────────────────
-describe('promoRedeem — lost the redemption insert race', () => {
-  const codeDoc = { _id: 'RACE', coins: 250, redeemed: 0, createdBy: 'admin', createdAt: 0 };
-
-  it('reports PROMO_ALREADY_USED when the winner\'s redemption row is unreadable', async () => {
-    const r = await svc(
-      stubCols({
-        promoCodes: { findOne: replies(codeDoc) },
-        promoRedemptions: { findOne: replies(null, null), insertOne: throws(dupKey('promoRedemptions')) },
-      }),
-    ).promoRedeem({ accountId: 'acc', code: 'race' });
-    expect(r).toEqual({ ok: false, error: 'PROMO_ALREADY_USED' });
-  });
-
-  it('propagates a non-duplicate insert failure', async () => {
-    await expect(
-      svc(
-        stubCols({
-          promoCodes: { findOne: replies(codeDoc) },
-          promoRedemptions: { findOne: replies(null), insertOne: throws(DRIVER_DOWN) },
-        }),
-      ).promoRedeem({ accountId: 'acc', code: 'RACE' }),
-    ).rejects.toThrow(DRIVER_DOWN);
-  });
-});
-
-describe('createPromoCode — insert failure', () => {
-  it('propagates a non-duplicate insert failure instead of reporting BAD_REQUEST (which reads as "code taken")', async () => {
-    await expect(
-      svc(stubCols({ promoCodes: { insertOne: throws(DRIVER_DOWN) } })).createPromoCode({
-        code: 'NEW',
-        coins: 50,
-        createdBy: 'admin',
-      }),
     ).rejects.toThrow(DRIVER_DOWN);
   });
 });

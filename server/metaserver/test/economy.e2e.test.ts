@@ -199,7 +199,7 @@ class FakeCommercial implements CommercialClient {
     this.granted.add(a.orderId);
     return { ok: true as const, coinsAfter: this.bal(a.accountId) };
   }
-  // ── fate points / year card / promo codes (minimal fakes for /fate/redeem, /year-card/buy, /promo/redeem) ──
+  // ── fate points / year card (minimal fakes for /fate/redeem, /year-card/buy) ──
   fatePoints = new Map<string, number>();
   async listActiveLimitedPools() {
     return [];
@@ -218,23 +218,12 @@ class FakeCommercial implements CommercialClient {
     this.subscriptions.set(a.accountId, { ...sub, expiry });
     return { ok: true as const, coinsAfter: this.bal(a.accountId), subscriptionExpiry: expiry };
   }
-  promoCodes = new Map<string, { coins: number; usedBy: Set<string> }>();
-  async promoRedeem(a: { accountId: string; code: string }) {
-    const entry = this.promoCodes.get(a.code);
-    if (!entry) return { ok: false as const, error: 'PROMO_NOT_FOUND' };
-    if (entry.usedBy.has(a.accountId)) return { ok: false as const, error: 'PROMO_ALREADY_USED' };
-    entry.usedBy.add(a.accountId);
-    this.coins.set(a.accountId, this.bal(a.accountId) + entry.coins);
-    return { ok: true as const, coinsAfter: this.bal(a.accountId), coinsGranted: entry.coins };
-  }
   // CommercialClient members this suite never exercises. They throw rather than answer: each was
   // simply absent before test/** was type-checked, so any call already crashed — this keeps that
   // truth while naming what happened.
   async createCustomPool(): Promise<never> { throw new Error('FakeCommercial.createCustomPool is not stubbed in this test'); }
   async closeLimitedPool(): Promise<never> { throw new Error('FakeCommercial.closeLimitedPool is not stubbed in this test'); }
   async listLimitedPools(): Promise<never> { throw new Error('FakeCommercial.listLimitedPools is not stubbed in this test'); }
-  async createPromoCode(): Promise<never> { throw new Error('FakeCommercial.createPromoCode is not stubbed in this test'); }
-  async listPromoCodes(): Promise<never> { throw new Error('FakeCommercial.listPromoCodes is not stubbed in this test'); }
   async paddleComplete(): Promise<never> { throw new Error('FakeCommercial.paddleComplete is not stubbed in this test'); }
   async paddleRefund(): Promise<never> { throw new Error('FakeCommercial.paddleRefund is not stubbed in this test'); }
   async recordPaddleEvent(): Promise<never> { throw new Error('FakeCommercial.recordPaddleEvent is not stubbed in this test'); }
@@ -1027,27 +1016,6 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     });
     expect(r.statusCode).toBe(400);
     expect(body(r).error.code).toBe('INVALID_RECEIPT');
-  });
-
-  it('promo redeem: happy path grants coins and mirrors the new balance', async () => {
-    comm.promoCodes.set('WELCOME10', { coins: 100, usedBy: new Set() });
-    const before = comm.bal(accountId);
-    const r = body(await app.inject({
-      method: 'POST', url: '/promo/redeem', headers: auth(), payload: { code: 'WELCOME10' },
-    }));
-    expect(r.ok).toBe(true);
-    expect(r.data.coinsGranted).toBe(100);
-    expect(r.data.save.wallet.coins).toBe(before + 100);
-  });
-
-  it('promo redeem: unknown code → 404 PROMO_NOT_FOUND', async () => {
-    const r = await app.inject({
-      method: 'POST', url: '/promo/redeem', headers: auth(), payload: { code: 'NO-SUCH-CODE' },
-    });
-    expect(r.statusCode).toBe(404);
-    // redeemPromoCode always sends ErrorCode.BAD_REQUEST as the code — only the HTTP status and message vary by error.
-    expect(body(r).error.code).toBe('BAD_REQUEST');
-    expect(body(r).error.message).toBe('PROMO_NOT_FOUND');
   });
 
   it('commercial not configured → economy endpoints 503', async () => {

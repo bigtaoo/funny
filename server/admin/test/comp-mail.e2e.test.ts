@@ -88,7 +88,7 @@ class FakeGateway implements GatewayClient {
   async invalidateFriends(): Promise<void> {}
 }
 /** The wallet/grant surface metaserver actually touches in this suite. Declared as a `Pick` of the
- *  real CommercialClient rather than the whole thing: the pool/promo/subscription half (18 more
+ *  real CommercialClient rather than the whole thing: the pool/subscription half (18 more
  *  methods) is irrelevant here, while everything listed below stays checked against the real
  *  signatures — see the cast at the buildApp() call for the other half. */
 type FakeCommercialSurface = Pick<CommercialClient,

@@ -178,3 +178,28 @@ BOOST_WEIGHT: micro…bodyLg 1 · label 0.85 · heading 0.75 · title 0.65 · he
 
 **读图结论**：横屏手机上 Back、标题、侧栏、卡牌、按钮都约大 1.4×，对比 09-28 的旧截图差别很明显。挤但没判重叠的：防守编辑器进攻队顶栏（Back 右边紧贴兵力读数，读数又按可用宽度缩放过），这轮没动。
 
+
+## 74. 中文段落全局断行：替换 Pixi 的分词器（2026-10-04）
+
+**起因**：IOS_RELEASE §10.8 修大厅退款同意卡时发现，Pixi 7 的 `wordWrap` 只在空格处断行——一整句中文是一个「词」。
+全仓 30 来处 `wordWrap: true` 里约一半没开 `breakWords`（新手引导面板、抽卡概率、片头/插画过场、关卡准备、结算、设置浮层、重连/申诉/确认对话框、拍卖行列表、图鉴与养成的背景故事……），
+中文在这些地方直接整行冲出面板；开了 `breakWords` 的那一半能断，但中英混排时是一级级半空的台阶行。
+此前已有两份各自为政的手写断行（`SubscriptionDisclosureDialog.wrapMixed`、§10.8 的 `pixiText.wrapMixedText`），每处新文本都得记得调用。
+
+**改法**：不逐处修，换掉 Pixi 的分词。[`pixiText.ts`](../../client/src/render/pixiText.ts) 的 `cjkTokenize` 顶替 `TextMetrics.tokenize`
+（typings 里是 private，但静态 `wordWrap` 就是调它），`installCjkWordWrap()` 与 `installTextPaddingFloor()` 一起在 `app.ts` 启动时装上，
+测试 harness `pixiHeadless.ts` 里也装，UI 测试和线上排版一致。
+- 每个全角字符单独成一个 token，拉丁连续字符（含 U+00A0 连着的「Apple ID」）整体一个 token，空格/换行照旧各自成 token；
+- 禁则：收尾标点（，。、；：？！）」』》 等）粘在前一个 token 上，开头标点（（「『《 等）粘在后一个上；
+- 单个全角字符永远不会比一行宽，于是 Pixi 自己的「放得下就接上，否则换行」循环就能把每行填满；`breakWords` 的含义不变——只管一个比整行还宽的拉丁单词能不能拆。
+- `wordWrap` 关着的文字完全不受影响。
+
+两份手写断行删掉，调用处改回普通 `wordWrap + breakWords`。
+
+**行为变化（有意的）**：没开 `breakWords` 的地方中文现在会折行。卡牌格子的卡名（`HandView/cellDraw.ts`）也一样：
+多字中文名放不下时折成两行而不是一直缩字号——和英文多词卡名早就是的行为一致。
+
+**测试**：[`test/render/cjkTokenize.test.ts`](../../client/test/render/cjkTokenize.test.ts)（分词）；
+[`subscriptionDisclosureDialog.ui.ts`](../../client/test/ui/subscriptionDisclosureDialog.ui.ts) 原先测 `wrapMixed` 的四条改为直接测 `TextMetrics.measureText` 的折行结果
+（行宽不超、「Apple ID」不拆、标点不落行首、中文行填满、超长德语单词才拆）。
+真 Chrome 竖屏 390×844 中文看过：重连提示（以前整句冲出卡片）、退款同意卡、片头过场。

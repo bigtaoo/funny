@@ -64,14 +64,3 @@ export interface PaddleEventView {
   rawEvent: string;
   ts: number;
 }
-
-export interface PromoCodeView {
-  code: string;
-  coins: number;
-  expiresAt?: number;
-  totalLimit?: number;
-  redeemed: number;
-  note?: string;
-  createdBy: string;
-  createdAt: number;
-}

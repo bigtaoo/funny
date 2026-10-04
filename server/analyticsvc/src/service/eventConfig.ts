@@ -61,7 +61,6 @@ export const DEFAULT_CONFIG: AnalyticsConfig = {
     battlepass_buy:           { sample: 1.0 },
     battlepass_claim:         { sample: 1.0 },
     recharge_milestone_claim: { sample: 1.0 },
-    promo_redeem:             { sample: 1.0 },
     fate_redeem:              { sample: 1.0 },
     ads_reward:               { sample: 1.0 },
     daily_checkin:            { sample: 1.0 },

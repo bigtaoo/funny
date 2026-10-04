@@ -3,15 +3,14 @@
 //
 // Why this file exists (2026-09-03 branch-coverage pass): these domains sit at or near 100% LINE
 // coverage — the route e2e suites drive every method — but their fakes are always
-// `available: true`, so the other side of every `available` guard had never run. That is exactly
-// the shape promo.test.ts was written for on 2026-08-20 (see its header); this file finishes the
-// job for the remaining five domains. What the branches decide is not cosmetic: each domain picks
+// `available: true`, so the other side of every `available` guard had never run; this file covers
+// those five domains. What the branches decide is not cosmetic: each domain picks
 // deliberately between degrading quietly (a read whose empty result still lets the ops console
 // render) and failing loudly with its own 503 code (a write, where "nothing happened" must not look
 // like success), and nothing pinned which method does which when a backend URL is unset.
 //
 // No Mongo: every assertion here returns or throws before touching a collection, except the flags
-// group, which stubs the two calls it makes. Same stub-core precedent as promo.test.ts.
+// group, which stubs the two calls it makes. Same stub-core pattern as stubDeps.ts.
 import { describe, expect, it } from 'vitest';
 import type { FeatureFlagDoc } from '@nw/shared';
 import type { AppealsService } from '../src/service/appeals';

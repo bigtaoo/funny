@@ -1,6 +1,6 @@
 // Deterministic collection stubs for the code paths a real mongod cannot be asked to produce on demand.
 //
-// Every E11000 catch block in this package (shop.ts ×3, gachaDraw.ts ×2, recharge.ts ×3, promo.ts,
+// Every E11000 catch block in this package (shop.ts ×3, gachaDraw.ts ×2, recharge.ts ×3,
 // base.ts's subscriptionCardBuy) exists for exactly one situation: this caller's pre-check read found no
 // row, and by the time it tried to insert, a CONCURRENT caller had already claimed the same key. A real
 // Mongo only produces that by losing a genuine race, which is why every one of those blocks — and every
