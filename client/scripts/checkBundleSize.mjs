@@ -20,7 +20,7 @@
 // cannot drift from the manifest, and it counts post-minification, post-contenthash bytes.
 //
 // Usage: node scripts/checkBundleSize.mjs   (run with cwd = client/, after `npm run build:web`).
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { brotliCompressSync, constants as zlibConstants } from 'node:zlib';
 
@@ -32,6 +32,7 @@ const arg = (name, dflt) => {
 };
 const DIST = arg('dist', 'dist');
 const BUDGET_PATH = arg('budget', join('scripts', 'bundle-size-budget.json'));
+const WEB_ONLY_SRC = arg('web-only', join('public', 'web'));
 const KIB = 1024;
 
 function fail(msg) {
@@ -73,9 +74,18 @@ function sizeOf(name) {
   }
 }
 
+// Website pages copied out of public/web (home/terms/support, the App Review recording, ...) are
+// emitted only by TARGET=web — webpack.config.js guards that CopyPlugin group with
+// `!isWechat && !isOffOrigin` — so no package inherits them. Counting them would let a website
+// video eat the art budget. index.html is the game's own page and stays counted.
+const WEB_ONLY = new Set(
+  existsSync(WEB_ONLY_SRC) ? readdirSync(WEB_ONLY_SRC).filter((n) => n !== 'index.html') : [],
+);
+
 function distTotalBytes(dir = DIST) {
   let total = 0;
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (dir === DIST && WEB_ONLY.has(entry.name)) continue;
     const p = join(dir, entry.name);
     total += entry.isDirectory() ? distTotalBytes(p) : statSync(p).size;
   }
@@ -104,7 +114,7 @@ const measured = {
   },
   'dist.total': {
     bytes: distTotalBytes(),
-    what: 'every emitted file — the whole-package figure the WeChat/mobile targets inherit',
+    what: 'every emitted file except the web-only site pages — the whole-package figure the WeChat/mobile targets inherit',
   },
 };
 
