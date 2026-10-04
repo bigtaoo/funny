@@ -135,3 +135,43 @@ export const MONO_CELL = { latin: 0.54, fullWidth: 1 } as const;
  * and has to match as one.
  */
 const FULL_WIDTH = /[ᄀ-ᅟ⺀-〾ぁ-㏿㐀-䶿一-鿿ꀀ-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦\u{20000}-\u{3FFFD}]/u;
+
+/** Punctuation that must not open a line (kinsoku): it rides on the end of the previous one. */
+const NO_LINE_START = /^[，。、；：？！）」』》〉】’”…,.;:?!)\]}%]$/u;
+
+/**
+ * Line-break `text` to `maxW` for a paragraph that mixes CJK with Latin words, returning it with
+ * explicit `\n`s (draw it with `wordWrap` off).
+ *
+ * Pixi's own wrapper only breaks at spaces. With `breakWords` a CJK run does wrap, but Pixi first
+ * flushes the current line before every space-delimited "word" that does not fit, so a sentence
+ * like `向 Apple 申请退款，Apple 会向我们…` comes out as a stair of half-empty lines. Here every
+ * full-width character is its own break unit, a Latin word (with its trailing spaces) is one unit
+ * that is never split, and closing punctuation is glued to the unit before it. Existing `\n`s are
+ * kept. A single unit wider than `maxW` gets a line of its own rather than being cut.
+ *
+ * `measure` is injected so this stays a pure function (tests pass a monospace estimate; callers
+ * pass `PIXI.TextMetrics.measureText(s, style).width`).
+ */
+export function wrapMixedText(text: string, maxW: number, measure: (s: string) => number): string {
+  return text.split('\n').map((para) => {
+    const units: string[] = [];
+    for (const m of para.matchAll(/[^\s\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}，。、；：？！（）「」『』《》〈〉【】‘’“”…]+\s*|\s+|./gsu)) {
+      const u = m[0];
+      if (units.length > 0 && (NO_LINE_START.test(u.trimEnd()) || /^\s+$/.test(u))) units[units.length - 1] += u;
+      else units.push(u);
+    }
+    const lines: string[] = [];
+    let line = '';
+    for (const u of units) {
+      if (line !== '' && measure((line + u).trimEnd()) > maxW) {
+        lines.push(line.trimEnd());
+        line = u.trimStart();
+      } else {
+        line += u;
+      }
+    }
+    lines.push(line.trimEnd());
+    return lines.join('\n');
+  }).join('\n');
+}

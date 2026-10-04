@@ -655,6 +655,22 @@ web 和新号都不弹这张卡，所以一直只有这台测试机能复现。
 - `ota.gamestao.com`（R2）此前**没配 CORS**，WKWebView（源 `capacitor://localhost`）读 manifest 被拦，`ota.ts` 静默吞掉——OTA 从上线起就没在真机上生效过。
   2026-10-03 给 R2 加了 CORS 规则（允许 `capacitor://localhost` 的 GET/HEAD）后立刻生效，详见 §11.7。
 
+### 10.8 §10.7 修复后的真机复核 + 同意卡中文不换行（2026-10-04）
+
+**复核**（新装、手动登录，analyticsvc `events` + metaserver 访问日志对时间线）：
+进大厅 09:41:50.3 → 同意卡回答（`POST /iap/apple/consumption-consent`）09:42:01.6 → 第一次 `ui_click`（`lobby.cards`，即「养成」）09:42:02.5，
+之后十几次点击全部即时生效。**大厅没有再卡死**：那约 11 秒是同意卡在屏上的时间——卡是模态的，卡外的点击按设计吞掉（§10.7 的回归测试钉着这一点），
+所以「先点了养成、卡了几秒」其实是点在了卡外。唯一的真卡顿是进大厅时一帧 391 ms（`rndMaxSh` 336 = Metal 着色器冷编译），不到半秒。
+
+**同意卡中文正文不换行**：Pixi 的 `wordWrap` 只在空格处断行，中文整段被当成一个「词」，画成一行横穿卡片。
+只加 `breakWords` 不够——Pixi 碰到放不下的「词」会先把当前行冲掉再断字，`向 Apple 申请退款，Apple 会…` 这种中英混排就成了参差不齐的半空行；
+另外卡片高度是写死的，竖屏手机上正文一折行就压到按钮上，德语标题和「Nicht erlauben」也溢出。
+**修法**：[`pixiText.ts` `wrapMixedText`](../../client/src/render/pixiText.ts) 自己断行（汉字逐字可断、拉丁词整体不拆、句末标点不落行首），
+大厅的同意卡和功能引导卡改成「卡片高度随正文增长」，标题与按钮文字用 `txtFit` 收进宽度。
+回归：[`client/test/render/wrapMixedText.test.ts`](../../client/test/render/wrapMixedText.test.ts)；
+[`lobbyConsentCard.ui.ts`](../../client/test/ui/lobbyConsentCard.ui.ts) 改为按去掉空白后的文字找正文。真浏览器里中/英/德 × 竖屏 390×844 + 横屏都看过。
+同类隐患（别处 `wordWrap` 没开 `breakWords` 的中文段落）没在这次一起扫。
+
 ## 11. OTA 热更新（Capgo 自托管，路线 B）
 
 > 目标：改 JS / web 资源（战斗逻辑、UI、数值、美术）后，玩家**下次冷启动即自动拿到新版**，无需过 App Store 审核；同时保留本地包做离线兜底。**只能热更 web 层**——任何原生改动（新增 Capacitor 插件、`Info.plist`、`AppDelegate.swift` 的 IAP 桥、图标/启动图、**`capacitor.config.ts` 里的 `ios.*`**，逐条见 §5.1）仍必须走 §5 的二进制发布。
