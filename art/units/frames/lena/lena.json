@@ -36,28 +36,28 @@
     [
      "boot_r",
      [
-      290,
+      546,
       1482
      ]
     ],
     [
      "boot_r",
      [
-      455,
+      381,
       1495
      ]
     ],
     [
      "boot_l",
      [
-      462,
+      632,
       1492
      ]
     ],
     [
      "boot_l",
      [
-      605,
+      489,
       1505
      ]
     ]
@@ -116,16 +116,16 @@
     {
      "t": 0,
      "pose": {
-      "thigh_l": -17,
+      "thigh_l": -26,
       "shin_l": 4,
-      "boot_l": -8,
-      "thigh_r": 14,
-      "shin_r": 12,
-      "boot_r": 6,
-      "torso": 3,
-      "head": -1,
-      "arm_u": -16,
-      "arm_l": -10,
+      "boot_l": -12,
+      "thigh_r": 22,
+      "shin_r": 20,
+      "boot_r": 14,
+      "torso": 6,
+      "head": -4,
+      "arm_u": -18,
+      "arm_l": -12,
       "hand": -4,
       "shield": -1,
       "shield.y": 0,
@@ -135,35 +135,35 @@
     {
      "t": 0.25,
      "pose": {
-      "thigh_l": -4,
+      "thigh_l": -2,
       "shin_l": 6,
       "boot_l": 0,
-      "thigh_r": -8,
-      "shin_r": 52,
-      "boot_r": 14,
-      "torso": 5,
-      "head": -3,
+      "thigh_r": -20,
+      "shin_r": 62,
+      "boot_r": 6,
+      "torso": 8,
+      "head": -6,
       "arm_u": 0,
-      "arm_l": -4,
+      "arm_l": -6,
       "hand": 0,
       "shield": 1,
-      "shield.y": -8,
-      "sword": 2
+      "shield.y": -6,
+      "sword": 0
      }
     },
     {
      "t": 0.5,
      "pose": {
-      "thigh_r": -17,
+      "thigh_r": -26,
       "shin_r": 4,
-      "boot_r": -8,
-      "thigh_l": 14,
-      "shin_l": 12,
-      "boot_l": 6,
-      "torso": 3,
-      "head": -1,
-      "arm_u": 16,
-      "arm_l": 2,
+      "boot_r": -12,
+      "thigh_l": 22,
+      "shin_l": 20,
+      "boot_l": 14,
+      "torso": 6,
+      "head": -4,
+      "arm_u": 18,
+      "arm_l": 0,
       "hand": 4,
       "shield": -1,
       "shield.y": 0,
@@ -173,20 +173,20 @@
     {
      "t": 0.75,
      "pose": {
-      "thigh_r": -4,
+      "thigh_r": -2,
       "shin_r": 6,
       "boot_r": 0,
-      "thigh_l": -8,
-      "shin_l": 52,
-      "boot_l": 14,
-      "torso": 5,
-      "head": -3,
+      "thigh_l": -20,
+      "shin_l": 62,
+      "boot_l": 6,
+      "torso": 8,
+      "head": -6,
       "arm_u": 0,
-      "arm_l": -4,
+      "arm_l": -6,
       "hand": 0,
       "shield": 1,
-      "shield.y": -8,
-      "sword": -2
+      "shield.y": -6,
+      "sword": 0
      }
     }
    ]

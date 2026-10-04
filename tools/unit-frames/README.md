@@ -9,6 +9,8 @@ Design: `design/product/art-direction.md` §4.3. Ported from `D:\standing\tools\
 | File | What |
 |---|---|
 | `bake.py <spec.json> [--preview <out.png>] [--debug <clip> <out.png>]` | Bake a unit's clips into `client/src/assets/units/frames/<unit>.png` + `.json`. `--preview` also writes a strip and a GIF at 2× game size; `--debug` draws a clip's deformer regions over its source. |
+| `split_parts.py <parts_spec.json> <out dir>` | Split a rig-ready drawing into parts (joint `discs`, `hidden` fills with optional `clone`, `open`, `flip`, `outline`); writes the parts, `parts.json` and an exploded `preview.png`. Format at the top of the file. |
+| `rig.py` | Cutout rig used by `bake.py` for `"source": "rig"` clips: forward kinematics, spline/eased keys, sole planting, rig-drawn `lines` (bowstring, nocked arrow) with per-clip overrides. Format at the top of the file. |
 | `cutout.py` | Cuts a drawing out of its white background (used by `bake.py` for sources without alpha). |
 | `generate_image.sh <out> <prompt file>` | Mistral text-to-image. |
 | `edit_image.sh <in> <out> <prompt file>` | Mistral image edit from a reference. |
@@ -17,6 +19,15 @@ Design: `design/product/art-direction.md` §4.3. Ported from `D:\standing\tools\
 Specs and prompts live in `art/units/frames/<unit>/`. The spec format is documented at the top of
 `bake.py`; tune regions with `--debug`, then judge motion with `?unitlab` on the dev server, which
 plays every frame-sheet unit next to its bone rig.
+
+Two ways to make frames:
+
+- **Warp** one whole drawing per clip (the first pilot). No seams, but limbs barely move.
+- **Rig** (current for Lena and Mara): a rig-ready drawing (limbs apart, joints visible, facing
+  right; made in ChatGPT) is split into parts, posed with forward kinematics and baked to the same
+  sheets. Cut both limbs at each joint and give each a disc there; put the hip pivot at the real
+  hip, not the skirt hem; mirror (`flip`) a part drawn facing the wrong way; check every part
+  alone over a flat colour for detached fills.
 
 Known limits:
 

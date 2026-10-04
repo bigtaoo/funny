@@ -20,6 +20,7 @@ spec.json:
        "hidden": [[[x, y], ...], ...],    # optional: areas covered by other parts, filled in;
                                           #   an entry may be {"poly": [...], "clone": [dx, dy]}
                                           #   to copy the part's own texture from that offset
+       "flip": true,                      # optional: mirror the part about its pivot
        "pivot": [x, y]}                   # joint position in source pixels
     ]
   }
@@ -39,7 +40,7 @@ import sys
 
 import cv2
 import numpy as np
-from PIL import Image, ImageChops, ImageDraw
+from PIL import Image, ImageChops, ImageDraw, ImageOps
 
 sys.path.insert(0, os.path.dirname(__file__))
 from cutout import background_mask  # noqa: E402
@@ -161,8 +162,12 @@ def split(spec_path, out_dir):
         x0, y0 = max(0, x0 - PAD), max(0, y0 - PAD)
         x1, y1 = min(src.width, x1 + PAD), min(src.height, y1 + PAD)
         im = im.crop((x0, y0, x1, y1))
-        im.save(os.path.join(out_dir, part["name"] + ".png"), optimize=True)
         px, py = part["pivot"]
+        if part.get("flip"):
+            # mirrored about the pivot, e.g. a boot drawn toes-left on a figure that walks right
+            im = ImageOps.mirror(im)
+            x0 = 2 * px - x0 - im.width
+        im.save(os.path.join(out_dir, part["name"] + ".png"), optimize=True)
         meta.append({
             "name": part["name"],
             "w": im.width, "h": im.height,
