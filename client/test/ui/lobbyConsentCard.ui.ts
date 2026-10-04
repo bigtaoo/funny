@@ -95,7 +95,7 @@ function rects(scene: LobbyScene): { yes: PIXI.Rectangle; no: PIXI.Rectangle } {
   };
 }
 
-/** The body is drawn with explicit line breaks (pixiText.ts `wrapMixedText`): compare words, not layout. */
+/** The body is drawn wrapped, so its lines are broken: compare words, not layout. */
 const sameWords = (drawn: string, source: string): boolean =>
   drawn.replace(/\s+/g, '') === source.replace(/\s+/g, '');
 

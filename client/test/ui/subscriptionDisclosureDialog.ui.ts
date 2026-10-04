@@ -7,7 +7,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
 import { initI18n, setLocale, t, type Locale } from '../../src/i18n';
-import { SubscriptionDisclosureDialog, APPLE_STANDARD_EULA_URL, wrapMixed } from '../../src/ui/dialogs/SubscriptionDisclosureDialog';
+import { SubscriptionDisclosureDialog, APPLE_STANDARD_EULA_URL } from '../../src/ui/dialogs/SubscriptionDisclosureDialog';
 import type { SubscriptionDisclosureInfo } from '../../src/ui/dialogs/subscriptionDisclosure';
 
 // The dialog only ever runs inside the iOS shell; legalUrl() must give the absolute https page there.
@@ -115,14 +115,16 @@ describe('SubscriptionDisclosureDialog — what App Review needs to see', () => 
   });
 });
 
-describe('wrapMixed — mixed CJK/Latin wrapping', () => {
+describe('wordWrap — mixed CJK/Latin wrapping (render/pixiText.ts cjkTokenize)', () => {
   // Headless measureText is a flat 7px per character, so widths below are in characters × 7.
-  const style = new PIXI.TextStyle({ fontSize: 14, fontFamily: 'monospace' });
+  const wrapMixed = (text: string, maxW: number): string => PIXI.TextMetrics.measureText(text, new PIXI.TextStyle({
+    fontSize: 14, fontFamily: 'monospace', wordWrap: true, wordWrapWidth: maxW, breakWords: true,
+  })).lines.join('\n');
   const zh = '确认购买后将通过你的 Apple ID 账户扣费。订阅会自动续期，除非在当前周期结束前至少 24 小时取消。';
 
   it('keeps every line within the width at any width', () => {
     for (let chars = 6; chars <= 30; chars++) {
-      for (const line of wrapMixed(zh, style, chars * 7).split('\n')) {
+      for (const line of wrapMixed(zh, chars * 7).split('\n')) {
         expect(line.length, `"${line}" at ${chars} chars`).toBeLessThanOrEqual(chars);
       }
     }
@@ -130,19 +132,19 @@ describe('wrapMixed — mixed CJK/Latin wrapping', () => {
 
   it('never splits "Apple ID" or starts a line with closing punctuation, at any width', () => {
     for (let chars = 9; chars <= 30; chars++) {
-      const out = wrapMixed(zh, style, chars * 7);
+      const out = wrapMixed(zh, chars * 7);
       expect(out, `at ${chars} chars`).toContain('Apple ID');
       for (const line of out.split('\n')) expect(line[0], `"${line}" at ${chars} chars`).not.toMatch(/[。，；]/);
     }
   });
 
   it('fills CJK lines instead of stranding a short clause after a Latin word', () => {
-    const lines = wrapMixed(zh, style, 20 * 7).split('\n');
+    const lines = wrapMixed(zh, 20 * 7).split('\n');
     expect(lines[0]!.length).toBeGreaterThanOrEqual(18);
   });
 
   it('splits a single word only when it alone is wider than the line', () => {
-    expect(wrapMixed('in deinen App-Store-Accounteinstellungen.', style, 12 * 7).split('\n'))
+    expect(wrapMixed('in deinen App-Store-Accounteinstellungen.', 12 * 7).split('\n'))
       .toEqual(['in deinen', 'App-Store-Ac', 'counteinstel', 'lungen.']);
   });
 });

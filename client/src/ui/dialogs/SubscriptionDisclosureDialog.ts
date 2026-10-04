@@ -24,43 +24,6 @@ import { openExternalUrl } from '../../platform/externalLink';
 /** App Store Connect uses Apple's standard license agreement for this app, so that is the EULA. */
 export const APPLE_STANDARD_EULA_URL = 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
 
-const CJK = '⺀-鿿豈-﫿＀-￯　-〿';
-// One CJK character (plus any closing punctuation, so "。" never starts a line), one run of
-// non-CJK non-space characters (a Latin word; U+00A0 does not split it), or a run of ASCII spaces.
-const WRAP_TOKEN = new RegExp(`[${CJK}][。，、；：！？）」』]*|[^ \\t${CJK}]+|[ \\t]+`, 'g');
-
-/**
- * Wrap mixed CJK/Latin text to `maxW`, measured with `style`. PIXI's own wordWrap breaks only at
- * spaces: with spaces around "Apple ID" it strands half a clause on its own line, and without them
- * `breakWords` cuts wherever the line fills — "Apple I" / "D". Here CJK breaks between characters,
- * Latin words stay whole, and only a single word wider than the line is split by characters.
- */
-export function wrapMixed(text: string, style: PIXI.TextStyle, maxW: number): string {
-  const width = (s: string): number => PIXI.TextMetrics.measureText(s, style).width;
-  const lines: string[] = [];
-  for (const para of text.split('\n')) {
-    let line = '';
-    for (const tok of para.match(WRAP_TOKEN) ?? []) {
-      const space = tok.trim() === '';
-      if (space) { if (line) line += tok; continue; }
-      if (!line || width(line + tok) <= maxW) {
-        line += tok;
-      } else {
-        lines.push(line.trimEnd());
-        line = tok;
-      }
-      while (width(line) > maxW && line.length > 1) {
-        let cut = line.length - 1;
-        while (cut > 1 && width(line.slice(0, cut)) > maxW) cut--;
-        lines.push(line.slice(0, cut));
-        line = line.slice(cut);
-      }
-    }
-    lines.push(line.trimEnd());
-  }
-  return lines.join('\n');
-}
-
 export interface SubscriptionDisclosureCallbacks {
   onSubscribe(): void;
   onCancel(): void;
@@ -233,19 +196,19 @@ export class SubscriptionDisclosureDialog implements Scene {
     // Line height follows the snapped size, not `unit`: on a phone the size sits on the legibility
     // floor while `unit` keeps shrinking, and a unit-proportional line height stacked the rows.
     const detailsSize = snapFont(Math.round(unit * 0.042));
-    const details = makeText('', {
+    const details = makeText(detailLines.join('\n'), {
       fontSize: detailsSize, fill: C.dark, fontFamily: 'monospace', align: 'center',
       lineHeight: Math.round(detailsSize * 1.35),
+      wordWrap: true, wordWrapWidth: colW, breakWords: true,
     });
-    details.text = wrapMixed(detailLines.join('\n'), details.style, colW);
     details.anchor.set(0.5, 0);
 
     const termsSize = snapFont(Math.round(unit * 0.032));
-    const terms = makeText('', {
+    const terms = makeText(t('subDisclosure.terms'), {
       fontSize: termsSize, fill: C.mid, fontFamily: 'monospace', align: 'center',
       lineHeight: Math.round(termsSize * 1.3),
+      wordWrap: true, wordWrapWidth: colW, breakWords: true,
     });
-    terms.text = wrapMixed(t('subDisclosure.terms'), terms.style, colW);
     terms.anchor.set(0.5, 0);
 
     // Link rows are spaced off their measured height for the same floor reason.

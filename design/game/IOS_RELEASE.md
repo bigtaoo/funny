@@ -665,11 +665,9 @@ web 和新号都不弹这张卡，所以一直只有这台测试机能复现。
 **同意卡中文正文不换行**：Pixi 的 `wordWrap` 只在空格处断行，中文整段被当成一个「词」，画成一行横穿卡片。
 只加 `breakWords` 不够——Pixi 碰到放不下的「词」会先把当前行冲掉再断字，`向 Apple 申请退款，Apple 会…` 这种中英混排就成了参差不齐的半空行；
 另外卡片高度是写死的，竖屏手机上正文一折行就压到按钮上，德语标题和「Nicht erlauben」也溢出。
-**修法**：[`pixiText.ts` `wrapMixedText`](../../client/src/render/pixiText.ts) 自己断行（汉字逐字可断、拉丁词整体不拆、句末标点不落行首），
+**修法**：起初在 `pixiText.ts` 写了专用断行函数；同日改为全局方案——替换 Pixi 的分词器，所有 `wordWrap` 文本一起修好，见 [UI_DESIGN_LOG_2026-10 §74](UI_DESIGN_LOG_2026-10.md)。
 大厅的同意卡和功能引导卡改成「卡片高度随正文增长」，标题与按钮文字用 `txtFit` 收进宽度。
-回归：[`client/test/render/wrapMixedText.test.ts`](../../client/test/render/wrapMixedText.test.ts)；
-[`lobbyConsentCard.ui.ts`](../../client/test/ui/lobbyConsentCard.ui.ts) 改为按去掉空白后的文字找正文。真浏览器里中/英/德 × 竖屏 390×844 + 横屏都看过。
-同类隐患（别处 `wordWrap` 没开 `breakWords` 的中文段落）没在这次一起扫。
+回归：[`lobbyConsentCard.ui.ts`](../../client/test/ui/lobbyConsentCard.ui.ts) 按去掉空白后的文字找正文。真浏览器里中/英/德 × 竖屏 390×844 + 横屏都看过。
 
 ## 11. OTA 热更新（Capgo 自托管，路线 B）
 

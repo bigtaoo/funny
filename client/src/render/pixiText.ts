@@ -138,40 +138,64 @@ const FULL_WIDTH = /[ᄀ-ᅟ⺀-〾ぁ-㏿㐀-䶿一-鿿ꀀ-꓏가-힣豈-﫿︰
 
 /** Punctuation that must not open a line (kinsoku): it rides on the end of the previous one. */
 const NO_LINE_START = /^[，。、；：？！）」』》〉】’”…,.;:?!)\]}%]$/u;
+/** Punctuation that must not close a line: it rides into the start of the next one. */
+const NO_LINE_END = /^[（「『《〈【‘“([{]$/u;
 
 /**
- * Line-break `text` to `maxW` for a paragraph that mixes CJK with Latin words, returning it with
- * explicit `\n`s (draw it with `wordWrap` off).
+ * Split text into the units Pixi's `wordWrap` may break between — the replacement for
+ * `TextMetrics.tokenize` that {@link installCjkWordWrap} installs.
  *
- * Pixi's own wrapper only breaks at spaces. With `breakWords` a CJK run does wrap, but Pixi first
- * flushes the current line before every space-delimited "word" that does not fit, so a sentence
- * like `向 Apple 申请退款，Apple 会向我们…` comes out as a stair of half-empty lines. Here every
- * full-width character is its own break unit, a Latin word (with its trailing spaces) is one unit
- * that is never split, and closing punctuation is glued to the unit before it. Existing `\n`s are
- * kept. A single unit wider than `maxW` gets a line of its own rather than being cut.
- *
- * `measure` is injected so this stays a pure function (tests pass a monospace estimate; callers
- * pass `PIXI.TextMetrics.measureText(s, style).width`).
+ * Pixi's own tokenizer splits only at breaking spaces and newlines, so a Chinese sentence is one
+ * unbreakable "word": without `breakWords` it runs straight off the panel, and with it Pixi flushes
+ * the current line before every too-wide "word", so `向 Apple 申请退款，Apple 会…` comes out as a
+ * stair of half-empty lines. Here every full-width character is a token of its own, a run of
+ * Latin (or any non-full-width) characters stays one token, and kinsoku glues closing punctuation
+ * to the character before it and opening punctuation to the one after. Spaces and newlines are
+ * single tokens, as in Pixi's version. U+00A0 is not a breaking space, so "Apple ID" stays
+ * together.
  */
-export function wrapMixedText(text: string, maxW: number, measure: (s: string) => number): string {
-  return text.split('\n').map((para) => {
-    const units: string[] = [];
-    for (const m of para.matchAll(/[^\s\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}，。、；：？！（）「」『』《》〈〉【】‘’“”…]+\s*|\s+|./gsu)) {
-      const u = m[0];
-      if (units.length > 0 && (NO_LINE_START.test(u.trimEnd()) || /^\s+$/.test(u))) units[units.length - 1] += u;
-      else units.push(u);
+export function cjkTokenize(text: string): string[] {
+  const tokens: string[] = [];
+  if (typeof text !== 'string') return tokens;
+  let token = '';
+  let prev = '';
+  for (const ch of text) {
+    if (PIXI.TextMetrics.isBreakingSpace(ch) || isNewline(ch)) {
+      if (token !== '') tokens.push(token);
+      tokens.push(ch);
+      token = '';
+      prev = '';
+      continue;
     }
-    const lines: string[] = [];
-    let line = '';
-    for (const u of units) {
-      if (line !== '' && measure((line + u).trimEnd()) > maxW) {
-        lines.push(line.trimEnd());
-        line = u.trimStart();
-      } else {
-        line += u;
-      }
+    if (token !== '' && canBreakBetween(prev, ch)) {
+      tokens.push(token);
+      token = '';
     }
-    lines.push(line.trimEnd());
-    return lines.join('\n');
-  }).join('\n');
+    token += ch;
+    prev = ch;
+  }
+  if (token !== '') tokens.push(token);
+  return tokens;
+}
+
+function isNewline(ch: string): boolean {
+  return ch === '\n' || ch === '\r';
+}
+
+function canBreakBetween(a: string, b: string): boolean {
+  if (NO_LINE_START.test(b) || NO_LINE_END.test(a)) return false;
+  return FULL_WIDTH.test(a) || FULL_WIDTH.test(b);
+}
+
+/**
+ * Make every wrapped `PIXI.Text` break Chinese/Japanese/Korean between characters, once at boot.
+ *
+ * Swaps {@link cjkTokenize} in for `TextMetrics.tokenize` (private in the typings, but it is the
+ * static `wordWrap` calls). That is the whole fix: a full-width character is never wider than a
+ * line, so Pixi's "fits? else new line" loop fills each line, and `breakWords` keeps its meaning —
+ * whether a single Latin word wider than the line may be cut. Text drawn with `wordWrap` off is
+ * untouched.
+ */
+export function installCjkWordWrap(): void {
+  (PIXI.TextMetrics as unknown as { tokenize: (text: string) => string[] }).tokenize = cjkTokenize;
 }

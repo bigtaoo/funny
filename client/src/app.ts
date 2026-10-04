@@ -34,7 +34,7 @@ import { prewarmPanelFrame } from './render/panelFrame';
 import { msSinceActivity, POWER_PREFERENCE, RenderPolicy, rendererResolution } from './render/renderPolicy';
 import { installAdaptiveResolution } from './render/adaptiveResolution';
 import { setDebugFlagStorage } from './debugFlags';
-import { installTextPaddingFloor, setTextResolution } from './render/pixiText';
+import { installCjkWordWrap, installTextPaddingFloor, setTextResolution } from './render/pixiText';
 import { preloadBoot } from './assets/bootManifest';
 import { startIdlePrefetch } from './assets/idlePrefetch';
 import { installPrefetchPolicy } from './assets/prefetchPolicy';
@@ -101,6 +101,7 @@ export async function startApp(
   // Raise the global text-padding floor so no PIXI.Text (migrated to makeText or not)
   // can clip tall CJK glyph tops. See render/pixiText.ts. Layout-neutral.
   installTextPaddingFloor();
+  installCjkWordWrap();
   // Rasterize each label once, at the renderer's resolution, instead of at 1x for layout and again
   // at 2x on its first render. See render/pixiText.ts.
   setTextResolution(app.renderer.resolution);

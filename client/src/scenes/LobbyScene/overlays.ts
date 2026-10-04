@@ -6,7 +6,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { t, TranslationKey } from '../../i18n';
 import { buildIcon, IconKind } from '../../render/icons';
-import { makeText, wrapMixedText } from '../../render/pixiText';
+import { makeText } from '../../render/pixiText';
 import { txtFit } from '../../render/sketchUi';
 import { C, txt, sketchPanel, type LobbySceneCore } from './core';
 import { snapFont } from '../../render/fontScale';
@@ -292,18 +292,13 @@ export class OverlaysPanel {
   }
 }
 
-/**
- * A card's wrapped body paragraph, anchored top-centre. Broken by `wrapMixedText`, not Pixi's
- * `wordWrap`: Pixi only breaks at spaces, so a Chinese sentence was one unbreakable "word" drawn
- * as a single line straight through the card's edges.
- */
+/** A card's wrapped body paragraph, anchored top-centre. */
 function wrappedBody(text: string, fontSize: number, cardW: number): PIXI.Text {
-  const style = new PIXI.TextStyle({
+  const lbl = makeText(text, {
     fontSize, fill: C.mid, fontFamily: 'monospace', align: 'center',
     lineHeight: Math.round(fontSize * 1.4),
+    wordWrap: true, wordWrapWidth: cardW - Math.round(cardW * 0.12), breakWords: true,
   });
-  const maxW = cardW - Math.round(cardW * 0.12);
-  const lbl = makeText(wrapMixedText(text, maxW, (s) => PIXI.TextMetrics.measureText(s, style).width), style);
   lbl.anchor.set(0.5, 0);
   return lbl;
 }
