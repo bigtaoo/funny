@@ -284,6 +284,11 @@ module.exports = (env, argv) => {
         // and a store build has no business serving its own marketing site. Same group, different
         // reason; the gate in nativePaymentIsolation.test.ts asserts both lists separately.
         { from: 'public/web/about.html' }, { from: 'public/web/support.html' },
+        // The physical-device screen recording linked from App Store Connect's App Review Notes
+        // (Guideline 1.2: EULA before login, report, block). Website-only for the same reason as
+        // about/support — nothing in the game links to it. Keep the link stable: ASC keeps it
+        // across submissions, so a new recording gets a new file name rather than replacing this one.
+        { from: 'public/web/review', to: 'review' },
       ] })] : []),
       ...(!isWechat ? [new CopyPlugin({ patterns: [
         { from: 'public/favicon-16.png' }, { from: 'public/favicon-32.png' }, { from: 'public/favicon-48.png' },
