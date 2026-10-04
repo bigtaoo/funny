@@ -8,8 +8,19 @@ A rig source in the bake spec:
     "ground": [x, y], "crown": y,          # source px, as for a drawing source
     "parent": {"shin_b": "thigh_b", ...},  # missing / null = child of the body root
     "order": ["shin_b", ...],              # optional draw order override, back to front
-    "soles": [["boot_b", [x, y]], ...]     # source px points that can touch the ground
+    "soles": [["boot_b", [x, y]], ...],    # source px points that can touch the ground
+    "lines": [...]                         # optional: strokes drawn by the rig (see below)
   }}
+
+A part point is ["<part>", [x, y]] in source px; it follows that part. Lines, each drawn right
+after the part named by "after", width in output px:
+  {"kind": "string", "after": "bow", "a": <point>, "b": <point>, "pull": <point>,
+   "channel": "draw", "width": 1, "rgb": [r, g, b]}
+      a bowstring from a to b, pulled toward `pull` by the pose channel (0 = straight)
+  {"kind": "arrow", "after": "bow", "string": 0, "aim": <point>, "length": 300,
+   "channel": "arrow", "width": 1.4, "rgb": [r, g, b], "fletch": [r, g, b]}
+      an arrow nocked on line `string` (an index into "lines") pointing at `aim`, shown while
+      the pose channel is above 0.5
 
 A rig clip:
   {"source": "rig", "frames": 10, "fps": 12, "loop": true,
@@ -17,7 +28,8 @@ A rig clip:
                                            #   loops); ease: cubic in-out per segment
    "plant": true,                          # lift / drop the body so the lowest sole is at its
                                            #   rest height (gives the walk bob for free)
-   "keys": [{"t": 0, "ease": "out", "pose": {"thigh_b": 20, "shield.x": 30, "dy": -4}}, ...]}
+   "keys": [{"t": 0, "ease": "out", "pose": {"thigh_b": 20, "shield.x": 30, "dy": -4}}, ...],
+   "lines": {"0": {"after": "head"}}}     # optional: per-clip overrides of the source's lines
 
 Pose channels: "<part>" = rotation in degrees (clockwise on screen) about the part's pivot,
 "<part>.x" / "<part>.y" = shift in source px in the parent's frame, and the body channels
@@ -153,6 +165,55 @@ def body_matrix(src, pose, plant_dy):
     return affine(turn, scale)
 
 
+# ── lines ────────────────────────────────────────────────────────────────────────────
+
+def point(spec_pt, place):
+    name, (x, y) = spec_pt
+    return np.array(apply(place[name], x, y))
+
+
+def nock(line, place, pose):
+    a, b, p = point(line["a"], place), point(line["b"], place), point(line["pull"], place)
+    ab = b - a
+    rest = a + ab * np.clip(np.dot(p - a, ab) / np.dot(ab, ab), 0, 1)
+    return a, b, rest + (p - rest) * pose.get(line.get("channel", "draw"), 0.0)
+
+
+def stroke(canvas, polys, width, rgb, alpha, fill=False):
+    m = np.zeros(canvas.shape[:2], np.uint8)
+    pts = [np.round(np.asarray(q) * 16).astype(np.int32) for q in polys]
+    if fill:
+        cv2.fillPoly(m, pts, 255, cv2.LINE_AA, shift=4)
+    else:
+        cv2.polylines(m, pts, False, 255, max(1, round(width)), cv2.LINE_AA, shift=4)
+    a = m[:, :, None].astype(np.float32) / 255 * alpha
+    layer = np.concatenate([a * (np.array(rgb, np.float32) / 255), a], axis=2)
+    return layer + canvas * (1 - a)
+
+
+def draw_line(canvas, lines, i, place, pose, px, k):
+    """px: canvas px per output px; k: canvas px per source px."""
+    line = lines[i]
+    if line["kind"] == "string":
+        a, b, m = nock(line, place, pose)
+        return stroke(canvas, [[a, m, b]], line.get("width", 1) * px, line.get("rgb", (40, 32, 26)), 1.0)
+    show = pose.get(line.get("channel", "arrow"), 0.0)
+    if show <= 0.5:
+        return canvas
+    _, _, n = nock(lines[line["string"]], place, pose)
+    d = point(line["aim"], place) - n
+    d /= np.linalg.norm(d)
+    side = np.array([-d[1], d[0]])
+    length = line["length"] * k
+    tip = n + d * length
+    w = line.get("width", 1.4) * px
+    canvas = stroke(canvas, [[n, tip - d * 3 * w]], w, line.get("rgb", (120, 90, 60)), 1.0)
+    head = [tip, tip - d * 4 * w + side * 1.6 * w, tip - d * 4 * w - side * 1.6 * w]
+    canvas = stroke(canvas, [head], w, line.get("tip", (70, 70, 80)), 1.0, fill=True)
+    fl = [n + d * w, n + d * 6 * w + side * 1.4 * w, n + d * 6 * w - side * 1.4 * w]
+    return stroke(canvas, [fl], w, line.get("fletch", (110, 150, 200)), 1.0, fill=True)
+
+
 # ── rendering ────────────────────────────────────────────────────────────────────────────
 
 def premultiplied(im):
@@ -175,6 +236,8 @@ def bake_clip(clip, rig, src, height, super_):
                                                  Image.LANCZOS))
               for n, p in rig["parts"].items()}
     soles = src.get("soles", [])
+    lines = [dict(line, **clip.get("lines", {}).get(str(i), {})) for i, line in enumerate(src.get("lines", []))]
+    px = k / k_out  # canvas px per output px
 
     loop = clip.get("loop", True)
     n = clip["frames"]
@@ -192,6 +255,8 @@ def bake_clip(clip, rig, src, height, super_):
             plant = -max(apply(affine(body0, fk[name]), *pt)[1] - pt[1] for name, pt in soles)
         body = body_matrix(src, pose, plant)
         canvas = np.zeros((H, W, 4), np.float32)
+        # source px -> canvas px per part, for the rig's own lines
+        place_all = {n: affine(to_canvas, affine(body, fk[n])) for n in rig["parts"]}
         for name in rig["order"]:
             p = rig["parts"][name]
             im = images[name]
@@ -201,6 +266,9 @@ def bake_clip(clip, rig, src, height, super_):
             layer = cv2.warpAffine(im, m.astype(np.float32), (W, H), flags=cv2.INTER_LINEAR,
                                    borderMode=cv2.BORDER_CONSTANT, borderValue=0)
             canvas = layer + canvas * (1 - layer[:, :, 3:])
+            for j, line in enumerate(lines):
+                if line["after"] == name:
+                    canvas = draw_line(canvas, lines, j, place_all, pose, px, k)
         f = cv2.resize(canvas, (round(W * shrink), round(H * shrink)), interpolation=cv2.INTER_AREA)
         out.append((f * pose.get("alpha", 1.0), (gx * shrink, gy * shrink)))
     return out
