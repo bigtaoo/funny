@@ -35,6 +35,10 @@ import shieldBearerFramesUrl from '../../assets/units/frames/shieldbearer.png';
 import shieldBearerFramesJson from '../../assets/units/frames/shieldbearer.json';
 import maxFramesUrl from '../../assets/units/frames/max.png';
 import maxFramesJson from '../../assets/units/frames/max.json';
+import infantryFramesUrl from '../../assets/units/frames/infantry.png';
+import infantryFramesJson from '../../assets/units/frames/infantry.json';
+import archerFramesUrl from '../../assets/units/frames/archer.png';
+import archerFramesJson from '../../assets/units/frames/archer.json';
 import type { FrameSheetJson } from '../frames/frameSheet';
 
 /**
@@ -72,6 +76,8 @@ export const FRAME_ASSETS: Partial<Record<UnitType, { png: string; json: FrameSh
     [UnitType.Mara]: { png: maraFramesUrl as unknown as string, json: maraFramesJson as unknown as FrameSheetJson },
     [UnitType.ShieldBearer]: { png: shieldBearerFramesUrl as unknown as string, json: shieldBearerFramesJson as unknown as FrameSheetJson },
     [UnitType.Max]:          { png: maxFramesUrl as unknown as string, json: maxFramesJson as unknown as FrameSheetJson },
+    [UnitType.Infantry]:     { png: infantryFramesUrl as unknown as string, json: infantryFramesJson as unknown as FrameSheetJson },
+    [UnitType.Archer]:       { png: archerFramesUrl as unknown as string, json: archerFramesJson as unknown as FrameSheetJson },
   };
 
 function framesDisabled(): boolean {
