@@ -1,6 +1,6 @@
 # CrazyGames 上架：官方要求 ↔ 我们的实现
 
-> 状态：Basic Launch 代码侧已完成（2026-09-27，同日第二轮补门户静音/安全区/分享链接）· 权威：本文（CrazyGames 专属要求的单一入口）
+> 状态：**2026-10-05 已提交，门户状态 AWAITING REVIEW**（构建 `64c620eb`，来自提交 `b452aedf4`）；Basic Launch 代码侧 2026-09-27 完成 · 权威：本文（CrazyGames 专属要求的单一入口）
 > 来源：[docs.crazygames.com/requirements](https://docs.crazygames.com/requirements/intro/)（2026-09-27 逐页核过两轮：
 > 要求 8 页 + SDK intro/game + resources 的 CrazyGames App / Basic Launch 指标 / 加载 / 鼠标四页）；
 > SDK 行为以 `https://sdk.crazygames.com/crazygames-sdk-v3.js` 源码为准（文档页之外的细节都是在源码里查到的）。
@@ -105,6 +105,18 @@
 - 封面 prompt 已出（[`crazygames-cover-art-prompts.md`](../product/crazygames-cover-art-prompts.md)，2026-09-28），用户 AI 出图；预览视频用户手机录。
 - Atlas M0 升档、备份异地：**用户 2026-09-28 定：提审前不升，上线一天后看数据再决定。**
 - `/pve/stamina/ad`：2026-09-28 核过线上已部署（`POST https://api.gamestao.com/api/pve/stamina/ad` 回 400 校验错，不是 404）。
+- **2026-10-05 提交记录**（下次「Submit new version」照这份填）：
+  - QA 页：Gameplay requirements / 全域名 / Browser checks / Friend invitation flows 四项由 Claude 实测后答 Yes（Edge 四种 iframe 尺寸启动无报错；
+    两个新访客 A 建房、B 带 `?room=` 打开直接跳过新手关进房、双方开局同步）；Device checks: Mobile 用户真机测；
+    「retains friends in a lobby at end of round」答 **No**；聊天答 with filter/moderation；disableChat 答 Yes。
+    自动项「InviteLink functionality used」显示 Not detected——只有房间里点「Copy link」才会调 `inviteLink`，不是缺实现。
+  - Details：Category **Strategy**；Tags **Tower Defense / 2 Player / Battle / War**（标签库里没有 Strategy）；
+    Description = `store-assets-checklist §0.1b` 英文 App Store 稿去掉订阅段与 Apple EULA 链接、多人一句改为
+    「or open a room and invite a friend」、末句改为「Card draws are random; the draw rates are published in-game on the odds page. Free to play.」；
+    Controls = §4.1b 原文，`- ` 换成 `· `（Quill 编辑器会把 `- ` 自动转成列表）。
+  - 门户坑：①QA 结果只活在点 Continue 弹出的那个 `qa-continue` 标签页里，预览页关早了或换新标签打开同一 URL 都会报「Failed to retrieve QA results」；
+    ②封面/视频不能用脚本注入文件（控制台 `UploadType is not properly set`），必须手动拖；③Submit 前要先填 Billing，否则报「Error fetching payment details」。
+  - 已知小瑕疵（不阻塞，上线后第一版修）：新手关「Skip tutorial »」文字比底板宽，821×462 下「»」被右缘截掉。
 - 生产环境 `NW_CRAZYGAMES_GAME_ID`：**2026-09-28 核过仍未配**（`/api/auth/crazygames` 回 `SSO not configured`）。这个值是 CrazyGames 开发者后台建好游戏后分配的，拿到后写进 `secrets/funny/prod.yaml` → `push-env.py` → 重建 metaserver 即可；它只被 `/auth/crazygames` 读，**对其他平台零影响**。没配也不会卡死玩家（§2 回退），但门户玩家都会变成设备访客。
 
 ## 6. 其余官方条目核对结果（2026-09-27 第二轮）
