@@ -55,6 +55,14 @@ import skinArcherFramesUrl from '../../assets/units/frames/skin_archer.png';
 import skinArcherFramesJson from '../../assets/units/frames/skin_archer.json';
 import skinInfantryFramesUrl from '../../assets/units/frames/skin_infantry.png';
 import skinInfantryFramesJson from '../../assets/units/frames/skin_infantry.json';
+import skinShieldBearerFramesUrl from '../../assets/units/frames/skin_shieldbearer.png';
+import skinShieldBearerFramesJson from '../../assets/units/frames/skin_shieldbearer.json';
+import skinLenaFramesUrl from '../../assets/units/frames/skin_lena.png';
+import skinLenaFramesJson from '../../assets/units/frames/skin_lena.json';
+import skinMaraFramesUrl from '../../assets/units/frames/skin_mara.png';
+import skinMaraFramesJson from '../../assets/units/frames/skin_mara.json';
+import skinMaxFramesUrl from '../../assets/units/frames/skin_max.png';
+import skinMaxFramesJson from '../../assets/units/frames/skin_max.json';
 import type { FrameSheetJson } from '../frames/frameSheet';
 
 /**
@@ -159,6 +167,10 @@ export function resolveSkinOverrides(equippedSkins: readonly string[]): Partial<
 const SKIN_FRAME_ASSETS: Record<string, Partial<Record<UnitType, FrameAsset>>> = framesDisabled() ? {} : {
   skin_shop_c1: { [UnitType.Infantry]: { png: skinInfantryFramesUrl as unknown as string, json: skinInfantryFramesJson as unknown as FrameSheetJson } },
   skin_shop_r1: { [UnitType.Archer]: { png: skinArcherFramesUrl as unknown as string, json: skinArcherFramesJson as unknown as FrameSheetJson } },
+  skin_shop_e1: { [UnitType.ShieldBearer]: { png: skinShieldBearerFramesUrl as unknown as string, json: skinShieldBearerFramesJson as unknown as FrameSheetJson } },
+  skin_e1: { [UnitType.Lena]: { png: skinLenaFramesUrl as unknown as string, json: skinLenaFramesJson as unknown as FrameSheetJson } },
+  skin_e2: { [UnitType.Mara]: { png: skinMaraFramesUrl as unknown as string, json: skinMaraFramesJson as unknown as FrameSheetJson } },
+  skin_l1: { [UnitType.Max]: { png: skinMaxFramesUrl as unknown as string, json: skinMaxFramesJson as unknown as FrameSheetJson } },
 };
 
 /** Per-type frame-sheet overrides for a set of equipped skin ids — the sheet twin of {@link resolveSkinOverrides}. */
