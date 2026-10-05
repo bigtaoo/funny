@@ -151,9 +151,9 @@ function installWindow(): { count(type: string): number; fire(type: string): voi
 
 interface Harness {
   views: PixiAppViews;
-  manager: { goto: ReturnType<typeof vi.fn>; pushOverlay: ReturnType<typeof vi.fn>; popOverlay: ReturnType<typeof vi.fn> };
+  manager: { goto: ReturnType<typeof vi.fn>; pushOverlay: ReturnType<typeof vi.fn>; popOverlay: ReturnType<typeof vi.fn>; onGoto?: (() => void) | null };
   renderer: { resize: ReturnType<typeof vi.fn> };
-  scaling: { resize: ReturnType<typeof vi.fn> };
+  scaling: { refit: ReturnType<typeof vi.fn>; fitLayout: ReturnType<typeof vi.fn> };
   screen: { width: number; height: number };
   /** Live safe-area reading — mutable so a case can change an inset WITHOUT changing the size. */
   insets: { top: number; right: number; bottom: number; left: number };
@@ -181,7 +181,7 @@ function setup(): Harness {
   } as unknown as IPlatform;
   const renderer = { resize: vi.fn() };
   const app = { screen: { width: 1280, height: 720 }, stage: new PIXI.Container(), renderer } as unknown as PIXI.Application;
-  const scaling = { resize: vi.fn() };
+  const scaling = { refit: vi.fn(), fitLayout: vi.fn() };
   const manager = { goto: vi.fn(), pushOverlay: vi.fn(), popOverlay: vi.fn() };
   const input = { suppress: vi.fn() } as unknown as InputManager;
   const layout: ILayout = createLayout(screen.width, screen.height, Side.Bottom);
@@ -281,7 +281,7 @@ describe('PixiAppViews — resize-driven lobby rebuild', () => {
 
     // Immediate half: the canvas must track the viewport or it visibly lags a rotation.
     expect(h.renderer.resize).toHaveBeenCalledWith(800, 1200);
-    expect(h.scaling.resize).toHaveBeenCalledTimes(1);
+    expect(h.scaling.refit).toHaveBeenCalledTimes(1);
     // Deferred half: the expensive scene rebuild has not run yet.
     expect(rebuilds).toEqual([]);
 
@@ -328,7 +328,7 @@ describe('PixiAppViews — resize-driven lobby rebuild', () => {
     vi.advanceTimersByTime(SETTLE);
 
     expect(h.renderer.resize).not.toHaveBeenCalled();
-    expect(h.scaling.resize).not.toHaveBeenCalled();
+    expect(h.scaling.refit).not.toHaveBeenCalled();
     expect(rebuilds).toEqual([]);
   });
 
@@ -365,7 +365,7 @@ describe('PixiAppViews — resize-driven lobby rebuild', () => {
     h.screen.width = 800; h.screen.height = 1200;
     h.win.fire('resize');
     expect(h.renderer.resize).toHaveBeenCalledWith(800, 1200);
-    expect(h.scaling.resize).toHaveBeenCalledTimes(1);
+    expect(h.scaling.refit).toHaveBeenCalledTimes(1);
     expect(built.filter((b) => b.name === 'SettingsScene')).toHaveLength(1); // deferred, as for the lobby
 
     vi.advanceTimersByTime(SETTLE);
@@ -447,13 +447,33 @@ describe('PixiAppViews — resize-driven lobby rebuild', () => {
     h.insets.top = 47; h.insets.bottom = 34;
     h.win.fire('resize'); // same 1280x720
     expect(h.renderer.resize).toHaveBeenCalledWith(1280, 720);
-    const layout = h.scaling.resize.mock.calls[0]![2] as ILayout;
+    // The viewport watcher only re-fits; the new layout reaches the scaling when the next screen
+    // mounts (SceneManager.onGoto, wired by PixiAppViews).
+    h.manager.onGoto!();
+    const layout = h.scaling.fitLayout.mock.calls[0]![0] as ILayout;
     // Design height must reflect the SAFE area now, not the raw viewport.
     expect(layout.designHeight).toBe(createLayout(1280, 720, Side.Bottom, { ...h.insets }).designHeight);
 
     // Firing again with nothing changed stays dropped — the guard still guards.
     h.win.fire('resize');
-    expect(h.scaling.resize).toHaveBeenCalledTimes(1);
+    expect(h.scaling.refit).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-fits the screen on display to its OWN design rect; the new one takes effect at the next mount', () => {
+    // 2026-10-05, CrazyGames QA preview: a match that outlived a resize was drawn at the NEW rect's
+    // scale and came out as a strip down the left edge. The watcher must not hand the scaling a
+    // layout the mounted scene graph was never built against.
+    const h = setup();
+    h.views.showLobby(NO_CB);
+    h.screen.width = 722; h.screen.height = 406;
+    h.win.fire('resize');
+    expect(h.scaling.refit).toHaveBeenCalledWith(722, 406, expect.anything());
+    expect(h.scaling.fitLayout).not.toHaveBeenCalled();
+
+    h.manager.onGoto!();
+    const fitted = h.scaling.fitLayout.mock.calls[0]![0] as ILayout;
+    expect(fitted.designWidth).toBe(createLayout(722, 406, Side.Bottom).designWidth);
+    expect(fitted.designHeight).toBe(createLayout(722, 406, Side.Bottom).designHeight);
   });
 
   it('re-fits when the platform pushes an inset change with no resize event at all', () => {
@@ -464,7 +484,7 @@ describe('PixiAppViews — resize-driven lobby rebuild', () => {
 
     h.insets.top = 47;
     h.notifyInsets();
-    expect(h.scaling.resize).toHaveBeenCalledTimes(1);
+    expect(h.scaling.refit).toHaveBeenCalledTimes(1);
     expect(h.renderer.resize).toHaveBeenCalledWith(1280, 720);
   });
 

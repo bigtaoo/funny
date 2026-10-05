@@ -159,6 +159,16 @@ export class SceneManager {
   /** A goto() that arrived mid-fade, replayed once the current fade settles. Only the latest is kept. */
   private queued: Scene | null = null;
 
+  /**
+   * Called at the top of every {@link goto}, i.e. for every full screen that was just built. Set by
+   * PixiAppViews to fit the canvas to the layout that screen was built against — a viewport change
+   * only re-fits the current design rect, so this is where a new one takes effect (see
+   * ScalingManager.refit). Every caller builds its scene synchronously before calling goto, so "the
+   * layout at goto time" is "the layout the scene was built with". Overlays don't pass through
+   * here: they are drawn into their host's design rect.
+   */
+  onGoto: (() => void) | null = null;
+
   constructor(
     private readonly app: PIXI.Application,
     targetStage?: PIXI.Container,
@@ -174,6 +184,7 @@ export class SceneManager {
   }
 
   goto(scene: Scene, opts?: GotoOptions): void {
+    this.onGoto?.();
     // Same "done with this whole area" reasoning as the overlayScene drop below, extended to a
     // dialog this manager can't see (see DialogGate) — must run before the swap, not after, so a
     // background nav (match push, async world-shard resolve) can't leave the dialog's Close button

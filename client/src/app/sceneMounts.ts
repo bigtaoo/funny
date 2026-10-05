@@ -21,8 +21,10 @@
 //   - `volatile()` — never rebuilt, because a fresh constructor cannot restore what the scene is
 //                    holding: an engine mid-match, a replay's playhead, the SLG map's camera and
 //                    live subscriptions, a room whose contents only ever arrive as server pushes, a
-//                    cinematic mid-beat. These keep the 2026-09-10 behaviour — fitted canvas,
-//                    layout of the orientation they were entered in.
+//                    cinematic mid-beat. These keep the layout they were entered with; since
+//                    2026-10-05 the canvas contains THAT design rect in the new viewport (desk
+//                    surround in the bands) instead of drawing it at the new rect's scale, which
+//                    cut it to a strip down one edge (ScalingManager.refit).
 //   - `lobby()`    — the one screen rebuilt through the app core instead (`nav.goLobby({fromResize})`),
 //                    because nav/lobby.ts re-derives its callbacks from save/session state on every
 //                    entry.
