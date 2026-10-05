@@ -123,7 +123,7 @@
 - **`NW_CRAZYGAMES_GAME_ID` 的值是 `133101`**（2026-10-05 核）：取自预览页 `__NEXT_DATA__` 的 `props.pageProps.game.id`。
   门户 URL 里的 `8f3d95b1-c884-4175-bb28-08728dae174d` 是 **`submission.id`**，不是 token 里的 `gameId`——
   官方 User 文档的 token 示例就是数字（`"gameId": "20267"`）。配错不会卡人（服务端拒 token → §2 回退设备访客），但等于没配。
-- 生产环境 `NW_CRAZYGAMES_GAME_ID`：**2026-09-28 核过仍未配**（`/api/auth/crazygames` 回 `SSO not configured`）。这个值是 CrazyGames 开发者后台建好游戏后分配的，拿到后写进 `secrets/funny/prod.yaml` → `push-env.py` → 重建 metaserver 即可；它只被 `/auth/crazygames` 读，**对其他平台零影响**。没配也不会卡死玩家（§2 回退），但门户玩家都会变成设备访客。
+- 生产环境 `NW_CRAZYGAMES_GAME_ID`：**2026-10-05 已配 `133101` 并实测通过**。流程：`sops set secrets/funny/prod.yaml` → `push-env.py funny prod funny-vps '~/funny/server/.env' --yes`（diff 只有这一个 key；备份 `.env.bak-20261005140500`）→ `docker compose -f docker-compose.cloud.yml --env-file .env up -d --no-build metaserver`。验证：容器 `printenv` 得 `133101`；假 token 从 `SSO not configured` 变成 `invalid or expired CrazyGames token`；门户预览（build `64c620eb`）里真 token 的 `POST /auth/crazygames -> 200`（签名 + `gameId` 都对上）。它只被 `/auth/crazygames` 读，对其他平台零影响。
 
 ## 6. 其余官方条目核对结果（2026-09-27 第二轮）
 
