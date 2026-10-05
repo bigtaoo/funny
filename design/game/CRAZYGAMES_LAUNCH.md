@@ -49,6 +49,8 @@
 1. **预加载期间尺寸变化被丢掉**：`app.ts` 在资源预加载之后只比 safe-area insets 不比尺寸，而 viewport watcher 在预加载之后才装、以当时尺寸为基线 → 启动尺寸与最终尺寸不同时整局停在启动尺寸（画布也不 resize）。现在 `resettledLayout` 同时比尺寸，变了就 `renderer.resize` + 重算 layout。
 2. **不可重建的屏（对局、房间、开场动画、SLG 地图）在尺寸变化后按新矩形缩放旧场景图**：现在 watcher 只 `scaling.refit()`（旧矩形 contain 进新视口），新 layout 在下一屏 `goto` 时生效。
 
+3. **后台标签页启动时门户 iframe 报的是竖屏尺寸**（同日重新上传后复测发现）：修完 1、2 后，在后台标签页启动的预览不再被截断，但新手关仍是竖屏布局、居中缩在横屏框里——对局在标签页切到前台、iframe 拿到 722×406 之前就按竖屏建好了，而对局永不重建。修法：CG 构建的 `onLoadingComplete()` 在页面 `hidden` 时等到 `visible`，再等视口安静 300 ms（最长 1.5 s）才返回，首屏据此构建（`platform/web/visibleBoot.ts`）。前台启动零延迟。Loki 里同一构建的两条 crash 记录 `orient=landscape vp=723x361 / 720x361`，说明前台时游戏读到的尺寸是对的。
+
 门户 iframe 是跨域的（`games.crazygames.com`），从外层页面读不到游戏自己启动时的 `innerWidth`，所以「启动时到底是多大」没有实测值；本机复现见 `UI_DESIGN.md` 安全区那一行。**重新上传构建后要在预览里再看一遍新手关和好友房。**
 
 ## 3. 没有充值时的玩家体验（`iapKind() === null`，CG 与微信共用）
