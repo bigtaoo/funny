@@ -10,7 +10,7 @@
 //   * every dialog stays on screen in all three locales, portrait and landscape.
 //
 // Run: npm run test:ui
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
@@ -26,6 +26,7 @@ import {
 } from '../../src/ui/moderation';
 import type { WorldChatMessage } from '../../src/net/WorldApiClient';
 import { createFakeTextInput } from '../harness/fakeTextInput';
+import { monospaceWidth } from '../../src/render/pixiText';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -141,6 +142,37 @@ describe('moderation dialogs fit the screen', () => {
             expect(b.y + b.height, `"${n.text}" spills below`).toBeLessThanOrEqual(h);
           }
           d.destroy();
+        }
+      });
+    }
+  }
+
+  /** Menlo's bold advance (iOS 'monospace'), measured on device as the reason for this test. */
+  const MENLO_EM = 0.6;
+  // Each category is a one-tap answer, so its label must read in full: on an iPhone in landscape the
+  // three-column grid cut "Harassment / bullying" to "Harassment / bullyi…" (seen on device,
+  // 2026-10-04). iOS resolves 'monospace' to Menlo, ~0.6 em bold against the 0.54 em headless
+  // metric (and the headless canvas stub measures narrower still), so measurement is replaced with
+  // Menlo's advance here — with either headless metric the label still fits and nothing fails.
+  for (const locale of ['zh', 'en', 'de'] as Locale[]) {
+    for (const [w, h] of [[1688, 780], [1560, 720], [1920, 1080], [720, 1560], [1080, 2337]] as Array<[number, number]>) {
+      it(`[${locale}] ${w}x${h}: every report category label is shown in full with iOS-wide glyphs`, () => {
+        setLocale(locale);
+        const measure = PIXI.TextMetrics.measureText.bind(PIXI.TextMetrics);
+        const spy = vi.spyOn(PIXI.TextMetrics, 'measureText').mockImplementation((...args) => {
+          const m = measure(...args);
+          const size = Number((args[1] as PIXI.TextStyle).fontSize);
+          return Object.assign(Object.create(Object.getPrototypeOf(m)), m, { width: monospaceWidth(args[0], size) * (MENLO_EM / 0.54) });
+        });
+        try {
+          const d = new ReportDialog(w, h, target, { onSubmit: async () => {}, onClose() {} });
+          const shown = texts(d.container).map((n) => n.text);
+          for (const key of ['harassment', 'hate', 'sexual', 'spam', 'cheating', 'offensiveName', 'other'] as const) {
+            expect(shown).toContain(t(`moderation.cat.${key}`));
+          }
+          d.destroy();
+        } finally {
+          spy.mockRestore();
         }
       });
     }
