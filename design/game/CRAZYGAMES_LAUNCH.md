@@ -120,6 +120,9 @@
     **2026-10-05 已修**（`render/TutorialDirector/panels.ts::drawSkipButton`：先排字、底板宽度跟字走、从右缘向左长，
     封顶 `W*0.34`，超了用 `fitFont` 缩字号、不低于可读下限）；英/德 × 横/竖四种组合实测字都在底板内。
     **随下一次「Submit new version」上线**，已审核中的 `64c620eb` 不含此修复。
+- **`NW_CRAZYGAMES_GAME_ID` 的值是 `133101`**（2026-10-05 核）：取自预览页 `__NEXT_DATA__` 的 `props.pageProps.game.id`。
+  门户 URL 里的 `8f3d95b1-c884-4175-bb28-08728dae174d` 是 **`submission.id`**，不是 token 里的 `gameId`——
+  官方 User 文档的 token 示例就是数字（`"gameId": "20267"`）。配错不会卡人（服务端拒 token → §2 回退设备访客），但等于没配。
 - 生产环境 `NW_CRAZYGAMES_GAME_ID`：**2026-09-28 核过仍未配**（`/api/auth/crazygames` 回 `SSO not configured`）。这个值是 CrazyGames 开发者后台建好游戏后分配的，拿到后写进 `secrets/funny/prod.yaml` → `push-env.py` → 重建 metaserver 即可；它只被 `/auth/crazygames` 读，**对其他平台零影响**。没配也不会卡死玩家（§2 回退），但门户玩家都会变成设备访客。
 
 ## 6. 其余官方条目核对结果（2026-09-27 第二轮）
