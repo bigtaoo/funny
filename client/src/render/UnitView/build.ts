@@ -29,6 +29,9 @@ export interface BuildHost {
   readonly frameSheets: Map<UnitType, FrameSheet>;
   readonly localSkinAssets: Map<UnitType, TaoAsset>;
   readonly opponentSkinAssets: Map<UnitType, TaoAsset>;
+  /** Frame sheets of equipped skins (SKIN_FRAME_ASSETS); they win over the same side's skin .tao. */
+  readonly localSkinSheets: Map<UnitType, FrameSheet>;
+  readonly opponentSkinSheets: Map<UnitType, FrameSheet>;
   readonly assets: Map<UnitType, TaoAsset>;
   readonly localSide: Side;
   applyGear(runtime: UnitRuntime, unit: Unit): void;
@@ -52,8 +55,14 @@ function renderSide(host: BuildHost, unit: Unit): Side {
  */
 export function acquireSprite(host: BuildHost, unit: Unit): PIXI.Container {
   const isLocal = unit.side === host.localSide;
+  // A skin redrawn as a frame sheet wins first; its pool bucket is side-scoped like a skinned .tao's.
+  const skinSheet = (isLocal ? host.localSkinSheets : host.opponentSkinSheets).get(unit.unitType);
+  if (skinSheet) {
+    const key = `${unit.unitType}:frames:${isLocal ? 'local' : 'opp'}`;
+    return buildStickmanContainer(host, unit, key, o => new FrameRuntime(skinSheet, o));
+  }
   const skinned = (isLocal ? host.localSkinAssets : host.opponentSkinAssets).get(unit.unitType);
-  // An equipped skin is still a .tao, so it keeps the bone rig; otherwise a baked sheet wins.
+  // A skin still on its .tao keeps the bone rig; otherwise the type's baked sheet wins.
   const sheet = skinned ? undefined : host.frameSheets.get(unit.unitType);
   if (sheet) {
     return buildStickmanContainer(host, unit, `${unit.unitType}:frames`, o => new FrameRuntime(sheet, o));

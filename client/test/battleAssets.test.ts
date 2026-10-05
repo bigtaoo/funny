@@ -53,7 +53,7 @@ vi.mock('../src/render/frames/frameSheet', () => ({
 // physical order — see marchTokenScale.ui.ts for the same pattern).
 import { ensureBattleAssets } from '../src/assets/battleAssets';
 import { STICKMAN_ASSETS, resolveSkinOverrides } from '../src/render/UnitView';
-import { FRAME_ASSETS } from '../src/render/UnitView/assets';
+import { FRAME_ASSETS, resolveSkinFrameOverrides } from '../src/render/UnitView/assets';
 
 describe('ensureBattleAssets', () => {
   it('warms every default unit .tao plus L1 card art and the decor atlas when no skins are equipped', async () => {
@@ -82,6 +82,14 @@ describe('ensureBattleAssets', () => {
     const urls = new Set(loadAssetCalls.map((c) => c.url));
     expect(urls.has(localSkinUrl as string)).toBe(true);
     expect(urls.has(oppSkinUrl as string)).toBe(true);
+  });
+
+  it('warms the frame sheet of an equipped skin that has one, on either side', async () => {
+    frameSheetCalls.length = 0;
+    const skinSheet = Object.values(resolveSkinFrameOverrides(['skin_shop_r1']))[0];
+    expect(skinSheet).toBeDefined();
+    await ensureBattleAssets({ opponentSkins: ['skin_shop_r1'] });
+    expect(frameSheetCalls).toContain(skinSheet!.png);
   });
 
   it('never rejects — a failed .tao degrades quietly instead of wedging the gate', async () => {
