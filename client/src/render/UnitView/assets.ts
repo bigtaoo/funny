@@ -53,6 +53,8 @@ import splitterFramesUrl from '../../assets/units/frames/splitter.png';
 import splitterFramesJson from '../../assets/units/frames/splitter.json';
 import skinArcherFramesUrl from '../../assets/units/frames/skin_archer.png';
 import skinArcherFramesJson from '../../assets/units/frames/skin_archer.json';
+import skinInfantryFramesUrl from '../../assets/units/frames/skin_infantry.png';
+import skinInfantryFramesJson from '../../assets/units/frames/skin_infantry.json';
 import type { FrameSheetJson } from '../frames/frameSheet';
 
 /**
@@ -155,6 +157,7 @@ export function resolveSkinOverrides(equippedSkins: readonly string[]): Partial<
  * until then, exactly as STICKMAN_ASSETS backs FRAME_ASSETS. `?frames=0` turns these off too.
  */
 const SKIN_FRAME_ASSETS: Record<string, Partial<Record<UnitType, FrameAsset>>> = framesDisabled() ? {} : {
+  skin_shop_c1: { [UnitType.Infantry]: { png: skinInfantryFramesUrl as unknown as string, json: skinInfantryFramesJson as unknown as FrameSheetJson } },
   skin_shop_r1: { [UnitType.Archer]: { png: skinArcherFramesUrl as unknown as string, json: skinArcherFramesJson as unknown as FrameSheetJson } },
 };
 

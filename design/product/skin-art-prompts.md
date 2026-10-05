@@ -10,7 +10,7 @@
 
 | 皮肤 id | 角色 / 兵种 | 稀有度 | 配色 | 状态 |
 |---|---|---|---|---|
-| `skin_shop_c1` | 李川 / Infantry | common | 灰白调 | ✅ 已出图定稿，[`art/skins/infantry.png`](../../art/skins/infantry.png)；§1 prompt 为此图基准 |
+| `skin_shop_c1` | 李川 / Infantry | common | 灰白调 | ✅ 已出图定稿，[`art/skins/infantry.png`](../../art/skins/infantry.png)；§1 prompt 为此图基准。2026-10-05 走序列帧：绑定图 [`art/skins/infantry/infantry_rig.png`](../../art/skins/infantry/infantry_rig.png)（prompt `infantry_rig.txt`），烘焙为 `skin_infantry`，见 `art-direction.md` §4.3.1 |
 | `skin_shop_r1` | 苏远 / Archer | rare | 蓝色调 | ✅ 2026-10-05 走序列帧：owner 定了 v6 站姿，另在 ChatGPT 出了绑定图 [`art/skins/archer/archer_rig.png`](../../art/skins/archer/archer_rig.png)（prompt 在同目录 `archer_rig.txt`），切件烘焙为 `skin_archer` 序列帧，见 `art-direction.md` §4.3.1。[`art/skins/archer.png`](../../art/skins/archer.png) 仍是 v3 立绘（只作素材，战斗里不用它） |
 | `skin_shop_e1` | 陈守 / ShieldBearer | epic | 紫色调 | 🟡 已出图 [`art/skins/shieldbearer.png`](../../art/skins/shieldbearer.png)（§3 v2 prompt，体型/叉腿盾墙/寸头全中）；**留 1 项待调**：肤色偏深 + 黑卷发，与另两人（浅暖褐肤 + 棕发）不一致，破坏"方家三兄弟"读感，重出时加 `light warm tan skin matching his friends, brown hair not black` |
 | `skin_e1` | Anna·Lena | epic | 橙色调（原紫色调） | ✅ 已出图定稿（2026-07-26），2026-08-09 改色为橙，[`art/skins/lena.png`](../../art/skins/lena.png)；§6 v2 prompt 命中 |

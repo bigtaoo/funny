@@ -1,0 +1,417 @@
+{
+ "out": "../../../../client/src/assets/units/frames/skin_infantry",
+ "height": 140,
+ "screenHeight": 54,
+ "points": {
+  "hit": [
+   0.065,
+   -0.39
+  ]
+ },
+ "shadow": [
+  0.234,
+  0.058
+ ],
+ "sources": {
+  "rig": {
+   "parts": "parts/parts.json",
+   "ground": [
+    460,
+    1445
+   ],
+   "crown": -469,
+   "parent": {
+    "thigh_b": null,
+    "shin_b": "thigh_b",
+    "foot_b": "shin_b",
+    "thigh_f": null,
+    "shin_f": "thigh_f",
+    "foot_f": "shin_f",
+    "head": "torso",
+    "arm_bu": "torso",
+    "arm_bl": "arm_bu",
+    "arm_u": "torso",
+    "arm_l": "arm_u",
+    "hand": "arm_l"
+   },
+   "soles": [
+    [
+     "foot_b",
+     [
+      245,
+      1459
+     ]
+    ],
+    [
+     "foot_b",
+     [
+      340,
+      1464
+     ]
+    ],
+    [
+     "foot_f",
+     [
+      520,
+      1416
+     ]
+    ],
+    [
+     "foot_f",
+     [
+      700,
+      1434
+     ]
+    ]
+   ],
+   "order": [
+    "arm_bu",
+    "arm_bl",
+    "thigh_b",
+    "shin_b",
+    "foot_b",
+    "thigh_f",
+    "shin_f",
+    "foot_f",
+    "torso",
+    "head",
+    "arm_u",
+    "arm_l",
+    "hand"
+   ]
+  }
+ },
+ "colors": 64,
+ "clips": {
+  "idle": {
+   "source": "rig",
+   "frames": 8,
+   "fps": 8,
+   "loop": true,
+   "plant": true,
+   "keys": [
+    {
+     "t": 0,
+     "pose": {
+      "torso": 0,
+      "head": 0,
+      "arm_bu": 0,
+      "arm_bl": 0,
+      "arm_u": 0,
+      "arm_l": 0,
+      "hand": 0,
+      "thigh_b": 0,
+      "shin_b": 0,
+      "thigh_f": 0,
+      "shin_f": 0
+     }
+    },
+    {
+     "t": 0.5,
+     "pose": {
+      "torso": 1.5,
+      "head": -3,
+      "arm_bu": 3,
+      "arm_bl": 3,
+      "arm_u": -2,
+      "arm_l": 3,
+      "hand": -4,
+      "thigh_b": -1.5,
+      "shin_b": 3,
+      "thigh_f": 1.5,
+      "shin_f": 3
+     }
+    }
+   ]
+  },
+  "walk": {
+   "source": "rig",
+   "frames": 10,
+   "fps": 12,
+   "loop": true,
+   "plant": true,
+   "keys": [
+    {
+     "t": 0,
+     "pose": {
+      "thigh_f": -24,
+      "shin_f": 4,
+      "foot_f": -10,
+      "thigh_b": 20,
+      "shin_b": 18,
+      "foot_b": 12,
+      "torso": 3,
+      "head": -2,
+      "arm_bu": -22,
+      "arm_bl": -6,
+      "arm_u": 10,
+      "arm_l": -4,
+      "hand": 3
+     }
+    },
+    {
+     "t": 0.25,
+     "pose": {
+      "thigh_f": -2,
+      "shin_f": 6,
+      "foot_f": 0,
+      "thigh_b": -20,
+      "shin_b": 58,
+      "foot_b": 6,
+      "torso": 5,
+      "head": -4,
+      "arm_bu": 0,
+      "arm_bl": 4,
+      "arm_u": 0,
+      "arm_l": 0,
+      "hand": 0
+     }
+    },
+    {
+     "t": 0.5,
+     "pose": {
+      "thigh_b": -24,
+      "shin_b": 4,
+      "foot_b": -10,
+      "thigh_f": 20,
+      "shin_f": 18,
+      "foot_f": 12,
+      "torso": 3,
+      "head": -2,
+      "arm_bu": 22,
+      "arm_bl": 10,
+      "arm_u": -10,
+      "arm_l": 4,
+      "hand": -3
+     }
+    },
+    {
+     "t": 0.75,
+     "pose": {
+      "thigh_b": -2,
+      "shin_b": 6,
+      "foot_b": 0,
+      "thigh_f": -20,
+      "shin_f": 58,
+      "foot_f": 6,
+      "torso": 5,
+      "head": -4,
+      "arm_bu": 0,
+      "arm_bl": 4,
+      "arm_u": 0,
+      "arm_l": 0,
+      "hand": 0
+     }
+    }
+   ]
+  },
+  "attack": {
+   "source": "rig",
+   "frames": 10,
+   "fps": 12,
+   "loop": false,
+   "hitAt": 0.5,
+   "plant": true,
+   "keys": [
+    {
+     "t": 0,
+     "pose": {
+      "torso": 0,
+      "head": 0,
+      "arm_bu": 0,
+      "arm_bl": 0,
+      "arm_u": 0,
+      "arm_l": 0,
+      "hand": 0,
+      "thigh_b": 0,
+      "shin_b": 0,
+      "foot_b": 0,
+      "thigh_f": 0,
+      "shin_f": 0,
+      "foot_f": 0,
+      "dx": 0
+     }
+    },
+    {
+     "t": 0.32,
+     "ease": "in",
+     "pose": {
+      "torso": -6,
+      "head": 4,
+      "arm_bu": 14,
+      "arm_bl": 0,
+      "arm_u": 64.9,
+      "arm_l": -62.3,
+      "hand": 66.3,
+      "thigh_b": 4,
+      "shin_b": 6,
+      "foot_b": 0,
+      "thigh_f": -4,
+      "shin_f": 6,
+      "foot_f": 0,
+      "dx": -10
+     }
+    },
+    {
+     "t": 0.5,
+     "ease": "linear",
+     "pose": {
+      "torso": 12,
+      "head": 6,
+      "arm_bu": -16,
+      "arm_bl": 0,
+      "arm_u": -64.1,
+      "arm_l": 45.7,
+      "hand": 73.3,
+      "thigh_b": 12,
+      "shin_b": 4,
+      "foot_b": 0,
+      "thigh_f": -18,
+      "shin_f": 14,
+      "foot_f": -2,
+      "dx": 30
+     }
+    },
+    {
+     "t": 0.62,
+     "pose": {
+      "torso": 10,
+      "head": 4,
+      "arm_bu": -12,
+      "arm_bl": 0,
+      "arm_u": -58.1,
+      "arm_l": 45.7,
+      "hand": 73.3,
+      "thigh_b": 11,
+      "shin_b": 4,
+      "foot_b": 0,
+      "thigh_f": -16,
+      "shin_f": 12,
+      "foot_f": -2,
+      "dx": 26
+     }
+    },
+    {
+     "t": 1,
+     "pose": {
+      "torso": 0,
+      "head": 0,
+      "arm_bu": 0,
+      "arm_bl": 0,
+      "arm_u": 0,
+      "arm_l": 0,
+      "hand": 0,
+      "thigh_b": 0,
+      "shin_b": 0,
+      "foot_b": 0,
+      "thigh_f": 0,
+      "shin_f": 0,
+      "foot_f": 0,
+      "dx": 0
+     }
+    }
+   ]
+  },
+  "death": {
+   "source": "rig",
+   "frames": 9,
+   "fps": 12,
+   "loop": false,
+   "keys": [
+    {
+     "t": 0,
+     "pose": {
+      "rot": 0,
+      "dx": 0,
+      "dy": 0,
+      "torso": 0,
+      "head": 0,
+      "arm_bu": 0,
+      "arm_bl": 0,
+      "arm_u": 0,
+      "arm_l": 0,
+      "hand": 0,
+      "thigh_f": 0,
+      "shin_f": 0,
+      "thigh_b": 0,
+      "shin_b": 0
+     }
+    },
+    {
+     "t": 0.22,
+     "ease": "in",
+     "pose": {
+      "rot": 6,
+      "dx": 8,
+      "dy": -8,
+      "torso": -12,
+      "head": -16,
+      "arm_bu": -20,
+      "arm_bl": -10,
+      "arm_u": 14,
+      "arm_l": -10,
+      "hand": 34,
+      "thigh_f": -12,
+      "shin_f": 22,
+      "thigh_b": 8,
+      "shin_b": 18
+     }
+    },
+    {
+     "t": 0.6,
+     "pose": {
+      "arm_u": 73.9,
+      "arm_l": 17.7,
+      "hand": 55.3
+     }
+    },
+    {
+     "t": 0.8,
+     "ease": "out",
+     "pose": {
+      "rot": -84,
+      "dx": -45,
+      "dy": -190,
+      "torso": -8,
+      "head": -12,
+      "arm_bu": -40,
+      "arm_bl": -10,
+      "arm_u": 60.9,
+      "arm_l": 34.7,
+      "hand": 69.3,
+      "thigh_f": 2,
+      "shin_f": 14,
+      "thigh_b": 4,
+      "shin_b": 16
+     }
+    },
+    {
+     "t": 0.9,
+     "pose": {
+      "rot": -88,
+      "dy": -215
+     }
+    },
+    {
+     "t": 1,
+     "pose": {
+      "rot": -88,
+      "dx": -50,
+      "dy": -197,
+      "torso": -6,
+      "head": -10,
+      "arm_bu": -38,
+      "arm_bl": -8,
+      "arm_u": 59.9,
+      "arm_l": 35.7,
+      "hand": 69.3,
+      "thigh_f": 4,
+      "shin_f": 10,
+      "thigh_b": 4,
+      "shin_b": 10
+     }
+    }
+   ]
+  }
+ }
+}
