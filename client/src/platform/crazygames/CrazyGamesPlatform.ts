@@ -11,6 +11,7 @@ import { setAudioSuspended } from '../../audio/audioSettings';
 import type { SafeAreaInsets } from '../../layout/ILayout';
 import { readSafeAreaInsets, observeSafeAreaInsets } from '../web/safeAreaProbe';
 import { CrazyGamesRooms, type CrazyGamesRoomSdk } from './crazyGamesRooms';
+import { untilVisibleAndSettled } from '../web/visibleBoot';
 
 /**
  * CrazyGames platform adapter.
@@ -249,6 +250,11 @@ export class CrazyGamesPlatform implements IPlatform {
     } catch (e) {
       console.warn('[CrazyGames] loadingStop failed:', e);
     }
+    // app.ts re-reads the viewport right after this resolves and builds the first screen against
+    // it — which, for a new player, is the tutorial match that is never rebuilt. Booted in a
+    // background tab, the portal's iframe reported a portrait size and the match stayed portrait
+    // in a landscape frame (2026-10-05 QA preview), so don't hand back until someone can see it.
+    await untilVisibleAndSettled();
   }
 
   onGameplayStart(): void {
