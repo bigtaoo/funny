@@ -8,15 +8,15 @@ import { registerPool } from '../cache/poolRegistry';
 import { StickmanRuntime } from './stickman/StickmanRuntime';
 import type { TaoAsset, GearGlyphSpec } from './stickman/StickmanRuntime';
 import type { UnitRuntime } from './unitRuntime';
-import { loadFrameSheet, type FrameSheet, type FrameSheetJson } from './frames/frameSheet';
+import { loadFrameSheet, type FrameSheet } from './frames/frameSheet';
 import { TICK_RATE } from '@nw/engine';
 import type { EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import { fx } from './theme';
 import { targetScreenHeight } from './unitSize';
 import { setBarRatio } from './barSprite';
 import {
-  STICKMAN_ASSETS, FRAME_ASSETS, resolveSkinOverrides, createUnitContainer, resetUnitContainer,
-  HP_BAR_WIDTH, HP_TOTAL_FRAMES, HP_FADE_FRAMES,
+  STICKMAN_ASSETS, FRAME_ASSETS, resolveSkinOverrides, resolveSkinFrameOverrides, createUnitContainer, resetUnitContainer,
+  HP_BAR_WIDTH, HP_TOTAL_FRAMES, HP_FADE_FRAMES, type FrameAsset,
 } from './UnitView/assets';
 import {
   setSpellTargetPreview, playHitEffect, playDeathEffect, getHitPoint, NO_SPELL_TARGETS, type EffectsHost,
@@ -96,6 +96,10 @@ export class UnitView {
    */
   private readonly opponentSkinAssets: Map<UnitType, TaoAsset> = new Map();
 
+  /** Frame sheets of equipped skins (SKIN_FRAME_ASSETS), side-scoped like the .tao maps above; they win over those. */
+  private readonly localSkinSheets: Map<UnitType, FrameSheet> = new Map();
+  private readonly opponentSkinSheets: Map<UnitType, FrameSheet> = new Map();
+
   /**
    * Hero Roster card instances + equipment inventory for the battle-render gear
    * overlay (§20.4). PvE/siege only — PvP passes nothing (A5 hard wall), so PvP
@@ -165,13 +169,19 @@ export class UnitView {
     // unskinned look) — the equipped skin (S3-4) additionally loads into a
     // side-scoped override map, applied only to that side's units (acquireSprite).
     this.loadAssetsInto(STICKMAN_ASSETS, this.assets);
-    for (const [type, { png, json }] of Object.entries(FRAME_ASSETS) as [UnitType, { png: string; json: FrameSheetJson }][]) {
-      loadFrameSheet(png, json)
-        .then(sheet => { this.frameSheets.set(type, sheet); })
-        .catch(err => { console.warn(`[UnitView] ${type} frame sheet failed to load:`, err); });
-    }
+    this.loadSheetsInto(FRAME_ASSETS, this.frameSheets);
     this.loadAssetsInto(resolveSkinOverrides(equippedSkins), this.localSkinAssets);
     this.loadAssetsInto(resolveSkinOverrides(opponentSkins), this.opponentSkinAssets);
+    this.loadSheetsInto(resolveSkinFrameOverrides(equippedSkins), this.localSkinSheets);
+    this.loadSheetsInto(resolveSkinFrameOverrides(opponentSkins), this.opponentSkinSheets);
+  }
+
+  private loadSheetsInto(sheets: Partial<Record<UnitType, FrameAsset>>, into: Map<UnitType, FrameSheet>): void {
+    for (const [type, { png, json }] of Object.entries(sheets) as [UnitType, FrameAsset][]) {
+      loadFrameSheet(png, json)
+        .then(sheet => { into.set(type, sheet); })
+        .catch(err => { console.warn(`[UnitView] ${type} frame sheet failed to load:`, err); });
+    }
   }
 
   private loadAssetsInto(urls: Partial<Record<UnitType, string>>, into: Map<UnitType, TaoAsset>): void {
@@ -283,7 +293,8 @@ export class UnitView {
     return {
       pool: this.pool, stickmanPools: this.stickmanPools, stickmanPoolKeys: this.stickmanPoolKeys,
       stickmanRuntimes: this.stickmanRuntimes, frameSheets: this.frameSheets, localSkinAssets: this.localSkinAssets,
-      opponentSkinAssets: this.opponentSkinAssets, assets: this.assets, localSide: this.localSide,
+      opponentSkinAssets: this.opponentSkinAssets,
+      localSkinSheets: this.localSkinSheets, opponentSkinSheets: this.opponentSkinSheets, assets: this.assets, localSide: this.localSide,
       applyGear: (runtime: UnitRuntime, unit: Unit) => this.applyGear(runtime, unit),
     };
   }
@@ -392,6 +403,8 @@ export class UnitView {
     this.frameSheets.clear();
     this.localSkinAssets.clear();
     this.opponentSkinAssets.clear();
+    this.localSkinSheets.clear();
+    this.opponentSkinSheets.clear();
     this.gearSpecCache.clear();
 
     this.container.destroy({ children: true });

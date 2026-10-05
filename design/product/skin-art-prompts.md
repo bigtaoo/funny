@@ -10,12 +10,12 @@
 
 | 皮肤 id | 角色 / 兵种 | 稀有度 | 配色 | 状态 |
 |---|---|---|---|---|
-| `skin_shop_c1` | 李川 / Infantry | common | 灰白调 | ✅ 已出图定稿，[`art/skins/infantry.png`](../../art/skins/infantry.png)；§1 prompt 为此图基准 |
-| `skin_shop_r1` | 苏远 / Archer | rare | 蓝色调 | 🟡 头部问题已收敛（§2 v6 prompt，2026-08-14），**owner 站在出图工具里看过，pending：①最终 3/4 侧身还是正面站姿拍板 ②把选定的成品图存回 [`art/skins/archer.png`](../../art/skins/archer.png) 覆盖旧版**，之后才进 GIMP 切件；旧版 v3 图暂留仓库当占位 |
-| `skin_shop_e1` | 陈守 / ShieldBearer | epic | 紫色调 | 🟡 已出图 [`art/skins/shieldbearer.png`](../../art/skins/shieldbearer.png)（§3 v2 prompt，体型/叉腿盾墙/寸头全中）；**留 1 项待调**：肤色偏深 + 黑卷发，与另两人（浅暖褐肤 + 棕发）不一致，破坏"方家三兄弟"读感，重出时加 `light warm tan skin matching his friends, brown hair not black` |
-| `skin_e1` | Anna·Lena | epic | 橙色调（原紫色调） | ✅ 已出图定稿（2026-07-26），2026-08-09 改色为橙，[`art/skins/lena.png`](../../art/skins/lena.png)；§6 v2 prompt 命中 |
-| `skin_e2` | Anna·Mara | epic | 橙色调（原紫色调） | ✅ 已出图定稿（2026-07-26），2026-08-09 改色为橙，[`art/skins/mara.png`](../../art/skins/mara.png)；§5 v2 prompt 命中 |
-| `skin_l1` | Anna·Max | legendary | 橙色调（原金米调） | ✅ 已出图定稿（2026-07-26），2026-08-09 改色为橙，[`art/skins/max.png`](../../art/skins/max.png)；§4 v2 prompt 命中 |
+| `skin_shop_c1` | 李川 / Infantry | common | 灰白调 | ✅ 已出图定稿，[`art/skins/infantry.png`](../../art/skins/infantry.png)；§1 prompt 为此图基准。2026-10-05 走序列帧：绑定图 [`art/skins/infantry/infantry_rig.png`](../../art/skins/infantry/infantry_rig.png)（prompt `infantry_rig.txt`），烘焙为 `skin_infantry`，见 `art-direction.md` §4.3.1 |
+| `skin_shop_r1` | 苏远 / Archer | rare | 蓝色调 | ✅ 2026-10-05 走序列帧：owner 定了 v6 站姿，另在 ChatGPT 出了绑定图 [`art/skins/archer/archer_rig.png`](../../art/skins/archer/archer_rig.png)（prompt 在同目录 `archer_rig.txt`），切件烘焙为 `skin_archer` 序列帧，见 `art-direction.md` §4.3.1。[`art/skins/archer.png`](../../art/skins/archer.png) 仍是 v3 立绘（只作素材，战斗里不用它） |
+| `skin_shop_e1` | 陈守 / ShieldBearer | epic | 紫色调 | 🟡 已出图 [`art/skins/shieldbearer.png`](../../art/skins/shieldbearer.png)（§3 v2 prompt，体型/叉腿盾墙/寸头全中）；**留 1 项待调**：肤色偏深 + 黑卷发，与另两人（浅暖褐肤 + 棕发）不一致，破坏"方家三兄弟"读感，重出时加 `light warm tan skin matching his friends, brown hair not black`。2026-10-05 走序列帧：绑定图 [`art/skins/shieldbearer/shieldbearer_rig.png`](../../art/skins/shieldbearer/shieldbearer_rig.png)（prompt `shieldbearer_rig.txt`），烘焙为 `skin_shieldbearer`，见 `art-direction.md` §4.3.1；绑定图里肤色和发色已按上条修正（浅暖褐肤、棕发），战斗形象以绑定图为准 |
+| `skin_e1` | Anna·Lena | epic | 橙色调（原紫色调） | ✅ 已出图定稿（2026-07-26），2026-08-09 改色为橙，[`art/skins/lena.png`](../../art/skins/lena.png)；§6 v2 prompt 命中。2026-10-05 走序列帧：绑定图 [`art/skins/lena/lena_rig.png`](../../art/skins/lena/lena_rig.png)（prompt `lena_rig.txt`），烘焙为 `skin_lena`，见 `art-direction.md` §4.3.1 |
+| `skin_e2` | Anna·Mara | epic | 橙色调（原紫色调） | ✅ 已出图定稿（2026-07-26），2026-08-09 改色为橙，[`art/skins/mara.png`](../../art/skins/mara.png)；§5 v2 prompt 命中。2026-10-05 走序列帧：绑定图 [`art/skins/mara/mara_rig.png`](../../art/skins/mara/mara_rig.png)（prompt `mara_rig.txt`），烘焙为 `skin_mara`，见 `art-direction.md` §4.3.1 |
+| `skin_l1` | Anna·Max | legendary | 橙色调（原金米调） | ✅ 已出图定稿（2026-07-26），2026-08-09 改色为橙，[`art/skins/max.png`](../../art/skins/max.png)；§4 v2 prompt 命中。2026-10-05 走序列帧：绑定图 [`art/skins/max/max_rig.png`](../../art/skins/max/max_rig.png)（prompt `max_rig.txt`），烘焙为 `skin_max`，见 `art-direction.md` §4.3.1 |
 
 > **2026-08-09 改色为橙**：owner 要求把 Lena/Mara/Max 三款皮肤的配色统一改成橙色（原 epic 紫金公式 + legendary 金米调）。做法是**程序化改色**，不是重新出图：对已出图定稿的成品资产（`client/src/assets/units/skins/skin_{lena,mara,max}.{png,tao}`、`art/skins/{lena,mara,max}/*.png`、对应的 `.tao.editor` 动画师工程内嵌图）做色相区间替换——只对主色带（Lena/Mara 的深紫/亮紫/薰衣草，Max 的金/米）做色相偏移+饱和度/明度提升到橙色，金饰边、蓝方阵营锚点（蓝宝石/蓝绳）、肤色、发色、黑色描线、白底透明不动。因此本文档下方各条 prompt 里写的具体色号（`#6B3F73`/`#AA55CC`/`#C9A227` 等）已不是当前上线资产的真实颜色，只保留作历史记录/若未来要从零重新出图时的参照——重新出图时需先把 prompt 里的色号语言换成橙色公式再用。`.xcf` 分层源文件未跟着改色（GIMP 图层改色需手工做，本次未做），仅供将来重新出图的分层基底，不代表当前上线外观。
 
@@ -306,10 +306,7 @@ accent.
 
 **⚠️ v6 prompt 里 "three-quarter side view, body turned about 45 degrees" 这句和 Pose 段的实际描述已经不一致**（Pose 段改成了"头身同向、正面站姿"倾向），GPT Image 2 实测结果是接近正面站姿——说明当前这版落地效果比开头那句字面描述更偏正面。**下次重出前先决定 pending 里的①**，如果选"就要正面站姿"，应该把开头这句一并改成 front-ish stance 以消除自相矛盾；如果选"还要 3/4 侧身"，则要在保留"头身同向不独立转脖子"这条硬约束的前提下，把身体转向和头部朝向都同步转 45 度（不要只转身体），再试一版。
 
-**Pending（下次接手时先做这两件事）** — **2026-09-03 复核仍然全开**：`art/skins/archer.png` 与 `art/skins/archer/archer.png` 都还是 2026-07-24/26 的 v3 字节，`client/src/assets/units/skins/skin_archer.tao` 就是从这版 v3 绑出来的。这是全库唯一还需要**新出图**的美术缺口（其余批次已逐项核对关闭）。
-1. **拍板站姿**：v6 的正面站姿 vs 找回 3/4 侧身（见上方 ⚠️）——owner 尚未最终确认，只说"头部不再违和，先这样吧"。
-2. **落盘成品图**：owner 是在 GPT Image 2 工具里出的图，还没有把最终选定的那张存回仓库——`art/skins/archer.png` 目前仍是 v3 的旧图（头部违和的那版）。选定站姿后先把 PNG 存回该路径（同时更新 `art/skins/archer/archer.png` 那份，两处都要覆盖），再进 GIMP 切件 → animator 绑骨 → `UnitView.ts` `SKIN_ASSETS` / `shop.ts` 接线（见文档末尾"出图后流程"）。
-
+**已关闭（2026-10-05）**：owner 拍板用 v6 那版站姿。战斗形象不再走 GIMP 切件 + animator 绑骨，改走 `tools/unit-frames` 序列帧：另出一张 3/4 侧身朝右、四肢分开的绑定图（`art/skins/archer/archer_rig.png`），切件烘焙成 `client/src/assets/units/frames/skin_archer.*`。旧的 `skin_archer.tao`（v3 绑的）只在序列帧加载完成前兜底。
 ---
 
 ## 3. `skin_shop_e1` — 陈守 · ShieldBearer（epic，紫色调）
@@ -421,6 +418,11 @@ A full-length head-to-toe character illustration of a sturdy young woman warrior
 ---
 
 ## 出图后流程
+
+> 2026-10-05 起战斗形象走序列帧（`art-direction.md` §4.3.1），下面 2–3 步的 GIMP + animator 骨骼流程只剩旧皮肤还在用。新皮肤：
+> 立绘定稿后，再出一张**绑定图**（3/4 侧身朝右、两腿分开靴尖朝右、手臂离开身体、武器不压身体；prompt 参照 `art/skins/archer/archer_rig.txt`），
+> 用 `tools/unit-frames/split_parts.py` 切件、`bake.py` 烘焙，在 `UnitView/assets.ts` 的 `SKIN_FRAME_ASSETS` 里按皮肤 id 接上，`?unitlab&skin=<id>` 检查。
+
 
 1. 挑 4 变体里线条最干净、色块边界最清楚的一张，同名存入 `art/skins/`（文件名任意，非接线路径，纯素材库）。
 2. GIMP 按骨架部位切件（头/躯干/上臂/前臂/大腿/小腿×2 侧），参照 `art/units/archer/`、`art/units/shieldbearer/` 现有分层的命名规则（`head.png` / `arm-left-up.png` / `leg-right-down.png` 等）。
