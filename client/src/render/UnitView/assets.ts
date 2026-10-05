@@ -51,6 +51,8 @@ import berserkerFramesUrl from '../../assets/units/frames/berserker.png';
 import berserkerFramesJson from '../../assets/units/frames/berserker.json';
 import splitterFramesUrl from '../../assets/units/frames/splitter.png';
 import splitterFramesJson from '../../assets/units/frames/splitter.json';
+import skinArcherFramesUrl from '../../assets/units/frames/skin_archer.png';
+import skinArcherFramesJson from '../../assets/units/frames/skin_archer.json';
 import type { FrameSheetJson } from '../frames/frameSheet';
 
 /**
@@ -79,10 +81,13 @@ export const STICKMAN_ASSETS: Partial<Record<UnitType, string>> = {
 /**
  * Unit types drawn from a baked frame sheet (tools/unit-frames) instead of their bone rig —
  * the 2026-10 pilot (design/product/art-direction.md §4.3). The .tao in STICKMAN_ASSETS stays the
- * fallback until the sheet loads, and keeps drawing equipped skins, the lobby and the world map.
+ * fallback until the sheet loads, and keeps drawing equipped skins without a sheet of their own
+ * (SKIN_FRAME_ASSETS), the lobby and the world map.
  * `?frames=0` turns the sheets off on web, to compare against the rig.
  */
-export const FRAME_ASSETS: Partial<Record<UnitType, { png: string; json: FrameSheetJson }>> =
+export interface FrameAsset { png: string; json: FrameSheetJson }
+
+export const FRAME_ASSETS: Partial<Record<UnitType, FrameAsset>> =
   framesDisabled() ? {} : {
     [UnitType.Lena]: { png: lenaFramesUrl as unknown as string, json: lenaFramesJson as unknown as FrameSheetJson },
     [UnitType.Mara]: { png: maraFramesUrl as unknown as string, json: maraFramesJson as unknown as FrameSheetJson },
@@ -139,6 +144,25 @@ export function resolveSkinOverrides(equippedSkins: readonly string[]): Partial<
   let overrides: Partial<Record<UnitType, string>> = {};
   for (const id of equippedSkins) {
     const skin = SKIN_ASSETS[id];
+    if (skin) overrides = { ...overrides, ...skin };
+  }
+  return overrides;
+}
+
+/**
+ * Skin → per-type baked frame sheet, for skins redrawn for tools/unit-frames (art-direction §4.3.1).
+ * A skin listed here draws from its sheet once it loads; its .tao in SKIN_ASSETS stays the fallback
+ * until then, exactly as STICKMAN_ASSETS backs FRAME_ASSETS. `?frames=0` turns these off too.
+ */
+const SKIN_FRAME_ASSETS: Record<string, Partial<Record<UnitType, FrameAsset>>> = framesDisabled() ? {} : {
+  skin_shop_r1: { [UnitType.Archer]: { png: skinArcherFramesUrl as unknown as string, json: skinArcherFramesJson as unknown as FrameSheetJson } },
+};
+
+/** Per-type frame-sheet overrides for a set of equipped skin ids — the sheet twin of {@link resolveSkinOverrides}. */
+export function resolveSkinFrameOverrides(equippedSkins: readonly string[]): Partial<Record<UnitType, FrameAsset>> {
+  let overrides: Partial<Record<UnitType, FrameAsset>> = {};
+  for (const id of equippedSkins) {
+    const skin = SKIN_FRAME_ASSETS[id];
     if (skin) overrides = { ...overrides, ...skin };
   }
   return overrides;

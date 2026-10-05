@@ -5,12 +5,13 @@
  * rig (.tao) on the left of the pair and the frame sheet on the right, at the unit's real battle
  * height and enlarged. The attack clip runs at a 1 s attack interval and death replays every few
  * seconds, so the clips can be judged without a backend or a match.
- * `?unitlab&zoom=4` changes the enlarged scale; `&flash` pulses the hit flash.
+ * `?unitlab&zoom=4` changes the enlarged scale; `&flash` pulses the hit flash; `&skin=skin_shop_r1`
+ * benches that skin's .tao against its sheet (SKIN_FRAME_ASSETS) instead of the default look.
  */
 import * as PIXI from 'pixi.js-legacy';
 import { UnitType } from '@nw/engine/types';
 import { palette } from './theme';
-import { STICKMAN_ASSETS, FRAME_ASSETS } from './UnitView/assets';
+import { STICKMAN_ASSETS, FRAME_ASSETS, resolveSkinOverrides, resolveSkinFrameOverrides } from './UnitView/assets';
 import { StickmanRuntime } from './stickman/StickmanRuntime';
 import { FrameRuntime } from './frames/FrameRuntime';
 import { loadFrameSheet } from './frames/frameSheet';
@@ -34,17 +35,21 @@ export async function startUnitLab(canvas: HTMLCanvasElement): Promise<void> {
 
   // `&unit=shieldbearer,max` limits the bench to those types, since it only fits about two per screen
   const only = params.get('unit')?.split(',');
-  const types = (Object.keys(FRAME_ASSETS) as UnitType[]).filter((t) => !only || only.includes(t));
+  const skin = params.get('skin');
+  const skinFrames = skin ? resolveSkinFrameOverrides([skin]) : {};
+  const rigs = skin ? { ...STICKMAN_ASSETS, ...resolveSkinOverrides([skin]) } : STICKMAN_ASSETS;
+  const frames = skin ? skinFrames : FRAME_ASSETS;
+  const types = (Object.keys(frames) as UnitType[]).filter((t) => !only || only.includes(t));
   const figures: Array<{ runtime: UnitRuntime; clip: (typeof CLIPS)[number] }> = [];
   const colW = 120 * zoom / 3 + 40;
   let y = 30;
   for (const type of types) {
     const h = targetScreenHeight(type);
-    const { png, json } = FRAME_ASSETS[type]!;
+    const { png, json } = frames[type]!;
     const [asset, sheet] = await Promise.all([
-      StickmanRuntime.loadAsset(STICKMAN_ASSETS[type]!, h), loadFrameSheet(png, json),
+      StickmanRuntime.loadAsset(rigs[type]!, h), loadFrameSheet(png, json),
     ]);
-    const label = new PIXI.Text(`${type} — left: bone rig, right: frame sheet`, { fontSize: 14, fill: 0x333333 });
+    const label = new PIXI.Text(`${skin ? `${skin} ` : ''}${type} — left: bone rig, right: frame sheet`, { fontSize: 14, fill: 0x333333 });
     label.position.set(10, y);
     app.stage.addChild(label);
     y += 24;
