@@ -42,6 +42,15 @@
 | 分享链接不能指向门户外 | `shareReplay` 此前用 `window.location` 拼链接——在门户里那是 **iframe 自己的游戏文件地址**，别人点开是门户外的裸游戏。现在门户上用 `game.inviteLink({ r })` 生成门户游戏页链接（实测形如 `/game/<slug>?czy_invite=…&utm_source=…&r=<code>`），门户把 query 透传进 iframe，`getLaunchShareCode()` 照旧读 `r`；无 SDK（本地 dev）才退回页面 URL。 |
 | 包体 | 25 MB / 358 文件（上限 250 MB / 1500）。**首包实测 5.4 MB 到首帧、5.6 MB 进新手关**（生产构建、全新访客，2026-09-27），远低于手机首页要求的 20 MB 与 Basic 指南建议值，无需调整。 |
 
+### 2.1 QA 预览里的半屏渲染（2026-10-05 修）
+
+门户 QA 预览的 iframe 是 722×406。两次预览里新手关战斗和好友房都只画在左侧一窄条，切到前台也不恢复。两个成因，都在 `client/src`，都已修：
+
+1. **预加载期间尺寸变化被丢掉**：`app.ts` 在资源预加载之后只比 safe-area insets 不比尺寸，而 viewport watcher 在预加载之后才装、以当时尺寸为基线 → 启动尺寸与最终尺寸不同时整局停在启动尺寸（画布也不 resize）。现在 `resettledLayout` 同时比尺寸，变了就 `renderer.resize` + 重算 layout。
+2. **不可重建的屏（对局、房间、开场动画、SLG 地图）在尺寸变化后按新矩形缩放旧场景图**：现在 watcher 只 `scaling.refit()`（旧矩形 contain 进新视口），新 layout 在下一屏 `goto` 时生效。
+
+门户 iframe 是跨域的（`games.crazygames.com`），从外层页面读不到游戏自己启动时的 `innerWidth`，所以「启动时到底是多大」没有实测值；本机复现见 `UI_DESIGN.md` 安全区那一行。**重新上传构建后要在预览里再看一遍新手关和好友房。**
+
 ## 3. 没有充值时的玩家体验（`iapKind() === null`，CG 与微信共用）
 
 金币是唯一付费货币，所有消费都能用免费金币完成，没有硬锁（不付费月入约 3.1k–8.9k，见 `ECONOMY_NUMBERS.md`）。

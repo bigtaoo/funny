@@ -5,7 +5,7 @@
 // sets the scale by calling `setDesignScale()` itself — so deleting the one line in applyScaling
 // that actually calls it leaves all 20 of those cases green while the 111 MB texture comes straight
 // back. Same shape of gap ADR-072 recorded ("首轮测试全在场景层和视图层，漏了中间那层接线，而原 bug
-// 恰恰只长在那里"). `pixiAppViews.ui.ts` covers the half above this one (onResize -> scaling.resize)
+// 恰恰只长在那里"). `pixiAppViews.ui.ts` covers the half above this one (onResize -> scaling.refit / fitLayout)
 // against a mocked scaling, so between the two files the whole chain is pinned.
 //
 // Lives in the UI suite because it needs a REAL ScalingManager, and that needs working
