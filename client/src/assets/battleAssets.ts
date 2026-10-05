@@ -24,6 +24,8 @@
 import { UnitType } from '@nw/engine/types';
 import { StickmanRuntime } from '../render/stickman/StickmanRuntime';
 import { STICKMAN_ASSETS, resolveSkinOverrides } from '../render/UnitView';
+import { FRAME_ASSETS } from '../render/UnitView/assets';
+import { loadFrameSheet } from '../render/frames/frameSheet';
 import { targetScreenHeight } from '../render/unitSize';
 import { preloadL1CardArtTextures } from '../render/cardArt';
 import { decorMergedAtlas } from '../render/atlas/decorMergedAtlas';
@@ -57,6 +59,9 @@ export function ensureBattleAssets(
 
   const steps: Array<() => Promise<unknown>> = [
     ...Array.from(urls, ([url, h]) => () => StickmanRuntime.loadAsset(url, h)),
+    // Frame-sheet units (art-direction §4.3.1) replace their rig once the sheet is in, so warm the
+    // sheets too or the first units of a match would spawn as rigs.
+    ...Object.values(FRAME_ASSETS).map(({ png, json }) => () => loadFrameSheet(png, json)),
     () => preloadL1CardArtTextures(),
     // Battle ambience + corner labels (decorLayer/decorCLayer/battleLabels/HUD, and
     // ResultScene right after). Used to ride the L0 boot gate; since it became a

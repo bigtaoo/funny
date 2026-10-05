@@ -224,7 +224,7 @@ Anna 三人随偶数章出场（[characters.md](../product/characters.md)：Ch2/
   ② 小腿图比骨头长，鞋底在踝关节下约 12px，shadow `offsetY` 139 → 212。死亡躺倒帧躯干（含箭袋）比本体厚，`translateY` 从本体的 196 降到 120，腿略向下斜着着地。
   ③ **已上线**：同样按 **S 档**导出（旧包也是 M 档烤的），`naturalHeight` 468 → 342，与本体一致，所以皮肤版在场上也会变大约 1.37 倍。原有的膝盖/腰部接缝同日另修，见 ④。
   ④ **接缝修复**：(a) 膝盖——四张腿图都是**斜着画的**（右大腿 / 右靴筒约 10° 倾斜），旧绑定按竖直处理，右腿大腿底与靴口左右错开约 20px、左大腿又比骨头短约 17px。改为按贴图中轴线拟合重绑：大腿旋转对齐骨头、长度拉到膝关节下 5px，靴子锚点放在靴筒顶的中轴上、比膝关节高 6px（压在大腿下面）。(b) 腰部——髋关节原本落在上衣下摆的**最前沿**，腿像从衣摆前角伸出来。改为让整个上半身相对髋前移 33px：脊柱骨多转 `asin(33/120)`，脊柱贴图反向转同样角度并重设锚点，肩/头/手臂关节位置与贴图保持一致。死亡躺倒帧的 `translateY` 相应 120 → 158。`naturalHeight` 仍是 342。
-- [ ] **卫安（Medic）绑骨没做完，战斗里仍是旧的淡线稿**（2026-09-03 核对）：v7 新图早在 `f05ad876a`（2026-07-29）就出了，卡面图也已随 2026-08-20 那批 `exportUnitCardArt.mjs` 上线；但 `client/src/assets/units/medic.tao` 与**归档的旧 rig** `art/units/old/medic/medic.tao` **md5 完全相同**——也就是上线的战斗骨骼还是被显式标为 old 的那一份。`art/units/medic/` 目前只有 `medic.xcf`，图层零件还没导出。**剩下的步骤**：GIMP 图层导出 → animator 绑骨（照 Runner 那轮）→ 导出 `.tao` 覆盖 `client/src/assets/units/medic.tao`。**核对方式别看文件日期**（资产重组/压缩批次会刷新时间戳），用上面那个 md5 对比。
+- [x] **卫安（Medic）换上绿色 v7**（2026-10-04 完成）：战斗里改用帧图（`art/units/frames/medic/`，从 `art/units/medic.png` 切 12 块绑骨烘焙，见 `art-direction.md` §4.3.1）；卡面与缩略图换成同一张图的抠图（母版 `art/units/medic/medic.png`，由 `art/scripts/exportUnitCardArt.mjs` 导出）。此前（2026-09-03 核对）战斗用的是归档旧 rig、卡面也还是旧白色线稿——这里早先写"卡面已上线 v7"是错的。`client/src/assets/units/medic.tao` 仍是旧 rig，只在 `?frames=0` 关掉帧图时才会出现。
 
 ### 7.6 涛阵营三个新英雄（具名+背景+视觉，2026-07-02 定稿）
 

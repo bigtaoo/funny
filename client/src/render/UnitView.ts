@@ -7,13 +7,15 @@ import { ObjectPool } from '../cache/ObjectPool';
 import { registerPool } from '../cache/poolRegistry';
 import { StickmanRuntime } from './stickman/StickmanRuntime';
 import type { TaoAsset, GearGlyphSpec } from './stickman/StickmanRuntime';
+import type { UnitRuntime } from './unitRuntime';
+import { loadFrameSheet, type FrameSheet, type FrameSheetJson } from './frames/frameSheet';
 import { TICK_RATE } from '@nw/engine';
 import type { EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import { fx } from './theme';
 import { targetScreenHeight } from './unitSize';
 import { setBarRatio } from './barSprite';
 import {
-  STICKMAN_ASSETS, resolveSkinOverrides, createUnitContainer, resetUnitContainer,
+  STICKMAN_ASSETS, FRAME_ASSETS, resolveSkinOverrides, createUnitContainer, resetUnitContainer,
   HP_BAR_WIDTH, HP_TOTAL_FRAMES, HP_FADE_FRAMES,
 } from './UnitView/assets';
 import {
@@ -52,8 +54,8 @@ export class UnitView {
   /** All active unit display containers (circle or stickman wrapper), keyed by unit id. */
   private sprites: Map<number, PIXI.Container> = new Map();
 
-  /** Active StickmanRuntime instances for stickman-animated units, keyed by unit id. */
-  private readonly stickmanRuntimes: Map<number, StickmanRuntime> = new Map();
+  /** Active animated figures (bone rig or frame sheet), keyed by unit id. */
+  private readonly stickmanRuntimes: Map<number, UnitRuntime> = new Map();
 
   /** Pool bucket key of each active stickman unit — needed to return its pair to the matching pool. */
   private readonly stickmanPoolKeys: Map<number, string> = new Map();
@@ -65,13 +67,16 @@ export class UnitView {
    * ~11-sprite runtimes instead of new/destroy per spawn is the main
    * swarm-performance lever.
    */
-  private readonly stickmanPools: Map<string, Array<{ wrapper: PIXI.Container; runtime: StickmanRuntime }>> = new Map();
+  private readonly stickmanPools: Map<string, Array<{ wrapper: PIXI.Container; runtime: UnitRuntime }>> = new Map();
 
   /**
    * Per-unit HP bar visibility timer (render frames remaining).
    * 0 = hidden. Decremented every render frame in sync().
    */
   private hpTimers: Map<number, number> = new Map();
+
+  /** Baked frame sheets keyed by unit type (FRAME_ASSETS); entries appear as each load resolves. */
+  private readonly frameSheets: Map<UnitType, FrameSheet> = new Map();
 
   /** Default (unskinned) .tao assets keyed by unit type; entries appear as each fetch resolves. */
   private readonly assets: Map<UnitType, TaoAsset> = new Map();
@@ -160,6 +165,11 @@ export class UnitView {
     // unskinned look) — the equipped skin (S3-4) additionally loads into a
     // side-scoped override map, applied only to that side's units (acquireSprite).
     this.loadAssetsInto(STICKMAN_ASSETS, this.assets);
+    for (const [type, { png, json }] of Object.entries(FRAME_ASSETS) as [UnitType, { png: string; json: FrameSheetJson }][]) {
+      loadFrameSheet(png, json)
+        .then(sheet => { this.frameSheets.set(type, sheet); })
+        .catch(err => { console.warn(`[UnitView] ${type} frame sheet failed to load:`, err); });
+    }
     this.loadAssetsInto(resolveSkinOverrides(equippedSkins), this.localSkinAssets);
     this.loadAssetsInto(resolveSkinOverrides(opponentSkins), this.opponentSkinAssets);
   }
@@ -272,9 +282,9 @@ export class UnitView {
   private buildHost(): BuildHost {
     return {
       pool: this.pool, stickmanPools: this.stickmanPools, stickmanPoolKeys: this.stickmanPoolKeys,
-      stickmanRuntimes: this.stickmanRuntimes, localSkinAssets: this.localSkinAssets,
+      stickmanRuntimes: this.stickmanRuntimes, frameSheets: this.frameSheets, localSkinAssets: this.localSkinAssets,
       opponentSkinAssets: this.opponentSkinAssets, assets: this.assets, localSide: this.localSide,
-      applyGear: (runtime: StickmanRuntime, unit: Unit) => this.applyGear(runtime, unit),
+      applyGear: (runtime: UnitRuntime, unit: Unit) => this.applyGear(runtime, unit),
     };
   }
 
@@ -286,7 +296,7 @@ export class UnitView {
     };
   }
 
-  private applyGear(runtime: StickmanRuntime, unit: Unit): void {
+  private applyGear(runtime: UnitRuntime, unit: Unit): void {
     applyGear(this.gearHost(), runtime, unit);
   }
 
@@ -379,6 +389,7 @@ export class UnitView {
     this.sprites.clear();
     this.hpTimers.clear();
     this.assets.clear();
+    this.frameSheets.clear();
     this.localSkinAssets.clear();
     this.opponentSkinAssets.clear();
     this.gearSpecCache.clear();

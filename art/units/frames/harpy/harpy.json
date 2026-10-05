@@ -1,0 +1,310 @@
+{
+ "out": "../../../../client/src/assets/units/frames/harpy",
+ "height": 120,
+ "screenHeight": 46,
+ "points": {
+  "hit": [
+   0.0,
+   -0.6
+  ]
+ },
+ "shadow": [
+  0.3,
+  0.07
+ ],
+ "sources": {
+  "rig": {
+   "parts": "parts/parts.json",
+   "ground": [
+    800,
+    2075
+   ],
+   "crown": 129,
+   "parent": {
+    "thigh_f": "torso",
+    "shin_f": "thigh_f",
+    "tars_f": "shin_f",
+    "thigh_b": "torso",
+    "shin_b": "thigh_b",
+    "tars_b": "shin_b",
+    "head": "torso",
+    "wing_b": "torso",
+    "wing_f": "torso"
+   }
+  }
+ },
+ "colors": 64,
+ "clips": {
+  "idle": {
+   "source": "rig",
+   "frames": 8,
+   "fps": 8,
+   "loop": true,
+   "keys": [
+    {
+     "t": 0,
+     "pose": {
+      "torso": 0,
+      "head": -2,
+      "wing_b": 28,
+      "wing_f": -24,
+      "thigh_f": 10,
+      "shin_f": -8,
+      "tars_f": 14,
+      "thigh_b": -6,
+      "shin_b": 10,
+      "tars_b": 8,
+      "dx": 0,
+      "dy": -195,
+      "rot": 0
+     }
+    },
+    {
+     "t": 0.5,
+     "pose": {
+      "torso": 0,
+      "head": 2,
+      "wing_b": -28,
+      "wing_f": 24,
+      "thigh_f": 10,
+      "shin_f": -8,
+      "tars_f": 20,
+      "thigh_b": -6,
+      "shin_b": 10,
+      "tars_b": 14,
+      "dx": 0,
+      "dy": -155,
+      "rot": 0
+     }
+    }
+   ]
+  },
+  "walk": {
+   "source": "rig",
+   "frames": 8,
+   "fps": 14,
+   "loop": true,
+   "keys": [
+    {
+     "t": 0,
+     "pose": {
+      "torso": 0,
+      "head": -8,
+      "wing_b": 33.6,
+      "wing_f": -28.799999999999997,
+      "thigh_f": 22,
+      "shin_f": -4,
+      "tars_f": 24,
+      "thigh_b": 14,
+      "shin_b": 10,
+      "tars_b": 20,
+      "dx": 0,
+      "dy": -205,
+      "rot": 10
+     }
+    },
+    {
+     "t": 0.5,
+     "pose": {
+      "torso": 0,
+      "head": -8,
+      "wing_b": -33.6,
+      "wing_f": 28.799999999999997,
+      "thigh_f": 26,
+      "shin_f": -6,
+      "tars_f": 30,
+      "thigh_b": 18,
+      "shin_b": 10,
+      "tars_b": 26,
+      "dx": 0,
+      "dy": -160,
+      "rot": 10
+     }
+    }
+   ]
+  },
+  "attack": {
+   "source": "rig",
+   "frames": 9,
+   "fps": 12,
+   "loop": false,
+   "hitAt": 0.5,
+   "keys": [
+    {
+     "t": 0,
+     "pose": {
+      "torso": 0,
+      "head": 0,
+      "wing_b": 0,
+      "wing_f": 0,
+      "thigh_f": 10,
+      "shin_f": -8,
+      "tars_f": 14,
+      "thigh_b": -6,
+      "shin_b": 10,
+      "tars_b": 8,
+      "dx": 0,
+      "dy": -170,
+      "rot": 0
+     }
+    },
+    {
+     "t": 0.3,
+     "ease": "in",
+     "pose": {
+      "torso": 0,
+      "head": 8,
+      "wing_b": 42.0,
+      "wing_f": -36.0,
+      "thigh_f": -10,
+      "shin_f": 20,
+      "tars_f": 20,
+      "thigh_b": -16,
+      "shin_b": 20,
+      "tars_b": 20,
+      "dx": -20,
+      "dy": -230,
+      "rot": -12
+     }
+    },
+    {
+     "t": 0.5,
+     "ease": "out",
+     "pose": {
+      "torso": 0,
+      "head": 10,
+      "wing_b": -36.4,
+      "wing_f": 31.200000000000003,
+      "thigh_f": -55,
+      "shin_f": -30,
+      "tars_f": -20,
+      "thigh_b": -40,
+      "shin_b": -20,
+      "tars_b": -10,
+      "dx": 60,
+      "dy": -190,
+      "rot": -18
+     }
+    },
+    {
+     "t": 0.7,
+     "pose": {
+      "torso": 0,
+      "head": 8,
+      "wing_b": -22.400000000000002,
+      "wing_f": 19.200000000000003,
+      "thigh_f": -45,
+      "shin_f": -24,
+      "tars_f": -14,
+      "thigh_b": -32,
+      "shin_b": -14,
+      "tars_b": -6,
+      "dx": 50,
+      "dy": -190,
+      "rot": -12
+     }
+    },
+    {
+     "t": 1,
+     "pose": {
+      "torso": 0,
+      "head": 0,
+      "wing_b": 0,
+      "wing_f": 0,
+      "thigh_f": 10,
+      "shin_f": -8,
+      "tars_f": 14,
+      "thigh_b": -6,
+      "shin_b": 10,
+      "tars_b": 8,
+      "dx": 0,
+      "dy": -170,
+      "rot": 0
+     }
+    }
+   ]
+  },
+  "death": {
+   "source": "rig",
+   "frames": 9,
+   "fps": 12,
+   "loop": false,
+   "keys": [
+    {
+     "t": 0,
+     "pose": {
+      "torso": 0,
+      "head": 0,
+      "wing_b": 0,
+      "wing_f": 0,
+      "thigh_f": 10,
+      "shin_f": -8,
+      "tars_f": 14,
+      "thigh_b": -6,
+      "shin_b": 10,
+      "tars_b": 8,
+      "dx": 0,
+      "dy": -170,
+      "rot": 0
+     }
+    },
+    {
+     "t": 0.25,
+     "ease": "in",
+     "pose": {
+      "torso": -6,
+      "head": -14,
+      "wing_b": 44.800000000000004,
+      "wing_f": -38.400000000000006,
+      "thigh_f": 10,
+      "shin_f": -8,
+      "tars_f": 14,
+      "thigh_b": -6,
+      "shin_b": 10,
+      "tars_b": 8,
+      "dx": 0,
+      "dy": -210,
+      "rot": -10
+     }
+    },
+    {
+     "t": 0.75,
+     "ease": "in",
+     "pose": {
+      "torso": -10,
+      "head": -20,
+      "wing_b": -40,
+      "wing_f": 40,
+      "thigh_f": -20,
+      "shin_f": 30,
+      "tars_f": 20,
+      "thigh_b": -10,
+      "shin_b": 30,
+      "tars_b": 20,
+      "dx": -40,
+      "dy": -600,
+      "rot": -78
+     }
+    },
+    {
+     "t": 1,
+     "pose": {
+      "torso": -12,
+      "head": -24,
+      "wing_b": -46,
+      "wing_f": 46,
+      "thigh_f": -22,
+      "shin_f": 32,
+      "tars_f": 22,
+      "thigh_b": -12,
+      "shin_b": 32,
+      "tars_b": 22,
+      "dx": -44,
+      "dy": -682,
+      "rot": -84
+     }
+    }
+   ]
+  }
+ }
+}

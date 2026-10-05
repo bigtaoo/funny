@@ -1,0 +1,254 @@
+{
+ "source": "../../berserker/berserker.png",
+ "outline": {
+  "width": 3,
+  "rgb": [
+   40,
+   38,
+   40
+  ]
+ },
+ "parts": [
+  {
+   "name": "boot_b",
+   "from": {
+    "image": "../../berserker/leg-r.png",
+    "at": [
+     159,
+     1252
+    ]
+   },
+   "discs": [
+    [
+     315,
+     1590,
+     92
+    ]
+   ],
+   "poly": [
+    [
+     110,
+     1600
+    ],
+    [
+     330,
+     1530
+    ],
+    [
+     480,
+     1630
+    ],
+    [
+     490,
+     1860
+    ],
+    [
+     110,
+     1860
+    ]
+   ],
+   "pivot": [
+    315,
+    1590
+   ]
+  },
+  {
+   "name": "leg_b",
+   "from": {
+    "image": "../../berserker/leg-r.png",
+    "at": [
+     159,
+     1252
+    ]
+   },
+   "exclude_parts": [
+    "boot_b"
+   ],
+   "pivot": [
+    540,
+    1190
+   ]
+  },
+  {
+   "name": "boot_f",
+   "from": {
+    "image": "../../berserker/leg-l.png",
+    "at": [
+     876,
+     1268
+    ]
+   },
+   "discs": [
+    [
+     1095,
+     1630,
+     88
+    ]
+   ],
+   "poly": [
+    [
+     960,
+     1620
+    ],
+    [
+     1250,
+     1620
+    ],
+    [
+     1420,
+     1700
+    ],
+    [
+     1420,
+     1860
+    ],
+    [
+     960,
+     1860
+    ]
+   ],
+   "pivot": [
+    1095,
+    1630
+   ]
+  },
+  {
+   "name": "leg_f",
+   "from": {
+    "image": "../../berserker/leg-l.png",
+    "at": [
+     876,
+     1268
+    ]
+   },
+   "exclude_parts": [
+    "boot_f"
+   ],
+   "pivot": [
+    1040,
+    1170
+   ]
+  },
+  {
+   "name": "torso",
+   "from": {
+    "image": "../../berserker/spine.png",
+    "at": [
+     32,
+     9
+    ]
+   },
+   "pivot": [
+    805,
+    1300
+   ]
+  },
+  {
+   "name": "head",
+   "from": {
+    "image": "../../berserker/head.png",
+    "at": [
+     844,
+     153
+    ]
+   },
+   "pivot": [
+    930,
+    400
+   ]
+  },
+  {
+   "name": "hand",
+   "from": {
+    "image": "../../berserker/arm-r-down.png",
+    "at": [
+     252,
+     530
+    ]
+   },
+   "discs": [
+    [
+     470,
+     1085,
+     72
+    ]
+   ],
+   "poly": [
+    [
+     230,
+     1045
+    ],
+    [
+     1460,
+     1045
+    ],
+    [
+     1460,
+     1800
+    ],
+    [
+     230,
+     1800
+    ]
+   ],
+   "pivot": [
+    470,
+    1090
+   ]
+  },
+  {
+   "name": "forearm",
+   "from": {
+    "image": "../../berserker/arm-r-down.png",
+    "at": [
+     252,
+     530
+    ]
+   },
+   "discs": [
+    [
+     470,
+     1085,
+     72
+    ]
+   ],
+   "poly": [
+    [
+     300,
+     560
+    ],
+    [
+     640,
+     560
+    ],
+    [
+     640,
+     1085
+    ],
+    [
+     300,
+     1085
+    ]
+   ],
+   "exclude_parts": [],
+   "pivot": [
+    460,
+    690
+   ]
+  },
+  {
+   "name": "upper",
+   "from": {
+    "image": "../../berserker/arm-r-up.png",
+    "at": [
+     364,
+     244
+    ]
+   },
+   "pivot": [
+    630,
+    430
+   ]
+  }
+ ]
+}

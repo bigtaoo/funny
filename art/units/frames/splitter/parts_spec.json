@@ -1,0 +1,108 @@
+{
+ "source": "../../splitter/splitter.png",
+ "outline": {
+  "width": 3,
+  "rgb": [
+   40,
+   50,
+   45
+  ]
+ },
+ "parts": [
+  {
+   "name": "b_base",
+   "poly": [
+    [
+     960,
+     720
+    ],
+    [
+     1280,
+     720
+    ],
+    [
+     1280,
+     850
+    ],
+    [
+     960,
+     850
+    ]
+   ],
+   "pivot": [
+    1120,
+    840
+   ]
+  },
+  {
+   "name": "b_top",
+   "from": {
+    "image": "../../splitter/arm.png",
+    "at": [
+     567,
+     439
+    ]
+   },
+   "pivot": [
+    992,
+    709
+   ]
+  },
+  {
+   "name": "b_right",
+   "from": {
+    "image": "../../splitter/spine.png",
+    "at": [
+     1225,
+     462
+    ]
+   },
+   "pivot": [
+    1669,
+    976
+   ]
+  },
+  {
+   "name": "b_left",
+   "from": {
+    "image": "../../splitter/leg.png",
+    "at": [
+     85,
+     530
+    ]
+   },
+   "pivot": [
+    546,
+    1069
+   ]
+  },
+  {
+   "name": "b_mid",
+   "from": {
+    "image": "../../splitter/arm-l.png",
+    "at": [
+     887,
+     755
+    ]
+   },
+   "pivot": [
+    1248,
+    1154
+   ]
+  },
+  {
+   "name": "b_small",
+   "from": {
+    "image": "../../splitter/head.png",
+    "at": [
+     1514,
+     1106
+    ]
+   },
+   "pivot": [
+    1746,
+    1298
+   ]
+  }
+ ]
+}

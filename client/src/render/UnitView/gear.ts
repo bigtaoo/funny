@@ -8,7 +8,7 @@ import { PLAYER_EQUIPPABLE_UNITS } from '@nw/engine';
 import type { EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import { getEquipDef } from '../../game/meta/equipmentDefs';
 import type { EquipSlot } from '../../game/meta/SaveData';
-import type { StickmanRuntime } from '../stickman/StickmanRuntime';
+import type { UnitRuntime } from '../unitRuntime';
 import type { GearGlyphSpec } from '../stickman/StickmanRuntime';
 
 export interface GearHost {
@@ -63,6 +63,6 @@ export function gearSpecsFor(host: GearHost, unitType: UnitType): GearGlyphSpec[
  * keyed by type, not side, so a runtime can flip sides on reuse). setGear is
  * idempotent, so the common pooled-reuse-same-side case is a no-op.
  */
-export function applyGear(host: GearHost, runtime: StickmanRuntime, unit: Unit): void {
+export function applyGear(host: GearHost, runtime: UnitRuntime, unit: Unit): void {
   runtime.setGear(unit.side === host.localSide ? gearSpecsFor(host, unit.unitType) : []);
 }

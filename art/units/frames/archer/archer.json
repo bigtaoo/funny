@@ -1,0 +1,491 @@
+{
+ "out": "../../../../client/src/assets/units/frames/archer",
+ "height": 140,
+ "screenHeight": 46,
+ "points": {
+  "hit": [
+   0.095,
+   -0.57
+  ]
+ },
+ "shadow": [
+  0.342,
+  0.085
+ ],
+ "sources": {
+  "rig": {
+   "parts": "parts/parts.json",
+   "ground": [
+    300,
+    652
+   ],
+   "crown": -31,
+   "parent": {
+    "thigh_b": null,
+    "shin_b": "thigh_b",
+    "foot_b": "shin_b",
+    "thigh_f": null,
+    "shin_f": "thigh_f",
+    "foot_f": "shin_f",
+    "head": "torso",
+    "arm_b": "torso",
+    "bow": "arm_b",
+    "arm_d": "torso"
+   },
+   "soles": [
+    [
+     "foot_b",
+     [
+      190,
+      652
+     ]
+    ],
+    [
+     "foot_b",
+     [
+      250,
+      652
+     ]
+    ],
+    [
+     "foot_f",
+     [
+      355,
+      643
+     ]
+    ],
+    [
+     "foot_f",
+     [
+      440,
+      643
+     ]
+    ]
+   ],
+   "order": [
+    "thigh_b",
+    "shin_b",
+    "foot_b",
+    "thigh_f",
+    "shin_f",
+    "foot_f",
+    "torso",
+    "head",
+    "arm_b",
+    "bow",
+    "arm_d"
+   ],
+   "lines": [
+    {
+     "kind": "string",
+     "after": "bow",
+     "a": [
+      "bow",
+      [
+       465,
+       24
+      ]
+     ],
+     "b": [
+      "bow",
+      [
+       441,
+       490
+      ]
+     ],
+     "pull": [
+      "arm_d",
+      [
+       345,
+       252
+      ]
+     ],
+     "channel": "draw",
+     "width": 0.6,
+     "rgb": [
+      20,
+      45,
+      25
+     ]
+    },
+    {
+     "kind": "arrow",
+     "after": "bow",
+     "string": 0,
+     "aim": [
+      "bow",
+      [
+       575,
+       238
+      ]
+     ],
+     "length": 270,
+     "channel": "arrow",
+     "width": 1.1,
+     "rgb": [
+      20,
+      45,
+      25
+     ],
+     "tip": [
+      20,
+      45,
+      25
+     ],
+     "fletch": [
+      60,
+      110,
+      60
+     ]
+    }
+   ]
+  }
+ },
+ "colors": 64,
+ "clips": {
+  "idle": {
+   "source": "rig",
+   "frames": 8,
+   "fps": 8,
+   "loop": true,
+   "plant": true,
+   "keys": [
+    {
+     "t": 0,
+     "pose": {
+      "draw": 1,
+      "arrow": 1,
+      "torso": 0,
+      "head": 0,
+      "arm_b": 0,
+      "bow": 0,
+      "arm_d": 0,
+      "thigh_b": 0,
+      "shin_b": 0,
+      "thigh_f": 0,
+      "shin_f": 0
+     }
+    },
+    {
+     "t": 0.5,
+     "pose": {
+      "draw": 1,
+      "arrow": 1,
+      "torso": 1.2,
+      "head": -2,
+      "arm_b": -1.2,
+      "bow": 0,
+      "arm_d": -1.5,
+      "thigh_b": -1.2,
+      "shin_b": 2.5,
+      "thigh_f": 1.2,
+      "shin_f": 2.5
+     }
+    }
+   ]
+  },
+  "walk": {
+   "source": "rig",
+   "frames": 10,
+   "fps": 12,
+   "loop": true,
+   "plant": true,
+   "keys": [
+    {
+     "t": 0,
+     "pose": {
+      "thigh_f": -22,
+      "shin_f": 4,
+      "foot_f": -8,
+      "thigh_b": 18,
+      "shin_b": 16,
+      "foot_b": 10,
+      "draw": 0,
+      "arrow": 0,
+      "arm_b": 38,
+      "bow": -40,
+      "torso": 3,
+      "head": -2,
+      "arm_d": 54
+     }
+    },
+    {
+     "t": 0.25,
+     "pose": {
+      "thigh_f": -2,
+      "shin_f": 6,
+      "foot_f": 0,
+      "thigh_b": -18,
+      "shin_b": 52,
+      "foot_b": 6,
+      "draw": 0,
+      "arrow": 0,
+      "arm_b": 41,
+      "bow": -40,
+      "torso": 5,
+      "head": -4,
+      "arm_d": 62
+     }
+    },
+    {
+     "t": 0.5,
+     "pose": {
+      "thigh_b": -22,
+      "shin_b": 4,
+      "foot_b": -8,
+      "thigh_f": 18,
+      "shin_f": 16,
+      "foot_f": 10,
+      "draw": 0,
+      "arrow": 0,
+      "arm_b": 44,
+      "bow": -40,
+      "torso": 3,
+      "head": -2,
+      "arm_d": 70
+     }
+    },
+    {
+     "t": 0.75,
+     "pose": {
+      "thigh_b": -2,
+      "shin_b": 6,
+      "foot_b": 0,
+      "thigh_f": -18,
+      "shin_f": 52,
+      "foot_f": 6,
+      "draw": 0,
+      "arrow": 0,
+      "arm_b": 41,
+      "bow": -40,
+      "torso": 5,
+      "head": -4,
+      "arm_d": 62
+     }
+    }
+   ]
+  },
+  "attack": {
+   "source": "rig",
+   "frames": 10,
+   "fps": 12,
+   "loop": false,
+   "hitAt": 0.5,
+   "plant": true,
+   "keys": [
+    {
+     "t": 0,
+     "pose": {
+      "torso": 0,
+      "head": 0,
+      "arm_b": 0,
+      "bow": 0,
+      "arm_d": 0,
+      "arm_d.x": 0,
+      "arm_d.y": 0,
+      "thigh_b": 0,
+      "shin_b": 0,
+      "thigh_f": 0,
+      "shin_f": 0,
+      "dx": 0
+     }
+    },
+    {
+     "t": 0.42,
+     "ease": "in",
+     "pose": {
+      "torso": -3,
+      "head": 2,
+      "arm_b": 0,
+      "bow": 0,
+      "arm_d": -2,
+      "arm_d.x": -16,
+      "arm_d.y": 0,
+      "thigh_b": 3,
+      "shin_b": 0,
+      "thigh_f": -3,
+      "shin_f": 0,
+      "dx": -4
+     }
+    },
+    {
+     "t": 0.5,
+     "ease": "out",
+     "pose": {
+      "torso": -4,
+      "head": 2,
+      "arm_b": -5,
+      "bow": 4,
+      "arm_d": -26,
+      "arm_d.x": -34,
+      "arm_d.y": -6,
+      "thigh_b": 3,
+      "shin_b": 0,
+      "thigh_f": -3,
+      "shin_f": 0,
+      "dx": -8
+     }
+    },
+    {
+     "t": 0.68,
+     "pose": {
+      "torso": -2,
+      "head": 1,
+      "arm_b": -2,
+      "bow": 1,
+      "arm_d": -20,
+      "arm_d.x": -26,
+      "arm_d.y": 0,
+      "thigh_b": 0,
+      "shin_b": 0,
+      "thigh_f": 0,
+      "shin_f": 0,
+      "dx": -5
+     }
+    },
+    {
+     "t": 1,
+     "pose": {
+      "torso": 0,
+      "head": 0,
+      "arm_b": 0,
+      "bow": 0,
+      "arm_d": 0,
+      "arm_d.x": 0,
+      "arm_d.y": 0,
+      "thigh_b": 0,
+      "shin_b": 0,
+      "thigh_f": 0,
+      "shin_f": 0,
+      "dx": 0
+     }
+    },
+    {
+     "t": 0,
+     "ease": "hold",
+     "pose": {
+      "draw": 1,
+      "arrow": 1
+     }
+    },
+    {
+     "t": 0.46,
+     "ease": "hold",
+     "pose": {
+      "draw": 0,
+      "arrow": 0
+     }
+    },
+    {
+     "t": 0.9,
+     "ease": "hold",
+     "pose": {
+      "draw": 1,
+      "arrow": 1
+     }
+    }
+   ]
+  },
+  "death": {
+   "source": "rig",
+   "frames": 9,
+   "fps": 12,
+   "loop": false,
+   "keys": [
+    {
+     "t": 0,
+     "pose": {
+      "rot": 0,
+      "dx": 0,
+      "dy": 0,
+      "torso": 0,
+      "head": 0,
+      "arm_b": 0,
+      "bow": 0,
+      "arm_d": 0,
+      "thigh_f": 0,
+      "shin_f": 0,
+      "thigh_b": 0,
+      "shin_b": 0
+     }
+    },
+    {
+     "t": 0.22,
+     "ease": "in",
+     "pose": {
+      "rot": 6,
+      "dx": 8,
+      "dy": -8,
+      "torso": -12,
+      "head": -16,
+      "arm_b": 30,
+      "bow": -20,
+      "arm_d": 40,
+      "thigh_f": -12,
+      "shin_f": 22,
+      "thigh_b": 8,
+      "shin_b": 18
+     }
+    },
+    {
+     "t": 0.8,
+     "ease": "out",
+     "pose": {
+      "rot": -84,
+      "dx": -45,
+      "dy": -150,
+      "torso": -8,
+      "head": -12,
+      "arm_b": 70,
+      "bow": -60,
+      "arm_d": 80,
+      "thigh_f": 2,
+      "shin_f": 14,
+      "thigh_b": 4,
+      "shin_b": 16
+     }
+    },
+    {
+     "t": 0.9,
+     "pose": {
+      "rot": -88,
+      "dy": -175
+     }
+    },
+    {
+     "t": 1,
+     "pose": {
+      "rot": -88,
+      "dx": -50,
+      "dy": -154,
+      "torso": -6,
+      "head": -10,
+      "arm_b": 75,
+      "bow": -65,
+      "arm_d": 85,
+      "thigh_f": 4,
+      "shin_f": 10,
+      "thigh_b": 4,
+      "shin_b": 10
+     }
+    },
+    {
+     "t": 0,
+     "ease": "hold",
+     "pose": {
+      "draw": 1,
+      "arrow": 1
+     }
+    },
+    {
+     "t": 0.12,
+     "ease": "hold",
+     "pose": {
+      "draw": 0,
+      "arrow": 0
+     }
+    }
+   ]
+  }
+ }
+}
