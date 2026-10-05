@@ -116,7 +116,10 @@
     Controls = §4.1b 原文，`- ` 换成 `· `（Quill 编辑器会把 `- ` 自动转成列表）。
   - 门户坑：①QA 结果只活在点 Continue 弹出的那个 `qa-continue` 标签页里，预览页关早了或换新标签打开同一 URL 都会报「Failed to retrieve QA results」；
     ②封面/视频不能用脚本注入文件（控制台 `UploadType is not properly set`），必须手动拖；③Submit 前要先填 Billing，否则报「Error fetching payment details」。
-  - 已知小瑕疵（不阻塞，上线后第一版修）：新手关「Skip tutorial »」文字比底板宽，821×462 下「»」被右缘截掉。
+  - 已提交构建里的小瑕疵：新手关「Skip tutorial »」文字比底板宽，821×462 下「»」被右缘截掉。
+    **2026-10-05 已修**（`render/TutorialDirector/panels.ts::drawSkipButton`：先排字、底板宽度跟字走、从右缘向左长，
+    封顶 `W*0.34`，超了用 `fitFont` 缩字号、不低于可读下限）；英/德 × 横/竖四种组合实测字都在底板内。
+    **随下一次「Submit new version」上线**，已审核中的 `64c620eb` 不含此修复。
 - 生产环境 `NW_CRAZYGAMES_GAME_ID`：**2026-09-28 核过仍未配**（`/api/auth/crazygames` 回 `SSO not configured`）。这个值是 CrazyGames 开发者后台建好游戏后分配的，拿到后写进 `secrets/funny/prod.yaml` → `push-env.py` → 重建 metaserver 即可；它只被 `/auth/crazygames` 读，**对其他平台零影响**。没配也不会卡死玩家（§2 回退），但门户玩家都会变成设备访客。
 
 ## 6. 其余官方条目核对结果（2026-09-27 第二轮）

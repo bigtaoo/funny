@@ -16,7 +16,7 @@ import { tearDownChildren } from '../sketchUi';
 import { ILayout, Rect } from '../../layout/ILayout';
 import { t, type TranslationKey } from '../../i18n';
 import { drawHudButton, hudButtonText } from '../../ui/widgets/hudButton';
-import { snapFont } from '../fontScale';
+import { fitFont, snapFont } from '../fontScale';
 import type { Phase } from './types';
 
 export interface PanelHost {
@@ -62,8 +62,21 @@ export function buildLayers(host: PanelHost): void {
 
 function drawSkipButton(host: PanelHost): void {
   const { designWidth: W } = host.layout;
-  const bw = Math.round(W * 0.18);
-  const bh = Math.round(bw * 0.42);
+  // The height (and so the font) comes from the nominal width; the WIDTH then follows the label.
+  // A fixed 18%-of-W pill used to be ~1.6x narrower than "Skip tutorial »" at that font, so the
+  // text spilled past both ends and the trailing » was cut off by the canvas edge (CrazyGames
+  // preview, 2026-10-05). Grow leftward from the right margin up to a cap; past the cap, shrink
+  // the font (fitFont keeps it on the scale and above the legibility floor).
+  const bh = Math.round(W * 0.18 * 0.42);
+  const pad = Math.round(bh * 0.35);
+  const maxW = Math.round(W * 0.34);
+  const lbl = makeText(t('tutorial.skip' as TranslationKey), {
+    fontFamily: 'monospace', fontSize: snapFont(Math.round(bh * 0.42)), fill: hudButtonText('primary'),
+  });
+  if (lbl.width + pad * 2 > maxW) {
+    lbl.style.fontSize = fitFont(Number(lbl.style.fontSize), lbl.width, maxW - pad * 2);
+  }
+  const bw = Math.max(Math.round(W * 0.18), Math.ceil(lbl.width) + pad * 2);
   const bx = W - bw - Math.round(W * 0.03);
   const by = Math.round(bh * 0.6);
   host.skipBtnRect = { x: bx, y: by, w: bw, h: bh };
@@ -71,9 +84,6 @@ function drawSkipButton(host: PanelHost): void {
   drawHudButton(g, bw, bh, 'primary', { radius: bh * 0.3, fillAlpha: 0.78 });
   g.x = bx; g.y = by;
   host.root.addChild(g);
-  const lbl = makeText(t('tutorial.skip' as TranslationKey), {
-    fontFamily: 'monospace', fontSize: snapFont(Math.round(bh * 0.42)), fill: hudButtonText('primary'),
-  });
   lbl.anchor.set(0.5);
   lbl.x = bx + bw / 2; lbl.y = by + bh / 2;
   host.root.addChild(lbl);
