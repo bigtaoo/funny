@@ -131,6 +131,7 @@
    ]
   }
  },
+ "colors": 64,
  "clips": {
   "idle": {
    "source": "rig",

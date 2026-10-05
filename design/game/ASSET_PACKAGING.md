@@ -431,7 +431,7 @@ bundle 从 §1 记的 ~1.5 MB 长到 2.08 MB（raw），**没有任何东西发�
 |---|---|---|---|
 | `entry.brotli` | 470.9 KiB | 550 KiB | 整包代码，跑任何东西之前都得下完 |
 | `boot.gate` | 694.2 KiB | 800 KiB | **玩家真正在等的那一层**（L0 阻塞层） |
-| `dist.total` | 22.9 MiB | 26000 KiB | 前两者都看不见的美术膨胀。不计 `public/web` 拷出的官网页（含 App Review 录屏 `review/`）：只有 TARGET=web 产出它们，任何包都不继承（2026-10-04） |
+| `dist.total` | 22.9 MiB | 27000 KiB | 前两者都看不见的美术膨胀。不计 `public/web` 拷出的官网页（含 App Review 录屏 `review/`）：只有 TARGET=web 产出它们，任何包都不继承（2026-10-04）。2026-10-05 由 26000 抬到 27000（当日实测 26380.7 KiB）：12 张帧图（约 1.3 MB，64 色调色板）与 `.tao` rig 兜底同时出包；抬之前先把漏了 `colors` 的 lena/mara 两张 RGBA 帧图按 64 色重 bake（省约 800 KiB）。下一次要砍，就退役已有帧图的单位的 rig PNG/`.tao`，而不是再抬 |
 
 两个设计选择：
 - **绝对预算 + 明示余量，不是 ratchet**。行数是人加的，字节是依赖升级/minifier 版本/美术重导出天天在动的——no-growth ratchet 会在没做错事的提交上变红，然后训练所有人条件反射地抬基线。
