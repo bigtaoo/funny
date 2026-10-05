@@ -8,7 +8,8 @@
 import * as PIXI from 'pixi.js-legacy';
 import { makeText } from '../pixiText';
 import { CardDefinition, CardType } from '@nw/engine/types';
-import { t, type TranslationKey } from '../../i18n';
+import { t, getLocale, type TranslationKey } from '../../i18n';
+import { compoundSeam } from '../../i18n/compoundBreaks';
 import { TICK_RATE } from '@nw/engine/math/fixed';
 import { SketchPen } from '../sketch';
 import { palette } from '../theme';
@@ -163,9 +164,16 @@ export function configureSlot(
     nameText.style.fontSize = FS.bodyLg;
     nameText.style.fontSize = fitFont(FS.bodyLg, nameText.width, cardW - 8);
     // At the floor and still too wide ("Meteoreinschlag" on a 720-wide portrait design, where the
-    // card is 112 design px): split the word across two lines rather than run off the card. The
-    // name is bottom-anchored, so the second line grows up over the art, not out of the card.
-    if (nameText.width > cardW - 8) nameText.style.breakWords = true;
+    // card is 112 design px): split the word across two lines rather than run off the card — at
+    // its compound seam with a hyphen when one is listed ("Bogen-" / "schütze"), else wherever the
+    // glyphs run out. The name is bottom-anchored, so the second line grows up over the art, not
+    // out of the card.
+    if (nameText.width > cardW - 8) {
+      const seam = compoundSeam(nameText.text, getLocale());
+      if (seam) nameText.text = `${seam[0]}-
+${seam[1]}`;
+      if (!seam || nameText.width > cardW - 8) nameText.style.breakWords = true;
+    }
     nameText.x = (cardW - nameText.width) / 2;
     nameText.y = cardH - nameText.height - 6;
 

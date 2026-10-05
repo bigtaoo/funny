@@ -1,6 +1,6 @@
 # CrazyGames 上架：官方要求 ↔ 我们的实现
 
-> 状态：Basic Launch 代码侧已完成（2026-09-27，同日第二轮补门户静音/安全区/分享链接）· 权威：本文（CrazyGames 专属要求的单一入口）
+> 状态：**2026-10-05 已提交，门户状态 AWAITING REVIEW**（构建 `64c620eb`，来自提交 `b452aedf4`）；Basic Launch 代码侧 2026-09-27 完成 · 权威：本文（CrazyGames 专属要求的单一入口）
 > 来源：[docs.crazygames.com/requirements](https://docs.crazygames.com/requirements/intro/)（2026-09-27 逐页核过两轮：
 > 要求 8 页 + SDK intro/game + resources 的 CrazyGames App / Basic Launch 指标 / 加载 / 鼠标四页）；
 > SDK 行为以 `https://sdk.crazygames.com/crazygames-sdk-v3.js` 源码为准（文档页之外的细节都是在源码里查到的）。
@@ -41,6 +41,17 @@
 | CG App 安全区 | resources/crazygames-app：App 里游戏全屏贴边，刘海/圆角会挡 UI。CG 平台现在和 web 一样实现 `getSafeAreaInsets` / `onSafeAreaInsetsChanged`（复用 `platform/web/safeAreaProbe.ts`），模板加 `viewport-fit=cover`（不加它 `env()` 永远是 0）。网站 iframe 里读数仍是 0，布局不变。**只有单测覆盖**：本地模拟不出 App 的贴边环境，要在 App 里真机看一次。 |
 | 分享链接不能指向门户外 | `shareReplay` 此前用 `window.location` 拼链接——在门户里那是 **iframe 自己的游戏文件地址**，别人点开是门户外的裸游戏。现在门户上用 `game.inviteLink({ r })` 生成门户游戏页链接（实测形如 `/game/<slug>?czy_invite=…&utm_source=…&r=<code>`），门户把 query 透传进 iframe，`getLaunchShareCode()` 照旧读 `r`；无 SDK（本地 dev）才退回页面 URL。 |
 | 包体 | 25 MB / 358 文件（上限 250 MB / 1500）。**首包实测 5.4 MB 到首帧、5.6 MB 进新手关**（生产构建、全新访客，2026-09-27），远低于手机首页要求的 20 MB 与 Basic 指南建议值，无需调整。 |
+
+### 2.1 QA 预览里的半屏渲染（2026-10-05 修）
+
+门户 QA 预览的 iframe 是 722×406。两次预览里新手关战斗和好友房都只画在左侧一窄条，切到前台也不恢复。两个成因，都在 `client/src`，都已修：
+
+1. **预加载期间尺寸变化被丢掉**：`app.ts` 在资源预加载之后只比 safe-area insets 不比尺寸，而 viewport watcher 在预加载之后才装、以当时尺寸为基线 → 启动尺寸与最终尺寸不同时整局停在启动尺寸（画布也不 resize）。现在 `resettledLayout` 同时比尺寸，变了就 `renderer.resize` + 重算 layout。
+2. **不可重建的屏（对局、房间、开场动画、SLG 地图）在尺寸变化后按新矩形缩放旧场景图**：现在 watcher 只 `scaling.refit()`（旧矩形 contain 进新视口），新 layout 在下一屏 `goto` 时生效。
+
+3. **后台标签页启动时门户 iframe 报的是竖屏尺寸**（同日重新上传后复测发现）：修完 1、2 后，在后台标签页启动的预览不再被截断，但新手关仍是竖屏布局、居中缩在横屏框里——对局在标签页切到前台、iframe 拿到 722×406 之前就按竖屏建好了，而对局永不重建。修法：CG 构建的 `onLoadingComplete()` 在页面 `hidden` 时等到 `visible`，再等视口安静 300 ms（最长 1.5 s）才返回，首屏据此构建（`platform/web/visibleBoot.ts`）。前台启动零延迟。Loki 里同一构建的两条 crash 记录 `orient=landscape vp=723x361 / 720x361`，说明前台时游戏读到的尺寸是对的。
+
+门户 iframe 是跨域的（`games.crazygames.com`），从外层页面读不到游戏自己启动时的 `innerWidth`，所以「启动时到底是多大」没有实测值；本机复现见 `UI_DESIGN.md` 安全区那一行。**重新上传构建后要在预览里再看一遍新手关和好友房。**
 
 ## 3. 没有充值时的玩家体验（`iapKind() === null`，CG 与微信共用）
 
@@ -94,7 +105,25 @@
 - 封面 prompt 已出（[`crazygames-cover-art-prompts.md`](../product/crazygames-cover-art-prompts.md)，2026-09-28），用户 AI 出图；预览视频用户手机录。
 - Atlas M0 升档、备份异地：**用户 2026-09-28 定：提审前不升，上线一天后看数据再决定。**
 - `/pve/stamina/ad`：2026-09-28 核过线上已部署（`POST https://api.gamestao.com/api/pve/stamina/ad` 回 400 校验错，不是 404）。
-- 生产环境 `NW_CRAZYGAMES_GAME_ID`：**2026-09-28 核过仍未配**（`/api/auth/crazygames` 回 `SSO not configured`）。这个值是 CrazyGames 开发者后台建好游戏后分配的，拿到后写进 `secrets/funny/prod.yaml` → `push-env.py` → 重建 metaserver 即可；它只被 `/auth/crazygames` 读，**对其他平台零影响**。没配也不会卡死玩家（§2 回退），但门户玩家都会变成设备访客。
+- **2026-10-05 提交记录**（下次「Submit new version」照这份填）：
+  - QA 页：Gameplay requirements / 全域名 / Browser checks / Friend invitation flows 四项由 Claude 实测后答 Yes（Edge 四种 iframe 尺寸启动无报错；
+    两个新访客 A 建房、B 带 `?room=` 打开直接跳过新手关进房、双方开局同步）；Device checks: Mobile 用户真机测；
+    「retains friends in a lobby at end of round」答 **No**；聊天答 with filter/moderation；disableChat 答 Yes。
+    自动项「InviteLink functionality used」显示 Not detected——只有房间里点「Copy link」才会调 `inviteLink`，不是缺实现。
+  - Details：Category **Strategy**；Tags **Tower Defense / 2 Player / Battle / War**（标签库里没有 Strategy）；
+    Description = `store-assets-checklist §0.1b` 英文 App Store 稿去掉订阅段与 Apple EULA 链接、多人一句改为
+    「or open a room and invite a friend」、末句改为「Card draws are random; the draw rates are published in-game on the odds page. Free to play.」；
+    Controls = §4.1b 原文，`- ` 换成 `· `（Quill 编辑器会把 `- ` 自动转成列表）。
+  - 门户坑：①QA 结果只活在点 Continue 弹出的那个 `qa-continue` 标签页里，预览页关早了或换新标签打开同一 URL 都会报「Failed to retrieve QA results」；
+    ②封面/视频不能用脚本注入文件（控制台 `UploadType is not properly set`），必须手动拖；③Submit 前要先填 Billing，否则报「Error fetching payment details」。
+  - 已提交构建里的小瑕疵：新手关「Skip tutorial »」文字比底板宽，821×462 下「»」被右缘截掉。
+    **2026-10-05 已修**（`render/TutorialDirector/panels.ts::drawSkipButton`：先排字、底板宽度跟字走、从右缘向左长，
+    封顶 `W*0.34`，超了用 `fitFont` 缩字号、不低于可读下限）；英/德 × 横/竖四种组合实测字都在底板内。
+    **随下一次「Submit new version」上线**，已审核中的 `64c620eb` 不含此修复。
+- **`NW_CRAZYGAMES_GAME_ID` 的值是 `133101`**（2026-10-05 核）：取自预览页 `__NEXT_DATA__` 的 `props.pageProps.game.id`。
+  门户 URL 里的 `8f3d95b1-c884-4175-bb28-08728dae174d` 是 **`submission.id`**，不是 token 里的 `gameId`——
+  官方 User 文档的 token 示例就是数字（`"gameId": "20267"`）。配错不会卡人（服务端拒 token → §2 回退设备访客），但等于没配。
+- 生产环境 `NW_CRAZYGAMES_GAME_ID`：**2026-10-05 已配 `133101` 并实测通过**。流程：`sops set secrets/funny/prod.yaml` → `push-env.py funny prod funny-vps '~/funny/server/.env' --yes`（diff 只有这一个 key；备份 `.env.bak-20261005140500`）→ `docker compose -f docker-compose.cloud.yml --env-file .env up -d --no-build metaserver`。验证：容器 `printenv` 得 `133101`；假 token 从 `SSO not configured` 变成 `invalid or expired CrazyGames token`；门户预览（build `64c620eb`）里真 token 的 `POST /auth/crazygames -> 200`（签名 + `gameId` 都对上）。它只被 `/auth/crazygames` 读，对其他平台零影响。
 
 ## 6. 其余官方条目核对结果（2026-09-27 第二轮）
 

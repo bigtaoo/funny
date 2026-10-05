@@ -16,7 +16,7 @@
 // size it was built at, and `toDesignSpace` kept mapping taps through a transform computed for the
 // old viewport. The 2026-09-10 pass made the cheap half unconditional:
 //
-//   - Re-fit (`renderer.resize` + `createLayout` + `scaling.resize`) is a few numbers and a
+//   - Re-fit (`renderer.resize` + `createLayout` + `scaling.refit`) is a few numbers and a
 //     backbuffer resize. It must happen for whatever is on screen, so it is installed once at
 //     construction and never removed.
 //   - Rebuild (tear down and reconstruct the current scene) allocates a whole scene graph, so it
@@ -134,7 +134,13 @@ export class ViewportResizer {
     invalidateRender();
     const layout = createLayout(width, height, Side.Bottom, insets);
     this.onLayout(layout);
-    this.scaling.resize(width, height, layout, insets);
+    // Re-fit the design rect of the screen ON DISPLAY, not the new one: that screen's scene graph
+    // was laid out against it. A rebuildable screen picks the new rect up when its rebuild lands
+    // (SceneManager.onGoto); a volatile one (a match, the room, the SLG map) keeps it, contained
+    // with the desk surround in the bands. Fitting the new rect here drew a match that outlived a
+    // resize into a strip down the left edge — the CrazyGames QA preview reshapes its iframe after
+    // boot, so instant-multiplayer's room and the tutorial battle both shipped that way (2026-10-05).
+    this.scaling.refit(width, height, insets);
 
     // A rotation immediately followed by a tap into another screen is safe without a cancel hook:
     // the timer only says "the viewport settled", and what gets rebuilt is resolved by the callback

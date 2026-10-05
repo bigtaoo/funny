@@ -276,13 +276,18 @@ export async function startApp(
   await platform.onLoadingComplete();
 
   // See resettledLayout() (layout/ScalingManager.ts): the asset-preload gate we just awaited
-  // takes far longer than WebKit's env(safe-area-inset-*) settle delay, so re-checking here
-  // catches a stale boot-time (often 0) inset before any scene is built.
+  // takes far longer than WebKit's env(safe-area-inset-*) settle delay, and nothing watches the
+  // viewport across it, so re-checking here catches a stale boot-time (often 0) inset — or an
+  // iframe the embedding page reshaped meanwhile — before any scene is built.
   const settledInsets = platform.getSafeAreaInsets?.();
   const { width: settledW, height: settledH } = platform.getScreenSize();
-  const relaidLayout = resettledLayout(settledW, settledH, insets, settledInsets);
+  const relaidLayout = resettledLayout(
+    { width: screenW, height: screenH, insets },
+    { width: settledW, height: settledH, insets: settledInsets },
+  );
   if (relaidLayout) {
     layout = relaidLayout;
+    if (settledW !== screenW || settledH !== screenH) app.renderer.resize(settledW, settledH);
     scaling.resize(settledW, settledH, layout, settledInsets);
     // Only when it actually fired: this branch was shipped in 2026-07 as the whole fix for the
     // iPhone-13 bug and is unreachable when the WebView zeroes env() outright, so whether it ran

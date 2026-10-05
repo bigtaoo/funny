@@ -127,6 +127,9 @@ export class PixiAppViews implements AppViews {
     // attaching it to the lobby's lifetime is what left rotation and late safe-area insets
     // unhandled on the login screen, the settings screen and inside a whole battle.
     this.viewport.install();
+    // Every full-screen build is laid out against `this.layout` — fit the canvas to it as it mounts
+    // (see SceneManager.onGoto; the viewport watcher itself only re-fits the screen on display).
+    manager.onGoto = () => scaling.fitLayout(this.layout);
   }
 
 

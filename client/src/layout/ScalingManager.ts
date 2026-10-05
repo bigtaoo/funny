@@ -51,22 +51,38 @@ export function insetsEqual(a: SafeAreaInsets | undefined, b: SafeAreaInsets | u
   return na.top === nb.top && na.right === nb.right && na.bottom === nb.bottom && na.left === nb.left;
 }
 
+/** One reading of the viewport: its size and (where the platform has them) its safe-area insets. */
+export interface ViewportReading {
+  width: number;
+  height: number;
+  insets: SafeAreaInsets | undefined;
+}
+
 /**
- * WebKit can report `env(safe-area-inset-*)` as 0 on the very first synchronous read after a
- * cold load, before `viewport-fit=cover` has settled — so a boot-time inset read can undercount
- * the notch/status-bar inset. Compares a later ("settled") reading against the boot-time one and
- * returns a freshly computed layout if they differ, or `null` if nothing changed (the common
- * case — callers should skip the rescale then).
+ * The boot layout is built before the asset-preload gate; nothing watches the viewport until the
+ * gate is through (app/viewportResize.ts is installed after it, seeded from the size it sees THEN).
+ * Compares the post-gate ("settled") reading against the boot one and returns a freshly computed
+ * layout if they differ, or `null` if nothing changed (the common case — callers skip the rescale).
+ *
+ * Two ways they differ:
+ *   - Insets: WebKit can report `env(safe-area-inset-*)` as 0 on the very first synchronous read
+ *     after a cold load, before `viewport-fit=cover` has settled.
+ *   - Size (2026-10-05): an embedding page can reshape the game's iframe while we preload. The
+ *     CrazyGames QA preview did — a game booted in a background tab came up at another size and
+ *     settled at 722x406, and since only insets were compared, every screen for the rest of the
+ *     session was laid out for the boot size: a portrait page drawn into the left third of a
+ *     landscape canvas, the resize watcher seeing nothing to do.
  */
 export function resettledLayout(
-  screenW: number,
-  screenH: number,
-  initialInsets: SafeAreaInsets | undefined,
-  settledInsets: SafeAreaInsets | undefined,
+  boot: ViewportReading,
+  settled: ViewportReading,
   localSide: Side = Side.Bottom,
 ): ILayout | null {
-  if (!settledInsets || insetsEqual(settledInsets, initialInsets)) return null;
-  return createLayout(screenW, screenH, localSide, settledInsets);
+  const sameSize = settled.width === boot.width && settled.height === boot.height;
+  // An absent settled reading means the platform has no insets at all — not that they changed.
+  const sameInsets = !settled.insets || insetsEqual(settled.insets, boot.insets);
+  if (sameSize && sameInsets) return null;
+  return createLayout(settled.width, settled.height, localSide, settled.insets ?? boot.insets);
 }
 
 /**
@@ -116,6 +132,9 @@ export class ScalingManager {
 
   private layout: ILayout;
   private insets: SafeAreaInsets = { top: 0, right: 0, bottom: 0, left: 0 };
+  /** Viewport the scaling was last applied to, for {@link fitLayout}. */
+  private screenW = 1;
+  private screenH = 1;
 
   constructor(
     private readonly app: PIXI.Application,
@@ -145,6 +164,28 @@ export class ScalingManager {
     this.applyScaling(screenW, screenH);
   }
 
+  /**
+   * The viewport changed but the screen on display did not: contain the SAME design rect in the new
+   * viewport. The design rect only moves when a screen is built against a new layout
+   * ({@link fitLayout}) — fitting the old screen's scene graph to the new rect is what drew a
+   * battle that outlived a resize into a strip down the left edge (2026-10-05, CrazyGames QA
+   * preview: the portal reshapes its iframe after the game has booted).
+   */
+  refit(screenW: number, screenH: number, insets?: SafeAreaInsets): void {
+    if (insets) this.insets = insets;
+    this.applyScaling(screenW, screenH);
+  }
+
+  /** A screen was built against `layout`: fit its design rect into the current viewport. */
+  fitLayout(layout: ILayout): void {
+    if (layout.designWidth === this.layout.designWidth && layout.designHeight === this.layout.designHeight) {
+      this.layout = layout;
+      return;
+    }
+    this.layout = layout;
+    this.applyScaling(this.screenW, this.screenH);
+  }
+
   /** Current design-space size — what a stage-level overlay drawn at `gameLayer`'s transform lays out in. */
   get designSize(): { w: number; h: number } {
     return { w: this.layout.designWidth, h: this.layout.designHeight };
@@ -161,6 +202,8 @@ export class ScalingManager {
   // ── Private ───────────────────────────────────────────────────────────────
 
   private applyScaling(screenW: number, screenH: number): void {
+    this.screenW = screenW;
+    this.screenH = screenH;
     const dw = this.layout.designWidth;
     const dh = this.layout.designHeight;
 

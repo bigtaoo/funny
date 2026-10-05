@@ -554,8 +554,8 @@ Crash Data、Performance Data（分析/不关联）、**Purchase History**（App
 | 封面 · 横版 | **1920×1080**（16:9） | ✅ `art/store/crazygames/cover_landscape_1920x1080.jpg`（2026-09-28，AI 出图，prompt 见 [`crazygames-cover-art-prompts.md`](../crazygames-cover-art-prompts.md)；原图在 `src/`）。旧的 `art/store/icons/crazygames_thumb_1280x720.png` 是战斗截图，不再用于 CG |
 | 封面 · 竖版 | **800×1200**（2:3） | ✅ `art/store/crazygames/cover_portrait_800x1200.jpg`（同上） |
 | 封面 · 方形 | **800×800**（1:1） | ✅ `art/store/crazygames/cover_square_800x800.jpg`（同上） |
-| 预览视频 · 横版 | 1080p 16:9，**15–20 s**，≤ 50 MB | ⏳ 用户手机录制 |
-| 预览视频 · 竖版 | 1080p 2:3，15–20 s，≤ 50 MB | ⏳ 用户手机录制 |
+| 预览视频 · 横版 | 1080p 16:9，**15–20 s**，≤ 50 MB | ✅ `art/store/video/crazygames_preview_landscape_1920x1080.mp4`（2026-10-05，1920×1080 60fps，20 s，7.3 MB，无音轨；第 0–1 s 横版封面静帧，后 19 s 为一局 PvP 收尾到「You Win!」） |
+| 预览视频 · 竖版 | 1080p 2:3，15–20 s，≤ 50 MB | ✅ `art/store/video/crazygames_preview_portrait_1080x1620.mp4`（2026-10-05，1080×1620 60fps，19.9 s，4.5 MB，无音轨；首帧竖版封面，截止在「You Win!」、不含结算页） |
 | 游戏标题/描述 | 英文（见 §0.1 EN） | — |
 | 操作说明 | 鼠标/触屏操作说明 | ✅ 见 §4.1b（2026-09-09 拟，逐条对着代码核过） |
 
@@ -567,6 +567,14 @@ Crash Data、Performance Data（分析/不关联）、**Purchase History**（App
 > **视频规则**：无音频；无黑屏、logo、转场、黑边；**看不到鼠标指针**；不写 Play Now、宣传语、App 图标；
 > **第一帧就是静态封面**；不要快进（门户自己调速）。内容挑最精彩的对战瞬间、卡牌/兵种、大地图。
 > 录制时注意：我们的游戏在桌面浏览器里有系统指针，录屏工具要关掉指针采集，或者用触屏模拟录。
+>
+> **实际录法（2026-10-05，可复用）**：不用手机录屏，在桌面 Chrome 里对游戏 canvas 直接
+> `canvas.captureStream(60)` + `MediaRecorder`（vp9 webm，16 Mbps）。录的是画布本身的分辨率，天然没有指针、
+> 状态栏、浏览器边框和音轨。横版：F11 全屏（1280×800 逻辑 × DPR 1.5 → 画布 1920×1200），ffmpeg 上下各裁 60 px。
+> 竖版：DevTools 设备工具栏 Responsive 800×1200 + DPR 1.5 → 画布 1200×1800，缩到 1080×1620。
+> 后期：封面静帧 1 s 硬切接对战片段，`-an`、x264 CRF 20、`+faststart`。
+> 坑：录制中改窗口/视口尺寸会让 webm 中途换分辨率，ffmpeg 的 `tile` 之类滤镜会因此吐不出帧——先按分辨率切段再处理；
+> 结尾要截在「You Win!」上，别带进结算页（有玩家昵称和 FIGHT AGAIN 按钮）。原始 webm 不进仓库。
 
 ### 4.1b 操作说明文案（2026-09-09）
 
