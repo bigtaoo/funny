@@ -7,7 +7,7 @@ import { OwnerId } from '@nw/engine/types';
 import { ILayout, Rect } from '../layout/ILayout';
 import { t } from '../i18n';
 import { drawHudButton, hudButtonText, HudButtonVariant } from '../ui/widgets/hudButton';
-import { FS, snapFont, snapFontDown, currentFontFloor } from './fontScale';
+import { FS, snapFont, snapFontDown, currentFontFloor, fitFont } from './fontScale';
 import { factionInk, fx } from './theme';
 import { buildIcon, preloadInkIconTextures } from './icons';
 import { HpBarView, HP_BAR_W } from './HUDView/hpBar';
@@ -25,6 +25,8 @@ const textStyle = (): PIXI.ITextStyle | Partial<PIXI.ITextStyle> =>
 // Surrender button — top strip. Taller than the old 30 so it's an easier tap target.
 const BTN_W       = 100;
 const BTN_H       = 44;
+/** Breathing room between the surrender/exit label and its button's edges. */
+const BTN_PAD_X   = 6;
 /** Ink-well glyph box (design px) drawn left of the ink count. */
 const INK_ICON_S  = 28;
 // Bottom action buttons (upgrade / refresh) — larger, laid out inside hudBottomRightRect.
@@ -67,6 +69,8 @@ export class HUDView {
   private refreshBtnBg!:    PIXI.Graphics;
   private refreshBtnLabel!: PIXI.Text;
   private surrenderBtnBg!:  PIXI.Graphics;
+  /** Drawn width of the surrender/exit button: BTN_W, or wider when its label needs it. */
+  private surrenderBtnW = BTN_W;
 
   /** Monotonic phase driver for HP-danger blink + upgrade-affordable pulse. */
   private pulseT = 0;
@@ -301,18 +305,26 @@ export class HUDView {
     // playback (spectator): there is nothing to surrender, and `_surrenderRect`
     // stays zero so input hit-testing never triggers the confirm dialog.
     this.surrenderBtnBg = new PIXI.Graphics();
-    const sBtnX = (isLandscape ? boardRight : topR.x + topR.w) - BTN_W - 8;
     const sBtnY = topR.y + (topR.h - BTN_H) / 2;
+    const rightEdge = (isLandscape ? boardRight : topR.x + topR.w) - 8;
+    let sBtnX = rightEdge - BTN_W;
     let sLabel: PIXI.Text | null = null;
     if (!this.hideSurrender) {
+      sLabel = makeText(t(this.campaign ? 'hud.exitLevel' : 'hud.surrender'), { fontSize: FS.small, fill: 0x333333, fontWeight: 'bold', fontFamily: 'monospace' });
+      // The label is fitted to the button, and the button grows (leftwards, it is right-anchored)
+      // only for what the floor cannot absorb: German "LEVEL VERLASSEN" under the phone type boost
+      // ran past both ends of the fixed 100 px cell. The growth stops short of the enemy HP bar.
+      sLabel.style.fontSize = fitFont(FS.small, sLabel.width, BTN_W - 2 * BTN_PAD_X);
+      const maxW = Math.max(BTN_W, rightEdge - (enemyHp.x + HP_BAR_W) - 8);
+      this.surrenderBtnW = Math.min(maxW, Math.max(BTN_W, Math.ceil(sLabel.width) + 2 * BTN_PAD_X));
+      sBtnX = rightEdge - this.surrenderBtnW;
       this.surrenderBtnBg.x = sBtnX;
       this.surrenderBtnBg.y = sBtnY;
       this.drawSurrenderBtn();
-      this._surrenderRect = { x: sBtnX, y: sBtnY, w: BTN_W, h: BTN_H };
+      this._surrenderRect = { x: sBtnX, y: sBtnY, w: this.surrenderBtnW, h: BTN_H };
 
-      sLabel = makeText(t(this.campaign ? 'hud.exitLevel' : 'hud.surrender'), { fontSize: FS.small, fill: 0x333333, fontWeight: 'bold', fontFamily: 'monospace' });
       sLabel.anchor.set(0.5);
-      sLabel.x = sBtnX + BTN_W / 2;
+      sLabel.x = sBtnX + this.surrenderBtnW / 2;
       sLabel.y = sBtnY + BTN_H / 2;
     }
 
@@ -449,7 +461,7 @@ export class HUDView {
 
   private drawSurrenderBtn(): void {
     this.surrenderBtnBg.clear();
-    drawHudButton(this.surrenderBtnBg, BTN_W, BTN_H, 'secondary', { radius: 4 });
+    drawHudButton(this.surrenderBtnBg, this.surrenderBtnW, BTN_H, 'secondary', { radius: 4 });
   }
 
   private setUpgradeBtnStyle(enabled: boolean): void {

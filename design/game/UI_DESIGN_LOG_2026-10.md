@@ -203,3 +203,21 @@ BOOST_WEIGHT: micro…bodyLg 1 · label 0.85 · heading 0.75 · title 0.65 · he
 [`subscriptionDisclosureDialog.ui.ts`](../../client/test/ui/subscriptionDisclosureDialog.ui.ts) 原先测 `wrapMixed` 的四条改为直接测 `TextMetrics.measureText` 的折行结果
 （行宽不超、「Apple ID」不拆、标点不落行首、中文行填满、超长德语单词才拆）。
 真 Chrome 竖屏 390×844 中文看过：重连提示（以前整句冲出卡片）、退款同意卡、片头过场。
+
+## 75. 德语竖屏对战 HUD：退出按钮与卡名断词（2026-10-05）
+
+**现象**（CrazyGames 提审前竖屏德语过一遍时看到）：
+- 顶栏右侧的「LEVEL VERLASSEN」（战役里投降按钮的文案）在 §72 字号放大后比固定 100 设计 px 的按钮宽，两头都冲出按钮，窄屏上还被画布右边缘切掉；
+- 手牌卡名 `Bogenschütze` 到了可读性下限仍放不下，只能靠 `breakWords` 硬拆，断在「Bogenschüt / ze」这种位置。
+
+**改法**：
+- [`HUDView.ts`](../../client/src/render/HUDView.ts)：标签先用 `fitFont` 往按钮里收；下限吸收不了的部分才让按钮**向左**加宽（按钮右锚定），
+  加宽到敌方血条右侧为止。英文/中文文案放得下时按钮仍是 100，行为不变。`_surrenderRect`（点击区）与 `_enemyInfoRect` 跟着实际宽度走。
+- 新增 [`i18n/compoundBreaks.ts`](../../client/src/i18n/compoundBreaks.ts)：按语言列出长复合词的**唯一断点**（`Bogen|schütze`、`Meteor|einschlag`、`Brücken|einsturz` 等十个德语卡名）。
+  [`HandView/cellDraw.ts`](../../client/src/render/HandView/cellDraw.ts) 在卡名到下限仍超宽时先查这张表，命中就排成「Bogen-」/「schütze」两行；没命中或拆完仍超宽，才退回 `breakWords`。
+  - 没有用软连字符（U+00AD）写进词典：布局测试逐字比对词典值与渲染文本，而且软连字符在不同 canvas 后端上的绘制/测量不一致。
+  - 测试 [`test/compoundBreaks.test.ts`](../../client/test/compoundBreaks.test.ts) 守住「表里每一项拼回去都是真实存在的德语卡名」，改卡名时表会一起报错。
+
+**验证**：真 Chrome，`nw_locale=de`，竖屏 iframe 430×900 与 360×700，战役第 1 关：按钮 144 设计 px 宽、文案完整在框内；
+临时把六张手牌换成最长的六个德语卡名看过断行（Bogen-/schütze、Meteor-/einschlag、Brücken-/einsturz、Eisen-/wächter、Sturm-/angriff 两行，Schildträger 一行放得下）。
+
