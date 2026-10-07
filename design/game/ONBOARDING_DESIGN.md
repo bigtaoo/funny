@@ -1,6 +1,8 @@
 # Notebook Wars — 新手引导 / FTUE 设计
 
-> 状态：设计中 · 权威：本文（首次体验**编排流程 + 专属教学关 + 首次功能引导**的单一入口）· 更新：2026-06-27
+> 状态：设计中 · 权威：本文（首次体验**编排流程 + 专属教学关 + 首次功能引导**的单一入口）· 更新：2026-10-07
+>
+> **2026-10-07：第一分钟重做提案见 [§11](#11-v2第一分钟重做提案2026-10-07待拍板)**（CrazyGames 以「整体质量」拒稿，审核员 57 秒就在教学关第二拍关页）。§11 落地后取代 §3.1 认知导览、§3.2.1 自由发挥，并改写 §2 的 ③。
 >
 > **权威边界**：本文拥有 **① 专属教学关 `ch0_tutorial` 的编排/卡点/脚本特效**、**② 首次功能引导（per-feature first-use guide）机制**、**③ 功能开放策略（哪些首启即开、哪些设门槛）**。本文**不**拥有——故事文案（归 [`CAMPAIGN_STORY.md`](CAMPAIGN_STORY.md) / [`../product/world.md`](../product/world.md)）、引擎/波次数据结构（归 `@nw/engine` `campaign/`，见 [`SLG_DESIGN_LOG.md`](SLG_DESIGN_LOG.md) §16.7）、合规弹窗（归 [`COMPLIANCE_GLOBAL.md`](COMPLIANCE_GLOBAL.md) / [`COMPLIANCE_CN.md`](COMPLIANCE_CN.md)，**合规是开机第一步、不属于新手引导**，见 §6）、漏斗埋点字段（归 [`ANALYTICS_DESIGN.md`](ANALYTICS_DESIGN.md)）。
 
@@ -27,7 +29,7 @@
  │       —— 权威归 COMPLIANCE_GLOBAL，本文只约束「先合规 → 才埋点」的顺序
  │
  └─ 【FTUE 层，本文权威】
-      ③ 首启故事 IntroScene（nw_seen_intro，可跳过）        [已有]
+      ③ 首启故事 IntroScene（nw_seen_intro，可跳过）        [已有；§11.7 提案移出首启]
       ④ 登录门控 resolveEntry（含「单机试玩」入口）          [已有 SA-3]
       ⑤ ★ 教学关 ch0_tutorial（首次必经，可跳过，§3）       [新建]
       ⑥ 首胜结算 + 首次奖励 + 「明天再来」钩子（§5）         [部分已有]
@@ -45,6 +47,8 @@
 > **设计前提**：假定玩家**从未玩过此类游戏（lane defense / 卡牌出兵）**。所以教学分两段：先**认知导览**（不动手，把"棋盘、敌我、方向、胜负、墨/手牌"讲透），再**动手三拍**（亲手放兵/建筑/法术）。每一步固定脚本、全员一致；三拍打完留一段**自由发挥**窗，再毕业。
 
 ### 3.1 阶段 A — 认知导览（orientation，不动手）
+
+> ⚠️ **将被 §11 取代**：审核员把 O2–O7 在 1.2 秒内连点过去，这一段讲解实际没人读。§11.3 把这七条知识点改成画面里直接看到的东西，取消所有「下一步」。
 
 进场即暂停（引擎冻结、无敌人），用一串聚光灯把战场基本盘讲清。每步点一下「下一步」推进，可跳过。**色彩锚点：蓝 = 你，红 = 老师的批改军**（与 [`../product/art-direction.md`](../product/art-direction.md) 我蓝敌红一致）。
 
@@ -277,7 +281,7 @@
 | **首次功能引导机制（`flags.featSeen.*`）** | ✅ 机制已建。`SaveManager.featSeen/markFeatSeen` + 大厅 `showFeatureGuide` + `withGuide`（match/shop/social/cards/daily/world）+ `guide.*` 全语种 + `feature_guide_shown/closed` 埋点（design-doc-audit-2026-07 补齐，见 §7）。**各子页内「?」按钮未逐页接**（见 §10），因此 `feature_guide_replay` 事件暂无调用点 |
 | **SLG 开局多步引导链（§4.2，2026-08-12）** | ✅ 已建。新组件 `client/src/render/GuideOverlay.ts`（呼吸高亮环+气泡，不拦截输入）+ `guide.world.step{1..4}` flags + WorldMapScene/CityScene 接线；无独立埋点（复用已有 `feature_guide_*`/`screen_view` 口径即可回答"引导链有没有被看到"，未单独加 per-step 埋点，若后续要看逐步流失率再补） |
 | 首胜奖励 + 签到入口引出 | 🟡 毕业=首胜走既有结算链；签到由大厅红点承载，未新增金币龙头（§5） |
-| 年龄门 + EU/UK 同意弹窗 | ❌ 待建（合规，归 COMPLIANCE，开机层） |
+| 年龄门 + EU/UK 同意弹窗 | ✅ 已建（合规，归 COMPLIANCE，开机层）：年龄 + 同意 + 使用条款合成一屏 `EntryGateDialog`，`createAppCore.ts` `gateConsent` 驱动。第一屏的体验问题见 §11.8 |
 | **作者欢迎邮件**（首次真正通关+1000金币，§5.1） | ✅ 已建（`server/metaserver/src/service/pve.ts` `pveClear`，e2e `test/pve.e2e.test.ts`） |
 | FTUE 漏斗埋点 | ✅ 已接（design-doc-audit-2026-07 核实：本行与 §9 待办条目此前是过期记录——A9-9 早已落地逐 beat 埋点 `tutorial_step`，`step_key` 覆盖 `tutorial_start→orientation_1..7→beat_unit→beat_building→beat_spell→freeplay→tutorial_complete`，`TutorialDirector.ts`→`GameRenderer`→`game.ts#goTutorial()`→`analytics.track()`；100% 采样，`GET /internal/query?type=tutorial_funnel` 可查逐步转化率，字段权威见 `ANALYTICS_DESIGN.md` §9.9/§9.6。仅剩 §7 提到的「登录方式/首次功能引导 弹出关闭再看/次日回访」几个漏斗节点是否全部接齐未逐项复核，非本次审计范围） |
 
@@ -311,3 +315,157 @@
 - **首次功能引导**：`featSeen.<id>` 用扁平 flag 键（不改 schema）。首启引导在**大厅**弹（`LobbyScene.showFeatureGuide` + core `withGuide` 包 match/shop/social/cards/daily/world），关闭后续接导航。**各子页内常驻「?」重看按钮未逐页接**——当前重看入口=设置「重看新手教学」(重跑教学关) + 各功能首次 `withGuide`；逐页「?」复用同一 `guide.*` i18n，后续在各 Scene 加按钮即可。拍卖在大世界内，未单独接首启引导。design-doc-audit-2026-07 后续跟进已给 `withGuide` 接上 `feature_guide_shown/closed` 埋点（§7）；`feature_guide_replay` 已预留但要等这里的「?」按钮落地才有调用点。
 - **FTUE 注入点**：`createAppCore.goLobby` 一次性闸门——本会话首次将进大厅且 `!tutorial_done` → 改走 `goTutorial()`（步骤 ⑤，在登录/试玩之后、大厅之前）。
 - **验证**：engine `tsc -b` + 18 项引擎测试通过；client `tsc --noEmit` + 生产 webpack 构建通过。
+
+---
+
+## 11. v2：第一分钟重做（提案，2026-10-07，待拍板）
+
+> 状态：**提案，代码未动**。§11.11 的问题拍板后再实现；实现完把本节并回 §2/§3，删掉被取代的 §3.1 与 §3.2.1。
+
+### 11.1 为什么重做：审核员的 57 秒
+
+CrazyGames 2026-10-07 以「overall quality does not yet meet the expectations of our platform」拒稿。后台（analyticsvc `events` + metaserver `accounts`）查到拒稿前**唯一的外部访客**是门户 QA 号，完整轨迹见 [`CRAZYGAMES_LAUNCH.md` §7](CRAZYGAMES_LAUNCH.md)：
+
+| 相对时间 | 事件 |
+|---|---|
+| 0 s | `session_start`，0.3 s 后 `tutorial_start`（CG 包跳过开场故事，过完同意页直接进教学关） |
+| 0 → 44.5 s | 停在 O1「This is your side」 |
+| 44.8 → 46.0 s | **O2–O7 六张卡 1.2 秒内连点过去**，每张约 0.2 s |
+| 46.0 s | 进 Beat 1 放兵，约 2.7 s 就放下了 |
+| 52.7 s | 进 Beat 2「Build a defense」。中间约 4 s 是在等引擎跑到 `gateTick 120` |
+| 55.6 s | 关页（`churn_signal explicit_exit`） |
+
+读出来的东西：
+
+- **讲解型文字卡没人读。**加「5 秒自动前进」只会让人多等：他点完六张只用了 1.2 s，自动前进反而要 30 s。web 首启的 `IntroScene` 本来就是「每行 5 秒自动前进」（7 行），说明自动前进解决不了「不想读字」。
+- **拖卡这个操作不难。**第一拍不到 3 s 就完成了，所以问题不在操作，在节奏和信息密度。
+- **拍与拍之间有空等。**放行后要等到 `gateTick` 才出下一拍，玩家只能干看着。
+- CrazyGames 给 Basic 的参考指标里有一条「玩满 1 分钟的转化 80% 以上」（CRAZYGAMES_LAUNCH §6 末尾），而审核员恰好没撑过第 60 秒。
+
+### 11.2 验收标准
+
+1. 教学开始后 **≤ 1.5 s** 画面上就有东西在动，**≤ 3 s** 出现第一个要玩家做的操作。
+2. **全程 0 个「Next」**，没有任何要点掉才能继续的文字卡。
+3. 任一时刻屏幕上**最多一条指令**：标题 ≤ 4 个词，正文 ≤ 10 个词（按英文算）。
+4. **能用画面表达的就不用字。**
+5. 引擎只在「等玩家出这张牌」的那一刻冻结，而且冻结前先让敌人动起来（**先动后停**）。
+6. **拍与拍之间不空等**：上一拍的反应结束后 ≤ 1.5 s 出下一拍。
+7. **不替玩家操作**：玩家不动只会看到越来越明显的示范，最后那一下必须玩家自己拖（§11.4）。
+8. **有收尾**：最后一下（陨石）要爽，紧接着胜利 + 奖励的时刻，然后才离开教学。
+9. 熟练玩家 30 s 内能打完，纯新手 ≤ 75 s。
+
+### 11.3 新流程
+
+时间是参考值，按手感调。
+
+| 时间 | 阶段 | 画面 | 文字 | 引擎 |
+|---|---|---|---|---|
+| 0 → ~1.5 s | 开场 | 战场直接出现。一个红笔兵从敌方出生行沿第 4 道朝我方走；两边基地上方各浮一个标签 | 基地标签 `YOU`（蓝）/ `ENEMY`（红），3 s 后淡出 | 跑 |
+| ~1.5 s | Beat 1 | 红兵走到约 1/3 处停住；步兵卡外框呼吸，第 4 道亮起 | **Stop it!** Drag this card onto the glowing lane. | 冻结 |
+| 玩家放兵后 | Beat 1 反应 | 蓝兵往前推，撞上红兵并打掉 | 反馈 2 s 自动淡出：*Troops march forward.* | 跑 |
+| 红兵死后 ≤ 1.5 s | Beat 2 | 第 7 道 3 个红兵排队压下来，走一小段后停住；塔卡外框呼吸，第 7 道建筑格亮起 | **More coming!** Drop the tower on the glowing spot. | 先跑后冻结 |
+| 玩家放塔后 | Beat 2 反应 | 塔逐个点掉 3 个红兵 | *Towers hold a lane.* | 跑 |
+| 清完后 ≤ 1.5 s | Beat 3 | 第 2 道刷出挤成一团的 5 个红兵后停住；陨石卡外框呼吸，敌团上出现脉冲圈 | **Meteor!** Drop it on the crowd. | 先跑后冻结 |
+| 玩家放陨石后 | Beat 3 反应 | 大爆炸、震屏、焦痕，**5 个全倒**。审计记录里「只倒 2 个、没有明显爆炸、文案却说 Nice!」要一起修 | — | 跑 |
+| +~1 s | 毕业 | 胜利印章动画 + 奖励（§11.6） | **You win!** Protect your notebook. Break theirs. | — |
+
+**原 O1–O7 的知识点去向：**
+
+| 原步骤 | 改成 |
+|---|---|
+| O1/O2 我方、敌方、基地 | 开场的 `YOU` / `ENEMY` 基地标签 |
+| O3 蓝是你、红是敌 | 单位本身的颜色，加上开场那个红兵。**前提是阵营看得出来**：审计发现阵营只靠脚下淡色阴影圈区分，而且敌方持盾兵是蓝墨画的。教学关只出红笔兵，不受影响；全局的阵营可读性归美术那一批修 |
+| O4 行进方向 | 直接看红兵走过来、蓝兵走出去 |
+| O5 车道 | 亮起的那条道 |
+| O6 胜负条件 | 毕业页那一句话 |
+| O7 墨与手牌 | **移出教学关**。教学关墨给得足，本来也碰不到墨不够的情况。改成首次实战里第一次点到墨不够的牌时弹一次情境提示（新 flag `hint.ink`），不暂停 |
+
+**阶段 C 自由发挥在首跑取消**：陨石之后直接毕业，不再要玩家自己去找「Finish」按钮。设置里「重看新手教学」走同一条流程。
+
+### 11.4 玩家不动时：分级示范，不代打
+
+| 冻结后玩家不动 | 提示 |
+|---|---|
+| 0 s | 引导卡外框呼吸 + 目标高亮 + 一行指令 |
+| Beat 1 第 2 s；Beat 2/3 第 4 s | **幽灵手**：一张半透明的引导卡从手牌槽滑到目标，每趟 1.2 s，停 0.6 s，循环播放，直到玩家按下任意手牌 |
+| 拖错（拖了别的卡，或放到别处） | 卡弹回原位，**马上**播一趟幽灵手，不等计时。现在的 `allowCardPlay` 是静默否决，玩家不知道错在哪 |
+
+**为什么不在空闲时自动替玩家出牌**：
+
+- 教学要教的就是「拖」这个动作。替他放了，下一拍他还是不会拖。
+- 挂机的人会看到游戏自己在打，像在看宣传视频，不像在玩。
+- 数据显示审核员不是不操作，Beat 1 他不到 3 s 就放下了。他是不想读字。
+
+幽灵手在效果上就是「演示给他看」，只把最后那一下留给玩家。
+
+### 11.5 版面规则
+
+- 指令条**不得压住**目标道/目标格、引导卡，以及陨石目标圈。按目标位置选空位：目标在下半屏，指令条就放上方，反过来也一样。这条修的是审计里竖屏「Build a defense」高亮格被面板整块盖住的问题。
+- 「Skip」按钮要避开所有目标区。这条修的是横屏 722×406 下陨石圈一半落在 Skip 底下的问题。
+- 指令文字**实际显示**不小于 14 px（按画布缩放之后算）。审计里 722×406 下正文只有约 8 px。
+- 不再用全屏暗化。现在 `dim` 只在原阶段 A/C 用，这两个阶段都取消了。
+
+### 11.6 毕业之后
+
+- **胜利时刻**：印章动画加一个看得见的奖励。现在 `ch0_tutorial.json` 的 `rewards.materials.scrap: 4` 玩家根本看不到，`goTutorial` 毕业后直接 `goLobby`。奖励给什么、给多少，按 ECONOMY_BALANCE 的一次性奖励口径定（§11.11 问题 2）。
+- **去向**：毕业页一个按钮，二选一（§11.11 问题 1）：
+  - **直接进 `ch1_lv1`（推荐）**：趁玩家刚学会、手还热，把他送进一局真正的、能赢的仗。
+  - 回大厅：保持现状。审计发现大厅主按钮是「Ranked · 5–10 min」，新号首局 PvP 大约 50 秒就输掉、扣 18 ELO，这条路对新人不友好，要么一起改大厅主按钮，要么别送他去大厅。
+
+### 11.7 故事放在哪
+
+**现状：**
+
+- web 和微信首启时，`IntroScene` 排在**同意页之前**：7 行字，每行 5 秒自动前进，最后一行要点一下才走。玩家要先看大约 35 秒文字才见到同意页，之后才是教学关。
+- CG 包已经用 `skipStoryIntro` 跳过了这一段。
+- `ch1_lv1` 的准备页有一大段叙事散文，开打前还有一层黑屏剧情（`level.story.introKey`）。
+
+**三种做法：**
+
+| 做法 | 评价 |
+|---|---|
+| 删掉 | 世界观和作者那封邮件（§5.1）都靠故事撑着，删掉可惜 |
+| 压到 3 秒、放在首启 | 仍然是「玩之前先看」，只是看得短一些 |
+| **往后放 + 压缩（推荐）** | 首启所有平台都像 CG 一样不播 `IntroScene`；故事挪到**第一次打开战役地图**时，压成 1 张插画 + 1 行字，≤ 3 s，点一下就过；完整的 7 行版放进「重看故事」入口 |
+
+另外，`ch1_lv1` 准备页去掉大段叙事，只留关卡名和「开始」；开打前的黑屏 intro 改到赢之后再放（并进 outro）。文案本身的权威仍在 [`CAMPAIGN_STORY.md`](CAMPAIGN_STORY.md)，本文只管放在哪、放多长。
+
+### 11.8 同意页（权威不在本文，列为同一批）
+
+CG 包第一屏是年龄 + 同意 + 使用条款合成的一屏 `EntryGateDialog`。审计记录它是「一整页法律文字 + 出生年份步进器」。提案：
+
+- 压成一屏短句 + `Privacy` / `Terms` 链接。出生年份改成下拉或快选，不用一年一年点。
+- **待核实**：CrazyGames 门户本身是否已经替游戏收了 GDPR 同意。如果是，CG 包可以不弹我们自己的同意问题，只保留年龄声明和条款。
+
+具体改动走 [`COMPLIANCE_GLOBAL.md`](COMPLIANCE_GLOBAL.md)。
+
+### 11.9 埋点
+
+- **新的 `step_key` 序列**：`tutorial_start → beat_unit → beat_building → beat_spell → graduate → tutorial_complete`。`orientation_*` 和 `freeplay` 退役，历史数据照旧能查。analyticsvc 的 `TUTORIAL_ORDERED_KEYS`（`server/analyticsvc/src/service/defs.ts`）要同步改。
+- **每拍完成时**发 `tutorial_beat_done { beat, idle_ms, ghost_shown, wrong_drops }`。这样就能看出玩家卡在哪一拍、幽灵手有没有起作用。
+- **同意页停留时长**：`gdpr_consent` 加 `dwell_ms`（只在「同意」这条路上带，拒绝那条路照旧不发任何遥测，见 `createAppCore.ts` `gateConsent` 的注释）。
+- **补洞**：审核员那条 CG SSO 首登会话里**没有 `load_time`，也没有 `gdpr_consent`**，可是存档里同意标记已经是 true。根因还没查。不修的话，下一位审核员在同意页停了多久仍然看不到。
+
+### 11.10 改动面（估计）
+
+| 位置 | 改什么 |
+|---|---|
+| `client/src/render/TutorialDirector.ts` | 删 orientation 阶段；每拍都加 `setupTick`（先动后停）；`gateTick` 改成「本拍反应波的敌人全灭」，保留 tick 上限兜底；加空闲计时 + 幽灵手 + 拖错反馈；反馈 2 s 自动淡出；陨石后自动毕业；首跑不进 freeplay |
+| `client/src/render/TutorialDirector/panels.ts` | 居中卡片改成指令条 + §11.5 的避让规则 |
+| `server/engine/src/campaign/levels/ch0_tutorial.json` | 波次重排：Beat 1 的红兵 `atTick` 提前到开场，三拍都先刷敌再冻结 |
+| `GameRenderer` | 基地标签；拖错回调 |
+| i18n `en/de/zh` | 新的短文案；删 `tutorial.o1–o7`、`tutorial.free.*` |
+| 毕业页 | 新做，或复用 `ResultScene` 的一部分（实现时定） |
+| `createAppCore.start` / `app/nav/auth.ts` `goIntro` | 首启不播 `IntroScene`（§11.7） |
+| 战役第一次打开 / `ch1_lv1` 准备页 | 压缩版故事；去掉准备页散文（§11.7） |
+| analyticsvc `defs.ts` | 新 step 序列（§11.9） |
+
+不改 `@nw/engine` 的逻辑。`TutorialDrawPolicy` 照旧保证三张引导卡按拍到手；`enterFreePlay()` 首跑不再调用。
+
+### 11.11 待拍板
+
+1. **毕业后去哪**：直接进 `ch1_lv1`（推荐），还是回大厅？
+2. **毕业奖励**：给什么、给多少？
+3. **故事**：往后放 + 压缩（推荐）/ 删掉 / 3 秒版留在首启？
+4. **自由发挥阶段 C**：首跑取消（推荐），还是保留约 10 秒？
+5. **CG 包的同意弹窗**：先核实门户是否已经收了 GDPR 同意（§11.8）。

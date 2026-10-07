@@ -1,6 +1,6 @@
 # CrazyGames 上架：官方要求 ↔ 我们的实现
 
-> 状态：**2026-10-05 已提交，门户状态 AWAITING REVIEW**（构建 `64c620eb`，来自提交 `b452aedf4`）；Basic Launch 代码侧 2026-09-27 完成 · 权威：本文（CrazyGames 专属要求的单一入口）
+> 状态：**2026-10-07 被拒**（理由只有一句「overall quality」，审核员轨迹见 §7）；2026-10-05 提交的构建是 `64c620eb`（来自提交 `b452aedf4`）；Basic Launch 代码侧 2026-09-27 完成 · 权威：本文（CrazyGames 专属要求的单一入口）
 > 来源：[docs.crazygames.com/requirements](https://docs.crazygames.com/requirements/intro/)（2026-09-27 逐页核过两轮：
 > 要求 8 页 + SDK intro/game + resources 的 CrazyGames App / Basic Launch 指标 / 加载 / 鼠标四页）；
 > SDK 行为以 `https://sdk.crazygames.com/crazygames-sdk-v3.js` 源码为准（文档页之外的细节都是在源码里查到的）。
@@ -144,3 +144,37 @@
 
 Basic 期间的运营信息：更新**自动通过**；评估指标参考值——平均时长 10 分钟以上、次日留存 10–15%、玩满 1 分钟的转化 80% 以上；
 累计 5 万次游玩后才有官方技术支持。
+
+## 7. 2026-10-07 拒稿与审核员轨迹
+
+**邮件原文要点**：Nivara: Notebook Wars 未通过，理由只有一句 overall quality does not yet meet the expectations of our platform，没有具体条目。
+
+**审核员是谁**：后台查 2026-10-05 提交后到拒稿前的全部 CG 会话（analyticsvc `events` 的 `platform:'crazygames'`），按设备分组后，排除用户自测和我们自己的体检，只剩一条外部会话：
+
+- 走 SSO 登录，`displayName` 为 `Testing2`，即门户 QA 号。metaserver `accounts` 里 `oauth.provider=crazygames`，所以 **SSO 首登在生产上实测通过**。
+- 时间 2026-10-07 07:59 UTC，Windows Chrome 桌面，画布 1100×574。
+
+**轨迹**：一共 **57 秒**，没打完新手关。
+
+1. 在第 1 张讲解卡上停了 44.5 秒。
+2. 第 2–7 张 1.2 秒内连点过去。
+3. 放兵，约 3 秒做完。
+4. 进入「Build a defense」，3 秒后关页。
+
+逐事件时间表见 [`ONBOARDING_DESIGN.md` §11.1](ONBOARDING_DESIGN.md)。
+
+他**没见过大厅、战役、结算页和 PvP**。所以判决落在「同意页 + 文字卡教学 + 前两拍」，重做方案在 ONBOARDING_DESIGN §11。§6 末尾引用的 Basic 参考指标里有一条「玩满 1 分钟的转化 80% 以上」，审核员恰好没撑过 60 秒。
+
+**埋点缺口**：这条会话里没有 `load_time`，也没有 `gdpr_consent`，但存档里的同意标记已经是 true，说明 CG SSO 首登这条路丢掉了启动和同意页阶段的记录。根因待查（ONBOARDING_DESIGN §11.9）。
+
+**同一次排查里体检出的其它问题**：
+- 战役地图元素重叠；
+- 结算页按钮被压住，DEFEAT 时仍发夸奖徽章；
+- 手牌卡名压住插画。
+
+审核员没有走到这些地方，它们不是这次被拒的直接原因，但重投前也要修，清单在会话记忆 `crazygames-rejection-audit-2026-10-07` 里。
+
+**查法**（只读）：
+1. 在 analyticsvc 容器里查 `events`，按 `platform` + 时间窗筛选，再按 `device_id` 分组，逐条导出事件。
+2. 拿 `user_id` 到 metaserver 容器查 `accounts`（看 `displayName`、`oauth`、`createdAt`）和 `saves`（看 `save.flags`）。
+3. 查询脚本用完即删，连接串不要外传。
