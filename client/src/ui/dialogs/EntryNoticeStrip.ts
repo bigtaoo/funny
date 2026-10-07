@@ -26,6 +26,7 @@ import type { Hit } from '../hits';
 import type { Rect } from '../../layout/ILayout';
 import { legalUrl } from './ConsentDialog';
 import { openExternalUrl } from '../../platform/externalLink';
+import { UI_FONT_FAMILY } from '../../render/theme';
 
 /** What the strip says and asks. Built by the app core (`offerEntryNotice`). */
 export interface EntryNoticeSpec {
@@ -82,7 +83,7 @@ export function buildEntryNoticeStrip(
   if (spec.stats) sentences.push(t('entryNotice.stats'));
   if (spec.consent) sentences.push(t('entryNotice.consent'));
   const body = makeText(sentences.join(' '), {
-    fontSize: fs, fill: C.dark, fontFamily: 'monospace',
+    fontSize: fs, fill: C.dark, fontFamily: UI_FONT_FAMILY,
     wordWrap: true, wordWrapWidth: innerW, breakWords: true, lineHeight: Math.round(fs * 1.35),
   });
 

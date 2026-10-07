@@ -12,6 +12,7 @@ import { factionInk, fx } from './theme';
 import { buildIcon, preloadInkIconTextures } from './icons';
 import { HpBarView, HP_BAR_W } from './HUDView/hpBar';
 import { showSurrenderConfirm, hideSurrenderConfirm, showGameOver, type OverlayHost } from './HUDView/overlays';
+import { UI_FONT_FAMILY } from './theme';
 
 export { heartPoints, clipPolygonRight } from './HUDView/hpBar';
 
@@ -21,7 +22,7 @@ export { heartPoints, clipPolygonRight } from './HUDView/hpBar';
 // floor), so a module-level copy freezes whatever the floor was at IMPORT time — which is before
 // `ScalingManager` has computed a scale at all.
 const textStyle = (): PIXI.ITextStyle | Partial<PIXI.ITextStyle> =>
-  ({ fontSize: FS.tiny, fill: 0x222222, fontFamily: 'monospace' });
+  ({ fontSize: FS.tiny, fill: 0x222222, fontFamily: UI_FONT_FAMILY });
 // Surrender button — top strip. Taller than the old 30 so it's an easier tap target.
 const BTN_W       = 100;
 const BTN_H       = 44;
@@ -31,7 +32,7 @@ const BTN_PAD_X   = 6;
 const INK_ICON_S  = 28;
 // Bottom action buttons (upgrade / refresh) — larger, laid out inside hudBottomRightRect.
 const actionLabelStyle = (): Partial<PIXI.ITextStyle> =>
-  ({ fontSize: FS.title, fill: 0x555555, fontFamily: 'monospace', fontWeight: 'bold' });
+  ({ fontSize: FS.title, fill: 0x555555, fontFamily: UI_FONT_FAMILY, fontWeight: 'bold' });
 
 const HP_CELL_H   = 15;
 
@@ -310,7 +311,7 @@ export class HUDView {
     let sBtnX = rightEdge - BTN_W;
     let sLabel: PIXI.Text | null = null;
     if (!this.hideSurrender) {
-      sLabel = makeText(t(this.campaign ? 'hud.exitLevel' : 'hud.surrender'), { fontSize: FS.small, fill: 0x333333, fontWeight: 'bold', fontFamily: 'monospace' });
+      sLabel = makeText(t(this.campaign ? 'hud.exitLevel' : 'hud.surrender'), { fontSize: FS.small, fill: 0x333333, fontWeight: 'bold', fontFamily: UI_FONT_FAMILY });
       // The label is fitted to the button, and the button grows (leftwards, it is right-anchored)
       // only for what the floor cannot absorb: German "LEVEL VERLASSEN" under the phone type boost
       // ran past both ends of the fixed 100 px cell. The growth stops short of the enemy HP bar.
@@ -429,7 +430,7 @@ export class HUDView {
     this.upgradeGlow.y = rUpgrade.y + rUpgrade.h / 2;
     this.upgradeGlow.visible = false;
     this.upgradeArrow = makeText('▼', {
-      fontSize: snapFont(Math.round(rUpgrade.h * 0.5)), fill: fx.upgrade, fontWeight: 'bold', fontFamily: 'monospace',
+      fontSize: snapFont(Math.round(rUpgrade.h * 0.5)), fill: fx.upgrade, fontWeight: 'bold', fontFamily: UI_FONT_FAMILY,
     });
     this.upgradeArrow.anchor.set(0.5, 0);
     this.upgradeArrow.x = rUpgrade.x + rUpgrade.w / 2;

@@ -21,6 +21,7 @@ import { drawStatusTag } from '../../ui/widgets/statusTag';
 import { addButton, centerLabel, scrollRegion } from './chrome';
 import type { NetworkHandlers } from './network';
 import { canModerate, isBlocked, messageContent, requestBlock, requestReport, type ModerationTarget } from '../../ui/moderation';
+import { UI_FONT_FAMILY } from '../../render/theme';
 
 // ⚠️ Material-attachment id namespace: every server system that sends a `kind: 'material'` mail
 // attachment (auctionsvc, worldsvc season rewards, battlepass, retention, events) uses the short
@@ -145,7 +146,7 @@ export class MailPanel {
     core.container.addChild(from);
 
     const bodyTxt = makeText(systemText(m.body), {
-      fontSize: FS.heading, fill: C.dark, fontFamily: 'monospace',
+      fontSize: FS.heading, fill: C.dark, fontFamily: UI_FONT_FAMILY,
       wordWrap: true, wordWrapWidth: panelW, breakWords: true,
     });
     bodyTxt.x = px; bodyTxt.y = Math.max(top + Math.round(h * 0.10), Math.ceil(from.y + from.height));

@@ -12,6 +12,7 @@ import { makeText } from '../../../render/pixiText';
 import { createShieldGlow, drawShieldDome, drawShieldGlow, clearShieldGlow, animateShield } from './shieldFx';
 import type { WorldMapRendererCore } from './core';
 import type { WorldMapRendererPool } from './pool';
+import { UI_FONT_FAMILY } from '../../../render/theme';
 
 export interface CityHandlers {
   refreshCityLayer(): void;
@@ -99,7 +100,7 @@ export class WorldMapRendererCity implements CityHandlers {
           plotMask.name = 'plotMask';
           sprite.mask = plotMask;
           const label = makeText('', {
-            fontFamily: 'monospace', fontWeight: 'bold', align: 'center',
+            fontFamily: UI_FONT_FAMILY, fontWeight: 'bold', align: 'center',
             stroke: 0xfff8f0, strokeThickness: 3,
           });
           label.name = 'label';

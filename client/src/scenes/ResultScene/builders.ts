@@ -15,6 +15,7 @@ import { FS, snapFont, fitFont } from '../../render/fontScale';
 import type { Badge } from '../ResultScene';
 import { tapHandler } from '../../ui/hits';
 import { drawButtonLabel } from '../../ui/widgets/buttonLabel';
+import { UI_FONT_FAMILY } from '../../render/theme';
 
 // ── Pure(ish) builder helpers for ResultScene ─────────────────────────────────
 //
@@ -97,7 +98,7 @@ export function buildBadgeMedallion(
   const title = makeText(badge.title(), {
     fontSize: fitTitle(badge.title(), maxW),
     fill: 0x555555,
-    fontFamily: 'monospace',
+    fontFamily: UI_FONT_FAMILY,
   });
   title.anchor.set(0.5, 0);
   title.x = 0;
@@ -108,7 +109,7 @@ export function buildBadgeMedallion(
     fontSize: fitTitle(badge.value(stats), maxW, FS.title),
     fill: 0x222222,
     fontWeight: 'bold',
-    fontFamily: 'monospace',
+    fontFamily: UI_FONT_FAMILY,
   });
   value.anchor.set(0.5, 0);
   value.x = 0;
@@ -121,7 +122,7 @@ export function buildBadgeMedallion(
 /** Largest scale token whose rendering of `text` fits `maxW` — see {@link buildBadgeMedallion}. */
 function fitTitle(text: string, maxW: number, size: number = FS.heading): number {
   if (!Number.isFinite(maxW)) return size;
-  const probe = makeText(text, { fontSize: size, fontFamily: 'monospace' });
+  const probe = makeText(text, { fontSize: size, fontFamily: UI_FONT_FAMILY });
   const w = probe.width;
   probe.destroy({ texture: true, baseTexture: true });
   return fitFont(size, w, maxW);
@@ -212,7 +213,7 @@ export function addTitleSub(container: PIXI.Container, h: number, data: ProfileD
   const sub = makeText(`「${titleLabel}」`, {
     fontSize: FS.label,
     fill: 0x8a7020,
-    fontFamily: 'monospace',
+    fontFamily: UI_FONT_FAMILY,
   });
   sub.anchor.set(0.5, 0);
   sub.x = centerX;
@@ -229,7 +230,7 @@ export function addProfileLine(
   const line = makeText(label, {
     fontSize: FS.title,
     fill: color,
-    fontFamily: 'monospace',
+    fontFamily: UI_FONT_FAMILY,
     fontWeight: 'bold',
   });
   line.anchor.set(0.5, 0);
@@ -256,7 +257,7 @@ export function addVersusLine(
     const txt = makeText(label, {
       fontSize: FS.title,
       fill: color,
-      fontFamily: 'monospace',
+      fontFamily: UI_FONT_FAMILY,
       fontWeight: 'bold',
     });
     txt.anchor.set(0, 0);
@@ -269,7 +270,7 @@ export function addVersusLine(
   const vsTxt = makeText('vs', {
     fontSize: FS.title,
     fill: 0x888888,
-    fontFamily: 'monospace',
+    fontFamily: UI_FONT_FAMILY,
     fontWeight: 'bold',
   });
   vsTxt.anchor.set(0, 0);

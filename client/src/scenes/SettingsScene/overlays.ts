@@ -10,10 +10,11 @@ import { drawButtonLabel } from '../../ui/widgets/buttonLabel';
 import { caretDisplay } from '../../ui/inputDisplay';
 import { FS, snapFont } from '../../render/fontScale';
 import type { Hit } from '../../ui/hits';
+import { UI_FONT_FAMILY } from '../../render/theme';
 
 function txt(label: string, size: number, color: number, bold = false): PIXI.Text {
   return makeText(label, {
-    fontSize: size, fill: color, fontFamily: 'monospace',
+    fontSize: size, fill: color, fontFamily: UI_FONT_FAMILY,
     fontWeight: bold ? 'bold' : 'normal',
   });
 }
@@ -114,7 +115,7 @@ export function drawDeleteConfirm(host: OverlayHost): void {
   container.addChild(title);
 
   const body = makeText(t('settings.deleteAccount.confirmBody'), {
-    fontSize: FS.heading, fill: C.dark, fontFamily: 'monospace',
+    fontSize: FS.heading, fill: C.dark, fontFamily: UI_FONT_FAMILY,
     wordWrap: true, wordWrapWidth: pw * 0.86, align: 'center', lineHeight: Math.round(h * 0.036),
   });
   body.anchor.set(0.5, 0); body.x = w / 2; body.y = py + Math.round(ph * 0.26);

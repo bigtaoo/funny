@@ -18,6 +18,7 @@ import { snapFont } from '../../render/fontScale';
 import { t } from '../../i18n/index';
 import { tapHandler } from '../hits';
 import type { IPlatform, ITextInput } from '../../platform/IPlatform';
+import { UI_FONT_FAMILY } from '../../render/theme';
 
 // Mirrors server/shared/src/social.ts APPEAL_REASON_MAX (500) — not imported: '@nw/shared' resolves to a
 // curated browser-safe subset (see client/webpack.config.js) that does not re-export server/shared/src/social.ts,
@@ -122,7 +123,7 @@ export class AppealDialog implements Scene {
     title.anchor.set(0.5, 0);
 
     const body = makeText(t('appeal.body'), {
-      fontSize: snapFont(Math.round(unit * 0.04)), fill: C.dark, fontFamily: 'monospace',
+      fontSize: snapFont(Math.round(unit * 0.04)), fill: C.dark, fontFamily: UI_FONT_FAMILY,
       wordWrap: true, wordWrapWidth: cardW * 0.84, lineHeight: Math.round(unit * 0.055),
     });
     body.anchor.set(0.5, 0);

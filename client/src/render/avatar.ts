@@ -42,6 +42,7 @@ import { HERO_AVATAR_ART_URLS, type HeroAvatarKey } from './heroAvatarArt';
 import { SKIN_AVATAR_ART_URLS, type SkinAvatarKey } from './skinAvatarArt';
 import { PRESET_HEAD_BOX, HERO_HEAD_BOX, SKIN_HEAD_BOX, type HeadBox } from './portraitHeadBox';
 import { snapFont } from './fontScale';
+import { UI_FONT_FAMILY } from './theme';
 
 /** First visible glyph of a name, uppercased (handles CJK + latin). */
 function initial(name: string): string {
@@ -310,7 +311,7 @@ export function buildAvatar(size: number, name: string, seed = 7, avatarId?: str
     const letter = makeText(initial(name), {
       fontSize: snapFont(Math.round(size * 0.5)),
       fill: palette.paper,
-      fontFamily: 'monospace',
+      fontFamily: UI_FONT_FAMILY,
       fontWeight: 'bold',
     });
     letter.anchor.set(0.5, 0.5);

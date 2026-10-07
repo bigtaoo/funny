@@ -100,3 +100,28 @@ export const fx = {
   hpHigh:        0x44cc44,
   hpLow:         0xcc4444,
 } as const;
+
+/**
+ * The ONE font family every piece of in-game UI text is drawn in (2026-10-07).
+ *
+ * Before this there were 91 inline `fontFamily:` literals — mostly 'monospace', but story and
+ * result headlines asked for 'serif', the loading overlay for 'sans-serif', and the hand cards, the
+ * drag ghost and the ink hint named no family at all and fell back to PIXI's default (Arial). The
+ * same screen mixed three faces. Every text now takes this constant: scenes through `txt()` /
+ * `txtOutlined()` (render/sketchUi.ts), everything else either spells it out or inherits it from
+ * `makeText()` (render/pixiText.ts), which fills it in when a style names none, and from
+ * `installUiFontDefault()`, which makes it PIXI's own default for any `new PIXI.Text` that bypasses
+ * the factory. `test/uiFontFamily.test.ts` fails on a new raw `fontFamily:` literal.
+ *
+ * Swapping to a hand-written face is a one-line change HERE, plus loading the face before the first
+ * text is built (a `FontFace` in the web boot, `wx.loadFont` on WeChat) — keep a generic fallback
+ * in the stack, e.g. `"'Some Hand', monospace"`, because CJK glyphs will come from the fallback.
+ * Two things assume a fixed advance today and must be re-checked when that happens:
+ * `monospaceWidth()`/`MONO_CELL` (render/pixiText.ts, guarded by test/browser/textMetrics.spec.ts)
+ * and `fitFont()`'s linear sizing (render/fontScale.ts). Both degrade to "a measured width wins"
+ * rather than breaking, but a proportional face makes the headless estimate less faithful.
+ *
+ * Not covered on purpose: the world map's baked `BitmapFont` (digits only, its own glyph atlas) and
+ * the static HTML pages.
+ */
+export const UI_FONT_FAMILY = 'monospace';

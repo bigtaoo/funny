@@ -10,8 +10,8 @@
  * This module is the single home for those primitives, all drawn with the shared
  * {@link SketchPen} so every screen reads as the same notebook page as the board
  * and lobby. Colours flow from {@link palette} (theme.ts) so a re-skin is one
- * edit. Fonts are intentionally left as `monospace` for now — a proper hand-drawn
- * font is a separate task (it needs a bundled font face).
+ * edit. The font family flows the same way, from `UI_FONT_FAMILY` (theme.ts) — monospace
+ * today; a hand-drawn face is a one-line swap there plus loading the face (see its doc).
  */
 import * as PIXI from 'pixi.js-legacy';
 import { SketchPen } from './sketch';
@@ -20,6 +20,7 @@ import { FS, fitFont, currentFontFloor } from './fontScale';
 import { makeText, measuredWidth, cjkPadding } from './pixiText';
 import { addPanelFrame } from './panelFrame';
 import { addPaperRules } from './paperRules';
+import { UI_FONT_FAMILY } from './theme';
 
 /**
  * Shared scene palette. Paper / ruled line / margin / red flow from the theme
@@ -56,13 +57,13 @@ export const ui = {
 } as const;
 
 /**
- * Plain text node. Font stays `monospace` until the hand-written font task lands;
- * centralised here so that swap is one edit across every scene.
+ * Plain text node in the UI's one family (`UI_FONT_FAMILY`, theme.ts — where a hand-written
+ * face would be swapped in).
  */
 export function txt(label: string, size: number, color: number, bold = false, wordWrapWidth?: number): PIXI.Text {
   // makeText() applies CJK anti-clip padding (see render/pixiText.ts) — layout-neutral.
   return makeText(label, {
-    fontSize: size, fill: color, fontFamily: 'monospace',
+    fontSize: size, fill: color, fontFamily: UI_FONT_FAMILY,
     fontWeight: bold ? 'bold' : 'normal',
     ...(wordWrapWidth !== undefined ? { wordWrap: true, wordWrapWidth, breakWords: true } : {}),
   });
@@ -142,7 +143,7 @@ export function txtOutlined(
   label: string, size: number, color: number, strokeColor: number, strokeWidth = 3, bold = false,
 ): PIXI.Text {
   return makeText(label, {
-    fontSize: size, fill: color, fontFamily: 'monospace',
+    fontSize: size, fill: color, fontFamily: UI_FONT_FAMILY,
     fontWeight: bold ? 'bold' : 'normal',
     stroke: strokeColor, strokeThickness: strokeWidth,
   });

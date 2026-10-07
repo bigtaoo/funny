@@ -17,6 +17,7 @@ import { FS, snapFont, fitFont } from '../../../render/fontScale';
 import type { SaveData } from '../../../game/meta/SaveData';
 import { dailyRewardClaimable, makeDayKey, weeklyPoints, weeklyClaimableTiers, WEEKLY_CHEST_THRESHOLDS } from '../../../game/meta/retention';
 import type { DailyPanelCtx } from '../types';
+import { UI_FONT_FAMILY } from '../../../render/theme';
 
 export type { Hit } from '../../../ui/hits';
 export type { DailyPanelCtx } from '../types';
@@ -80,7 +81,7 @@ export function renderDailyTasks(ctx: DailyPanelCtx, areaX: number, top: number,
     // while every card had a state word on it: "Clear any PvE level" needed two lines in portrait
     // purely to clear "In progress", and there is no longer anything there to clear.
     const label = makeText(t(labelKey as TranslationKey), {
-      fontSize: stateFS, fill: 0x333333, fontFamily: 'monospace',
+      fontSize: stateFS, fill: 0x333333, fontFamily: UI_FONT_FAMILY,
       wordWrap: true, wordWrapWidth: Math.max(cardW * 0.3, cardW * 0.87 - reserve), breakWords: true,
     });
     label.anchor.set(0, 0.5);

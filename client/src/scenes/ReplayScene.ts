@@ -21,6 +21,7 @@ import { FS, snapFont } from '../render/fontScale';
 import { tapHandler } from '../ui/hits';
 import { battleTrack } from '../audio/battleMusic';
 import type { MusicTrack } from '../audio/types';
+import { UI_FONT_FAMILY } from '../render/theme';
 
 /**
  * Replay player (S1-RP).
@@ -312,7 +313,7 @@ export class ReplayScene implements Scene {
       fontSize: snapFont(Math.round(btnH * 0.5)),
       fill: 0xaa2222,
       fontWeight: 'bold',
-      fontFamily: 'monospace',
+      fontFamily: UI_FONT_FAMILY,
     });
     const topR = this.layout.hudTopRect;
     const marginX = Math.round(this.layout.boardRect.x - tag.width - 40);
@@ -392,7 +393,7 @@ export class ReplayScene implements Scene {
       fontSize: FS.headline,
       fill: 0xffffff,
       fontWeight: 'bold',
-      fontFamily: 'monospace',
+      fontFamily: UI_FONT_FAMILY,
       align: 'center',
     });
     this.statusLabel.anchor.set(0.5, 0.5);
@@ -438,7 +439,7 @@ export class ReplayScene implements Scene {
       fontSize: snapFont(Math.round(h * 0.42)),
       fill: 0xffffff,
       fontWeight: 'bold',
-      fontFamily: 'monospace',
+      fontFamily: UI_FONT_FAMILY,
     });
     fitLabel(label, w - 16);
     label.anchor.set(0.5, 0.5);

@@ -4,6 +4,7 @@ import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor, marginLineX } from '../../render/sketchUi';
 import { FS, snapFont } from '../../render/fontScale';
 import type { ChatMessageView } from '../../net/ApiClient';
+import { UI_FONT_FAMILY } from '../../render/theme';
 
 // ── Message-thread virtualization + bubble drawing for ChatScene ─────────────
 //
@@ -57,13 +58,13 @@ const FAIL_FONT_FRAC = 0.018;
  *  consistent with the real Text buildBubble() later constructs for on-screen rows). */
 function measureBodyHeight(body: string, contentW: number): number {
   const style = new PIXI.TextStyle({
-    fontSize: FS.heading, fontFamily: 'monospace', wordWrap: true, wordWrapWidth: contentW, breakWords: true,
+    fontSize: FS.heading, fontFamily: UI_FONT_FAMILY, wordWrap: true, wordWrapWidth: contentW, breakWords: true,
   });
   return Math.ceil(PIXI.TextMetrics.measureText(body, style).height);
 }
 
 function measureFailLabelHeight(h: number): number {
-  const style = new PIXI.TextStyle({ fontSize: snapFont(Math.round(h * FAIL_FONT_FRAC)), fontFamily: 'monospace', fontWeight: 'bold' });
+  const style = new PIXI.TextStyle({ fontSize: snapFont(Math.round(h * FAIL_FONT_FRAC)), fontFamily: UI_FONT_FAMILY, fontWeight: 'bold' });
   return Math.ceil(PIXI.TextMetrics.measureText(t('chat.sendFailed'), style).height);
 }
 
@@ -122,7 +123,7 @@ export function buildBubble(
   const padY = Math.round(h * BUBBLE_PAD_Y_FRAC);
   const body = makeText(m.body, {
     fontSize: FS.heading, fill: mine ? 0xffffff : C.dark,
-    fontFamily: 'monospace', wordWrap: true, wordWrapWidth: maxW - padX * 2, breakWords: true,
+    fontFamily: UI_FONT_FAMILY, wordWrap: true, wordWrapWidth: maxW - padX * 2, breakWords: true,
   });
   const bw = Math.min(maxW, Math.ceil(body.width) + padX * 2);
   const bh = Math.ceil(body.height) + padY * 2;
