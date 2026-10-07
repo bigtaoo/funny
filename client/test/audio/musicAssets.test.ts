@@ -9,16 +9,18 @@
  * expensive way on the cue gate, whose first version had two rules that turned out to be
  * unreachable once a mutation suite was finally written.
  *
- * **A SEPARATE file rather than more rules in `audioAssets.test.ts`, and that is the compliance
- * decision, not a filing decision.** Every SFX source is CC0 and needs no attribution;
- * `checkPacks` there asserts exactly that, and `packs.json` carries a top-level
- * `all_sources_commercial_ok_without_attribution: true`. The two BGM tracks are **Suno-generated
- * and NOT CC0**. Filing them into `packs.json` would leave only two outcomes, and both are bad:
- * the CC0 assertion goes red, or somebody "fixes" it by weakening the assertion — and a weakened
- * assertion is worse than no assertion, because the claim it makes about the other 22 files
- * silently stops being checked. So the music record lives in its own `music` / `music_terms`
- * sections of `credits.json`, deliberately outside `packs.json`, and `checkNotInPacks` below
- * asserts that separation holds in BOTH directions.
+ * **A SEPARATE file rather than more rules in `audioAssets.test.ts`, and a separate record rather
+ * than more entries in `packs.json`** — even though every BGM master is CC0 too (FreePD, since
+ * 2026-10-07). `packs.json` is `write_packs.py`'s record of the packs `process.py` cuts CUES from,
+ * and `audioAssets.test.ts` holds the cue set to it; music is cut by a different driver
+ * (`process_music.py`) into a different directory under a different gate. One record describing
+ * two pipelines is how a check on one of them quietly stops covering the other. So the music
+ * record lives in `credits.json`'s `music` / `music_sources` sections (both written by
+ * `process_music.py`), and `checkNotInPacks` below asserts the separation in BOTH directions.
+ *
+ * **There is no credits screen in this game**, which is what `checkSources` actually guards: a
+ * licence that asks for attribution (CC BY and friends) cannot be honoured anywhere a player would
+ * see it, so a master under one is refused here rather than shipped on a promise.
  *
  * The check worth reading first: **`lengthS` must still match the file.** `MusicPlayer` starts the
  * next deck at `lengthS - XFADE_S`, so a length that drifts from the shipped audio puts the
@@ -43,23 +45,24 @@ const AUDIT_PY = join(REPO, 'tools', 'audio-pipeline', 'audit.py');
 
 /** A rationale shorter than this is a placeholder, and a placeholder is worse than nothing. */
 const MIN_RATIONALE = 60;
-/** `generator` value marking a master the project owns rather than one a service produced.
- *  It is what switches `checkReproducible` and `checkTerms` between their two shapes. */
-const FIRST_PARTY = 'first-party';
 
 interface MusicCredit {
   track: string;
   file: string;
+  /** The master, repo-relative under `art/audio/sources/`. */
   source: string;
-  generator: string;
-  generated: string;
+  /** Key into `music_sources` — where the master came from and under what licence. */
+  provenance: string;
+  title: string;
+  author: string;
+  /** Where the master's exact bytes were downloaded from. */
+  source_url: string;
+  /** SPDX id; must equal its `music_sources` entry's. */
+  license: string;
   brief: string;
-  /** The verbatim style prompt for a GENERATED master; `null` for a first-party one, whose
-   *  reproducibility record is the master file itself — see `checkReproducible`. */
-  prompt: string | null;
-  /** Playback speed the master was re-rendered at before the region was cut (1.0 = as performed;
-   *  `bgm.lobby` ships at 0.8, pitch held). Part of the cut record, not a note: the master plus
-   *  the region reproduces the file only at the speed it was cut at. */
+  /** Playback speed the master was re-rendered at before the region was cut (1.0 = as performed).
+   *  Part of the cut record, not a note: the master plus the region reproduces the file only at
+   *  the speed it was cut at. */
   speed: number;
   region_start_s: number;
   length_s: number;
@@ -72,11 +75,13 @@ interface MusicCredit {
   mid_band_dbfs: number;
   rationale: string;
 }
-interface MusicTerms {
+interface MusicSource {
+  title: string;
+  page: string;
   license: string;
-  generator: string;
-  terms_url: string;
-  license_text_archived: boolean;
+  /** Repo-relative path of the archived licence text. */
+  license_text: string;
+  attribution_required: boolean;
   accepted_by: string;
   accepted_on: string;
   note: string;
@@ -84,7 +89,7 @@ interface MusicTerms {
 interface Credits {
   cues: { files: { file: string }[] }[];
   music: MusicCredit[];
-  music_terms: MusicTerms;
+  music_sources: Record<string, MusicSource>;
 }
 interface Packs {
   all_sources_commercial_ok_without_attribution: boolean;
@@ -122,6 +127,8 @@ interface Ctx {
   knownCues: readonly string[];
   /** Is this `source` (repo-relative under `art/audio/sources/`) actually in the repo? */
   masterExists(source: string): boolean;
+  /** Is this repo-relative path (an archived licence text) actually in the repo? */
+  repoFileExists(path: string): boolean;
 }
 
 /**
@@ -180,8 +187,7 @@ function checkDiskSet(ctx: Ctx): string[] {
   for (const [track, file] of Object.entries(ctx.files)) {
     if (!ctx.onDisk.includes(file)) out.push(`${track}: ${file} is declared but not on disk`);
   }
-  // An orphan ships bytes whose licence nobody can explain — which for a NOT-CC0 source is the
-  // one direction that actually matters legally.
+  // An orphan ships bytes whose licence and provenance nobody recorded.
   for (const f of ctx.onDisk) {
     if (!declared.has(f)) out.push(`${f}: on disk but no track declares it`);
   }
@@ -272,7 +278,10 @@ function checkCredits(ctx: Ctx): string[] {
     if (!m) { out.push(`${track}: no entry in credits.json's music section`); continue; }
     if (m.file !== ctx.files[track]) out.push(`${track}: credits names ${m.file}, catalogue ships ${ctx.files[track]}`);
     if (!m.source) out.push(`${track}: no source master named`);
-    if (!m.generator) out.push(`${track}: no generator named — the licence hangs off this`);
+    if (!m.provenance) out.push(`${track}: no provenance named — the licence hangs off this`);
+    for (const k of ['title', 'author', 'source_url', 'license'] as const) {
+      if (!m[k]) out.push(`${track}: no ${k} recorded`);
+    }
     if ((m.rationale ?? '').length < MIN_RATIONALE) out.push(`${track}: rationale is a placeholder`);
     if ((m.brief ?? '').length < MIN_RATIONALE) out.push(`${track}: brief is a placeholder`);
   }
@@ -283,27 +292,16 @@ function checkCredits(ctx: Ctx): string[] {
 }
 
 function checkReproducible(ctx: Ctx): string[] {
-  // **One requirement, two shapes, chosen by provenance.** A shipped loop is a REGION of a master
-  // — so "can somebody produce this file again" only has an answer if the master is recoverable,
-  // and what "recoverable" means differs:
+  // A shipped loop is a REGION of a master, so "can somebody produce this file again" only has
+  // an answer if the master itself is in the repo — the original download, byte for byte (its MD5
+  // against the source is in the archived licence text). An upstream that has already closed once
+  // (FreePD.com, 2025) is not a place to go back to.
   //
-  //  * A generated master exists only as a prompt. daydayup shipped two tracks whose prompts were
-  //    never captured; its credits.json carries two `prompt_note` fields explaining the gap was
-  //    RECORDED rather than reconstructed, because a reconstructed prompt is a guess that reads
-  //    like a record. Archiving the prompt is step 4 of `art/audio/suno/BRIEFS.md` for that reason.
-  //  * A first-party master is a FILE, and the corresponding requirement is that the file is in
-  //    the repo. `bgm.lobby`'s is (`art/audio/sources/first-party/doodle-bed.flac`, lossless, so it
-  //    IS the master); demanding a prompt for it would gate a field that can only be filled with
-  //    a fiction, which is the failure mode this rule was written against in the first place.
-  //
-  // Either way the check is on the artefact that would actually be needed, and neither branch can
-  // be satisfied by prose.
-  //
-  // **The master is only half of it: the other half is what was DONE to it.** `bgm.lobby` ships
-  // at 0.8x through a phase vocoder (2026-09-05, the listening pass called the bed too hurried),
-  // and a re-cut at the recorded region but the wrong speed is a different track that passes
-  // every other rule in this file. So the cut record has to carry the speed — and `length_s`,
-  // the one number in that record the shipped bytes can contradict, is checked against them.
+  // **The master is only half of it: the other half is what was DONE to it.** The previous lobby
+  // bed shipped at 0.7x through a phase vocoder, and a re-cut at the recorded region but the wrong
+  // speed is a different track that passes every other rule in this file. So the cut record has
+  // to carry the speed — and `length_s`, the one number in that record the shipped bytes can
+  // contradict, is checked against them.
   const out: string[] = [];
   for (const m of ctx.credits.music) {
     if (!(m.speed > 0)) {
@@ -315,42 +313,37 @@ function checkReproducible(ctx: Ctx): string[] {
       out.push(`${m.track}: credits records a ${m.length_s} s region but the shipped file `
         + `measures ${info.seconds.toFixed(3)} s — the record does not describe these bytes`);
     }
-    if (m.generator === FIRST_PARTY) {
-      if (!m.source) { out.push(`${m.track}: no source master named`); continue; }
-      if (!ctx.masterExists(m.source)) {
-        out.push(`${m.track}: the master ${m.source} is not in the repo — the shipped loop is a `
-          + 'region of it and cannot be re-cut without it');
-      }
-      continue;
-    }
-    if (!m.prompt || m.prompt.trim().length < MIN_RATIONALE) {
-      out.push(`${m.track}: the generation prompt is not archived — it is unreproducible without it`);
+    if (!m.source || !ctx.masterExists(m.source)) {
+      out.push(`${m.track}: the master ${m.source} is not in the repo — the shipped loop is a `
+        + 'region of it and cannot be re-cut without it');
     }
   }
   return out;
 }
 
-function checkTerms(ctx: Ctx): string[] {
-  const t = ctx.credits.music_terms;
+function checkSources(ctx: Ctx): string[] {
+  const sources = ctx.credits.music_sources;
+  if (!sources) return ['credits.json: no music_sources section'];
   const out: string[] = [];
-  if (!t) return ['credits.json: no music_terms section'];
-  // The point of this rule is that the record stays HONEST about not being CC0. A future edit that
-  // quietly relabels it inherits the SFX set's "commercial use, no attribution" claim without
-  // anybody re-reading a licence.
-  if (/cc0|public.?domain/i.test(t.license)) {
-    out.push(`music_terms.license "${t.license}" claims CC0 — AI-generated output is not`);
+  for (const m of ctx.credits.music) {
+    const src = sources[m.provenance];
+    if (!src) { out.push(`${m.track}: provenance "${m.provenance}" has no music_sources entry`); continue; }
+    if (m.license !== src.license) {
+      out.push(`${m.track}: records licence ${m.license} but its source is ${src.license}`);
+    }
   }
-  if (!/not cc0/i.test(t.note ?? '')) out.push('music_terms.note no longer says NOT CC0 in plain words');
-  // `terms_url` points at somebody else's terms, so it is required exactly when there IS somebody
-  // else. For a project-owned master there is no third party to have accepted terms with, and a
-  // URL invented to satisfy a gate is worse than an empty field — but `accepted_by`/`accepted_on`
-  // stay required either way: "who put this in the repo, when" is the half of the record that is
-  // load-bearing for a track that is not CC0.
-  const required = t.generator === FIRST_PARTY
-    ? (['generator', 'accepted_by', 'accepted_on'] as const)
-    : (['generator', 'terms_url', 'accepted_by', 'accepted_on'] as const);
-  for (const k of required) {
-    if (!t[k]) out.push(`music_terms.${k} is empty — who accepted what, when, is the whole record`);
+  const used = new Set(ctx.credits.music.map((m) => m.provenance));
+  for (const [id, src] of Object.entries(sources)) {
+    if (!used.has(id)) out.push(`music_sources.${id}: no track uses it — a licence covering nothing`);
+    for (const k of ['license', 'page', 'license_text', 'accepted_by', 'accepted_on'] as const) {
+      if (!src[k]) out.push(`music_sources.${id}.${k} is empty — who accepted what, when, is the whole record`);
+    }
+    if (src.license_text && !ctx.repoFileExists(src.license_text)) {
+      out.push(`music_sources.${id}: licence text ${src.license_text} is not in the repo`);
+    }
+    if (src.attribution_required !== false) {
+      out.push(`music_sources.${id}: requires attribution, and this game has no credits screen to carry it`);
+    }
   }
   return out;
 }
@@ -361,7 +354,7 @@ function checkNotInPacks(ctx: Ctx): string[] {
   for (const p of ctx.packs.packs) {
     for (const f of p.files ?? []) {
       if (shipped.has(basename(f))) {
-        out.push(`${f}: a NOT-CC0 track is filed under packs.json's CC0 sources`);
+        out.push(`${f}: a music track is filed under packs.json, which records the cue pipeline's sources`);
       }
     }
   }
@@ -397,7 +390,7 @@ function checkDuckCues(ctx: Ctx): string[] {
 
 const RULES = {
   checkDiskSet, checkLength, checkGateWindow, checkXfadeShared, checkMidTarget, checkSeam,
-  checkGain, checkCredits, checkReproducible, checkTerms, checkNotInPacks, checkNaming,
+  checkGain, checkCredits, checkReproducible, checkSources, checkNotInPacks, checkNaming,
   checkDuckCues,
 };
 
@@ -452,6 +445,7 @@ function realCtx(): Ctx {
     duckCues: [...DUCK_CUES],
     knownCues: Object.keys(CUE_CATALOGUE),
     masterExists: (source) => existsSync(join(ART, 'sources', source)),
+    repoFileExists: (path) => existsSync(join(REPO, path)),
   };
 }
 
@@ -463,14 +457,13 @@ describe('the shipped BGM set', () => {
     });
   }
 
-  it('ships exactly the one track that has a master', () => {
-    // Not decoration: `MusicTrack` is a union whose comment explains why `bgm.battle`,
-    // `bgm.intro` and the two result "tracks" are deliberately absent — the first because its
-    // master does not exist yet and a fileless track is indistinguishable from a screen that is
-    // meant to be quiet. A second member appearing without that comment being revisited is the
-    // shape of an unconsidered addition; when `bgm.battle` genuinely lands, this line and the
-    // three `music: null` declarations move together.
-    expect([...ALL_TRACKS].sort()).toEqual(['bgm.lobby'] satisfies MusicTrack[]);
+  it('ships exactly the three tracks the design names', () => {
+    // Not decoration: `MusicTrack` is a union whose comment explains why `bgm.intro` and the two
+    // result "tracks" are deliberately absent, and why §2.3's `bgm.battle` is two tracks split at
+    // the x2 ink phase. A fourth member appearing without that comment being revisited is the
+    // shape of an unconsidered addition.
+    expect([...ALL_TRACKS].sort()).toEqual(
+      ['bgm.battle.early', 'bgm.battle.late', 'bgm.lobby'] satisfies MusicTrack[]);
   });
 });
 
@@ -583,23 +576,13 @@ describe('every rule has been seen to fail', () => {
     fails(checkCredits, c, 'rationale is a placeholder');
   });
 
-  it('checkReproducible: a first-party master that is not in the repo', () => {
-    // The shipped loop is a 74 s REGION of a 3:33 master. Lose the master and it cannot be
-    // re-cut — a different region, a different level, a different seam. Nothing else here would
-    // notice: the mp3 on disk keeps passing every other rule in this file.
+  it('checkReproducible: a master that is not in the repo', () => {
+    // A shipped loop is a REGION of a longer master. Lose the master and it cannot be re-cut — a
+    // different region, a different level, a different seam. Nothing else here would notice: the
+    // mp3 on disk keeps passing every other rule in this file.
     const c = mutable();
     c.masterExists = () => false;
     fails(checkReproducible, c, 'is not in the repo');
-  });
-
-  it('checkReproducible: the daydayup gap, reintroduced (a GENERATED master with no prompt)', () => {
-    // The other branch of the same rule. It is unreachable today (the one shipped track is
-    // first-party), so the mutation has to supply the provenance as well as the gap — which is
-    // the point: `bgm.battle` will arrive on this branch, and the rule must already be armed.
-    const c = mutable();
-    c.credits.music[0]!.generator = 'Suno v4';
-    c.credits.music[0]!.prompt = null;
-    fails(checkReproducible, c, 'not archived');
   });
 
   it('checkReproducible: a cut record with no speed', () => {
@@ -613,31 +596,49 @@ describe('every rule has been seen to fail', () => {
     // `length_s` left at 74 would have described the file that USED to ship while every other
     // number in the record was current.
     const c = mutable();
-    c.credits.music[0]!.length_s = 74.0;
+    c.credits.music[0]!.length_s += 3;
     fails(checkReproducible, c, 'does not describe these bytes');
   });
 
-  it('checkTerms: the music record relabelled as CC0', () => {
+  it('checkSources: a track whose provenance has no licence entry', () => {
     const c = mutable();
-    c.credits.music_terms.license = 'cc0';
-    fails(checkTerms, c, 'claims CC0');
+    c.credits.music[0]!.provenance = 'somewhere-else';
+    fails(checkSources, c, 'has no music_sources entry');
   });
 
-  it('checkTerms: the plain-words NOT CC0 note removed', () => {
+  it('checkSources: a track recording a different licence than its source', () => {
     const c = mutable();
-    c.credits.music_terms.note = 'Fine for commercial use.';
-    fails(checkTerms, c, 'NOT CC0');
+    c.credits.music[0]!.license = 'CC-BY-4.0';
+    fails(checkSources, c, 'but its source is');
   });
 
-  it('checkTerms: nobody recorded as having accepted the terms', () => {
+  it('checkSources: nobody recorded as having accepted the licence', () => {
     const c = mutable();
-    c.credits.music_terms.accepted_by = '';
-    fails(checkTerms, c, 'accepted_by');
+    c.credits.music_sources[c.credits.music[0]!.provenance]!.accepted_by = '';
+    fails(checkSources, c, 'accepted_by');
   });
 
-  it('checkNotInPacks: a NOT-CC0 track filed into the CC0 pack list', () => {
+  it('checkSources: the archived licence text gone from the repo', () => {
     const c = mutable();
-    c.packs.packs = [...c.packs.packs, { name: 'suno', files: [Object.values(c.files)[0]!] }];
+    c.repoFileExists = () => false;
+    fails(checkSources, c, 'is not in the repo');
+  });
+
+  it('checkSources: a licence that asks for attribution', () => {
+    const c = mutable();
+    c.credits.music_sources[c.credits.music[0]!.provenance]!.attribution_required = true;
+    fails(checkSources, c, 'no credits screen');
+  });
+
+  it('checkSources: a licence entry no track uses', () => {
+    const c = mutable();
+    c.credits.music_sources = { ...c.credits.music_sources, orphan: { ...Object.values(c.credits.music_sources)[0]! } };
+    fails(checkSources, c, 'a licence covering nothing');
+  });
+
+  it('checkNotInPacks: a music track filed into the cue pipeline\'s pack list', () => {
+    const c = mutable();
+    c.packs.packs = [...c.packs.packs, { name: 'freepd', files: [Object.values(c.files)[0]!] }];
     fails(checkNotInPacks, c, 'filed under');
   });
 

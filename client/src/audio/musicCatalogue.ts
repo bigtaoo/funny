@@ -23,18 +23,20 @@
 //    1.0**——与 `CueDef.gain` 同一条纪律、同一个理由：一个电平有两处可设，就等于没有人找得到它。
 //
 // **没有 `borrowedFrom` 字段**（daydayup 的同名文件有）。那边三条轨里有一条没有 master，需要一个
-// 机器可读的"这是替身"记录，免得一次只写在注释里的替代永远发货下去。这里两条轨都有自己的
+// 机器可读的"这是替身"记录，免得一次只写在注释里的替代永远发货下去。这里每条轨都有自己的
 // master，而 §2.3 的 `bgm.intro` 不是"借用 lobby 的替身"——它压根不是一条轨（见 `types.ts` 里
 // `MusicTrack` 的注释）。一个没有使用者的字段是一条没人能违反的规则。
 import type { AudioCue, MusicTrack } from './types';
 
 import lobbyUrl from '../assets/audio/music/bgm-lobby.mp3';
+import battleEarlyUrl from '../assets/audio/music/bgm-battle-early.mp3';
+import battleLateUrl from '../assets/audio/music/bgm-battle-late.mp3';
 
 /**
  * 交叉淡入的长度，秒。**这个数与资产管线共享，不许单边改动。**
  *
- * `tools/audio-pipeline/audit.py` 的 `XFADE_S` 是同一个 2.0，而两条发货的循环是**按它验收的**：
- * `music` 门禁的 `xfade_band_diff` 比较的正是这个宽度的头尾窗口，也正是因为有它，两条循环只需要
+ * `tools/audio-pipeline/audit.py` 的 `XFADE_S` 是同一个 2.0，而每条发货的循环都是**按它验收的**：
+ * `music` 门禁的 `xfade_band_diff` 比较的正是这个宽度的头尾窗口，也正是因为有它，每条循环只需要
  * 在 2 秒内音色相容、而不需要样本级连续。在这里调大，等于用一个没人测量过的窗口去评判它们；
  * 调小，等于把已经测到手的接缝质量丢在桌上。`musicAssets.test.ts` 断言两边这个数一致。
  */
@@ -64,18 +66,17 @@ export interface TrackDef {
  */
 export const MUSIC_CATALOGUE: Record<MusicTrack, TrackDef> = {
   // `lengthS` 是 `process_music.py` 打印的 **decoded** 秒数，不是它被要求切的区段长度
-  // （MP3 帧补齐让两者可以不等）。回绕在 `lengthS - XFADE_S` = 71.0 s 处触发。
+  // （MP3 帧补齐让两者可以不等）。回绕在 `lengthS - XFADE_S` 处触发。
   //
-  // **这个文件 2026-09-05 按 0.8x → 0.7x 重切过两轮**（听感反馈：太急促，0.8x 之后仍然太快）。
-  // 放慢是在**资产**里花掉的，不是在运行时的 `playbackRate` 上——两个平台那个旋钮背后是变调还是
-  // 保音高，微信没有文档保证，而 `XFADE_S` 是播放器里 2 秒**墙钟**，只有存储时间轴就等于播放时间
-  // 轴的文件才能让它和门禁量过的那 2 秒是同一段。每换一次速度区段都要重搜（74 s → 61 s → 73 s，
-  // 见 `process_music.py` 的 TRACKS），因为旧区段挑它的那条时间轴已经不存在了。
+  // 三条都是 FreePD 的 CC0 曲子（2026-10-07 由项目所有者从候选里试听选定，出处与授权在
+  // `art/audio/credits.json` 的 `music` / `music_sources`），都按**原速**发货：上一条大厅床为了
+  // 「太急促」被相位声码器拉到 0.7x，而拉伸本身的发糊可能就是它不好听的一部分原因。
   //
-  // **下面的 `gain` 仍然是 1.0，「音量太大」那条反馈没有落在这里**：它改的是 BGM 总线默认值
-  // （`audioSettings.ts` 的 `bgm: 0.5 → 0.2`）。理由见本文件头注释里那条「一个电平有两处可设，
-  // 就等于没有人找得到它」——总线还多一个好处，玩家自己也能拖。
-  'bgm.lobby': { path: lobbyUrl, lengthS: 73.0, gain: 1.0 },
+  // 「音量太大」那条旧反馈仍然落在 BGM 总线默认值上（`audioSettings.ts` 的 `bgm: 0.2`），不在
+  // 这里的 `gain`——理由见本文件头注释里那条「一个电平有两处可设，就等于没有人找得到它」。
+  'bgm.lobby': { path: lobbyUrl, lengthS: 79.0, gain: 1.0 },
+  'bgm.battle.early': { path: battleEarlyUrl, lengthS: 74.0, gain: 1.0 },
+  'bgm.battle.late': { path: battleLateUrl, lengthS: 77.5, gain: 1.0 },
 };
 
 /** 每一条轨，运行时可枚举。从目录导出，所以不会像手写清单那样与 union 漂开。 */

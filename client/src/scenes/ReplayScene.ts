@@ -19,6 +19,8 @@ import { netLog } from '../net/log';
 import { ui, sketchPanel, seedFor } from '../render/sketchUi';
 import { FS, snapFont } from '../render/fontScale';
 import { tapHandler } from '../ui/hits';
+import { battleTrack } from '../audio/battleMusic';
+import type { MusicTrack } from '../audio/types';
 
 /**
  * Replay player (S1-RP).
@@ -60,8 +62,10 @@ function fitLabel(label: PIXI.Text, maxW: number): void {
 const log = netLog('replay');
 
 export class ReplayScene implements Scene {
-  /** 回放的是同一场对局，声音走同一条战斗管线——刻意安静，见 `GameScene.music`。 */
-  readonly music = null;
+  /** 回放的是同一场对局，音乐跟着回放进度走，同 `GameScene.music`。快进跨过 6 分钟就换曲。 */
+  get music(): MusicTrack {
+    return battleTrack(this.renderer?.elapsedTicks ?? 0);
+  }
   readonly container: PIXI.Container;
 
   private renderer: GameRenderer | null = null;

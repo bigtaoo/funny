@@ -1,4 +1,4 @@
-"""Produce the shipped BGM loops from AI-generated masters (AUDIO_DESIGN §2.3 / §7 step 7).
+"""Produce the shipped BGM loops from their masters (AUDIO_DESIGN §2.3 / §7 step 7).
 
 The second driver beside `process.py` (the 18 cues). It is separate because all three of its
 inputs differ from a cue's, and each difference changes a STEP rather than a parameter:
@@ -33,11 +33,11 @@ from the repo root rather than from this directory (`audit.py`, which takes path
 is the one that is run from here).
 
 Usage, from the repo root (P = tools/audio-pipeline):
-    P/venv/Scripts/python P/process_music.py --search "Some Suno Title.mp3"
+    P/venv/Scripts/python P/process_music.py --search freepd/some-track.mp3
     P/venv/Scripts/python P/process_music.py --search bgm.lobby   # ...with its shelf applied
     P/venv/Scripts/python P/process_music.py [--track bgm.lobby] [--out DIR]
 """
-import argparse, os, shutil
+import argparse, json, os, shutil
 import numpy as np
 import soundfile as sf
 
@@ -54,8 +54,7 @@ from audit import (BAND_N, MID_BAND, XFADE_S, band_edges, band_profile, band_rms
 from process import BUS_GAIN, TARGETS
 
 # Masters live under the same source tree as the cue foley, one directory per provenance
-# (`first-party/` for a track the project owns, `suno/` for a generated one). The BRIEFS for the
-# tracks that still need generating are in `art/audio/suno/BRIEFS.md`.
+# (`freepd/` today, each with the licence record it was taken under).
 SRC_DIR = 'art/audio/sources'
 OUT_DIR = 'client/src/assets/audio/music'
 
@@ -91,49 +90,110 @@ QUALITY_LADDER = [0.6, 0.4, 0.2]     # libsndfile VBR quality; higher number = s
 # `--search` works on a bare filename with no entry here, which is the order the work actually
 # happens in: acquire the master, search, decide, record, then process.
 TRACKS: dict[str, dict] = {
+    # All three masters are FreePD tracks (CC0 1.0, see `art/audio/sources/freepd/LICENSE.md`),
+    # picked by ear by the project owner on 2026-10-07 from a 25-track shortlist, after the
+    # listening pass rejected the previous lobby bed outright. Every entry plays at the
+    # tempo it was performed at: the old bed's 0.7x phase-vocoder stretch is one of the things
+    # that pass may have been hearing, and a track picked BY EAR at 1.0x has no reason to move.
     'bgm.lobby': {
-        'src': 'first-party/doodle-bed.flac',
-        # From `--search bgm.lobby`, i.e. searched on the SLOWED master -- the region is a
-        # decision about the file that ships, and at a different `speed` a 2 s crossfade window
-        # spans different material. **Re-searching is part of changing `speed`, not a tidy-up**,
-        # and this entry has now been re-picked twice for exactly that reason (12.5s/74.0s at
-        # 1.0x, 45.0s/61.0s at 0.8x, this one at 0.7x); none of the three transfers by rescaling.
-        #
-        # 91.5s/73.0s is its bucket's winner (cost 0.80, seam 0.69 dB, levels within 0.21 dB).
-        # The 30-45 s bucket scores better overall (0.56) and is again declined for the reason
-        # the first cut recorded: a 33 s loop turns over every 33 seconds on screens players sit
-        # on for minutes, and a seam nobody can hear buys nothing if the repetition is what they
-        # notice instead. 73 s is also longer than the 61 s it replaces, which is the direction
-        # this should move as the bed gets slower and quieter.
-        'region': (91.5, 73.0),
-        # Played at seven tenths of the tempo it was performed at, pitch held (`time_stretch`).
-        # The listening pass called the bed "too hurried" -- the first thing anybody said about
-        # any sound in this game -- and a lobby bed is the one piece of audio a player hears for
-        # minutes at a stretch with nothing else asking for attention. **0.8 was tried first and
-        # was still too fast**, so this is the second step down, not a first guess.
-        #
-        # Not a half (which is what "slow it down by one time" literally asks for): 0.5 needs a 2x
-        # stretch, where the vocoder's smearing is plainly audible on sustained strings, and a
-        # region long enough to be worth looping would land past the gate's 90 s ceiling. 1.43x
-        # still keeps the artefacts under the noise floor of a bed now mixed 5.8 dB BELOW the tap
-        # cue (see MUSIC_BUS_GAIN) -- and being quieter is itself what buys the extra stretch.
-        'speed': 0.7,
-        # No shelf. The master's own 20-250 Hz sits 14 dB under its mid band (this is a light
-        # acoustic bed, not a mix with a sub); a shelf here would be attenuating something that
-        # is not in the way, and `--search` was therefore run raw.
+        'src': 'freepd/hopeful.mp3',
+        'provenance': 'freepd',
+        'title': 'Hopeful',
+        'author': 'Rafael Krux',
+        'source_url': 'https://archive.org/download/freepd/comedy/Hopeful.mp3',
+        'brief': ('The bed for every screen outside a match -- lobby, menus, shop, world map, '
+                  'results. Light and steady, sat on for minutes under taps and page turns.'),
+        # 75-90 s bucket winner (cost 0.90, seam 0.74 dB, levels within 0.28 dB). The 30-45 s
+        # bucket scores better (0.59) and is declined for the reason every lobby cut has given:
+        # a 31 s loop turns over twice a minute on screens players sit on for minutes.
+        'region': (20.5, 79.0),
+        'speed': 1.0,
+        # No shelf: 20-250 Hz sits 2 dB under the mid band -- a light ukulele/glockenspiel
+        # arrangement with no sub to tame.
         'shelf': None,
         'why': (
-            'The first music in the game, and project-owned rather than licensed or generated. '
-            'Played at 0.7x with its pitch held (phase vocoder), because the listening pass '
-            'called the original bed too hurried for a screen players sit on for minutes -- and '
-            'called 0.8x still too fast. A 73 s region lifted out of the slowed master, chosen by '
-            'the same crossfade-window band measure the gate then applies (0.69 dB across the '
-            'seam, level within 0.21 dB). '
-            'Shipped as bgm.lobby rather than bgm.battle because it has no percussive transients '
-            'and no forward pull -- it is written to be sat on, not to be interrupted.'
+            'Rafael Krux, "Hopeful" (FreePD, CC0). Light, bouncy and steady -- its 2 s window '
+            'levels spread only 2.1 dB across the region -- which is what a bed under minutes of '
+            'menu taps needs. Chosen by the project owner by ear over the shortlist. A 79 s region '
+            'lifted out of the 114 s master by the same crossfade-window band measure the gate '
+            'applies (0.74 dB across the seam); the 31 s region that measures better was declined '
+            'because a loop that short is heard turning over.'
+        ),
+    },
+    'bgm.battle.early': {
+        'src': 'freepd/managing-mischief.mp3',
+        'provenance': 'freepd',
+        'title': 'Managing Mischief',
+        'author': 'Bryan Teoh',
+        'source_url': 'https://archive.org/download/freepd/comedy/Managing%20Mischief.mp3',
+        'brief': ('A match from its first tick to the x2 ink phase at 6 min: mischievous, '
+                  'sneaking, tense but never epic -- a war fought under a school desk.'),
+        # 60-75 s bucket winner and the best long region in the track (cost 0.58, seam 0.55 dB,
+        # levels within 0.06 dB). The track's 12 dB whole-file level spread is its intro and its
+        # tail; inside this region the 2 s windows spread 6 dB.
+        'region': (52.5, 74.0),
+        'speed': 1.0,
+        'shelf': None,
+        'why': (
+            'Bryan Teoh, "Managing Mischief" (FreePD, CC0) -- described by its author as "frisky '
+            'yet cautious", which is the battle brief (a war under the desk, tense but never '
+            'epic). Plays from the start of a match until the x2 ink phase at 6 min, where '
+            'bgm.battle.late takes over. A 74 s region (seam 0.55 dB) that skips the intro and the '
+            "tail, which is where the master's quiet passages are."
+        ),
+    },
+    'bgm.battle.late': {
+        'src': 'freepd/busybody.mp3',
+        'provenance': 'freepd',
+        'title': 'Busybody',
+        'author': 'Bryan Teoh',
+        'source_url': 'https://archive.org/download/freepd/comedy/Busybody.mp3',
+        'brief': ('A match from the x2 ink phase at 6 min to its end: the same mischief, '
+                  'faster and busier, so the speed-up is heard as well as seen.'),
+        # 75-90 s bucket (cost 1.74, seam 0.99 dB) rather than the 45-60 s winner (0.82 dB): the
+        # late phase can run eleven minutes, and a 50 s loop would turn over thirteen times in it.
+        # 0.99 dB is under half the 2.5 dB cap; the extra 27 s of material is worth more.
+        'region': (2.0, 77.5),
+        'speed': 1.0,
+        'shelf': None,
+        'why': (
+            'Bryan Teoh, "Busybody" (FreePD, CC0) -- "happily frantic". Faster than the early '
+            'track (about 136 against 120 BPM) and evenly loud throughout (2.7 dB window spread), '
+            'so the x2 ink phase at 6 min is heard as the match speeding up rather than as a new '
+            'scene. A 77.5 s region (seam 0.99 dB), the longest the 86 s master offers under the '
+            'cap, because this phase can last the rest of a 17-minute match.'
         ),
     },
 }
+
+
+# provenance id (a TRACKS entry's `provenance`) -> the licence it was taken under. Written into
+# `credits.json`'s `music_sources` beside the per-track record, so the licence and the files it
+# covers are produced by one script and cannot be edited apart.
+#
+# Deliberately NOT in `packs.json`, although FreePD is CC0 like every SFX pack there: that file
+# is `write_packs.py`'s record of the sources `process.py` cuts cues from, and it is what
+# `audioAssets.test.ts` holds the cue set to. A music master is cut by a different driver into a
+# different directory under a different gate; filing it there would make one record describe two
+# pipelines. `musicAssets.test.ts` checks both records instead.
+SOURCES: dict[str, dict] = {
+    'freepd': {
+        'title': 'FreePD.com (Kevin MacLeod et al.), via the Internet Archive mirror',
+        'page': 'https://web.archive.org/web/20241231185827/https://freepd.com/',
+        'archive': 'https://archive.org/details/freepd',
+        'license': 'CC0-1.0',
+        'license_text': 'art/audio/licenses/freepd-LICENSE.txt',
+        'attribution_required': False,
+        'accepted_by': 'Tao Wang',
+        'accepted_on': '2026-10-07',
+        'note': ('FreePD.com closed in 2025; its archived homepage states "This music is all '
+                 'licensed CC0 1.0 Universal Public Domain Dedication". Masters were taken from '
+                 'the complete archive.org mirror and checked against its MD5s (recorded in the '
+                 'licence text). Authors are credited per track although CC0 does not ask it.'),
+    },
+}
+
+CREDITS = 'art/audio/credits.json'
 
 
 def db(x: float) -> float:
@@ -435,7 +495,7 @@ def headroom_report(mid_dbfs: float) -> None:
           + ('  <-- UNDER the 10 dB the target was set for' if binding[1] < 10.0 else ''))
 
 
-def process(track: str, out_dir: str) -> None:
+def process(track: str, out_dir: str) -> dict:
     spec = TRACKS[track]
     src = os.path.join(SRC_DIR, spec['src'])
     t0, dur = spec['region']
@@ -494,6 +554,50 @@ def process(track: str, out_dir: str) -> None:
           f'<- musicCatalogue lengthS')
     print(f'       xfade band-diff {xfade_band_diff(back, bsr):5.2f} dB (gate: <= 2.5)')
     headroom_report(mid)
+    return {
+        'track': track,
+        'file': os.path.basename(path),
+        'source': spec['src'],
+        'provenance': spec['provenance'],
+        'title': spec['title'],
+        'author': spec['author'],
+        'source_url': spec['source_url'],
+        'license': SOURCES[spec['provenance']]['license'],
+        'brief': spec['brief'],
+        'speed': speed,
+        'region_start_s': t0,
+        'length_s': round(len(back) / bsr, 3),
+        'source_length_s': round(len(full) / sr, 2),
+        'shelf': ({'hz': spec['shelf'][0], 'db': spec['shelf'][1], 'order': 4}
+                  if spec['shelf'] else None),
+        'sample_rate': rate,
+        'channels': back.shape[1],
+        'bytes': nbytes,
+        'xfade_band_diff_db': round(xfade_band_diff(back, bsr), 2),
+        'mid_band_dbfs': round(mid, 2),
+        'rationale': spec['why'],
+    }
+
+
+def write_credits(records: list[dict]) -> None:
+    """Merge the music record into `credits.json`, leaving `process.py`'s cue sections alone.
+
+    Records for tracks not processed this run are kept (a `--track` run re-cuts one file, not the
+    set); records for tracks no longer in TRACKS are dropped, and so is any source no remaining
+    track uses -- a licence entry that covers nothing is a claim nobody can check.
+    """
+    credits = json.load(open(CREDITS, encoding='utf-8'))
+    by_track = {m['track']: m for m in credits.get('music', [])}
+    by_track.update({r['track']: r for r in records})
+    music = [by_track[t] for t in sorted(TRACKS) if t in by_track]
+    credits['music'] = music
+    credits['music_sources'] = {p: SOURCES[p] for p in sorted({m['provenance'] for m in music})}
+    # Same serialisation as `process.py`'s write, so that each driver rewriting the file leaves
+    # the other's sections byte-identical.
+    with open(CREDITS, 'w', encoding='utf-8', newline='\n') as f:
+        json.dump(credits, f, indent=2, ensure_ascii=False)
+        f.write('\n')
+    print(f'\nmusic credits ({len(music)} tracks) -> {CREDITS}')
 
 
 def main() -> None:
@@ -514,10 +618,9 @@ def main() -> None:
             report_search(f, a.speed)
         return
     if not TRACKS:
-        raise SystemExit('TRACKS is empty -- generate the masters (art/audio/suno/BRIEFS.md), '
+        raise SystemExit('TRACKS is empty -- acquire a master under art/audio/sources/, '
                          'then --search one to pick its region and record it here.')
-    for t in (a.track or sorted(TRACKS)):
-        process(t, a.out)
+    write_credits([process(t, a.out) for t in (a.track or sorted(TRACKS))])
 
 
 if __name__ == '__main__':

@@ -14,32 +14,31 @@ Two drivers, because their inputs differ in kind rather than in degree:
     peak, because music has no synth voice to match. See its module docstring.
 
     A track also has a **tempo**, and `speed` in its `TRACKS` entry re-renders the master through a
-    pitch-preserving phase vocoder before a region is chosen (`load_master`). `bgm.lobby` ships at
-    0.7x since 2026-09-05 — the listening pass called the original bed too hurried and 0.8x still
-    too fast — and the slowdown is spent HERE rather than on a runtime `playbackRate` so that both
+    pitch-preserving phase vocoder before a region is chosen (`load_master`), so that both
     platforms stream one identical file whose stored timeline is the played one (AUDIO_DESIGN
     §0.6). **Changing `speed` means re-running `--search`**: a 2 s crossfade window spans different
     material at a different speed, so a recorded region was picked against a timeline that no
-    longer exists, and rescaling a 74 s region to 92.5 s would land past the gate's 90 s ceiling
-    anyway. That region has now been re-picked once per speed — three times.
+    longer exists. Every track shipping today is at 1.0 — the previous lobby bed went to 0.7x for
+    "too hurried" and was then rejected outright, and the stretch's smearing may have been part of
+    what was heard.
 
-    `MUSIC_BUS_GAIN` (the headroom report's other half) went 0.5 -> 0.2 in the same pass: measured,
+    `MUSIC_BUS_GAIN` (the headroom report's other half) is 0.2 since 2026-09-05: measured at 0.5,
     the bed had been DELIVERING 2.2 dB louder than the `ui.tap` cue it is supposed to sit under.
-    The file target stayed at -29 dBFS — it is the reference the gate holds and the only thing
-    making two tracks comparable, so the mix decision belongs on the bus, which is also the knob
-    the player can move.
+    The file target stays at -29 dBFS — it is the reference the gate holds and the only thing
+    making tracks comparable, so the mix decision belongs on the bus, which is also the knob the
+    player can move.
 
-    Masters live under `art/audio/sources/<provenance>/` — `first-party/` for one the project owns
-    (that is where the shipped `bgm.lobby` comes from: `doodle-bed.flac`, lossless, so the tracked
-    file IS the master), `suno/` for a generated one. The distinction is not filing: it decides
-    what "reproducible" means, and `musicAssets.test.ts`'s `checkReproducible` branches on it —
-    a generated master exists only as its prompt (which must be archived), a first-party master is
-    a file (which must be in the repo).
+    Masters live under `art/audio/sources/<provenance>/` as the exact downloaded bytes, and every
+    one of them is in the repo (`musicAssets.test.ts`'s `checkReproducible`). Since 2026-10-07 all
+    three are FreePD tracks (CC0, `freepd/`); the licence each provenance was taken under is the
+    `SOURCES` table in `process_music.py`, archived as text under `art/audio/licenses/`.
+    `process_music.py` writes `credits.json`'s `music` / `music_sources` sections itself, and
+    `process.py` carries them over when it rewrites the cue sections.
 
-    **⚠️ Masters arrive as WAV and are converted to FLAC before being tracked.** A 3.5-minute
-    stereo WAV is 40 MB and compresses badly in git; the FLAC is 13 MB and lossless, so nothing is
-    lost but the bytes. `.gitignore` excludes `art/audio/sources/**/*.wav` so a dropped-in master
-    cannot be committed raw by accident.
+    **⚠️ A master that arrives as WAV is converted to FLAC before being tracked.** A 3.5-minute
+    stereo WAV is 40 MB and compresses badly in git; FLAC is lossless at about a third of that.
+    `.gitignore` excludes `art/audio/sources/**/*.wav` so a dropped-in master cannot be committed
+    raw by accident. An MP3 master is tracked as downloaded — re-encoding it would only lose more.
 
 `audit.py` measures and gates for both, and is deliberately the only place the band arithmetic
 lives — the producer imports it rather than reimplementing it. daydayup let a search metric and its
@@ -96,8 +95,8 @@ python -m venv --system-site-packages venv
     below the noise floor of the system's own timing. (`ui` is held to 8 ms — half a frame —
     because a button press is the most latency-sensitive event in the game.)
 
-  The `loop` and `music` classes were **not** ported: there is no BGM yet (§7 step 7). They come
-  across with it. An unused gate class is a rule nobody can be failing.
+  `music` arrived with the BGM (§7 step 7); daydayup's `loop` class was **not** ported — see "The
+  BGM gate" below for why.
 
 - **`process.py`** — the conversion: mono → trim → cap (faded) → peak-match → smallest
   bandwidth-legal MP3. Writes `client/src/assets/audio/` and `art/audio/credits.json`.

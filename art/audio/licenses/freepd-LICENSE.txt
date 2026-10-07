@@ -1,0 +1,26 @@
+FreePD.com -- licence record for the BGM masters under art/audio/sources/freepd/
+
+Licence: Creative Commons Zero, CC0 1.0 Universal Public Domain Dedication
+https://creativecommons.org/publicdomain/zero/1.0/
+
+FreePD.com closed in 2025. Its licence statement, as served by the site and
+captured by the Wayback Machine on 2024-12-31
+(https://web.archive.org/web/20241231185827/https://freepd.com/), reads:
+
+    "Legal: This music is all licensed CC0 1.0 Universal Public Domain Dedication."
+
+and the same page's footer: "100% Free Music - Free for Commercial Use, Free Of
+Royalties, Free Of Attribution, Creative Commons 0".
+
+Attribution is not required. The authors are recorded in credits.json anyway.
+
+The files were downloaded on 2026-10-07 from the complete mirror of the site on
+the Internet Archive, item "freepd" (https://archive.org/details/freepd), and
+checked byte-for-byte against that item's published MD5s:
+
+  file in this repo        archive.org path                 author        md5
+  hopeful.mp3              comedy/Hopeful.mp3               Rafael Krux   97e0459a3877793a4f9ae555b140bf91
+  managing-mischief.mp3    comedy/Managing Mischief.mp3     Bryan Teoh    422b95df8260fde543c436a54fe30992
+  busybody.mp3             comedy/Busybody.mp3              Bryan Teoh    69b8e5f567719853a52719a3d73f8539
+
+Accepted by Tao Wang on 2026-10-07.

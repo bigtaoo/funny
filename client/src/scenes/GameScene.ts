@@ -20,6 +20,8 @@ import { preloadL1CardArtTextures } from '../render/cardArt';
 import type { NetState } from '../net/NetClient';
 import type { MatchOver, PeerDc } from '../net/proto/transport';
 import { acquireBattleBusy } from '../net/battleBusy';
+import { battleTrack } from '../audio/battleMusic';
+import type { MusicTrack } from '../audio/types';
 
 export interface GameSceneCallbacks {
   /**
@@ -109,12 +111,13 @@ export interface GameSceneOptions {
 
 export class GameScene implements Scene {
   /**
-   * 对局刻意**安静**（AUDIO_DESIGN.md §2.3）。`bgm.battle` 还没有 master，而它没有进
-   * `MusicTrack` union——一条没有文件的轨会以「这个界面就是安静的」形式存在，和设计意图无法
-   * 区分。所以这里写的是显式的 `null`：它和「忘了声明」（省略 = 大厅床）是两回事。
-   * master 到了之后，这三处（本类、`ReplayScene`、`StatePlayerScene`）一起改成 `'bgm.battle'`。
+   * 对局 BGM（AUDIO_DESIGN.md §2.3）：前期曲，到 ×2 回墨阶段换后期曲，见 `battleMusic.ts`。
+   * 一个 getter 而不是字段：`SceneManager` 每帧问一次，阶段一到答案就变，不需要任何事件。
+   * 回放（`ReplayScene`）和状态回放（`StatePlayerScene`）按各自的播放进度问同一个函数。
    */
-  readonly music = null;
+  get music(): MusicTrack {
+    return battleTrack(this.renderer.elapsedTicks);
+  }
   readonly container;
   private readonly renderer: GameRenderer;
   private readonly cb: GameSceneCallbacks;
