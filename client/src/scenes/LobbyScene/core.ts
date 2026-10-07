@@ -229,6 +229,11 @@ export interface LobbySceneCallbacks {
   /** Server-authoritative ladder standing (SaveData.pvp); shown as a header badge. */
   pvp?: { rank: string; elo: number };
   /**
+   * Ranked games left today whose loss costs no ELO (new-player + daily slots, SEASON_DESIGN_IMPL_SPEC
+   * §15.5) — read at build time and drawn as a sticker on the hero when online and > 0.
+   */
+  getProtectedGamesLeft?(): number;
+  /**
    * Live soft-currency balance getter (SaveData.wallet.coins mirror); shown in the header (online only).
    * A closure rather than a snapshot value so the header re-renders with the current balance instead of
    * whatever it was at the moment `showLobby` was called (matches the getCoins convention used by every
@@ -307,6 +312,8 @@ export class LobbySceneCore {
   rankChipRect: Rect | null = null;
   /** Hit rect for the top-left profile chip (opens SettingsScene). */
   profileChipRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  /** Bounds of the hero's "N games today without ELO loss" sticker (protectSticker.ts); null when hidden. */
+  protectStickerRect: Rect | null = null;
 
   /** Aggregate social unread (friends + chat + mail) → red dot on the social nav slot. */
   socialBadge = 0;

@@ -8,9 +8,9 @@ import {
   computeEloDelta,
   streakMultiplier,
   eloToRank,
-  applyNewbieProtection,
-  newbieProtectedGame,
-  NEWBIE_PROTECT_GAMES,
+  applyLossProtection,
+  nextProtectSlot,
+  consumeDailyProtect,
   victoryCoinsForRank,
   createLogger,
   accrueStats,
@@ -27,7 +27,7 @@ import { writeMigratedSave } from '../../save.js';
 import type { CommercialClient } from '../../commercialClient.js';
 import { adsDayKey } from '../../economy.js';
 import type { MetaSocialsvcClient } from '../../socialsvcClient.js';
-import { newbieProtectEligible, settledRankedGames } from '../../newbieProtect.js';
+import { eloProtectEligible, protectDayKey, settledRankedGames } from '../../eloProtect.js';
 import type { EloResult } from './types.js';
 
 const log = createLogger('meta:internal');
@@ -59,18 +59,22 @@ export async function settleElo(
   const winnerK = ELO_K * streakMultiplier(wStreak > 0 ? wStreak : 0);
   const loserK = ELO_K * streakMultiplier(lStreak < 0 ? -lStreak : 0);
   const { winner: wDelta, loser: lDelta } = computeEloDelta(wElo, lElo, { winnerK, loserK });
-  // New-player protection (2026-10-07): eligibility (not a botsvc account) is resolved here; whether this
-  // game actually falls inside the account's window is decided inside applyPvp against the very doc the
+  // ELO-loss protection (§15.5, new-player + daily slots): eligibility (not a botsvc account) is resolved
+  // here; which slot (if any) this game uses is decided inside applyPvp against the very doc the
   // rev-guarded write is conditioned on, so concurrent settlements can't both claim the same slot.
   // The opponent's delta is never touched — computeEloDelta above already sized it normally.
+  // One day key for the whole settlement, so the pre-check and the CAS decision agree across midnight.
+  const dayKey = protectDayKey(now());
   const [wProtect, lProtect] = await Promise.all([
-    newbieProtectEligible(cols, winner.accountId, wDoc?.save.pvp),
-    newbieProtectEligible(cols, loser.accountId, lDoc?.save.pvp),
+    eloProtectEligible(cols, winner.accountId, wDoc?.save.pvp, dayKey),
+    eloProtectEligible(cols, loser.accountId, lDoc?.save.pvp, dayKey),
   ]);
+  const wOpts = { eligible: wProtect, dayKey };
+  const lOpts = { eligible: lProtect, dayKey };
   const out: Record<number, EloResult> = {};
   const [wRes, lRes] = await Promise.all([
-    applyPvp(cols, now, commercial, socialsvc, winner.accountId, wDoc, wDelta, true, wProtect, winnerStats),
-    applyPvp(cols, now, commercial, socialsvc, loser.accountId, lDoc, lDelta, false, lProtect, loserStats),
+    applyPvp(cols, now, commercial, socialsvc, winner.accountId, wDoc, wDelta, true, wOpts, winnerStats),
+    applyPvp(cols, now, commercial, socialsvc, loser.accountId, lDoc, lDelta, false, lOpts, loserStats),
   ]);
   if (wRes) out[winner.side] = wRes;
   if (lRes) out[loser.side] = lRes;
@@ -105,7 +109,7 @@ async function applyPvp(
   doc: SaveDoc | null,
   delta: number,
   won: boolean,
-  protectEligible: boolean,
+  protect: { eligible: boolean; dayKey: string },
   statDelta: Partial<Record<StatKey, number>> = {},
 ): Promise<EloResult | null> {
   // S9-6: in-match achievement count delta = L1-sanitized kill/cast + server-computed pvp.wins (winner +1 only; client value not trusted).
@@ -130,9 +134,11 @@ async function applyPvp(
       }
     }
     const pvp = cur.save.pvp;
-    // New-player protection: game index within the window, read off the doc this CAS is guarded on.
-    const protectedGame = protectEligible ? newbieProtectedGame(settledRankedGames(pvp)) : 0;
-    const settled = applyNewbieProtection(delta, pvp.streak, won, protectedGame);
+    // Loss protection: the slot this game uses (new-player first, then daily), read off the doc this CAS
+    // is guarded on — a lost race re-reads and re-decides, so the last slot can't be claimed twice.
+    const slot = protect.eligible ? nextProtectSlot(settledRankedGames(pvp), pvp.dailyProtect, protect.dayKey) : null;
+    const settled = applyLossProtection(delta, pvp.streak, won, slot !== null);
+    const dailyProtect = consumeDailyProtect(pvp.dailyProtect, protect.dayKey, slot);
     const after = Math.max(ELO_FLOOR, pvp.elo + settled.delta);
     const appliedDelta = after - pvp.elo;
     const rank = eloToRank(after) as RankId;
@@ -168,6 +174,7 @@ async function applyPvp(
         seasonPeakElo: newPeakElo,
         seasonPeakRank: newPeakRank,
         reachedRanks: newly.length > 0 ? [...reachedRanks, ...newly] : reachedRanks,
+        ...(dailyProtect ? { dailyProtect } : {}),
       },
     };
     const res = await cols.saves.findOneAndUpdate(
@@ -193,7 +200,7 @@ async function applyPvp(
         delta: appliedDelta,
         after,
         rankAfter: rank,
-        ...(protectedGame > 0 ? { protectedGame, protectedTotal: NEWBIE_PROTECT_GAMES } : {}),
+        ...(slot ? { protectedGame: slot.game, protectedTotal: slot.total, protectedKind: slot.kind } : {}),
       };
     }
     // rev conflict (concurrent client PUT /save) → re-read and retry

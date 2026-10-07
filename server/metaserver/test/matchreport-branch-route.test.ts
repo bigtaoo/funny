@@ -7,7 +7,7 @@
 // lands in `matches` — that document is the whole audit trail for a disputed or unsettled match.
 import { describe, it, expect } from 'vitest';
 import Fastify from 'fastify';
-import { compressReplayDoc, makeNewSave, type Collections, type MatchReplayDoc, type SaveDoc } from '@nw/shared';
+import { compressReplayDoc, makeNewSave, makeDayKey, DAILY_PROTECT_GAMES, type Collections, type MatchReplayDoc, type SaveDoc } from '@nw/shared';
 import { registerReportRoute } from '../src/internal/matchReport/reportRoute.js';
 import { REPLAY_INLINE_MAX_BYTES, MATCH_SETTLING_TAKEOVER_MS, type ReportBody } from '../src/internal/matchReport/types.js';
 import type { InternalCtx } from '../src/internal/context.js';
@@ -157,7 +157,9 @@ function archived<T>(matches: FakeMatches, roomId = 'R1'): T {
 function rankedSaves(): SaveDoc[] {
   return ['a', 'b'].map((id) => {
     const save = makeNewSave(id, NOW);
-    save.pvp.losses = 3; // veterans: past the new-player protection window, so losses settle in full
+    // Veterans with no protection slot left (§15.5: new-player pool used, today's daily slots spent), so losses settle in full.
+    save.pvp.losses = 3;
+    save.pvp.dailyProtect = { dayKey: makeDayKey(NOW), used: DAILY_PROTECT_GAMES };
     return { _id: id, save, rev: save.rev };
   });
 }

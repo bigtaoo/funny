@@ -373,22 +373,42 @@ export function addHeader(container: PIXI.Container, w: number, h: number, onTap
 }
 
 /**
- * New-player protection note under the ranked ELO line ("New player protection (2/3) · …"): the
- * account's first few settled ranked games never cost ELO (SEASON_DESIGN_IMPL_SPEC.md §15.5). Its own
- * smaller line rather than a suffix on the monospace ELO line, which would overflow in portrait.
- * Returns the new bottom y.
+ * ELO-loss protection fields carried by match_over.elo (SEASON_DESIGN_IMPL_SPEC.md §15.5): a protected
+ * ranked game's loss costs no ELO. New-player slots (an account's first 3 settled ranked games) are
+ * used first, then daily slots (first 3 of each server-UTC day).
  */
-export function addNewbieProtectLine(
-  container: PIXI.Container, w: number, h: number, top: number, game: number, total: number,
+export interface EloProtectFields {
+  /** 1-based index of this game within the slot pool it used; 0/absent = unprotected. */
+  protectedGame?: number;
+  /** That pool's size. */
+  protectedTotal?: number;
+  /** Which pool: 1 = new-player, 2 = daily (transport.proto EloDelta.protected_kind); 0/absent = new-player (older server). */
+  protectedKind?: number;
+}
+
+/** transport.proto EloDelta.protected_kind for the daily pool (server ladder.ts PROTECT_KIND_DAILY). */
+const PROTECT_KIND_DAILY = 2;
+
+/**
+ * Protection note under the ranked ELO line ("New player protection (2/3) · …" / "Daily protection
+ * (1/3) · …"), shown on any protected game, win or loss. Its own smaller line rather than a suffix on
+ * the monospace ELO line, which would overflow in portrait. Returns the new bottom y (`top` unchanged
+ * when the game was not protected).
+ */
+export function addEloProtectLine(
+  container: PIXI.Container, w: number, h: number, top: number, elo: EloProtectFields,
 ): number {
-  const line = makeText(t('result.newbieProtect', { n: game, total }), {
+  if (!elo.protectedGame || !elo.protectedTotal) return top;
+  const key: TranslationKey = elo.protectedKind === PROTECT_KIND_DAILY ? 'result.dailyProtect' : 'result.newbieProtect';
+  const line = makeText(t(key, { n: elo.protectedGame, total: elo.protectedTotal }), {
     fontSize: FS.body,
     fill: 0x555555,
-    fontFamily: 'serif',
+    fontFamily: UI_FONT_FAMILY,
   });
   line.anchor.set(0.5, 0);
   line.x = w / 2;
   line.y = top + h * 0.008;
+  if (line.width > w * 0.94) line.scale.set((w * 0.94) / line.width);
   container.addChild(line);
   return line.y + line.height;
 }
