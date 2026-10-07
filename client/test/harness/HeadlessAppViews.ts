@@ -57,6 +57,7 @@ import type { EventCallbacks } from '../../src/scenes/EventScene';
 import type { ConsentCallbacks, ConsentMode } from '../../src/ui/dialogs/ConsentDialog';
 import type { AgeGateCallbacks, AgeGateMode } from '../../src/ui/dialogs/AgeGateDialog';
 import type { EntryGateCallbacks, EntryGateMode } from '../../src/ui/dialogs/EntryGateDialog';
+import type { EntryNoticeSpec } from '../../src/ui/dialogs/EntryNoticeStrip';
 import { MIN_AGE_YEARS } from '../../src/app/appConstants';
 import type { ReconnectPromptCallbacks } from '../../src/ui/dialogs/ReconnectPromptDialog';
 import type { TitlesSceneCallbacks } from '../../src/scenes/TitlesScene';
@@ -119,6 +120,8 @@ export class HeadlessAppViews implements AppViews {
   lastRetentionBadge?: boolean;
   /** The Apple consumption-consent card's answer callback, when the lobby put the card up. */
   lastConsumptionConsentAsk?: (consented: boolean) => void;
+  /** The entry notice strip the core last put on the lobby (IPlatform.entryNoticeOnly), if any. */
+  lastEntryNotice?: EntryNoticeSpec;
   /** Last events-available flag the core pushed into the lobby handle. */
   lastEventsAvailable?: boolean;
   replay?: ReplaySceneCallbacks;
@@ -221,6 +224,7 @@ export class HeadlessAppViews implements AppViews {
       // wrapped navigation, matching a player who dismisses it immediately.
       showFeatureGuide: (_tk, _bk, onDismiss) => { onDismiss(); },
       showConsumptionConsent: (onAnswer) => { this.lastConsumptionConsentAsk = onAnswer; },
+      showEntryNotice: (spec) => { this.lastEntryNotice = spec; },
     };
   }
   showSettings(cb: SettingsSceneCallbacks): void { this.screen = 'settings'; this.settings = cb; }

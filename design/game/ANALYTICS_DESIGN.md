@@ -298,6 +298,39 @@ Art 7(1) 的举证留痕，不是遥测。
 视口都不溢出——横屏矮屏原本 de 溢出 56px，靠 `ConsentDialog.build` 的二次量算回来）+
 `client/test/ui/settingsDataSaverRow.ui.ts`（两个开关并排那一行，三语言四视口互不相撞）。
 
+### 3.6d CrazyGames 不设门之后：匿名教学步计数 + 「同意早于配置」竞态（2026-10-07）
+
+**背景**：CG 包从 2026-10-07 起入口不设门（[`COMPLIANCE_GLOBAL.md` §3.3a](COMPLIANCE_GLOBAL.md)），
+欧盟/美国时区的新玩家是在**埋点还没被回答**的状态下玩完第一分钟的——事件都在 §3.6 的内存缓冲里，
+他在大厅点「允许」才发，点「不用了」或没点就关页则一条都不发。可第一分钟恰恰是审核员走掉的地方。
+
+**匿名教学步计数**：没同意的启动每经过一个教学步，客户端打一次
+`GET /analytics/config?p=<平台>&t=<step>`（`analytics.countAnonymousTutorialStep(step)`，
+`analytics/index.ts` → `config.ts` `pingAnonymousTutorialStep`），服务端在 `tutorial_anon_daily`
+上按 `(日期, 平台, step)` 做 `$inc`（`traffic.ts` `countAnonymousTutorialStep`）。立场与 §3.6b/§3.6c
+完全一样：只有日期、平台、步骤键、计数；没有 device id、token、session id。
+- `step` 白名单 = v2 教学序列 `tutorial_start / beat_unit / beat_building / beat_spell / graduate / tutorial_complete`
+  （客户端 `ANONYMOUS_TUTORIAL_STEPS`、服务端 `ANON_TUTORIAL_STEPS`、OpenAPI `t` 枚举三处一致）；白名单外的值**什么都不记**。
+- `?t=` **不是启动**，绝不动 `boots_daily`。
+- 只在**没同意**时发（同意了的人发的是真的 `tutorial_step`）；同一步每次启动至多一次（设置里重玩教学不算第二个人到达）；离线不发。
+- 读法：ops「Launch funnel」卡的 `Unconsented tutorial` 列（`boot_funnel` 每行带 `anon_tutorial: { step: count }`），
+  跟同一行的 `Launches` 对着看。这是**按启动计**的趋势，不是人。
+- 覆盖：`client/test/analyticsAnonTutorial.test.ts` + `analyticsvc/test/bootAndLoadTime.e2e.test.ts` / `analytics.e2e.test.ts`。
+
+**`gdpr_consent` 新增两个 props**：`mode`（`gate` 入口门 / `notice` CG 非选择区「通知即同意」/ `prompt` CG 大厅提示条）
+和 `dwell_ms`（门或提示条在屏上多久才点了同意；只在同意那条路上带，`notice` 没有界面所以不带）。
+
+**根因：审核员那条会话为什么没有 `load_time` 和 `gdpr_consent`**（CRAZYGAMES_LAUNCH §7「埋点缺口」）——
+不是 SSO 的问题，是 `init()` 的顺序：它先把 `queue` 赋好、**再** `await fetchAnalyticsConfig()`。`track()` 和
+`flushPreConsent()` 都把「`queue` 有值」当成「SDK 就绪」，然后过 `shouldTrack()` 采样——而配置还没回来时
+`shouldTrack()` 读的是禁用兜底（`enabled:false`），**一律丢**。CG 包同意门是第一屏，QA 一秒内就点了，正好落在
+这个窗口里：点同意 → 缓冲里的 `boot`/`first_frame`/`load_time` 被重放进 `shouldTrack()` 全丢 → `gdpr_consent` 同样丢 →
+配置回来后 `init()` 才发 `session_start`（于是会话从 `session_start` 开始，0.3 s 后 `tutorial_start`）。存档里的同意
+标记走的是另一条路（`setFlag` → 待推送队列 → SSO 拿到 token 后补推），所以是 true。
+修法：`queue` 等配置回来**之后**才赋值（`analytics/index.ts` `init()`），在那之前一切事件都留在 `pending`。
+回归：`client/test/analyticsConfigRace.test.ts`（改回旧顺序时只剩 `['session_start']`，正是那条会话的样子）。
+同一个洞对已同意的老玩家也成立：配置还在路上时追踪的任何事件都会被丢。
+
 ---
 
 ## §4 采集配置（服务端控制开关）
@@ -463,7 +496,7 @@ scene 取值：`IntroScene / LobbyScene / LoginScene / CampaignMapScene / LevelP
 > **CrazyGames 静默自动登录不发 `login_submit`**：玩家已在门户登录过时，`resolveEntry()` 走 `bootstrap()` 静默换 token（与 `wx` 同路，见 `ONBOARDING_DESIGN.md`/`app/nav/auth.ts`），跳过 LoginScene，因此也跳过这三个事件——这条路径的转化只能从 §9.9 启动漏斗的 `reach_rate` 侧面看，不在这张登录漏斗里。`mode:'crazygames'` 三个事件只覆盖**主动点按钮**那条路。
 
 > **成功/失败为什么是两个事件名而不是一个带 `ok` 的事件**：§9.6 的首会话 `actions` 分布按**事件名**统计去重设备数、不看 props。合成一个名字，在唯一已经把新客 cohort 隔离出来的那张报表里两者就分不开了。
-| `intro_complete` / `intro_skip` | — | 首启故事 `IntroScene` 看完/跳过（`app/nav/auth.ts` `goIntro` 的 `onFinish(skipped)`），design-doc-audit-2026-07 补齐——此前这一步完全没有埋点。100% 采样，纳入 §9.6 `ONBOARDING_STEPS` 的 `intro_seen` 步骤 |
+| `intro_complete` / `intro_skip` | — | 开场故事卡自动消失/被点掉。2026-10-07 起故事不在首启播放，改为第一次打开战役地图时出的单行卡，事件在 `app/nav/game/campaignRoster.ts` `goCampaignMap` 的 `getStoryCard().onDone(skipped)` 里发；设置里「重看开场故事」不发（[`ONBOARDING_DESIGN.md` §11.7](ONBOARDING_DESIGN.md)）。这一步最早由 design-doc-audit-2026-07 补上，此前完全没有埋点。100% 采样，计入 §9.6 `ONBOARDING_STEPS` 的 `intro_seen` 步骤（现为最后一步） |
 
 ### 5.6a `idle_10min`：人还在屏幕前，手已经停了（2026-09-20）
 

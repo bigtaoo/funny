@@ -217,6 +217,16 @@
           launch count — so the launch is still counted exactly once, and the launch funnel can tell
           "left at a gate" from "playing and reporting nothing". It is the only thing the refusal
           path ever sends: a refusal cannot be reported as an event, and this endpoint stores no one.
+      - name: t
+        in: query
+        required: false
+        schema: { type: string, enum: [tutorial_start, beat_unit, beat_building, beat_spell, graduate, tutorial_complete] }
+        description: >
+          A tutorial step reached by a launch that has NOT granted analytics consent
+          (COMPLIANCE_GLOBAL §3.3 — the CrazyGames build plays its first minute before that question
+          is answered). Bumps a (date, platform, step) count in `tutorial_anon_daily` instead of the
+          launch counter — it is not a launch. Nothing identifying is sent or stored; a value outside
+          the enum counts nothing. The response body is the ordinary config and is thrown away.
     responses:
       '200':
         description: Collection config

@@ -59,6 +59,7 @@ import type { EventCallbacks } from '../scenes/EventScene';
 import type { ConsentCallbacks, ConsentMode } from '../ui/dialogs/ConsentDialog';
 import type { AgeGateCallbacks, AgeGateMode } from '../ui/dialogs/AgeGateDialog';
 import type { EntryGateCallbacks, EntryGateMode } from '../ui/dialogs/EntryGateDialog';
+import type { EntryNoticeSpec } from '../ui/dialogs/EntryNoticeStrip';
 import type { ReconnectPromptCallbacks } from '../ui/dialogs/ReconnectPromptDialog';
 import type { DeckBuilderCallbacks } from '../scenes/DeckBuilderScene';
 import type { CitySceneCallbacks } from '../scenes/CityScene';
@@ -107,6 +108,13 @@ export interface LobbyView {
    * and Apple accepts only the yes.
    */
   showConsumptionConsent(onAnswer: (consented: boolean) => void): void;
+  /**
+   * The non-blocking Terms/Privacy notice + analytics prompt (IPlatform.entryNoticeOnly,
+   * COMPLIANCE_GLOBAL §3.3): a strip along the bottom, above the nav, that takes only its own taps.
+   * Gone with the scene. Optional so fakes that predate it need not stub it; the core treats an
+   * absent method as "this screen cannot carry the notice" (see `offerEntryNotice`).
+   */
+  showEntryNotice?(spec: EntryNoticeSpec): void;
 }
 
 /** Live handle for the room scene — the core forwards NetSession control events to it. */

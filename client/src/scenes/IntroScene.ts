@@ -10,18 +10,18 @@ import { getArtTexture } from '../render/cardArt';
 import introIllustrationUrl from '../assets/story/intro_notebook.png';
 import { dispatchHit } from '../ui/hits';
 
-// ── First-launch intro (background story) ─────────────────────────────────────
+// ── Opening story (full 7-line version) ───────────────────────────────────────
 //
-// Skeleton for the onboarding story sequence, shown once on first launch
-// (driven by the `nw_seen_intro` storage flag in app.ts).
+// No longer part of first launch (ONBOARDING_DESIGN §11.7): new players get a one-line card on
+// their first campaign-map open instead (scenes/CampaignMapScene/storyCard.ts), and this full
+// version is played from settings → "Replay story" (nav.goIntro), returning to settings after.
 //
 // Current behavior: story lines fade in one by one; a tap reveals the next
 // line instantly (or completes the current fade). A line left untouched
 // still advances on its own after AUTO_ADVANCE_DELAY seconds, so the reader
 // doesn't have to keep tapping — EXCEPT the last line, which stays on screen
-// until an explicit tap: this scene feeds into the consent/privacy gate
-// (gateConsent in auth.ts), and auto-finishing into that would fly by before
-// anyone could actually read the ending. A skip button is always available
+// until an explicit tap, so the ending isn't whisked away before anyone could
+// actually read it (the player asked to see this story). A skip button is always available
 // in the top-right corner. A background illustration (father handing Tao the
 // notebook) fades in alongside story.line.3 and then stays at
 // ILLUSTRATION_TARGET_ALPHA behind the rest of the text.
@@ -87,7 +87,7 @@ export class IntroScene implements Scene {
   update(dt: number): void {
     // Advance current line fade; once fully shown, count down to an automatic step() so the
     // reader doesn't have to keep tapping. The last line is the one exception — it waits for an
-    // explicit tap instead of auto-finishing into the consent/privacy gate that follows this scene.
+    // explicit tap instead of auto-finishing (see the header).
     if (this.shownCount > 0 && this.shownCount <= this.lines.length) {
       const line = this.lines[this.shownCount - 1]!;
       const isLastLine = this.shownCount === this.lines.length;

@@ -163,6 +163,30 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
     expect(docs[0]).toMatchObject({ count: 0, declined: 1 });
   });
 
+  /**
+   * The anonymous tutorial tick (COMPLIANCE_GLOBAL §3.3). `?t=<step>` is sent by a launch that has
+   * not granted analytics consent as it passes a tutorial step. It is not a launch — counting it as
+   * one would inflate the funnel's denominator — and a step outside the allow-list mints nothing.
+   */
+  it('GET /analytics/config?t=<step> counts a tutorial step, never a launch, and only allow-listed steps', async () => {
+    await mongo!.collections.boots_daily.deleteMany({});
+    await mongo!.collections.tutorial_anon_daily.deleteMany({});
+    await fetch(`${base}/analytics/config?p=crazygames&t=tutorial_start`);
+    await fetch(`${base}/analytics/config?p=crazygames&t=tutorial_start`);
+    await fetch(`${base}/analytics/config?p=crazygames&t=beat_unit`);
+    await fetch(`${base}/analytics/config?p=crazygames&t=../../etc/passwd`);
+    await fetch(`${base}/analytics/config?p=nope&t=graduate`);
+
+    await new Promise((r) => setTimeout(r, 150));
+    expect(await mongo!.collections.boots_daily.countDocuments({}), 'a step tick is not a launch').toBe(0);
+    const docs = await mongo!.collections.tutorial_anon_daily.find({}).toArray();
+    expect(docs.map((d) => [d.platform, d.step, d.count]).sort()).toEqual([
+      ['crazygames', 'beat_unit', 1],
+      ['crazygames', 'tutorial_start', 2],
+      ['unknown', 'graduate', 1],
+    ]);
+  });
+
   // ─── Event ingestion ────────────────────────────────────────────────────────────
 
   it('POST /analytics/events ingests event batch → 200', async () => {
@@ -948,7 +972,7 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
     // the exception, reading dedicated intro_complete/intro_skip events (design-doc-audit-2026-07).
     const step = (k: string) => res.funnel.find((f) => f.step === k);
     expect(res.funnel.map((f) => f.step)).toEqual([
-      'session_start', 'intro_seen', 'tutorial_start', 'tutorial_complete', 'first_battle', 'first_clear',
+      'session_start', 'tutorial_start', 'tutorial_complete', 'first_battle', 'first_clear', 'intro_seen',
     ]);
     expect(step('session_start')?.count).toBe(2);
     expect(step('intro_seen')?.count).toBe(1); // only N1 emitted intro_complete

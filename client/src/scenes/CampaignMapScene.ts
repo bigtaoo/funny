@@ -13,6 +13,7 @@ import { drawNode, drawTrail, drawDecor, drawTape, drawClearStamp, clearStampX }
 import { buildCampaignHeader } from './CampaignMapScene/header';
 import { dispatchHit, type Hit } from '../ui/hits';
 import { steppedTime } from '../render/steppedTime';
+import { StoryCard, type StoryCardSpec } from './CampaignMapScene/storyCard';
 
 // ── CampaignMapScene (S3-5 → CAMPAIGN_DESIGN §12) — the "campaign notebook" ──────
 //
@@ -48,6 +49,12 @@ export interface CampaignMapCallbacks {
   isOnline(): boolean;
   /** Level ids with an offline clear queued for settlement (shown as "pending settlement"). */
   getPendingLevels(): string[];
+  /**
+   * The one-shot opening-story card to lay over the map on entry (ONBOARDING_DESIGN §11.7), or
+   * null once the player has been told the story. Asked at construction, not held as data, so a
+   * rebuild of this scene (resize) after the card was dismissed doesn't bring it back.
+   */
+  getStoryCard?(): StoryCardSpec | null;
 }
 
 
@@ -91,6 +98,8 @@ export class CampaignMapScene implements Scene {
 
   private hits: Hit[] = [];
   private pulseT = 0;
+  /** Opening-story card on top of the map while it is up; it eats every tap until it is gone. */
+  private storyCard: StoryCard | null = null;
 
   // No scroll — every page fits one screen by construction.
 
@@ -119,6 +128,12 @@ export class CampaignMapScene implements Scene {
     this.chapter = currentChapter(new Set(this.cb.getCleared()));
     this.mode = 'chapter';
     this.showPage(this.buildChapter(this.chapter));
+
+    const card = this.cb.getStoryCard?.();
+    if (card) {
+      this.storyCard = new StoryCard(this.w, this.h, card);
+      this.container.addChild(this.storyCard.container);
+    }
   }
 
   update(dt: number): void {
@@ -132,10 +147,19 @@ export class CampaignMapScene implements Scene {
       ring.alpha = 0.3 + 0.45 * k;
     }
     if (this.flip) this.advanceFlip(dt);
+    if (this.storyCard) {
+      this.storyCard.update(dt);
+      if (this.storyCard.done) {
+        this.storyCard.destroy();
+        this.storyCard = null;
+      }
+    }
   }
 
   destroy(): void {
     this.unsubs.forEach((u) => u());
+    this.storyCard?.destroy();
+    this.storyCard = null;
     // Free the Text baseTextures across the whole tree before dropping the container — a bare
     // container.destroy({children:true}) destroys the Text objects but orphans their textures
     // (texture defaults to false for descendants). Also frees any boiling-line Ticker.shared
@@ -204,6 +228,7 @@ export class CampaignMapScene implements Scene {
   }
 
   private handleDown(x: number, y: number): void {
+    if (this.storyCard) { this.storyCard.dismiss(); return; }
     // No `this.flip` guard: hits are kept live across flips (see flipTo), so taps
     // work even mid-animation or if the ticker stalls before a flip settles.
     dispatchHit(this.hits, x, y);

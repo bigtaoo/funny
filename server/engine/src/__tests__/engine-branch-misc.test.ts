@@ -423,30 +423,20 @@ test('a Top-side summoner sends its summon toward the BOTTOM building row', () =
 
 // ── Card.ts: TutorialDrawPolicy free play + Hand's empty slots ──────────────────────────────
 
-test('TutorialDrawPolicy deals the script in order, then filler, then the full pool in free play', () => {
-  const [a, b, c, d] = CARD_DEFINITIONS;
-  const script = [a!, b!];
-  const filler = [c!];
-  const policy = new TutorialDrawPolicy(script, filler, new Prng(5));
+test('TutorialDrawPolicy deals the script in order, then filler only', () => {
+  const [a, b, c] = CARD_DEFINITIONS;
+  const policy = new TutorialDrawPolicy([a!, b!], [c!], new Prng(5));
 
   assert.equal(policy.draw(), a, 'beat order is deterministic — the director looks for these');
   assert.equal(policy.draw(), b);
-  assert.equal(policy.draw(), c, 'past the script: filler only, so a teaching card is never wasted');
-
-  // Stage C re-includes the teaching cards, so every draw now comes from script + filler.
-  policy.enterFreePlay();
-  const pool = new Set([a, b, c]);
-  for (let i = 0; i < 20; i++) assert.ok(pool.has(policy.draw()), 'free play draws from the full loadout');
-  assert.equal(pool.has(d!), false, 'test premise: d is outside this policy\'s loadout');
+  for (let i = 0; i < 10; i++) assert.equal(policy.draw(), c, 'past the script: filler only, so a teaching card is never wasted');
 });
 
-test('TutorialDrawPolicy with an empty loadout falls back to the whole card pool in free play', () => {
-  // A degenerate configuration (no script, no filler) must still hand out a real card rather
-  // than `undefined`, which the caller would put straight into a hand slot.
-  const policy = new TutorialDrawPolicy([], [], new Prng(5));
-  policy.enterFreePlay();
-  const drawn = policy.draw();
-  assert.ok(CARD_DEFINITIONS.includes(drawn));
+test('TutorialDrawPolicy with no filler keeps cycling the script once it is dealt', () => {
+  const [a, b] = CARD_DEFINITIONS;
+  const policy = new TutorialDrawPolicy([a!, b!], [], new Prng(5));
+  policy.draw(); policy.draw();
+  for (let i = 0; i < 10; i++) assert.ok([a, b].includes(policy.draw()));
 });
 
 test('Hand.play on an empty slot and on an out-of-range index both answer null', () => {

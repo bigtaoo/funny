@@ -14,6 +14,7 @@ import type { Replay, OwnerId, PlayerStats, MatchStartInfo, AIDifficulty } from 
 import type { EloResult } from '../scenes/ResultScene';
 import type { ProfileData } from '../ui/dialogs/ProfilePopup';
 import type { RoomIntent } from '../platform/IPlatform';
+import type { EntryNoticeHost } from '../ui/dialogs/EntryNoticeStrip';
 
 /** Mutable session-lifetime state, shared by reference across all nav modules. */
 export interface AppState {
@@ -54,7 +55,11 @@ export type ShopSource = 'lobby_recharge' | 'prep' | 'shop_group' | 'unknown';
  * call `ctx.nav.goX()` in another without a static import cycle.
  */
 export interface Nav {
-  goIntro(): void;
+  /**
+   * The full 7-line story (IntroScene), then `onDone`. Never part of the boot flow any more
+   * (ONBOARDING_DESIGN §11.7) — only the settings "Replay story" entry calls it.
+   */
+  goIntro(onDone: () => void): void;
   /** `fade`: cross-fade in — set only when returning here from exiting a match or the SLG world map. */
   goLobby(opts?: { offline?: boolean; fromResize?: boolean; fade?: boolean }): void;
   goSettings(): void;
@@ -142,6 +147,14 @@ export interface AppCtx {
   playerName(): string;
   avatarId(): string | undefined;
   gateConsent(next: () => void): void;
+  /**
+   * Put the notice-only build's Terms/Privacy notice + analytics prompt on `host`, if anything is
+   * still to be said (IPlatform.entryNoticeOnly, COMPLIANCE_GLOBAL §3.3). A no-op on every other
+   * build. Call it every time the host is shown: a strip still up is put back, nothing new is
+   * offered twice in one launch. Always set by createAppCore; optional only so the many hand-built
+   * test ctxs need not stub it.
+   */
+  offerEntryNotice?(host: EntryNoticeHost): void;
   resolvePvpDeck(): string[];
   keepReplay(replay: Replay | undefined): Replay | undefined;
   resolveWorldShard(worldApi: WorldApiClient, then: (worldId: string) => void): void;

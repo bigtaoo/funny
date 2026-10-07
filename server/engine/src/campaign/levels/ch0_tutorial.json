@@ -8,8 +8,16 @@
   "startInk": 60,
   "inkRegenMult": 2,
   "enemyScale": {
-    "hp": 1,
+    "hp": 0.065,
     "damage": 1
+  },
+  "board": {
+    "laneLength": {
+      "2": 8,
+      "3": 8,
+      "4": 10,
+      "7": 13
+    }
   },
   "loadout": [
     "infantry_1",
@@ -25,24 +33,31 @@
   "waves": {
     "entries": [
       {
-        "atTick": 20,
+        "atTick": 2,
         "unitType": "max",
         "col": 4,
         "count": 1
       },
       {
-        "atTick": 140,
+        "atTick": 100,
         "unitType": "max",
         "col": 7,
         "count": 3,
-        "spacingTicks": 24
+        "spacingTicks": 20
       },
       {
-        "atTick": 300,
+        "atTick": 230,
         "unitType": "max",
         "col": 2,
-        "count": 5,
-        "spacingTicks": 4
+        "count": 2,
+        "spacingTicks": 30
+      },
+      {
+        "atTick": 230,
+        "unitType": "max",
+        "col": 3,
+        "count": 2,
+        "spacingTicks": 30
       }
     ]
   },

@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import {
   analyticsUnavailable, badgeModes, badgePivot, barRatio, barWidthPx, distribution, eventCountGrid,
   FUNNEL_STEPS, funnelPivot, funnelPlatforms, LEVEL_FUNNEL_LIMIT, levelFunnelRows, loginHourRows,
-  bootFunnelRows, churnSceneRows, loadTimeRows, metricRows, ms, ONBOARDING_LABELS, retentionCell,
+  anonTutorialCell, bootFunnelRows, churnSceneRows, loadTimeRows, metricRows, ms, ONBOARDING_LABELS, retentionCell,
   RETENTION_OFFSETS, retentionRows, sec, sectionRows, sectionValue, stepFunnelRows, TUTORIAL_LABELS,
   type BadgeRow, type FunnelRow, type RetentionByRow, type RetentionRow,
 } from '../src/logic/analytics';
@@ -282,6 +282,19 @@ describe('metricRows', () => {
 
   it('is empty when the stats backend reported nothing', () => {
     expect(metricRows({})).toEqual([]);
+  });
+});
+
+describe('anonTutorialCell', () => {
+  it('lists the unconsented tutorial steps in tutorial order, skipping zeros', () => {
+    expect(anonTutorialCell({
+      date: '2026-10-07', platform: 'crazygames', boots: 10, sessions: 4, consents: 4,
+      anon_tutorial: { beat_unit: 2, tutorial_start: 5, beat_spell: 0 },
+    })).toBe(`${TUTORIAL_LABELS.tutorial_start} 5 · ${TUTORIAL_LABELS.beat_unit} 2`);
+  });
+
+  it('is empty for a row without any — every platform but the notice-only one', () => {
+    expect(anonTutorialCell({ date: '2026-10-07', platform: 'web', boots: 10, sessions: 4, consents: 4 })).toBe('');
   });
 });
 

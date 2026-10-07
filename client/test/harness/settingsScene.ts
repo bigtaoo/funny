@@ -57,6 +57,7 @@ export const ONLINE: Partial<SettingsSceneCallbacks> = {
   getCoins: () => 0,
   onRename: async (name: string) => ({ ok: true, name }),
   onReplayTutorial() {},
+  onReplayStory() {},
   onLogout() {},
   onDeleteAccount: async () => ({ ok: true }),
 };

@@ -5,7 +5,7 @@
 // pages/analytics.ts (rather than folded into logic/analytics.ts) because these build DOM, not data.
 import { h } from '../dom';
 import {
-  badgeModes, badgePivot, barWidthPx, type BadgeRow, type BootFunnelDisplayRow,
+  anonTutorialCell, badgeModes, badgePivot, barWidthPx, type BadgeRow, type BootFunnelDisplayRow,
   LOAD_TIME_PHASE_LABELS, type LoadTimeDisplayRow, type ShareRow, type StepFunnelRow,
 } from '../logic/analytics';
 import { pct } from '../logic/shared';
@@ -84,6 +84,7 @@ export function launchFunnelCard(launches: BootFunnelDisplayRow[], days: number)
       h('th', { style: 'text-align:right', title: 'gdpr_consent — first-time acceptances' }, 'Consents'),
       // `bar()` prints the percentage next to the bar, so this column needs no separate pct cell.
       h('th', {}, 'Reached'),
+      h('th', { title: 'Tutorial steps reached by launches WITHOUT analytics consent — an anonymous count per step (COMPLIANCE_GLOBAL §3.3); consented players are in the tutorial funnel instead' }, 'Unconsented tutorial'),
     ),
   );
   for (const r of launches) {
@@ -96,6 +97,7 @@ export function launchFunnelCard(launches: BootFunnelDisplayRow[], days: number)
       h('td', { style: 'text-align:right' }, String(r.lost)),
       h('td', { style: 'text-align:right' }, String(r.consents)),
       h('td', {}, bar(r.reachRate)),
+      h('td', { class: 'muted' }, anonTutorialCell(r) || '—'),
     ));
   }
   return h('div', { class: 'card' },

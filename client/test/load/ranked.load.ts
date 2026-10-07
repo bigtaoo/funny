@@ -59,8 +59,6 @@ const uid = (i: number): string => `load_${Date.now().toString(36)}_${i}_${Math.
 /** Register + reach the online lobby. Throws (captured per-client) on failure. */
 async function registerAndEnterLobby(c: Client): Promise<void> {
   c.core.start();
-  if (!(await waitFor(() => c.views.screen === 'intro', 5_000))) throw new Error('no intro');
-  c.views.intro!.onFinish();
   c.views.declareAdultAge(); // neutral age gate, ahead of the consent gate
   c.views.consent!.onAccept(); // GDPR gate (L1-1) before entry
   if (!(await waitFor(() => c.views.screen === 'login', 10_000))) throw new Error('no login screen');

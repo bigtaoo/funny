@@ -35,6 +35,7 @@ export * from './season';
 export * from './battlepass';
 export * from './rechargeMilestone';
 export * from './titles';
+export * from './onboarding';
 export * from './retention';
 export * from './events';
 export * from './featureFlags';

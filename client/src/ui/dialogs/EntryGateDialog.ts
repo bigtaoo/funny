@@ -5,8 +5,8 @@
  * used to run them). The two answers still carry different legal weight (COMPLIANCE_GLOBAL §3.3/
  * §3.4 — "two legal bases, not bound to one button"), which is why the primary button(s) record
  * BOTH only where consent already has an unambiguous answer tied to the button pressed
- * ('accept-only' has one button, 'choice' has two, and either declares the current stepper year at
- * the same time as it answers consent). An underage stepper value still gets its own confirm step
+ * ('accept-only' has one button, 'choice' has two, and either declares the currently picked year at
+ * the same time as it answers consent). An underage year still gets its own confirm step
  * before anything is recorded, exactly as {@link AgeGateDialog} does, and the permanent 'blocked'
  * dead end stays that separate screen — nothing about declining consent or the below-threshold
  * outcome changes here, only how many screens a player who answers normally has to get through.
@@ -16,6 +16,14 @@
  * {@link AgeGateDialog}/{@link ConsentDialog} use, so those less-common paths render exactly as
  * before this existed. Only `{age:'ask', consent: not null}` — the actual new-player case — uses
  * new combined copy (`entryGate.body`/`entryGate.bodyChoice`).
+ *
+ * **Birth year: a two-tap picker, not a stepper** (2026-10-07, ONBOARDING_DESIGN §11.8). The row
+ * shows the current year as one field; tapping it swaps the card for a decade grid, a decade for
+ * that decade's years, a year back to the card. Any year is two taps away instead of up to dozens of
+ * ±1/±10 presses. The neutrality rules of COMPLIANCE_GLOBAL §3.4 are unchanged: it still asks for a
+ * birth YEAR (never "are you 13?"), still starts from 30 years ago (neither the threshold nor an
+ * obvious pass value), every decade is offered alike, and an underage year still needs its own
+ * confirmation before anything is recorded.
  */
 import * as PIXI from 'pixi.js-legacy';
 import { makeText, monospaceWidth } from '../../render/pixiText';
@@ -30,10 +38,10 @@ import { legalUrl, type ConsentMode } from './ConsentDialog';
 import { openExternalUrl } from '../../platform/externalLink';
 
 export interface EntryGateMode {
-  /** 'ask' shows the birth-year stepper; 'ok' means age is already known — only consent is asked. */
+  /** 'ask' shows the birth-year picker; 'ok' means age is already known — only consent is asked. */
   age: 'ask' | 'ok';
   /**
-   * null when consent is already known too — only the age stepper (+ its own button) is shown.
+   * null when consent is already known too — only the birth-year picker (+ its own button) is shown.
    * 'terms': analytics consent is already answered but the current Terms of Use (EULA) are not
    * (the App Review 1.2 re-accept, see TERMS_ACCEPTED_FLAG) — one Accept button, terms copy.
    */
@@ -41,7 +49,7 @@ export interface EntryGateMode {
 }
 
 export interface EntryGateAnswer {
-  /** Set only when `mode.age === 'ask'` and the stepper was confirmed — even on an underage answer. */
+  /** Set only when `mode.age === 'ask'` and the picked year was confirmed — even on an underage answer. */
   birthYear?: number;
   /** Set only when `mode.consent !== null` and a consent button was the one pressed. */
   granted?: boolean;
@@ -58,16 +66,15 @@ export interface EntryGateCallbacks {
 
 const MAX_AGE = 100;
 const START_OFFSET = 30;
-const DISABLED_ALPHA = 0.35;
 
 export class EntryGateDialog implements Scene {
   readonly container: PIXI.Container;
 
   private year: number;
-  /** Set once an underage stepper value has been confirmed once and needs a second confirmation. */
+  /** Set once an underage year has been confirmed once and needs a second confirmation. */
   private confirming = false;
-  private yearText: PIXI.Text | null = null;
-  private steps: Array<{ g: PIXI.Container; delta: number }> = [];
+  /** The year picker, when open: the decade grid, or the years of one decade (its first year). */
+  private picking: 'decade' | number | null = null;
 
   constructor(
     private readonly w: number,
@@ -98,8 +105,6 @@ export class EntryGateDialog implements Scene {
   private rebuild(): void {
     this.container.removeAllListeners();
     tearDownChildren(this.container);
-    this.yearText = null;
-    this.steps = [];
     this.build();
   }
 
@@ -107,11 +112,18 @@ export class EntryGateDialog implements Scene {
     return year <= this.thisYear && year >= this.thisYear - MAX_AGE;
   }
 
-  private step(delta: number): void {
-    if (!this.inRange(this.year + delta)) return;
-    this.year += delta;
-    if (this.yearText) this.yearText.text = String(this.year);
-    for (const s of this.steps) s.g.alpha = this.inRange(this.year + s.delta) ? 1 : DISABLED_ALPHA;
+  /** Every decade with at least one selectable year, newest first. */
+  private decades(): number[] {
+    const out: number[] = [];
+    const oldest = Math.floor((this.thisYear - MAX_AGE) / 10) * 10;
+    for (let d = Math.floor(this.thisYear / 10) * 10; d >= oldest; d -= 10) out.push(d);
+    return out;
+  }
+
+  private yearsOf(decade: number): number[] {
+    const out: number[] = [];
+    for (let y = decade; y < decade + 10; y++) if (this.inRange(y)) out.push(y);
+    return out;
   }
 
   private build(): void {
@@ -133,6 +145,7 @@ export class EntryGateDialog implements Scene {
     const cardX = (this.w - cardW) / 2;
 
     const maxH = this.h * 0.96;
+    if (this.picking !== null) { this.buildPicker(cardX, cardW, cardHmin, maxH); return; }
     let L = this.measure(cardHmin, cardW);
     if (L.contentH > maxH) {
       L.title.destroy(); L.body.destroy();
@@ -155,7 +168,7 @@ export class EntryGateDialog implements Scene {
     const innerW = cardW - 2 * padX;
 
     if (this.showsStepper() && L.dyStep !== undefined) {
-      this.buildStepper(innerX, cardY + L.dyStep, innerW, L.stepH!, L.unit);
+      this.buildYearField(innerX, cardY + L.dyStep, innerW, L.stepH!);
     }
 
     if (this.showsLinks() && L.dyLink1 !== undefined) {
@@ -186,7 +199,7 @@ export class EntryGateDialog implements Scene {
     return this.mode.consent !== null && !this.confirming;
   }
 
-  /** Whether the currently-selected stepper year (if asked) needs the underage confirm step. */
+  /** Whether the currently picked year (if asked) needs the underage confirm step. */
   private isUnderage(): boolean {
     return this.mode.age === 'ask' && this.declaredAge() < this.minAge;
   }
@@ -239,51 +252,87 @@ export class EntryGateDialog implements Scene {
     this.container.addChild(link);
   }
 
-  /** `[-10] [-1]  YEAR  [+1] [+10]`, centred in the card — identical widget to AgeGateDialog's. */
-  private buildStepper(x0: number, y: number, rowW: number, hStep: number, unit: number): void {
-    const stepW = Math.round(rowW * 0.17);
-    const gap = Math.round(rowW * 0.025);
-    const yearW = rowW - 4 * stepW - 4 * gap;
-    const fs = snapFont(Math.round(hStep * 0.42));
-
-    let x = x0;
-    for (const d of [-10, -1]) {
-      this.addStep(x, y, stepW, hStep, d, fs);
-      x += stepW + gap;
-    }
-
-    const year = txt(String(this.year), snapFont(Math.round(unit * 0.085)), C.dark, true);
-    year.anchor.set(0.5, 0.5);
-    year.x = x + yearW / 2; year.y = y + hStep / 2;
-    this.container.addChild(year);
-    this.yearText = year;
-    x += yearW + gap;
-
-    for (const d of [1, 10]) {
-      this.addStep(x, y, stepW, hStep, d, fs);
-      x += stepW + gap;
-    }
+  /** The birth-year row: one field showing the current year; tapping it opens the picker. */
+  private buildYearField(x0: number, y: number, rowW: number, hStep: number): void {
+    const fs = snapFont(Math.round(hStep * 0.4));
+    this.addButton(x0, y, rowW, hStep, t('entryGate.yearPick', { year: this.year }), null, C.paper, C.dark, fs, 4,
+      () => { this.picking = 'decade'; this.rebuild(); });
+    // A small "opens a list" caret at the right edge: drawn, not a glyph, so no font can drop it.
+    const r = Math.round(hStep * 0.16);
+    const cx = x0 + rowW - Math.round(hStep * 0.45);
+    const cy = y + hStep / 2;
+    const caret = new PIXI.Graphics();
+    caret.beginFill(C.dark).drawPolygon([cx - r, cy - r / 2, cx + r, cy - r / 2, cx, cy + r * 0.7]).endFill();
+    this.container.addChild(caret);
   }
 
-  private addStep(x: number, y: number, wBtn: number, hBtn: number, delta: number, fs: number): void {
-    const label = (delta > 0 ? '+' : '−') + String(Math.abs(delta));
-    const g = new PIXI.Container();
-    g.x = x; g.y = y;
-    const panel = sketchPanel(wBtn, hBtn, { fill: C.paper, border: C.dark, width: 2.4, seed: seedFor(wBtn, hBtn, 2) });
-    panel.eventMode = 'static';
-    panel.cursor = 'pointer';
-    panel.on('pointertap', tapHandler(() => this.step(delta)));
-    g.addChild(panel);
-    drawButtonLabel(g, 0, 0, wBtn, hBtn, label, null, C.dark, fs);
-    g.alpha = this.inRange(this.year + delta) ? 1 : DISABLED_ALPHA;
-    this.container.addChild(g);
-    this.steps.push({ g, delta });
+  /**
+   * The picker card: a decade grid, or one decade's years, plus a Back chip. 4 columns, at most
+   * 3 rows (11 decades + Back, or 10 years + Back), shrunk to fit a short landscape screen.
+   */
+  private buildPicker(cardX: number, cardW: number, unit: number, maxH: number): void {
+    const decadeMode = this.picking === 'decade';
+    const chips: Array<{ label: string; selected: boolean; onTap: () => void }> = decadeMode
+      ? this.decades().map((d) => ({
+          label: t('entryGate.decade', { decade: d }),
+          selected: Math.floor(this.year / 10) * 10 === d,
+          onTap: () => { this.picking = d; this.rebuild(); },
+        }))
+      : this.yearsOf(this.picking as number).map((yr) => ({
+          label: String(yr),
+          selected: yr === this.year,
+          onTap: () => { this.year = yr; this.picking = null; this.rebuild(); },
+        }));
+    chips.push({
+      label: t('entryGate.pickBack'),
+      selected: false,
+      onTap: () => { this.picking = decadeMode ? null : 'decade'; this.rebuild(); },
+    });
+
+    const padX = Math.round(cardW * 0.07);
+    const innerW = cardW - 2 * padX;
+    const titleLabel = t(decadeMode ? 'entryGate.pickDecade' : 'entryGate.pickYear');
+    const titleSize = snapFont(Math.round(unit * 0.06));
+    let title = txt(titleLabel, titleSize, C.dark, true);
+    const titleW = Math.max(title.width, monospaceWidth(titleLabel, titleSize));
+    if (titleW > innerW) {
+      const fitted = fitFont(titleSize, titleW, innerW);
+      if (fitted < titleSize) { title.destroy({ texture: true, baseTexture: true }); title = txt(titleLabel, fitted, C.dark, true); }
+    }
+    title.anchor.set(0.5, 0);
+
+    const cols = 4;
+    const rows = Math.ceil(chips.length / cols);
+    const gapX = Math.round(innerW * 0.03);
+    const gapY = Math.round(unit * 0.03);
+    const padTop = Math.round(unit * 0.06);
+    const gapTitle = Math.round(unit * 0.05);
+    const padBottom = Math.round(unit * 0.06);
+    const fixedH = padTop + title.height + gapTitle + padBottom + gapY * (rows - 1);
+    const chipH = Math.max(24, Math.min(Math.round(unit * 0.11), Math.floor((maxH - fixedH) / rows)));
+    const chipW = Math.floor((innerW - gapX * (cols - 1)) / cols);
+    const cardH = Math.round(fixedH + chipH * rows);
+    const cardY = (this.h - cardH) / 2;
+
+    const card = sketchPanel(cardW, cardH, { fill: C.paper, border: C.dark, width: 2.6, seed: seedFor(cardW, cardH, 5) });
+    card.x = cardX; card.y = cardY;
+    this.container.addChild(card);
+    title.x = this.w / 2; title.y = cardY + padTop;
+    this.container.addChild(title);
+
+    const fs = snapFont(Math.round(chipH * 0.38));
+    const gridY = cardY + padTop + title.height + gapTitle;
+    chips.forEach((c, i) => {
+      const x = cardX + padX + (i % cols) * (chipW + gapX);
+      const y = gridY + Math.floor(i / cols) * (chipH + gapY);
+      this.addButton(x, y, chipW, chipH, c.label, null, c.selected ? C.dark : C.paper, c.selected ? 0xffffff : C.dark, fs, 6 + i, c.onTap);
+    });
   }
 
   /**
    * Build the title/body text nodes at `unit` and return every vertical offset they imply, exactly
    * as {@link ConsentDialog.measure} does (same caller contract: measure, reject if too tall, and
-   * measure again at a smaller scale — see `build`'s two-pass call). The stepper/links/button rows
+   * measure again at a smaller scale — see `build`'s two-pass call). The year-field/links/button rows
    * are reserved by height only here (drawn later in `build`, which needs live refs to the year
    * label for `step()` to update in place).
    */

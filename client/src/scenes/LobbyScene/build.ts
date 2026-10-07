@@ -21,7 +21,7 @@ import { drawMainContent } from './mainContent';
 import { drawBottomNav } from './bottomNav';
 import { buildVsLayer } from './vsOverlay';
 import { onStartPressed } from './matchState';
-import { dispatchHit, runHit, type Hit } from '../../ui/hits';
+import { dispatchHit, inRect, runHit, type Hit } from '../../ui/hits';
 import type { Rect } from '../../layout/ILayout';
 
 export class BuildPanel {
@@ -79,6 +79,13 @@ export class BuildPanel {
   handleDown(x: number, y: number): void {
     const core = this.core;
     if (core.state !== 'idle') return;
+    // Entry notice strip (IPlatform.entryNoticeOnly): non-blocking, so it claims ONLY taps inside its
+    // own rectangle — and claims all of those, so a tap on the strip's padding never lands on the
+    // lobby button drawn underneath it. Checked first because it is drawn on top of everything.
+    if (core.noticeRect && inRect(x, y, core.noticeRect)) {
+      dispatchHit(core.noticeHits, x, y);
+      return;
+    }
     // First-time feature guide (§4.1): any tap dismisses it and continues navigation. Checked before
     // other hits, and it is a dismissal rather than a button — `back`, and it swallows the tap.
     // Modelled as a Hit rather than a bare playSfx even though there is no rect to test: runHit is

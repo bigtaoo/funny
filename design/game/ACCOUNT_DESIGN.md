@@ -132,7 +132,7 @@ POST /auth/bind     { method:'password'|'oauth'|'wx', ...credential }
 ```
 initI18n
   → 建 SaveManager（仍离线优先，loadLocal 同步可玩）
-  → seen_intro? : goIntro（首次故事，不变）
+  → seen_intro? : goIntro（首次故事；2026-10-07 起已移出启动流程，首启直接进入口门，见 ONBOARDING_DESIGN §11.7）
   → goIntro 完成 / 非首次：
       微信平台 → 静默 wx.login → goLobby（A6，跳过登录界面）
       其他平台 →

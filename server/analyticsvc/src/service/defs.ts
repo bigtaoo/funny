@@ -87,6 +87,29 @@ export interface BootFunnelRow {
   consents: number;
   /** sessions / boots — the share of launches that got far enough to report anything at all. */
   reach_rate?: number;
+  /**
+   * Anonymous tutorial-step ticks from launches WITHOUT analytics consent (COMPLIANCE_GLOBAL §3.3,
+   * `?t=` on `GET /analytics/config`): how far the players nothing else can see got into the first
+   * minute. Launch counts per step, not devices; only steps that ticked are present. Consented
+   * players are not in here — their real `tutorial_step` events are.
+   */
+  anon_tutorial?: Partial<Record<AnonTutorialStep, number>>;
+}
+
+/**
+ * The tutorial steps the anonymous counter accepts (`?t=` on `GET /analytics/config`). A fixed
+ * allow-list for the same reason `?p=` has one: the value becomes part of a document `_id` on an
+ * endpoint with no auth, so anything else is dropped rather than stored. Mirrors the client's
+ * `AnonymousTutorialStep` (client/src/analytics/index.ts) and the v2 tutorial sequence
+ * (ONBOARDING_DESIGN §11.9).
+ */
+export const ANON_TUTORIAL_STEPS = [
+  'tutorial_start', 'beat_unit', 'beat_building', 'beat_spell', 'graduate', 'tutorial_complete',
+] as const;
+export type AnonTutorialStep = (typeof ANON_TUTORIAL_STEPS)[number];
+
+export function isAnonTutorialStep(s: string): s is AnonTutorialStep {
+  return (ANON_TUTORIAL_STEPS as readonly string[]).includes(s);
 }
 
 /**
@@ -146,8 +169,8 @@ export interface OnboardingStep {
 }
 
 /**
- * Ordered onboarding funnel: open → intro seen → tutorial start → tutorial finished → first real battle →
- * first clear. Drop-off between adjacent steps localises where day-1 players quit; tutorial_complete ÷
+ * Ordered onboarding funnel: open → tutorial start → tutorial finished → first real battle → first clear →
+ * story seen. Drop-off between adjacent steps localises where day-1 players quit; tutorial_complete ÷
  * tutorial_start is the tutorial completion rate.
  *
  * Every step here is derived from a 100%-sampled event (see DEFAULT_CONFIG) so the counts are directly
@@ -159,13 +182,15 @@ export interface OnboardingStep {
  */
 export const ONBOARDING_STEPS: OnboardingStep[] = [
   { key: 'session_start', reached: () => true }, // baseline = whole cohort (all had a first session_start)
-  // intro_complete/intro_skip (design-doc-audit-2026-07) are 100%-sampled like the rest of this funnel —
-  // unlike screen_view (5%), they belong here instead of being excluded per the comment above.
-  { key: 'intro_seen', reached: (e) => e.has('intro_complete') || e.has('intro_skip') },
   { key: 'tutorial_start', reached: (e) => e.has('tutorial_start') },
   { key: 'tutorial_complete', reached: (e) => e.has('tutorial_complete') },
   { key: 'first_battle', reached: (e) => e.has('game_start') }, // first non-tutorial battle
   { key: 'first_clear', reached: (e) => e.has('level_complete') }, // first real level clear
+  // intro_complete/intro_skip (design-doc-audit-2026-07) are 100%-sampled like the rest of this funnel —
+  // unlike screen_view (5%), they belong here instead of being excluded per the comment above. Last, not
+  // second: since ONBOARDING_DESIGN §11.7 the story is no longer a first-launch scene but a one-line card
+  // on the first campaign-map open, which a new player reaches after the tutorial and (usually) ch1_lv1.
+  { key: 'intro_seen', reached: (e) => e.has('intro_complete') || e.has('intro_skip') },
 ];
 
 // Lifecycle/plumbing events excluded from the "which action did they take" breakdown (screen_view is
@@ -179,12 +204,13 @@ export const EMPTY_STEP_KEYS: Set<string> = new Set();
 // Fine-grained breakdown of *where inside the tutorial* a new player quits — as opposed to the coarse
 // tutorial_start/tutorial_complete pair in ONBOARDING_STEPS above. Driven by a `tutorial_step` event
 // (100% sampled, see DEFAULT_CONFIG) whose `props.step_key` matches one of the keys below in order;
-// emitted by client/src/render/TutorialDirector.ts via GameNav.goTutorial().
+// emitted by client/src/render/TutorialDirector.ts via GameNav.goTutorial(). Since the 2026-10 first-minute
+// rework (ONBOARDING_DESIGN §11.9) the old orientation_1..7 / freeplay keys are retired — they no longer
+// exist in the client, and older events carrying them simply match no step here.
 export const TUTORIAL_ORDERED_KEYS = [
   'tutorial_start',
-  'orientation_1', 'orientation_2', 'orientation_3', 'orientation_4', 'orientation_5', 'orientation_6', 'orientation_7',
   'beat_unit', 'beat_building', 'beat_spell',
-  'freeplay',
+  'graduate',
   'tutorial_complete',
 ] as const;
 

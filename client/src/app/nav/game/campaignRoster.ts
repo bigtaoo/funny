@@ -1,5 +1,5 @@
 // Campaign / battle / roster / equipment navigation: local PvP-vs-AI, campaign map + level prep +
-// campaign match, card roster, equipment, tutorial. Split out of createGameNav (see game.ts).
+// campaign match, card roster, equipment. Split out of createGameNav (see game.ts).
 //
 // Campaign and roster stay in one factory (not two): they have a genuine two-way call
 // dependency inside the original closure — goCampaignMap.onOpenEquipment calls goEquipment/
@@ -8,7 +8,6 @@
 // for no real benefit; see claudedocs/client-modules.md's split-form note for this file.
 import * as analytics from '../../../analytics';
 import { getLevel, CAMPAIGN_LEVEL_ORDER, achievementStatDelta, type AIDifficulty } from '../../../game';
-import { TUTORIAL_LEVEL_ID } from '@nw/engine';
 import { computeStars, buildStarContext } from '@nw/engine/campaign/stars';
 import { t, type TranslationKey } from '../../../i18n';
 import { allEquippedSkins, skinEquipKey } from '../../../game/meta/skinDefs';
@@ -26,12 +25,13 @@ import { buildEquipmentActions } from './equipmentActions';
 import { createStaminaAd } from './staminaAd';
 import type { MountOpts } from '../../AppViews';
 import type { AppCtx, Nav } from '../../appCtx';
-import { TOKEN_KEY, TUTORIAL_DONE_FLAG } from '../../appConstants';
+import { TOKEN_KEY, SEEN_INTRO_FLAG } from '../../appConstants';
 import { pickPracticeDifficulty } from '../lobby';
 import { resolveRealLayerInterlude } from '../../../scenes/realLayerInterludeArt';
+import openingStoryArtUrl from '../../../assets/story/intro_notebook.png';
 
 type CampaignRosterNav = Pick<Nav,
-  'goGame' | 'goCampaignMap' | 'goLevelPrep' | 'goCardRoster' | 'goEquipment' | 'goCampaign' | 'goTutorial'>;
+  'goGame' | 'goCampaignMap' | 'goLevelPrep' | 'goCardRoster' | 'goEquipment' | 'goCampaign'>;
 
 /** See goCardRoster's SLG-fetch comment. */
 const CARD_ROSTER_SLG_BUDGET_MS = 2500;
@@ -119,6 +119,19 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
       // PvE is server-authoritative: clearing / unlocking new levels requires an online connection (§8 decision 4). Offline, only previously unlocked levels can be replayed; new unlocks are gated.
       isOnline: () => saveManager.online(),
       getPendingLevels: () => saveManager.getPendingClears().map((p) => p.levelId),
+      // The opening story, compressed to one card, the first time the map opens
+      // (ONBOARDING_DESIGN §11.7) — no longer a 7-line scene in front of the first screen.
+      // SEEN_INTRO_FLAG is shared with the old first-launch intro on purpose: a save that already
+      // sat through that has been told the story and doesn't get the card. The funnel's
+      // `intro_seen` step reads these two events (analyticsvc ONBOARDING_STEPS).
+      getStoryCard: () => saveManager.getFlag(SEEN_INTRO_FLAG) ? null : {
+        illustrationUrl: openingStoryArtUrl,
+        text: t('story.card'),
+        onDone(skipped: boolean) {
+          analytics.track(skipped ? 'intro_skip' : 'intro_complete', {});
+          saveManager.setFlag(SEEN_INTRO_FLAG, true);
+        },
+      },
     });
   }
 
@@ -147,6 +160,10 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
       levelNumber,
       objective: level.objective,
       ...(level.rewards ? { rewards: level.rewards } : {}),
+      // Both optional per level, so what stands between a player and a level is data: ch1_lv1 — the
+      // first real level, entered straight from the tutorial — carries neither (ONBOARDING_DESIGN
+      // §11.7). Its chapter-intro text moved to `story.outroKey` and plays after the win instead;
+      // every later level keeps its brief, by which point the player has chosen to be here.
       ...(level.briefKey ? { brief: t(level.briefKey as TranslationKey) } : {}),
       ...(level.story?.introKey ? { intro: t(level.story.introKey as TranslationKey) } : {}),
       staminaCost,
@@ -437,35 +454,5 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
     });
   }
 
-  /**
-   * Dedicated tutorial level ch0_tutorial (FTUE step ⑤, ONBOARDING_DESIGN §3). Never fails: the
-   * director owns the endgame, so winner is always the local player. Both completion and skip write
-   * tutorial_done then return to the lobby; does not count toward campaign progress (recordClear is
-   * not called).
-   */
-  function goTutorial(): void {
-    const level = getLevel(TUTORIAL_LEVEL_ID);
-    if (!level) { nav.goLobby(); return; }  // If the tutorial level is missing, skip silently rather than blocking new players.
-    state.inLobby = false;
-    platform.onGameplayStart();
-    analytics.track('tutorial_start', { level_id: TUTORIAL_LEVEL_ID });
-    views.showGame({
-      onGameEnd(_winner, _stats, _replay) {
-        saveManager.setFlag(TUTORIAL_DONE_FLAG, true);
-        analytics.track('tutorial_complete', { level_id: TUTORIAL_LEVEL_ID });
-        // §5 first-win hook: graduation = first win; the daily check-in is surfaced via the lobby red dot, so no additional coin source is added here.
-        nav.goLobby({ fade: true }); // exiting a match — one of the transitions that cross-fade
-      },
-      onExitToLobby() {  // Skip tutorial
-        saveManager.setFlag(TUTORIAL_DONE_FLAG, true);
-        analytics.track('tutorial_skip', { step: 'tutorial' });
-        nav.goLobby({ fade: true }); // exiting a match — one of the transitions that cross-fade
-      },
-      onTutorialStep(stepKey) {
-        analytics.track('tutorial_step', { level_id: TUTORIAL_LEVEL_ID, step_key: stepKey });
-      },
-    }, { level, tutorial: true });
-  }
-
-  return { goGame, goCampaignMap, goLevelPrep, goCardRoster, goEquipment, goCampaign, goTutorial };
+  return { goGame, goCampaignMap, goLevelPrep, goCardRoster, goEquipment, goCampaign };
 }

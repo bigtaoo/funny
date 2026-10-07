@@ -5,7 +5,11 @@ import { netLog } from '../net/log';
 
 export const log = netLog('app');
 
-/** flags key — set after the first-launch intro has been seen. */
+/**
+ * flags key — the player has been told the opening story. Set when the one-shot story card on the
+ * first campaign-map open is dismissed (ONBOARDING_DESIGN §11.7); before that redesign, by the
+ * full first-launch IntroScene — so a save that saw the old intro already has it and skips the card.
+ */
 export const SEEN_INTRO_FLAG = 'seen_intro';
 /** Set after the tutorial is completed or skipped; prevents auto-entry afterwards. Clearing it via "replay tutorial" in settings allows re-entry (ONBOARDING_DESIGN §3.4). */
 export const TUTORIAL_DONE_FLAG = 'tutorial_done';

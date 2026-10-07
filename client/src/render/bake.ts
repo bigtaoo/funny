@@ -64,6 +64,11 @@ export function setDesignScale(scale: number): void {
   if (Number.isFinite(scale) && scale > 0) designScale = scale;
 }
 
+/** Design px → CSS px factor last reported by {@link setDesignScale} (1 before the first layout). */
+export function currentDesignScale(): number {
+  return designScale;
+}
+
 /**
  * Quantization step for {@link pageBakeResolution}: sixteenths.
  *
