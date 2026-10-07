@@ -97,7 +97,7 @@ export type ServerMsg =
       winnerSide: number;
       reason: string;
       mismatch: boolean;
-      elo?: { delta: number; after: number; rankAfter: string };
+      elo?: { delta: number; after: number; rankAfter: string; protectedGame?: number; protectedTotal?: number };
     }
   | { case: 'room_error'; code: string; message: string }
   | { case: 'pong' };
@@ -210,7 +210,15 @@ export function encodeServer(msg: ServerMsg): Uint8Array {
           winnerSide: msg.winnerSide,
           reason: msg.reason,
           mismatch: msg.mismatch,
-          elo: msg.elo ? { delta: msg.elo.delta, after: msg.elo.after, rankAfter: msg.elo.rankAfter } : undefined,
+          elo: msg.elo
+            ? {
+                delta: msg.elo.delta,
+                after: msg.elo.after,
+                rankAfter: msg.elo.rankAfter,
+                protectedGame: msg.elo.protectedGame ?? 0,
+                protectedTotal: msg.elo.protectedTotal ?? 0,
+              }
+            : undefined,
         },
       };
       break;

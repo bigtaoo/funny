@@ -11,7 +11,7 @@ import { buildDecorCLayer } from '../render/decorCLayer';
 import { FS } from '../render/fontScale';
 import {
   buildMarginDeco, buildBadgeMedallion, addMoodDeco, addProfileLine, addVersusLine,
-  addPrimaryButton, addSecondaryButton, addHeader,
+  addPrimaryButton, addSecondaryButton, addHeader, addNewbieProtectLine,
 } from './ResultScene/builders';
 
 /** Optional player identities for the result screen's tap-to-view profile popup. */
@@ -25,6 +25,9 @@ export interface EloResult {
   delta: number;
   after: number;
   rankAfter: string;
+  /** New-player protection: 1-based index of this game in the protected window; 0/absent = unprotected. */
+  protectedGame?: number;
+  protectedTotal?: number;
 }
 
 /** The "come back tomorrow" check-in hook (RETENTION_LAUNCH_PLAN.md §3.3) — see AppViews.ts's doc. */
@@ -359,6 +362,9 @@ export class ResultScene implements Scene {
       eloLine.y = headerBottom + h * 0.02;
       this.container.addChild(eloLine);
       headerBottom = eloLine.y + eloLine.height;
+      if (this.elo.protectedGame && this.elo.protectedTotal) {
+        headerBottom = addNewbieProtectLine(this.container, w, h, headerBottom, this.elo.protectedGame, this.elo.protectedTotal);
+      }
     }
 
     // Tap-to-view profile lines (netplay only — local then "vs opponent").

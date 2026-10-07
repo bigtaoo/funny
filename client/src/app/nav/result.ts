@@ -234,7 +234,9 @@ export function createResultNav(ctx: AppCtx): ResultNav {
       onNetState:   (s) => view.applyNetState(s),
       onPeerDc:     (p) => view.applyPeerDc(p),
       onMatchOver:  (m) => {
-        lastElo = m.elo ? { delta: m.elo.delta, after: m.elo.after, rankAfter: m.elo.rankAfter } : undefined;
+        lastElo = m.elo
+          ? { delta: m.elo.delta, after: m.elo.after, rankAfter: m.elo.rankAfter, protectedGame: m.elo.protectedGame, protectedTotal: m.elo.protectedTotal }
+          : undefined;
         view.applyMatchOver(m);
         if (pending) finishNet(pending.winner, pending.stats, lastElo, pending.replay);
       },

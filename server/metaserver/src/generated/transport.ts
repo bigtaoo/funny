@@ -253,6 +253,13 @@ export interface EloDelta {
   delta: number;
   after: number;
   rankAfter: string;
+  /**
+   * New-player protection (SEASON_DESIGN_IMPL_SPEC.md §15.5, 2026-10-07): 1-based index of this game within the
+   * account's protected window (first N settled ranked games never cost ELO); 0 = not a protected game.
+   */
+  protectedGame: number;
+  /** window size N; 0 when protected_game is 0 */
+  protectedTotal: number;
 }
 
 export interface MatchOver {
@@ -2425,7 +2432,7 @@ export const PeerDc: MessageFns<PeerDc> = {
 };
 
 function createBaseEloDelta(): EloDelta {
-  return { delta: 0, after: 0, rankAfter: "" };
+  return { delta: 0, after: 0, rankAfter: "", protectedGame: 0, protectedTotal: 0 };
 }
 
 export const EloDelta: MessageFns<EloDelta> = {
@@ -2438,6 +2445,12 @@ export const EloDelta: MessageFns<EloDelta> = {
     }
     if (message.rankAfter !== "") {
       writer.uint32(26).string(message.rankAfter);
+    }
+    if (message.protectedGame !== 0) {
+      writer.uint32(32).uint32(message.protectedGame);
+    }
+    if (message.protectedTotal !== 0) {
+      writer.uint32(40).uint32(message.protectedTotal);
     }
     return writer;
   },
@@ -2473,6 +2486,22 @@ export const EloDelta: MessageFns<EloDelta> = {
           message.rankAfter = reader.string();
           continue;
         }
+        case 4: {
+          if (tag !== 32) {
+            break;
+          }
+
+          message.protectedGame = reader.uint32();
+          continue;
+        }
+        case 5: {
+          if (tag !== 40) {
+            break;
+          }
+
+          message.protectedTotal = reader.uint32();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -2490,6 +2519,8 @@ export const EloDelta: MessageFns<EloDelta> = {
     message.delta = object.delta ?? 0;
     message.after = object.after ?? 0;
     message.rankAfter = object.rankAfter ?? "";
+    message.protectedGame = object.protectedGame ?? 0;
+    message.protectedTotal = object.protectedTotal ?? 0;
     return message;
   },
 };

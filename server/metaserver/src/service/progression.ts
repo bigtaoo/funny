@@ -15,11 +15,14 @@ import {
   computeEloDelta,
   eloToRank,
   accrueRetentionTask,
+  applyNewbieProtection,
+  newbieProtectedGame,
 } from '@nw/shared';
 import { getOrCreateSave } from '../save.js';
 import { getCurrentSeason } from '../ladderSeason.js';
 import { mirrorCoins } from '../economy.js';
 import { recordMaterialGrants } from '../material.js';
+import { newbieProtectEligible, settledRankedGames } from '../newbieProtect.js';
 import type { MetaHandlers } from '../generated/routes.gen.js';
 import { accountIdOf, clientPlatformOf, type MetaCore } from './base.js';
 
@@ -240,11 +243,16 @@ export class ProgressionService implements ProgressionHandlers {
      * through /internal/match/report). Always credits the 'pvp.match' daily task; ELO only moves while
      * the caller is below BOT_ELO_THRESHOLD, at a quarter of ranked K (BOT_ELO_K), throttled to one
      * accepted result per BOT_RESULT_MIN_GAP_MS so scripted spam can't out-pace the real 30s queue timeout.
+     * New-player protection (2026-10-07) applies here too: while the account is still inside its
+     * protected window (first NEWBIE_PROTECT_GAMES settled *real* ranked games) a bot-match loss costs
+     * no ELO. A bot match never uses up a protected slot — this path doesn't touch pvp.wins/losses/streak.
      */
     async submitBotResult(req: FastifyRequest, reply: FastifyReply) {
       const accountId = accountIdOf(req);
       const { won } = req.body as { won: boolean };
-      const { now } = this.core.deps;
+      const { now, cols } = this.core.deps;
+      // Only a loss can be protected, so wins skip the (botsvc-account) eligibility read entirely.
+      const protectEligible = !won && (await newbieProtectEligible(cols, accountId, undefined));
 
       let appliedDelta = 0;
       let resultElo = 0;
@@ -259,7 +267,9 @@ export class ProgressionService implements ProgressionHandlers {
         let lastBotResultAt = pvp.lastBotResultAt;
         if (!onCooldown && pvp.elo < BOT_ELO_THRESHOLD) {
           const { winner, loser } = computeEloDelta(pvp.elo, pvp.elo, { winnerK: BOT_ELO_K, loserK: BOT_ELO_K });
-          const after = Math.max(ELO_FLOOR, pvp.elo + (won ? winner : loser));
+          const protectedGame = protectEligible ? newbieProtectedGame(settledRankedGames(pvp)) : 0;
+          const { delta } = applyNewbieProtection(won ? winner : loser, pvp.streak, won, protectedGame);
+          const after = Math.max(ELO_FLOOR, pvp.elo + delta);
           appliedDelta = after - pvp.elo;
           elo = after;
           rank = eloToRank(after);

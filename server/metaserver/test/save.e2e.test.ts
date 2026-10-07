@@ -165,12 +165,13 @@ describe.skipIf(!mongo)('metaserver save-service e2e', () => {
     expect(aList[0]!.eloDelta).toBe(16);
     expect(typeof aList[0]!.opponentPublicId).toBe('string');
 
-    // Loser b's perspective: loss + eloDelta -16.
+    // Loser b's perspective: loss + eloDelta 0 — b is a brand-new account, so this is its first
+    // ranked game and new-player protection (first 3 settled ranked games never cost ELO) applies.
     const rb = await app.inject({
       method: 'GET', url: '/match/history', headers: { authorization: `Bearer ${b.token}` },
     });
     const bList = body(rb).data.matches as Array<Record<string, unknown>>;
     expect(bList[0]!.result).toBe('loss');
-    expect(bList[0]!.eloDelta).toBe(-16);
+    expect(bList[0]!.eloDelta).toBe(0);
   });
 });
