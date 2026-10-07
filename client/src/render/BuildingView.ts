@@ -11,6 +11,13 @@ import archerTexUrl from '../assets/buildings/game_arrow_tower.png';
 import { barSprite, setBarRatio } from './barSprite';
 
 const SPRITE_SIZE = 56;
+/** On-board building size (design px) — the drag's landing preview draws at the same size. */
+export const BUILDING_SPRITE_SIZE = SPRITE_SIZE;
+
+/** The board sprite of a building type — shared with the drag's landing preview. */
+export function buildingTextureUrl(type: BuildingType): string {
+  return (type === BuildingType.Barracks ? barracksTexUrl : archerTexUrl) as string;
+}
 const HP_BAR_Y    = 32;
 const HP_BAR_W    = 40;
 
