@@ -34,7 +34,7 @@ import { GachaScene, type GachaSceneCallbacks } from '../scenes/GachaScene';
 import { LoginScene, type LoginSceneCallbacks } from '../scenes/LoginScene';
 import { ResultScene } from '../scenes/ResultScene';
 import { ReplayScene, type ReplaySceneCallbacks } from '../scenes/ReplayScene';
-import { StatePlayerScene, type StatePlayerSceneCallbacks } from '../scenes/StatePlayerScene';
+import { StatePlayerScene, skinsForOwner, type StatePlayerSceneCallbacks } from '../scenes/StatePlayerScene';
 import type { StateReplay, EncodedStateReplay } from '../game/replay/StateReplay';
 import { SettingsScene, type SettingsSceneCallbacks } from '../scenes/SettingsScene';
 import { CampaignMapScene, type CampaignMapCallbacks } from '../scenes/CampaignMapScene';
@@ -67,7 +67,7 @@ import type { EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import { ScalingManager, createLayout } from '../layout/ScalingManager';
 import { InputManager } from '../inputSystem/InputManager';
 import type { ILayout } from '../layout/ILayout';
-import { enterBattle, DeferredSceneCalls } from './battleGate';
+import { enterBattle, enterReplay, DeferredSceneCalls } from './battleGate';
 import { enterWithAssets } from './assetGate';
 import { ViewportResizer } from './viewportResize';
 import { SceneMounts } from './sceneMounts';
@@ -308,13 +308,17 @@ export class PixiAppViews implements AppViews {
     cardInstances?: EngineCardInstance[], equipmentInv?: EngineEquipInv,
     siegeAcademy?: { hp: number; damage: number; siege: number },
   ): void {
-    this.mounts.volatile('ReplayScene', () => new ReplayScene(
+    // Never rebuilt (SceneMounts' volatile() list); gated like a battle — same UnitView (battleGate.enterReplay).
+    this.mounts.takeScreen();
+    void enterReplay({ app: this.app, manager: this.manager, input: this.input }, { equippedSkins }, () => this.mounts.timedBuild('ReplayScene', () => new ReplayScene(
       this.layout, this.input, replay, cb, level, equippedSkins, cardInstances, equipmentInv, siegeAcademy,
-    ));
+    )));
   }
 
   showStatePlayer(replay: StateReplay, cb: StatePlayerSceneCallbacks, encoded?: EncodedStateReplay): void {
-    this.mounts.volatile('StatePlayerScene', () => new StatePlayerScene(this.layout, replay, cb, encoded));
+    this.mounts.takeScreen();
+    const skins = { equippedSkins: skinsForOwner(replay, 0), opponentSkins: skinsForOwner(replay, 1) };
+    void enterReplay({ app: this.app, manager: this.manager, input: this.input }, skins, () => this.mounts.timedBuild('StatePlayerScene', () => new StatePlayerScene(this.layout, replay, cb, encoded)));
   }
 
   showResult(props: ResultViewProps): void {

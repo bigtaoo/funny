@@ -68,7 +68,7 @@ vi.mock('../src/assets/battleAssets', () => ({
 
 // Imported AFTER vi.mock (vitest hoists mock registration above all imports regardless of
 // physical order — same pattern as the file this replaced).
-import { enterBattle, DeferredSceneCalls } from '../src/app/battleGate';
+import { enterBattle, enterReplay, DeferredSceneCalls } from '../src/app/battleGate';
 import { ensureBattleAssets } from '../src/assets/battleAssets';
 import { enterWithAssets } from '../src/app/assetGate';
 
@@ -118,6 +118,31 @@ describe('enterBattle', () => {
     );
     await enterBattle(deps, {}, () => scene);
     expect(ensureBattleAssets).not.toHaveBeenCalled(); // never called: the warm was never invoked
+  });
+});
+
+describe('enterReplay', () => {
+  beforeEach(() => {
+    gateCalls.length = 0;
+    ensureCalls.length = 0;
+    vi.clearAllMocks();
+  });
+
+  // The replay players draw units through the same UnitView as a battle. Ungated, a shared-replay
+  // deep link (a cold first visit) spawned its opening units before any art loaded and showed them as
+  // procedural draft stick figures — reproduced in Chrome 2026-10-07, see unit-art-inventory.md §2.
+  it('runs the battle warm step with both sides’ skins before building the scene', async () => {
+    const opts = { equippedSkins: ['skin_shop_r1'], opponentSkins: ['skin_e2'] };
+    const built = await enterReplay(deps, opts, () => scene);
+    expect(built).toBe(scene);
+    expect(ensureBattleAssets).toHaveBeenCalledTimes(1);
+    expect(ensureCalls[0]![0]).toBe(opts);
+  });
+
+  it('swaps instantly (no cross-fade), like the volatile mounts it replaced', async () => {
+    await enterReplay(deps, {}, () => scene);
+    expect(enterWithAssets).toHaveBeenCalledTimes(1);
+    expect(gateCalls[0]!.opts?.fade).toBeFalsy();
   });
 });
 
