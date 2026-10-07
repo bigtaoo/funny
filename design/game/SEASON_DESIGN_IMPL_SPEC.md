@@ -335,37 +335,48 @@ migrateSaveIfStale 自己（D3）→ bp = save.battlePass（缺省视为未参�
 
 测试：沿用既有 `battlePassScroll.ui.ts`/`battlePassClaimOverlay.ui.ts`（19 例全绿）+ `tsc --noEmit` 通过；未加新用例断言描边本身（现有 headless PIXI 适配器不产出像素，只做结构冒烟）。
 
-### 15.5 新手保护：新号前 3 场排位不掉分（2026-10-07）
+### 15.5 掉分保护：新手 3 场 + 每日 3 场（2026-10-07）
 
-**用户拍板**：新账号的前 3 场排位，输了不扣 ELO。动机：新号 1000 分入场、匹配纯按 ELO 邻近（`matchsvc/src/Matchmaking.ts`），前几场常撞上在 1000 附近徘徊的老号（含 botsvc 常驻机器人号），开局连败 + 连败加速（§15.2）会把新人一口气压进更低分段，体验最差的正是留存最关键的头几局。此前全仓没有任何定级赛 / 新手处理。
+> 同日两版：上午先落地「新号前 3 场排位不掉分」（新手保护，commit `9ccd6fb4d`）；当天用户追加「每天前 3 场排位输了不扣分」（每日保护），并拍板**两者叠加**而不是用每日规则取代新手规则——新号首日因此有 6 场保护。本节是叠加后的权威版本。
+
+**用户拍板**：
+- **新手保护**：新账号的前 3 场排位，输了不扣 ELO。动机：新号 1000 分入场、匹配纯按 ELO 邻近（`matchsvc/src/Matchmaking.ts`），前几场常撞上在 1000 附近徘徊的老号（含 botsvc 常驻机器人号），开局连败 + 连败加速（§15.2）会把新人一口气压进更低分段，体验最差的正是留存最关键的头几局。此前全仓没有任何定级赛 / 新手处理。
+- **每日保护**：每个玩家每天的前 3 场排位，输了不扣分、赢了照常加分；这 3 场不论胜负都算。动机：给高分段玩家一个「每天至少打 3 场」的理由——高分号最怕的就是掉分，免费的 3 场让每日上线打几局没有心理成本。
+- **两者叠加、每局最多用一个名额**：先用新手名额，用完再用每日名额。所以新号第 1 天：第 1–3 局新手、第 4–6 局每日、第 7 局起正常；第 2 天起每天 3 局每日。
 
 **规则（权威在 `server/shared/src/ladder.ts`）**：
 
 | 项 | 规则 |
 |---|---|
-| 窗口 | `NEWBIE_PROTECT_GAMES = 3`：账号**已结算**的前 3 场排位。胜、负都占名额（赢了照常加分，也算用掉一场）。 |
-| 什么算"一场" | 只认真正走完 `settleElo` 的排位：`/internal/match/report` 的 `mode=ranked` 且有胜方、非 `mismatch`，或 `mismatch` 经 peer judge 判出胜负的那一路。平局 / 作废 / hash 不一致且未裁决 → 不结算 ELO、不动 `wins/losses`，**不占名额**。 |
-| 计数来源 | **不新增字段、不做迁移**：直接用 `pvp.wins + pvp.losses`。核过：这两个字段只有 ranked 结算（`eloSettlement.ts applyPvp`）会写；终身累计，赛季迁移 `migrateIfStale` 原样带过去不清零；PUT /save 已删，客户端写不进来。所以它就是"已结算排位场数"，信号可靠。`newbieProtectedGame(n)` 返回本局是窗口里的第几场（1..3），出窗口返回 0。 |
-| 输的那场 | delta 记 0（不掉分），**不推进连败**：`streak = min(prev, 0)`——会打断连胜（输就是输），但不开启 / 不加深连败，免得窗口一结束第 4 场带着 -3 连败被 ×1.6 的连败倍率放大。 |
+| 名额池 | 新手池 `NEWBIE_PROTECT_GAMES = 3`（账号**已结算**的前 3 场排位，终身一次）；每日池 `DAILY_PROTECT_GAMES = 3`（每个服务器 UTC 日前 3 场**没用新手名额**的已结算排位）。`nextProtectSlot(settled, dailyProtect, dayKey)` 按「新手 → 每日 → 无」返回本局用哪个池的第几号（`{ kind, game, total }`），`null` = 不保护。 |
+| 什么算"一场" | 只认真正走完 `settleElo` 的排位：`/internal/match/report` 的 `mode=ranked` 且有胜方、非 `mismatch`，或 `mismatch` 经 peer judge 判出胜负的那一路。胜、负都占名额（赢了照常加分，也算用掉一场）。平局 / 作废 / hash 不一致且未裁决 → 不结算 ELO、不动计数，**不占名额**。 |
+| 日界 | **服务器 UTC 自然日**，复用 `server/shared/src/retention.ts makeDayKey`（`toISOString().slice(0,10)`）——每日任务 / 签到判「今天」用的就是它（RETENTION_DESIGN §3 R2：用服务器 UTC 防跨时区刷），PvE 每日奖励上限、广告上限、胜场金币上限的 `dayKey` 也是同一个 UTC 日。客户端镜像同名函数 `client/src/game/meta/retention.ts makeDayKey`。 |
+| 新手计数 | **不新增字段**：直接用 `pvp.wins + pvp.losses`。这两个字段只有 ranked 结算（`eloSettlement.ts applyPvp`）会写；终身累计，赛季迁移 `migrateIfStale` 原样带过去不清零。`newbieProtectedGame(n)` 返回本局是新手池第几场（1..3），用完返回 0。 |
+| 每日计数 | 新字段 `save.pvp.dailyProtect = { dayKey, used }`（形状对齐 `retention.daily.dayKey`）。**只有用了每日名额的那局**才写它（`consumeDailyProtect` → `{ dayKey: 今天, used: game }`）；用新手名额或不保护的局原样不动。`dayKey` 不是今天 ⇒ 视为 0（**惰性重置**，不需要定时任务）。字段缺省 = 从没用过。 |
+| 输的那场 | delta 记 0（不掉分），**不推进连败**：`applyLossProtection` 给出 `streak = min(prev, 0)`——会打断连胜（输就是输），但不开启 / 不加深连败，免得保护一结束下一局带着 -3 连败被 ×1.6 的连败倍率放大。 |
 | 赢的那场 | 完全按原公式（含连胜倍率）结算，不受影响。 |
-| 对手 | 不受影响：`computeEloDelta` 先按双方真实状态算好 delta，保护只改被保护一侧自己那半。这让该局非零和（老号赢新号照常 +16、新号 -0），与 §15.2 的"故意非零和"同一取向；3 场 × 每号的通胀量可忽略。 |
-| 老账号 | 同一规则直接适用：已打满 3 场的（绝大多数）天然不受保护；上线前只打过 1–2 场的老号拿剩下的场次。不做一次性迁移、不区分"上线前/后"——按"账号的前 3 场"字面执行最简单，也没有可被利用的边界。 |
-| 机器人号 | botsvc 常驻号（`bot-0001`..，`accounts.deviceId` 以 `bot-` 开头，`activityDays.ts BOT_DEVICE_ID_PATTERN`，与留存统计排除机器人用的是同一判据）**永不受保护**，胜负两侧都不打标签。判定在 `metaserver/src/newbieProtect.ts newbieProtectEligible`：save 已显示 ≥3 场就直接返回 false、不读 accounts（老号零额外开销）；否则一次带 projection 的 `accounts.findOne`。读失败**放行**（save 已经说明是新号，错保护一个机器人 ≤3 场的代价远小于让新人白掉分）。 |
+| 对手 | 不受影响：`computeEloDelta` 先按双方真实状态算好 delta，保护只改被保护一侧自己那半。 |
+| 老账号 | 同一规则直接适用，不做迁移：已打满 3 场的老号只剩每日池；上线前只打过 1–2 场的老号先拿剩下的新手场次。 |
+| 机器人号 | botsvc 常驻号（`bot-0001`..，`accounts.deviceId` 以 `bot-` 开头，`activityDays.ts BOT_DEVICE_ID_PATTERN`，与留存统计排除机器人用的是同一判据）**两个池都永不受保护**，胜负两侧都不打标签、不写 `dailyProtect`。判定在 `metaserver/src/eloProtect.ts eloProtectEligible`：save 已显示「新手池用完且今天每日池用完」就直接返回 false、不读 accounts（老号每天第 4 局起零额外开销）；否则一次带 projection 的 `accounts.findOne`。读失败**放行**（错保护一个机器人几局的代价远小于让真人在保护局里白掉分）。 |
+| 客户端不可写 | 通用写存档端点 PUT /save 早已删除（`metaserver/src/save.ts` 头注释 / DECISIONS.md），`pvp.*` 只有服务端结算路径写，客户端只读到 GET /save 回包里的值。 |
 
-**并发安全**：是否在窗口内，是在 `applyPvp` 的重试循环里、对着本次 rev 守卫 CAS 所依据的那份文档（`cur`）现算的，不是用 `settleElo` 开头读到的旧值。同一新号两场结算并发、争最后一个名额时：先 CAS 成功的那场拿到第 3 场保护；另一场 CAS 失败 → 重读（losses 已是 3）→ 按常规扣分。写入仍是原来那一次整体替换 save 的 `findOneAndUpdate({_id, rev})`，没有新增写路径。
+**ELO 通胀（有意接受）**：保护局非零和——赢方照常 +16，输方 -0。上限是每个活跃玩家每天 3 场（新号首日 6 场）的「凭空」分数，量级上比 §15.2 连胜倍率带来的非零和更大，而且活跃度越高通胀越多。可接受的理由：赛季末软重置（`migrateIfStale` → `softReset` 向基线收拢）把每季累计的通胀截断，不会跨赛季滚雪球；段位门槛若因此显得偏松，调的是赛季软重置基线或段位阈值，不是回头削保护。上线后应盯一下赛季中后期的 ELO 分布中位数漂移。
 
-**AI 代打兜底（`POST /pvp/bot-result`）**：它也会动 ELO（<1200 时 ±4），所以同样适用——窗口内输给 AI 记 0。但 AI 局**不占名额**：这条路径本来就不写 `wins/losses/streak`（§15.2），窗口只按真人排位计。机器人号走这条路同样不保护。响应体不变（`delta` 为 0）；客户端 AI 局结算页本来就不显示 ELO 行，所以没有契约改动。
+**并发安全**：用哪个名额，是在 `applyPvp` 的重试循环里、对着本次 rev 守卫 CAS 所依据的那份文档（`cur`）现算的，不是用 `settleElo` 开头读到的旧值；`dailyProtect` 与 ELO 在同一次整体替换 save 的 `findOneAndUpdate({_id, rev})` 里写入，没有新增写路径。同一账号两场结算并发、争最后一个名额时：先 CAS 成功的那场拿到保护；另一场 CAS 失败 → 重读（计数已满）→ 按常规扣分。`dayKey` 在 `settleElo` 开头用 `now()` 算一次（`protectDayKey`），预检和 CAS 内判定用同一个日子，跨零点不会两边各算一天。
+
+**AI 代打兜底（`POST /pvp/bot-result`）**：它也会动 ELO（<1200 时 ±4），所以同样适用——还有剩余名额（新手或今日每日）时输给 AI 记 0。但 AI 局**不占任何名额**：这条路径本来就不写 `wins/losses/streak`（§15.2），也不写 `dailyProtect`；名额只被真人排位消耗。保留「不占」的理由：AI 局只在匹配超时时出现、ELO 影响本来就是 1/4 K，让它吃掉每日名额反而会让玩家的「免费 3 局」被一次匹配超时悄悄用掉。机器人号走这条路同样不保护。响应体不变（`delta` 为 0）；客户端 AI 局结算页本来就不显示 ELO 行，所以没有契约改动。
 
 **下发与展示**：
-- 契约：`transport.proto` `EloDelta` 加 `uint32 protected_game = 4; uint32 protected_total = 5;`（0 = 非保护局，proto3 默认值不上线，旧客户端无感）。meta `EloResult` 加可选 `protectedGame/protectedTotal`（只在保护局出现）→ gameserver 原样转发进 `match_over.elo`。client / gameserver / gateway / botsvc 四份生成的 `transport.ts` 已重生。
-- 客户端：`ResultScene` 在 ELO 行（如 `ELO +0 → 1000　青铜`）下方加一行小字 `result.newbieProtect`：zh「新手保护（2/3）· 输了不扣积分」/ en「New player protection (2/3) · losses cost no ELO」/ de「Neulingsschutz (2/3) · Niederlagen kosten kein ELO」。赢的保护局也显示（告诉玩家还剩几场），非保护局不显示。单独一行而不是拼进 ELO 行，是因为 ELO 行用 `FS.title` 等宽字，竖屏再拼一段会溢出。
-- 大厅不显示剩余场次（不改 UI）。
+- 契约：`transport.proto` `EloDelta` 有 `uint32 protected_game = 4; uint32 protected_total = 5; uint32 protected_kind = 6;`（`protected_kind` 1 = 新手、2 = 每日；0 = 非保护局，或 2026-10-07 早版只发前两个字段的服务端——客户端按新手读）。proto3 默认值不上线，旧客户端无感。meta `EloResult` 加可选 `protectedGame/protectedTotal/protectedKind`（只在保护局出现）→ gameserver 原样转发进 `match_over.elo`。client / gameserver / gateway / botsvc / metaserver 五份生成的 `transport.ts` 已重生。
+- 结算页：`ResultScene` 在 ELO 行（如 `ELO +0 → 1000　青铜`）下方加一行小字（`ResultScene/builders.ts addEloProtectLine`），按 `protectedKind` 选 key：新手 `result.newbieProtect` zh「新手保护（2/3）· 输了不扣积分」/ en「New player protection (2/3) · losses cost no ELO」/ de「Neulingsschutz (2/3) · Niederlagen kosten kein ELO」；每日 `result.dailyProtect` zh「每日保护（1/3）· 输了不扣积分」/ en「Daily protection (1/3) · losses cost no ELO」/ de「Tagesschutz (1/3) · Niederlagen kosten kein ELO」。赢的保护局也显示（告诉玩家用掉了第几场），非保护局不显示。单独一行而不是拼进 ELO 行，是因为 ELO 行用 `FS.title` 等宽字，竖屏再拼一段会溢出；超宽时按屏宽 94% 缩放。
+- 大厅：START MATCH 主按钮右上角一张贴纸（`LobbyScene/protectSticker.ts`），写今天还剩几局保护（新手剩余 + 今日每日剩余）：zh「今日还有 6 局输了不扣分」/ en「6 games today without ELO loss」/ de「Heute 6 Spiele ohne ELO-Verlust」（1 局用单数 key `lobby.protectLeftOne`）。只在在线且 >0 时画；骑在按钮上沿、占的是 header 与按钮之间的留白（≥3.5% h），不挤按钮内部的标题与副标题；点它等于点按钮。数字由客户端 `client/src/game/meta/eloProtect.ts protectedGamesLeftToday(save.pvp, serverNow())` 算——镜像 `ladder.ts protectedGamesLeft` 与两个常量（客户端 `@nw/shared` 别名只开放 SLG 浏览器安全切片，同 `pickPracticeDifficulty` 的做法，改数值两边一起改）；排位结束后 `saveManager.refresh()` 拉新存档，大厅订阅存档变化自动重建，所以数字会跟上。
 
 **测试**：
-- `server/shared/test/ladder.test.ts`：`newbieProtectedGame` 边界（0/1/2→1/2/3，3+→0，负数/NaN 防御）、`applyNewbieProtection`（保护负 → 0 且连败冻结、打断连胜、保护胜照常、出窗口等同原公式、不产出 `-0`）。
-- `server/metaserver/test/newbie-protect.test.ts`（FakeCollection 直调 `settleElo`）：前 3 场保护 + 第 4 场按 K=32 原值扣（无连败放大）、对手 delta 不变、保护胜打标签且占名额、CAS 丢失后重判（最后一个名额不能被领两次）、机器人号两侧都不保护、accounts 读失败放行、老号不读 accounts。
-- `server/metaserver/test/newbie-protect.e2e.test.ts`（真 Mongo）：完整 4 场序列 + 归档 `eloDelta=0`、两场并发争最后名额恰好一场被保护、`bot-` 设备号不保护、AI 代打窗口内输记 0 且不占名额。
-- `server/metaserver/test/bot-result.test.ts` 加 2 例（保护 / 机器人号）。既有用例里"新号输 -16"的断言（`internal.test.ts`、`matchreport-branch-elo.test.ts`、`matchreport-branch-route.test.ts`、`bot-result.test.ts`）把败方预置成已打满 3 场的老号，保持原意；`save.e2e.test.ts` 的新号败方改断言 `eloDelta = 0`。
-- `client/test/ui/resultNewbieProtect.ui.ts`：zh/en/de × 竖/横屏，保护行在 ELO 行下方、不出屏、不压 CTA、不与任何文字重叠；保护胜也显示；非保护局（字段缺省或 proto 默认 0）不显示。
+- `server/shared/test/ladder.test.ts`：`newbieProtectedGame` 边界；`dailyProtectUsed` / `dailyProtectedGame`（别的日子读 0、恰好 3 用完、坏数据按用完）；`nextProtectSlot` + `consumeDailyProtect` 的新号首日 7 局序列（1–3 新手、4–6 每日、第 7 局无）与次日重置、新手局不动每日计数；`protectedGamesLeft`；`applyLossProtection`（保护负 → 0 且连败冻结、打断连胜、保护胜照常、非保护等同原公式、不产出 `-0`）。
+- `server/metaserver/test/elo-protect.test.ts`（FakeCollection 直调 `settleElo`，可控时钟）：新号首日 7 局 + 第 2 天 3 局每日再第 4 局全额；老号当天恰好 3 局（含 1 场胜）后第 4 局全额；保护负打断连胜不开连败；新手局不动 `dailyProtect`；两个新号对局双方各自打新手标签；CAS 丢失后重判（最后一个每日名额不能被领两次）；机器人号两侧都不保护也不写计数；`eloProtectEligible` 短路 / 隔日重开 / 读失败放行；`protectDayKey` 的 UTC 零点。
+- `server/metaserver/test/elo-protect.e2e.test.ts`（真 Mongo）：新号 7 局完整序列 + 归档 `eloDelta=0` + 存档里的 `dailyProtect`，把计数日改成昨天后再 3 局每日 + 第 4 局全额；两场并发争最后一个每日名额恰好一场被保护；`bot-` 设备号不保护；AI 代打在有名额时输记 0 且两个池都不消耗、名额用完的老号与机器人号照扣。
+- `server/metaserver/test/bot-result.test.ts`：新手 / 每日（今天有剩）/ 昨日用完不影响今天 / 机器人号。既有用例里「输 -16」的断言（`internal.test.ts`、`matchreport-branch-elo.test.ts`、`matchreport-branch-route.test.ts`、`bot-result.test.ts`）把败方预置成新手池用完、今日每日池也用完的老号，保持原意；`save.e2e.test.ts` 的新号败方断言 `eloDelta = 0`（新手名额）。
+- `client/test/ui/resultEloProtect.ui.ts`：两种 kind × zh/en/de × 竖/横屏，保护行在 ELO 行下方、不出屏、不压 CTA、不与任何文字重叠；保护胜也显示；缺 kind 按新手；非保护局不显示。
+- `client/test/ui/lobbyProtectSticker.ui.ts`：zh/en/de × 5 种视口（竖屏高/矮、横屏宽/矮、722×406）× 正常 / 放大字号（`setFontScale(406/1080)`）：贴纸在 header 带以下、在按钮横向范围内、不碰按钮标题行、自身文字不出框、不与大厅任何文字重叠；0 局与离线不显示；1 局用单数；重建后不重复；外加 `protectedGamesLeftToday` 镜像的数值。
 
-**未做**：真机 / 本地全链路的肉眼验收（需要起整套后端 + 打一局排位）。
+**未做**：真机 / 本地全链路的肉眼验收（需要起整套后端 + 打一局排位）；大厅贴纸也只有 headless 几何测试，没有真浏览器截图。

@@ -97,7 +97,7 @@ export type ServerMsg =
       winnerSide: number;
       reason: string;
       mismatch: boolean;
-      elo?: { delta: number; after: number; rankAfter: string; protectedGame?: number; protectedTotal?: number };
+      elo?: { delta: number; after: number; rankAfter: string; protectedGame?: number; protectedTotal?: number; protectedKind?: number };
     }
   | { case: 'room_error'; code: string; message: string }
   | { case: 'pong' };
@@ -217,6 +217,7 @@ export function encodeServer(msg: ServerMsg): Uint8Array {
                 rankAfter: msg.elo.rankAfter,
                 protectedGame: msg.elo.protectedGame ?? 0,
                 protectedTotal: msg.elo.protectedTotal ?? 0,
+                protectedKind: msg.elo.protectedKind ?? 0,
               }
             : undefined,
         },

@@ -20,6 +20,7 @@ import type { BadgesPanel } from './badges';
 import { drawButtonLabel } from '../../ui/widgets/buttonLabel';
 import { headerMetrics } from './format';
 import { snapFont } from '../../render/fontScale';
+import { drawProtectSticker } from './protectSticker';
 
 /**
  * One shortcut in the engagement strip. `icon` is the same glyph the destination screen wears on its
@@ -200,6 +201,7 @@ export function drawMainContent(core: LobbySceneCore, badges: BadgesPanel): void
   const heroSubMaxW = contentW * 0.92;
   if (heroSub.width > heroSubMaxW) heroSub.scale.set(heroSubMaxW / heroSub.width);
   core.container.addChild(heroSub);
+  drawProtectSticker(core, core.btnRect, tbH, core.cb.online ? (core.cb.getProtectedGamesLeft?.() ?? 0) : 0);
 
   // 2. Pillars: Campaign (gold, PvE) | World map (accent, SLG). The world map needs an account,
   // so it's hidden in offline mode — Campaign then takes the full content width.

@@ -97,36 +97,112 @@ export function nextStreak(prev: number, won: boolean): number {
 }
 
 /**
- * New-player protection (SEASON_DESIGN_IMPL_SPEC.md §15.5, 2026-10-07): an account's first
- * NEWBIE_PROTECT_GAMES *settled* ranked games never cost ELO. Wins and losses both use up the
- * window; draws / voided matches never settle, so they don't. Counted off the lifetime
- * `pvp.wins + pvp.losses` (written only by ranked settlement, never reset by a season rollover).
+ * ELO loss protection (SEASON_DESIGN_IMPL_SPEC.md §15.5). Two slot pools, and each settled ranked
+ * game consumes at most ONE slot — new-player slots first, otherwise a daily slot:
+ *   - new-player (2026-10-07): an account's first NEWBIE_PROTECT_GAMES settled ranked games, counted
+ *     off the lifetime `pvp.wins + pvp.losses` (written only by ranked settlement, kept across seasons);
+ *   - daily (2026-10-07): the first DAILY_PROTECT_GAMES settled ranked games of each server-UTC day
+ *     (retention.ts `makeDayKey`, the daily-task reset) that did NOT use a new-player slot, counted in
+ *     `pvp.dailyProtect`.
+ * So a brand-new account gets 6 protected games on its first day (1-3 new-player, 4-6 daily), then 3
+ * per day. Wins and losses both use a slot; draws / voided matches never settle, so they don't. A
+ * protected loss costs nothing; a protected win settles normally.
  */
 export const NEWBIE_PROTECT_GAMES = 3;
+/** Daily protection window size: first N settled ranked games per server-UTC day (§15.5). */
+export const DAILY_PROTECT_GAMES = 3;
+
+/** Which pool a protected game drew its slot from (transport.proto `EloDelta.protected_kind`; 0 = none). */
+export const PROTECT_KIND_NEWBIE = 1;
+export const PROTECT_KIND_DAILY = 2;
+export type ProtectKind = typeof PROTECT_KIND_NEWBIE | typeof PROTECT_KIND_DAILY;
+
+/** `SaveData.pvp.dailyProtect`: daily slots used on `dayKey`; a different (older) day means 0 used — reset is lazy. */
+export interface DailyProtectState {
+  dayKey: string;
+  used: number;
+}
+
+/** The slot a settlement would use: `game` is 1-based within its pool, `total` that pool's size. */
+export interface ProtectSlot {
+  kind: ProtectKind;
+  game: number;
+  total: number;
+}
 
 /**
- * 1-based index (1..NEWBIE_PROTECT_GAMES) of the protected game that the next ranked settlement
- * would be, given the account's settled ranked games *before* it; 0 once the window is used up.
+ * 1-based index (1..NEWBIE_PROTECT_GAMES) of the new-player slot that the next ranked settlement
+ * would use, given the account's settled ranked games *before* it; 0 once the pool is used up.
  */
 export function newbieProtectedGame(settledGames: number): number {
   const n = Number.isFinite(settledGames) ? Math.max(0, Math.floor(settledGames)) : NEWBIE_PROTECT_GAMES;
   return n < NEWBIE_PROTECT_GAMES ? n + 1 : 0;
 }
 
+/** Daily slots already used on `dayKey` (0 when the stored state is from another day or absent). */
+export function dailyProtectUsed(state: DailyProtectState | undefined, dayKey: string): number {
+  if (!state || state.dayKey !== dayKey) return 0;
+  const used = Number(state.used);
+  return Number.isFinite(used) ? Math.max(0, Math.floor(used)) : DAILY_PROTECT_GAMES;
+}
+
+/** 1-based index (1..DAILY_PROTECT_GAMES) of the daily slot the next settlement on `dayKey` would use; 0 once used up. */
+export function dailyProtectedGame(state: DailyProtectState | undefined, dayKey: string): number {
+  const used = dailyProtectUsed(state, dayKey);
+  return used < DAILY_PROTECT_GAMES ? used + 1 : 0;
+}
+
+/** The slot the next ranked settlement on `dayKey` would use (new-player first, then daily); null = unprotected. */
+export function nextProtectSlot(
+  settledGames: number,
+  daily: DailyProtectState | undefined,
+  dayKey: string,
+): ProtectSlot | null {
+  const n = newbieProtectedGame(settledGames);
+  if (n > 0) return { kind: PROTECT_KIND_NEWBIE, game: n, total: NEWBIE_PROTECT_GAMES };
+  const d = dailyProtectedGame(daily, dayKey);
+  if (d > 0) return { kind: PROTECT_KIND_DAILY, game: d, total: DAILY_PROTECT_GAMES };
+  return null;
+}
+
 /**
- * One side's settled ELO delta + streak with new-player protection applied. `protectedGame` comes
- * from {@link newbieProtectedGame} (0 = unprotected). A protected *loss* costs nothing and does not
- * feed the losing streak (it would otherwise amplify the first unprotected loss via the streak K
- * multiplier) — it still breaks a win streak, as any loss does. Wins and unprotected games settle
- * exactly as {@link computeEloDelta} / {@link nextStreak} say.
+ * `pvp.dailyProtect` after a settlement that used `slot`: only a daily slot advances it (to
+ * `{ dayKey, used: slot.game }`, which also performs the lazy day reset); a new-player slot or an
+ * unprotected game leaves it as it was.
  */
-export function applyNewbieProtection(
+export function consumeDailyProtect(
+  daily: DailyProtectState | undefined,
+  dayKey: string,
+  slot: ProtectSlot | null,
+): DailyProtectState | undefined {
+  return slot?.kind === PROTECT_KIND_DAILY ? { dayKey, used: slot.game } : daily;
+}
+
+/** Protected ranked games still available on `dayKey`: new-player slots left + daily slots left (the lobby hint). */
+export function protectedGamesLeft(
+  settledGames: number,
+  daily: DailyProtectState | undefined,
+  dayKey: string,
+): number {
+  const nextNewbie = newbieProtectedGame(settledGames);
+  const newbieLeft = nextNewbie > 0 ? NEWBIE_PROTECT_GAMES - nextNewbie + 1 : 0;
+  return newbieLeft + Math.max(0, DAILY_PROTECT_GAMES - dailyProtectUsed(daily, dayKey));
+}
+
+/**
+ * One side's settled ELO delta + streak with loss protection applied (`isProtected` = this game drew
+ * a slot from {@link nextProtectSlot}). A protected *loss* costs nothing and does not feed the losing
+ * streak (it would otherwise amplify the first unprotected loss via the streak K multiplier) — it
+ * still breaks a win streak, as any loss does. Wins and unprotected games settle exactly as
+ * {@link computeEloDelta} / {@link nextStreak} say.
+ */
+export function applyLossProtection(
   rawDelta: number,
   prevStreak: number,
   won: boolean,
-  protectedGame: number,
+  isProtected: boolean,
 ): { delta: number; streak: number } {
-  if (won || protectedGame <= 0) return { delta: rawDelta, streak: nextStreak(prevStreak, won) };
+  if (won || !isProtected) return { delta: rawDelta, streak: nextStreak(prevStreak, won) };
   return { delta: 0, streak: Math.min(prevStreak, 0) };
 }
 

@@ -104,6 +104,8 @@ export interface SaveData {
     seasonPeakElo?: number;
     seasonPeakRank?: string;
     reachedRanks?: string[];
+    /** Daily ELO-loss protection slots used on server-UTC day `dayKey` (server-written only; see game/meta/eloProtect.ts). */
+    dailyProtect?: { dayKey: string; used: number };
   };
   // —— S11 battle pass (lazy-created; appears after the first ranked game or purchase this season) ——
   battlePass?: {

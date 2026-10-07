@@ -1,8 +1,9 @@
-// New-player protection line on the ranked result screen (SEASON_DESIGN_IMPL_SPEC.md §15.5, 2026-10-07):
-// an account's first 3 settled ranked games never cost ELO, and match_over.elo carries
-// protectedGame/protectedTotal so ResultScene can say so under the ELO line. Verifies the line is
-// drawn (loss and win), sits under the ELO line without overlapping any other text, stays on screen
-// at every locale in portrait and landscape, and is absent for an unprotected game.
+// ELO-loss protection line on the ranked result screen (SEASON_DESIGN_IMPL_SPEC.md §15.5, 2026-10-07):
+// a protected ranked game (new-player slot: an account's first 3 settled ranked games; daily slot: the
+// first 3 of each server-UTC day) costs no ELO on a loss, and match_over.elo carries
+// protectedGame/protectedTotal/protectedKind so ResultScene can say which under the ELO line. Verifies
+// the line is drawn (loss and win, both kinds), sits under the ELO line without overlapping any other
+// text, stays on screen at every locale in portrait and landscape, and is absent for an unprotected game.
 //
 // Runs under the headless PIXI adapter (vitest.ui.config.ts). Run: npm run test:ui
 import { describe, it, expect } from 'vitest';
@@ -52,19 +53,23 @@ function texts(root: PIXI.Container): Array<{ text: string; b: PIXI.Rectangle }>
 const overlaps = (a: PIXI.Rectangle, b: PIXI.Rectangle): boolean =>
   a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
 
-const PROTECTED_LOSS: EloResult = { delta: 0, after: 1000, rankAfter: 'bronze', protectedGame: 2, protectedTotal: 3 };
+const KINDS: Array<{ kind: number; key: 'result.newbieProtect' | 'result.dailyProtect' }> = [
+  { kind: 1, key: 'result.newbieProtect' },
+  { kind: 2, key: 'result.dailyProtect' },
+];
 
-describe('ResultScene - new-player protection line', () => {
+describe('ResultScene - ELO-loss protection line', () => {
   it('draws "+0" plus the protection line under it on a protected loss, on screen and overlap-free', () => {
     for (const locale of ['zh', 'en', 'de'] as Locale[]) {
       setLocale(locale);
       try {
-        for (const [name, w, h] of VIEWPORTS) {
-          const scene = buildScene(w, h, 1, PROTECTED_LOSS); // winner=1, localOwner=0 -> a loss
+        for (const [name, w, h] of VIEWPORTS) for (const { kind, key } of KINDS) {
+          const elo: EloResult = { delta: 0, after: 1000, rankAfter: 'bronze', protectedGame: 2, protectedTotal: 3, protectedKind: kind };
+          const scene = buildScene(w, h, 1, elo); // winner=1, localOwner=0 -> a loss
           const all = texts(scene.container);
-          const expected = t('result.newbieProtect', { n: 2, total: 3 });
+          const expected = t(key, { n: 2, total: 3 });
           const line = all.find((n) => n.text === expected);
-          const where = `${locale}/${name}`;
+          const where = `${locale}/${name}/${key}`;
           expect(line, `${where}: no protection line (have: ${all.map((n) => n.text).join(' | ')})`).toBeDefined();
           expect(expected).toContain('2/3');
 
@@ -87,11 +92,19 @@ describe('ResultScene - new-player protection line', () => {
     }
   });
 
-  it('also labels a protected win (the window is used up by wins too)', () => {
+  it('also labels a protected win (wins use up a slot too)', () => {
     const [, w, h] = VIEWPORTS[1]!;
-    const scene = buildScene(w, h, 0, { delta: 16, after: 1016, rankAfter: 'bronze', protectedGame: 1, protectedTotal: 3 });
+    const scene = buildScene(w, h, 0, { delta: 16, after: 1016, rankAfter: 'bronze', protectedGame: 1, protectedTotal: 3, protectedKind: 2 });
     const all = texts(scene.container).map((n) => n.text);
-    expect(all).toContain(t('result.newbieProtect', { n: 1, total: 3 }));
+    expect(all).toContain(t('result.dailyProtect', { n: 1, total: 3 }));
+    scene.destroy();
+  });
+
+  it('reads a missing kind (older server) as new-player protection', () => {
+    const [, w, h] = VIEWPORTS[0]!;
+    const scene = buildScene(w, h, 1, { delta: 0, after: 1000, rankAfter: 'bronze', protectedGame: 3, protectedTotal: 3 });
+    const all = texts(scene.container).map((n) => n.text);
+    expect(all).toContain(t('result.newbieProtect', { n: 3, total: 3 }));
     scene.destroy();
   });
 

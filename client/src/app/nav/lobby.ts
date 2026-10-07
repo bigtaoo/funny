@@ -5,6 +5,7 @@ import { t, type TranslationKey } from '../../i18n';
 import { isFirstChapterCleared } from '../../game/campaign/progress';
 import { hasClaimable, reachedTierKeys } from '../../game/meta/achievements';
 import { getPvpUnlockedCards, validatePvpDeckClient, PVP_DECK_SIZE } from '../../game/meta/pvpLoadout';
+import { protectedGamesLeftToday } from '../../game/meta/eloProtect';
 import { WorldApiClient } from '../../net/WorldApiClient';
 import { getWorldBaseUrl } from '../../net/config';
 import { serverNow } from '../../net/serverClock';
@@ -238,6 +239,7 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
       playerName: playerName(),
       avatarId: avatarId(),
       pvp: { rank: pvp.rank, elo: pvp.elo },
+      getProtectedGamesLeft: () => protectedGamesLeftToday(saveManager.get().pvp, serverNow()),
       getCoins: () => saveManager.get().wallet.coins,
       onSaveChanged: (listener: () => void) => saveManager.subscribe(listener),
       offline: state.offlineMode,
