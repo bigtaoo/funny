@@ -1018,6 +1018,8 @@ music` 3/3 过、`selftest.py` 全过。头注里的取舍：
   断言）、`tsc` 与 webpack 生产构建。
 - 回绕点在真浏览器里是否仍落在 `lengthS − XFADE_S`：机制没改，§0.5 量过；新文件的 `lengthS` 由
   `musicAssets.test.ts` 按 MP3 帧数钉住。
+- **包体门禁当时没跑。** 三首共多出约 1783 KiB，把 `dist.total` 顶到 28734 KiB，超出 27000 的预算；
+  PR 的 CI 才发现。2026-10-07 把预算抬到 29500 KiB（理由见 ASSET_PACKAGING §13.4），没有为它压码率。
 
 ---
 
