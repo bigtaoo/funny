@@ -214,6 +214,7 @@
 | [avatar-art-prompts.md](product/avatar-art-prompts.md) | 头像 prompt |
 | [back-arrow-art.md](product/back-arrow-art.md) | 返回箭头图标 |
 | [battle-arrow-tower-art.md](product/battle-arrow-tower-art.md) | 战斗内箭塔美术 |
+| [unit-art-inventory.md](product/unit-art-inventory.md) | 战斗单位/建筑实机美术盘点（渲染路径、墨色、敌我外观）、占位草稿修复、敌方红墨可行性（2026-10-07） |
 | [panel-frame-art-prompts.md](product/panel-frame-art-prompts.md) | 面板边框 prompt |
 | [shop-art-prompts.md](product/shop-art-prompts.md) | 商店美术 prompt |
 | [gacha-art-prompts.md](product/gacha-art-prompts.md) | 盲盒美术 prompt |

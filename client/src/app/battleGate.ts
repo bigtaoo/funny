@@ -26,6 +26,20 @@ export function enterBattle<T extends Scene>(
 }
 
 /**
+ * Same warm step for the two replay players (ReplayScene, StatePlayerScene), which draw units through
+ * the same UnitView but used to be mounted with no gate at all. A shared-replay deep link is a
+ * cold-cache first visit, so its opening units spawned before any art had loaded and played out as
+ * procedural draft stick figures (art-direction §4.6). Instant swap, like the mounts it replaces.
+ */
+export function enterReplay<T extends Scene>(
+  deps: BattleGateDeps,
+  opts: BattleAssetOptions,
+  build: () => T,
+): Promise<T> {
+  return enterWithAssets(deps, (onProgress) => ensureBattleAssets(opts, onProgress), build);
+}
+
+/**
  * Buffers calls meant for a scene that doesn't exist yet — e.g. showGameNet must return a
  * NetGameView synchronously (the caller wires session.handlers to it right away), but
  * `enterBattle`'s loading gate means the actual GameScene isn't built until some time later, and

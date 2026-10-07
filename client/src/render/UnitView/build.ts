@@ -75,6 +75,20 @@ export function acquireSprite(host: BuildHost, unit: Unit): PIXI.Container {
 }
 
 /**
+ * Whether {@link acquireSprite} would now build a real figure (frame sheet or rig) for `unit`
+ * instead of the procedural draft placeholder — i.e. some art for it has finished loading. Mirrors
+ * acquireSprite's own lookup order so the two can't disagree; UnitView polls it to swap a unit that
+ * spawned as a placeholder over to its art the moment that art arrives (see UnitView.sync).
+ */
+export function hasUnitArt(host: BuildHost, unit: Unit): boolean {
+  const isLocal = unit.side === host.localSide;
+  return (isLocal ? host.localSkinSheets : host.opponentSkinSheets).has(unit.unitType)
+    || (isLocal ? host.localSkinAssets : host.opponentSkinAssets).has(unit.unitType)
+    || host.frameSheets.has(unit.unitType)
+    || host.assets.has(unit.unitType);
+}
+
+/**
  * Pool bucket key for a unit's stickman (wrapper + runtime) pair. Plain `unitType` for the common
  * case (no skin override on the relevant side — the vast majority of types, always). Types with a
  * skin equipped on this unit's own side get a distinct suffixed key so a skinned pooled instance is
@@ -144,7 +158,7 @@ function buildStickmanContainer(
   return wrapper;
 }
 
-// ─── Circle container (PvE-only types, or stickman units before asset loads) ──
+// ─── Circle container (a unit type whose art has not loaded yet, or failed to) ──
 
 function buildCircleContainer(host: BuildHost, unit: Unit): PIXI.Container {
   const c = host.pool.acquire();
