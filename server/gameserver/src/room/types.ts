@@ -26,6 +26,10 @@ export interface EloResult {
   delta: number;
   after: number;
   rankAfter: string;
+  /** New-player protection: 1-based game index within the protected window; absent = unprotected (meta omits it). */
+  protectedGame?: number;
+  /** Protected window size; present iff protectedGame is. */
+  protectedTotal?: number;
 }
 /** side → ELO delta (returned by meta after ranked settlement). */
 export type EloBySide = Record<number, EloResult>;

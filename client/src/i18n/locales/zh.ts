@@ -169,6 +169,7 @@ export const zh = {
   'result.retry': '再试一次',
   'result.watchReplay': '观看回放',
   'result.eloDelta': 'ELO {delta} → {after}　段位 {rank}',
+  'result.newbieProtect': '新手保护（{n}/{total}）· 输了不扣积分',
   'result.tomorrowReward': '明天回来签到领第 {day} 天奖励',
   'rank.unranked': '未定级',
   'rank.bronze': '青铜',

@@ -97,6 +97,40 @@ export function nextStreak(prev: number, won: boolean): number {
 }
 
 /**
+ * New-player protection (SEASON_DESIGN_IMPL_SPEC.md §15.5, 2026-10-07): an account's first
+ * NEWBIE_PROTECT_GAMES *settled* ranked games never cost ELO. Wins and losses both use up the
+ * window; draws / voided matches never settle, so they don't. Counted off the lifetime
+ * `pvp.wins + pvp.losses` (written only by ranked settlement, never reset by a season rollover).
+ */
+export const NEWBIE_PROTECT_GAMES = 3;
+
+/**
+ * 1-based index (1..NEWBIE_PROTECT_GAMES) of the protected game that the next ranked settlement
+ * would be, given the account's settled ranked games *before* it; 0 once the window is used up.
+ */
+export function newbieProtectedGame(settledGames: number): number {
+  const n = Number.isFinite(settledGames) ? Math.max(0, Math.floor(settledGames)) : NEWBIE_PROTECT_GAMES;
+  return n < NEWBIE_PROTECT_GAMES ? n + 1 : 0;
+}
+
+/**
+ * One side's settled ELO delta + streak with new-player protection applied. `protectedGame` comes
+ * from {@link newbieProtectedGame} (0 = unprotected). A protected *loss* costs nothing and does not
+ * feed the losing streak (it would otherwise amplify the first unprotected loss via the streak K
+ * multiplier) — it still breaks a win streak, as any loss does. Wins and unprotected games settle
+ * exactly as {@link computeEloDelta} / {@link nextStreak} say.
+ */
+export function applyNewbieProtection(
+  rawDelta: number,
+  prevStreak: number,
+  won: boolean,
+  protectedGame: number,
+): { delta: number; streak: number } {
+  if (won || protectedGame <= 0) return { delta: rawDelta, streak: nextStreak(prevStreak, won) };
+  return { delta: 0, streak: Math.min(prevStreak, 0) };
+}
+
+/**
  * Roll an AI opponent difficulty (1–10, see engine AISystem.ts) for a bot-fallback
  * match, scaled to the player's ELO. Below {@link BOT_ELO_THRESHOLD} draws from the
  * easier half (1–6); at/above it draws from the harder half (5–10) — the 5–6

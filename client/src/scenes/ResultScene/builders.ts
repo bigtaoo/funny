@@ -370,3 +370,24 @@ export function addHeader(container: PIXI.Container, w: number, h: number, onTap
   container.addChild(hit);
   return hdr;
 }
+
+/**
+ * New-player protection note under the ranked ELO line ("New player protection (2/3) · …"): the
+ * account's first few settled ranked games never cost ELO (SEASON_DESIGN_IMPL_SPEC.md §15.5). Its own
+ * smaller line rather than a suffix on the monospace ELO line, which would overflow in portrait.
+ * Returns the new bottom y.
+ */
+export function addNewbieProtectLine(
+  container: PIXI.Container, w: number, h: number, top: number, game: number, total: number,
+): number {
+  const line = makeText(t('result.newbieProtect', { n: game, total }), {
+    fontSize: FS.body,
+    fill: 0x555555,
+    fontFamily: 'serif',
+  });
+  line.anchor.set(0.5, 0);
+  line.x = w / 2;
+  line.y = top + h * 0.008;
+  container.addChild(line);
+  return line.y + line.height;
+}

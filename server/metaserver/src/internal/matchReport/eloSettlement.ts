@@ -8,7 +8,9 @@ import {
   computeEloDelta,
   streakMultiplier,
   eloToRank,
-  nextStreak,
+  applyNewbieProtection,
+  newbieProtectedGame,
+  NEWBIE_PROTECT_GAMES,
   victoryCoinsForRank,
   createLogger,
   accrueStats,
@@ -25,6 +27,7 @@ import { writeMigratedSave } from '../../save.js';
 import type { CommercialClient } from '../../commercialClient.js';
 import { adsDayKey } from '../../economy.js';
 import type { MetaSocialsvcClient } from '../../socialsvcClient.js';
+import { newbieProtectEligible, settledRankedGames } from '../../newbieProtect.js';
 import type { EloResult } from './types.js';
 
 const log = createLogger('meta:internal');
@@ -56,10 +59,18 @@ export async function settleElo(
   const winnerK = ELO_K * streakMultiplier(wStreak > 0 ? wStreak : 0);
   const loserK = ELO_K * streakMultiplier(lStreak < 0 ? -lStreak : 0);
   const { winner: wDelta, loser: lDelta } = computeEloDelta(wElo, lElo, { winnerK, loserK });
+  // New-player protection (2026-10-07): eligibility (not a botsvc account) is resolved here; whether this
+  // game actually falls inside the account's window is decided inside applyPvp against the very doc the
+  // rev-guarded write is conditioned on, so concurrent settlements can't both claim the same slot.
+  // The opponent's delta is never touched — computeEloDelta above already sized it normally.
+  const [wProtect, lProtect] = await Promise.all([
+    newbieProtectEligible(cols, winner.accountId, wDoc?.save.pvp),
+    newbieProtectEligible(cols, loser.accountId, lDoc?.save.pvp),
+  ]);
   const out: Record<number, EloResult> = {};
   const [wRes, lRes] = await Promise.all([
-    applyPvp(cols, now, commercial, socialsvc, winner.accountId, wDoc, wDelta, true, winnerStats),
-    applyPvp(cols, now, commercial, socialsvc, loser.accountId, lDoc, lDelta, false, loserStats),
+    applyPvp(cols, now, commercial, socialsvc, winner.accountId, wDoc, wDelta, true, wProtect, winnerStats),
+    applyPvp(cols, now, commercial, socialsvc, loser.accountId, lDoc, lDelta, false, lProtect, loserStats),
   ]);
   if (wRes) out[winner.side] = wRes;
   if (lRes) out[loser.side] = lRes;
@@ -94,6 +105,7 @@ async function applyPvp(
   doc: SaveDoc | null,
   delta: number,
   won: boolean,
+  protectEligible: boolean,
   statDelta: Partial<Record<StatKey, number>> = {},
 ): Promise<EloResult | null> {
   // S9-6: in-match achievement count delta = L1-sanitized kill/cast + server-computed pvp.wins (winner +1 only; client value not trusted).
@@ -118,7 +130,10 @@ async function applyPvp(
       }
     }
     const pvp = cur.save.pvp;
-    const after = Math.max(ELO_FLOOR, pvp.elo + delta);
+    // New-player protection: game index within the window, read off the doc this CAS is guarded on.
+    const protectedGame = protectEligible ? newbieProtectedGame(settledRankedGames(pvp)) : 0;
+    const settled = applyNewbieProtection(delta, pvp.streak, won, protectedGame);
+    const after = Math.max(ELO_FLOOR, pvp.elo + settled.delta);
     const appliedDelta = after - pvp.elo;
     const rank = eloToRank(after) as RankId;
 
@@ -146,7 +161,7 @@ async function applyPvp(
         ...pvp,
         elo: after,
         rank,
-        streak: nextStreak(pvp.streak, won),
+        streak: settled.streak,
         wins: pvp.wins + (won ? 1 : 0),
         losses: pvp.losses + (won ? 0 : 1),
         seasonNo: pvp.seasonNo ?? (currentSeason?.seasonNo ?? 1),
@@ -174,7 +189,12 @@ async function applyPvp(
           log.error('firstReach coin grant failed', { accountId, err: (e as Error).message });
         }
       }
-      return { delta: appliedDelta, after, rankAfter: rank };
+      return {
+        delta: appliedDelta,
+        after,
+        rankAfter: rank,
+        ...(protectedGame > 0 ? { protectedGame, protectedTotal: NEWBIE_PROTECT_GAMES } : {}),
+      };
     }
     // rev conflict (concurrent client PUT /save) → re-read and retry
   }

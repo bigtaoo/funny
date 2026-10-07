@@ -20,6 +20,10 @@ export interface EloResult {
   delta: number;
   after: number;
   rankAfter: string;
+  /** New-player protection (2026-10-07): 1-based index of this game within the protected window; absent = unprotected. */
+  protectedGame?: number;
+  /** Size of the protected window (NEWBIE_PROTECT_GAMES); present iff protectedGame is. */
+  protectedTotal?: number;
 }
 
 export interface ReportBody {

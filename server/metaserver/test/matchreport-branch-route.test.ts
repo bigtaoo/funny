@@ -157,6 +157,7 @@ function archived<T>(matches: FakeMatches, roomId = 'R1'): T {
 function rankedSaves(): SaveDoc[] {
   return ['a', 'b'].map((id) => {
     const save = makeNewSave(id, NOW);
+    save.pvp.losses = 3; // veterans: past the new-player protection window, so losses settle in full
     return { _id: id, save, rev: save.rev };
   });
 }

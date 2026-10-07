@@ -161,7 +161,15 @@ message MatchBot {
 
 message PeerDc { uint32 side = 1; uint32 grace_ms = 2; }
 
-message EloDelta { int32 delta = 1; int32 after = 2; string rank_after = 3; }
+message EloDelta {
+  int32  delta           = 1;
+  int32  after           = 2;
+  string rank_after      = 3;
+  // New-player protection (SEASON_DESIGN_IMPL_SPEC.md §15.5, 2026-10-07): 1-based index of this game within the
+  // account's protected window (first N settled ranked games never cost ELO); 0 = not a protected game.
+  uint32 protected_game  = 4;
+  uint32 protected_total = 5;   // window size N; 0 when protected_game is 0
+}
 
 message MatchOver {
   uint32   winner_side = 1;

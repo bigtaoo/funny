@@ -68,7 +68,7 @@ describe('eloSettlement branch backfill', () => {
   it('accelerates each side of the swing by that side own streak only', async () => {
     const { cols } = makeCols([
       doc('w', (s) => { s.pvp.streak = 2; }),
-      doc('l', (s) => { s.pvp.streak = -3; }),
+      doc('l', (s) => { s.pvp.streak = -3; s.pvp.losses = 3; }), // a real 3-loss skid: past the new-player window
     ]);
     const out = await settleElo(cols, now, fakeCommercial(false), socialsvc(), WINNER, LOSER);
     expect(out[0]!.delta).toBe(21);
@@ -235,7 +235,7 @@ describe('eloSettlement branch backfill', () => {
   // The opponent still settles, so the archived match ends up with a one-sided eloDelta — the shape
   // an operator sees in match history when this happens.
   it('gives up after three lost races, leaving the opponent settled one-sided', async () => {
-    const { cols, saves } = makeCols([doc('w'), doc('l')]);
+    const { cols, saves } = makeCols([doc('w'), doc('l', (s) => { s.pvp.losses = 3; })]); // l past the new-player window
     const real = saves.findOneAndUpdate.bind(saves);
     saves.findOneAndUpdate = async (filter, update, opts) => {
       if (filter._id === 'w') return null;

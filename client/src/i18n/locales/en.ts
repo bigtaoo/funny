@@ -164,6 +164,7 @@ export const en: Record<TranslationKey, string> = {
   'result.retry': 'RETRY',
   'result.watchReplay': 'WATCH REPLAY',
   'result.eloDelta': 'ELO {delta} → {after}　{rank}',
+  'result.newbieProtect': 'New player protection ({n}/{total}) · losses cost no ELO',
   'result.tomorrowReward': 'Come back tomorrow — Day {day} check-in',
   'rank.unranked': 'Unranked',
   'rank.bronze': 'Bronze',

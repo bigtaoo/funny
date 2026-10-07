@@ -13,6 +13,9 @@ import {
   nextStreak,
   streakMultiplier,
   pickBotDifficulty,
+  NEWBIE_PROTECT_GAMES,
+  newbieProtectedGame,
+  applyNewbieProtection,
   type RankId,
 } from '../src/ladder';
 
@@ -202,6 +205,51 @@ describe('nextStreak', () => {
 });
 
 // cross-check: RankId union is exhaustively covered by RANK_TIERS
+// ── New-player protection (2026-10-07) ─────────────────────────────────────────────
+
+describe('newbieProtectedGame', () => {
+  it('protects exactly the first NEWBIE_PROTECT_GAMES settled games, 1-based', () => {
+    expect(NEWBIE_PROTECT_GAMES).toBe(3);
+    expect(newbieProtectedGame(0)).toBe(1);
+    expect(newbieProtectedGame(1)).toBe(2);
+    expect(newbieProtectedGame(2)).toBe(3);
+    expect(newbieProtectedGame(3)).toBe(0);
+    expect(newbieProtectedGame(250)).toBe(0);
+  });
+
+  it('treats garbage counts defensively (negative -> fresh, non-finite -> unprotected)', () => {
+    expect(newbieProtectedGame(-4)).toBe(1);
+    expect(newbieProtectedGame(Number.NaN)).toBe(0);
+    expect(newbieProtectedGame(Number.POSITIVE_INFINITY)).toBe(0);
+  });
+});
+
+describe('applyNewbieProtection', () => {
+  it('a protected loss costs nothing and does not start a losing streak', () => {
+    expect(applyNewbieProtection(-16, 0, false, 1)).toEqual({ delta: 0, streak: 0 });
+  });
+
+  it('a protected loss breaks a win streak but never extends a losing streak', () => {
+    expect(applyNewbieProtection(-16, 2, false, 3)).toEqual({ delta: 0, streak: 0 });
+    // A pre-existing loss streak (legacy account still inside the window) is frozen, not deepened.
+    expect(applyNewbieProtection(-20, -1, false, 2)).toEqual({ delta: 0, streak: -1 });
+  });
+
+  it('a protected win settles normally (delta + streak)', () => {
+    expect(applyNewbieProtection(16, 0, true, 1)).toEqual({ delta: 16, streak: 1 });
+    expect(applyNewbieProtection(21, 2, true, 3)).toEqual({ delta: 21, streak: 3 });
+  });
+
+  it('outside the window a loss settles exactly like nextStreak / the raw delta', () => {
+    expect(applyNewbieProtection(-16, -2, false, 0)).toEqual({ delta: -16, streak: nextStreak(-2, false) });
+    expect(applyNewbieProtection(-16, 3, false, 0)).toEqual({ delta: -16, streak: -1 });
+  });
+
+  it('never returns -0 for a protected loss', () => {
+    expect(Object.is(applyNewbieProtection(-1, 0, false, 1).delta, 0)).toBe(true);
+  });
+});
+
 describe('RankId coverage', () => {
   it('RANK_TIERS covers every RankId used elsewhere', () => {
     const ids = RANK_TIERS.map((t) => t.id);
