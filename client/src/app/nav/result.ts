@@ -10,7 +10,7 @@ import { decodeStateReplay, type EncodedStateReplay } from '../../game/replay/St
 import { ApiError } from '../../net/ApiClient';
 import { t } from '../../i18n';
 import { showToastMessage } from '../../net/log';
-import { matchBadgeTelemetry } from '../../scenes/ResultScene';
+import { matchBadgeTelemetry } from '../../scenes/ResultScene/badges';
 import type { EloResult, ResultRetentionPreview, ResultSceneCallbacks } from '../../scenes/ResultScene';
 import { checkinClaimedCount, nextCheckinDay } from '../../game/meta/retention';
 import type { ProfileData } from '../../ui/dialogs/ProfilePopup';

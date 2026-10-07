@@ -20,7 +20,7 @@ import { ApiError } from '../../../net/ApiClient';
 import { showToastMessage } from '../../../net/log';
 import type { CardRosterView } from '../../../scenes/CardScene';
 import type { IconKind } from '../../../render/icons';
-import { matchBadgeTelemetry } from '../../../scenes/ResultScene';
+import { matchBadgeTelemetry } from '../../../scenes/ResultScene/badges';
 import { buildEquipmentActions } from './equipmentActions';
 import { createStaminaAd } from './staminaAd';
 import type { MountOpts } from '../../AppViews';

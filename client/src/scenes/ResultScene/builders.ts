@@ -12,7 +12,7 @@ import { bake } from '../../render/bake';
 import { Prng } from '@nw/engine/math/prng';
 import { drawSceneHeader, type SceneHeaderResult } from '../../ui/widgets/SceneHeader';
 import { FS, snapFont, fitFont } from '../../render/fontScale';
-import type { Badge } from '../ResultScene';
+import type { Badge } from './badges';
 import { tapHandler } from '../../ui/hits';
 import { drawButtonLabel } from '../../ui/widgets/buttonLabel';
 import { UI_FONT_FAMILY } from '../../render/theme';

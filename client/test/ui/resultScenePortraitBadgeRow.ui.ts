@@ -35,7 +35,7 @@ initI18n('en', memStore, ['zh', 'en', 'de']);
 const PORTRAIT_DESIGN: [number, number] = [1080, 1920];
 const LANDSCAPE_DESIGN: [number, number] = [1920, 1080];
 
-// Stats calibrated (same REF_* constants as ResultScene.ts) so computeBadges() returns exactly a
+// Stats calibrated (same REF_* constants as ResultScene/badges.ts) so computeBadges() returns exactly a
 // hero badge (IRON_WALL, score 1.0 — took 0 of the REF_DAMAGE=150 reference damage) plus two
 // secondary badges (TOP_DMG, EFFICIENT) — the exact 3-badge layout from the reported screenshot.
 function badgeStats(owner: 0 | 1): PlayerStats {
