@@ -170,6 +170,19 @@ client/src/assets/decor/   # 最终透明 PNG / 图集
   | `spell_rockslide` | jagged boulders tumbling down a steep slope in a vertical cascade + dust puffs; red accent slashes across the falling rocks |
   | `spell_bridge_collapse` | a plank bridge cracking and snapping in the middle, two halves tilting into a gap + broken planks; red accent marks the central crack |
 
+#### 7.2.2 拖动中的卡与落点预览（2026-10-07）
+
+用户拍板「两步都做」。以前拖动时跟手的是一张只写卡名的小白卡，玩家要读字才知道拿起的是什么；落到哪也只有整条车道/格子的色块。
+
+- **跟手的卡 = 手牌的缩小版**：同一张插画（直接取手牌槽正在显示的纹理，所以皮肤也一致），右上角同色费用圈，左上角牌型折角（§7.2.1 三色）。64×84 设计 px。插画还没解码时退回卡名文字，规则同旧版：先缩字号，到下限仍放不下就在空格处折行，单个长词就把卡撑宽。新手教程的「幽灵手」示范复用同一张卡，所以示范里也是插画。
+- **落点预览**：指针在棋盘上、且这一放**会被接受**时，在真正落地的格子上画一个半透明（alpha 0.55）的东西：
+  - 单位：卡面插画，画在本方出兵格上，高度按身高档位取真实值（`unitSize.ts`），所以车道里指到哪一格都显示在出兵格上；
+  - 建筑：棋盘上那张建筑图，56 设计 px，画在本方建造格上；
+  - 法术不另画：陨石 2×2、落石整列本来就有范围高亮，急速没有目标。
+- 预览出现时跟手的卡淡到 0.5，不挡住下面要放的东西；离开有效落点就恢复 0.9。0.35 在真 Chrome 里看过太淡、读不出是哪张卡。
+- 「会被接受」与放手时的判定同一套：非车道列、出兵格被占、建造格已有建筑或禁建都不显示；新手教程里按同样的吸附规则显示在被引导的车道上，不在提示阶段就不显示（`TutorialDirector.snapCardPlay`，无副作用版的 `allowCardPlay`）。
+- 代码：[`GameRenderer/dragGhost.ts`](../../client/src/render/GameRenderer/dragGhost.ts)；测试 `client/test/ui/dragLandingPreview.ui.ts`。
+
 ### 7.3 金币与资源显示
 
 - 金币：手写数字字体 + 简笔硬币图标
