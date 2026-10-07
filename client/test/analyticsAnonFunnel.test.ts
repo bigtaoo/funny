@@ -1,10 +1,11 @@
 /**
- * analyticsAnonTutorial.test.ts — the anonymous tutorial-step tick (COMPLIANCE_GLOBAL §3.3).
+ * analyticsAnonFunnel.test.ts — the anonymous first-session funnel tick (COMPLIANCE_GLOBAL §3.3b).
  *
- * The CrazyGames build plays its first minute before the analytics question is answered (EU/US time
- * zones), so `countAnonymousTutorialStep` is the only thing that can say where those players drop.
- * What is pinned here is what keeps it a counter and not telemetry: it carries no identity, it stops
- * the moment real events can flow, and it counts each step once per launch.
+ * EEA players who never say yes to analytics report nothing else, so `countAnonymousFunnelStep` is
+ * the only thing that can say where they drop — and because it counts every player, it is also the
+ * one funnel consented and unconsented players can be read on together. What is pinned here is what
+ * keeps it a counter and not telemetry: it carries no identity, and it counts each step once per
+ * launch.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { IStorage } from '../src/platform/IPlatform';
@@ -24,7 +25,7 @@ vi.mock('../src/analytics/config', () => ({
   fetchAnalyticsConfig: vi.fn(async () => {}),
   shouldTrack: vi.fn(() => true),
   pingDeclinedLaunch: vi.fn(),
-  pingAnonymousTutorialStep: vi.fn((base: string, platform: string, step: string) => { state.ticks.push({ base, platform, step }); }),
+  pingAnonymousFunnelStep: vi.fn((base: string, platform: string, step: string) => { state.ticks.push({ base, platform, step }); }),
 }));
 
 function fakeStorage(): IStorage {
@@ -44,52 +45,54 @@ async function launch(apiBase: string | null = 'https://host/api') {
   return analytics;
 }
 
-describe('anonymous tutorial tick', () => {
+describe('anonymous first-session funnel tick', () => {
   beforeEach(() => { vi.stubGlobal('document', undefined); vi.stubGlobal('window', undefined); });
 
   it('ticks each step once per launch, with nothing but the platform and the step', async () => {
     const analytics = await launch();
-    analytics.countAnonymousTutorialStep('tutorial_start');
-    analytics.countAnonymousTutorialStep('beat_unit');
-    analytics.countAnonymousTutorialStep('tutorial_start'); // e.g. "replay tutorial" in the same launch
+    analytics.countAnonymousFunnelStep('tutorial_start');
+    analytics.countAnonymousFunnelStep('beat_unit');
+    analytics.countAnonymousFunnelStep('tutorial_start'); // e.g. "replay tutorial" in the same launch
     expect(state.ticks).toEqual([
       { base: 'https://host', platform: 'web', step: 'tutorial_start' },
       { base: 'https://host', platform: 'web', step: 'beat_unit' },
     ]);
   });
 
-  it('sends nothing once consent is granted — those players report real tutorial events', async () => {
+  it('counts every player, whatever their analytics answer', async () => {
     const analytics = await launch();
     analytics.setConsent(true);
-    analytics.countAnonymousTutorialStep('tutorial_start');
-    expect(state.ticks).toEqual([]);
+    analytics.countAnonymousFunnelStep('tutorial_start');
+    analytics.setConsent(false);
+    analytics.countAnonymousFunnelStep('graduate');
+    expect(state.ticks.map((t) => t.step)).toEqual(['tutorial_start', 'graduate']);
   });
 
-  it('starts again after a refusal or a withdrawal', async () => {
+  it('covers the first campaign levels and the tutorial skip', async () => {
     const analytics = await launch();
-    analytics.setConsent(true);
-    analytics.setConsent(false);
-    analytics.countAnonymousTutorialStep('graduate');
-    expect(state.ticks.map((t) => t.step)).toEqual(['graduate']);
+    analytics.countAnonymousFunnelStep('tutorial_skip');
+    analytics.countAnonymousFunnelStep('lv1_start');
+    analytics.countAnonymousFunnelStep('lv3_clear');
+    expect(state.ticks.map((t) => t.step)).toEqual(['tutorial_skip', 'lv1_start', 'lv3_clear']);
   });
 
   it('drops a step outside the allow-list instead of sending it', async () => {
     const analytics = await launch();
-    analytics.countAnonymousTutorialStep('orientation_o1' as never);
+    analytics.countAnonymousFunnelStep('orientation_o1' as never);
     expect(state.ticks).toEqual([]);
   });
 
   it('is a no-op offline, where there is no counter to write to', async () => {
     const analytics = await launch(null);
-    analytics.countAnonymousTutorialStep('tutorial_start');
+    analytics.countAnonymousFunnelStep('tutorial_start');
     expect(state.ticks).toEqual([]);
   });
 
   it('a fresh launch counts the same step again', async () => {
     let analytics = await launch();
-    analytics.countAnonymousTutorialStep('tutorial_start');
+    analytics.countAnonymousFunnelStep('tutorial_start');
     analytics = await launch();
-    analytics.countAnonymousTutorialStep('tutorial_start');
+    analytics.countAnonymousFunnelStep('tutorial_start');
     expect(state.ticks).toHaveLength(1); // launch() clears the log; the second launch ticked once
   });
 });
