@@ -38,7 +38,9 @@ export function makeText(
   // A plain style that names no family gets the UI's one family (render/theme.ts) instead of
   // PIXI's built-in default, Arial — the hand cards and the drag ghost drew in Arial for months
   // because nobody wrote a family down. A TextStyle instance is the caller's own object; leave it.
-  const withFamily = style instanceof PIXI.TextStyle || style.fontFamily != null
+  // (Plain-object check rather than `instanceof PIXI.TextStyle`: several unit tests mock the module.)
+  const plain = Object.getPrototypeOf(style) === Object.prototype;
+  const withFamily = !plain || style.fontFamily != null
     ? style
     : { ...style, fontFamily: UI_FONT_FAMILY };
   const t = new PIXI.Text(text, withFamily);
