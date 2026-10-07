@@ -333,8 +333,7 @@ export class ResultScene implements Scene {
     const title = makeText(headline, {
       fontSize: FS.display,
       fill: headlineColor,
-      fontWeight: 'bold',
-      fontFamily: UI_FONT_FAMILY,
+      fontWeight: 'bold', // family: makeText's UI_FONT_FAMILY default
     });
     title.anchor.set(0.5, 0);
     title.x = w / 2;

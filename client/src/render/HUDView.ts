@@ -8,6 +8,7 @@ import { ILayout, Rect } from '../layout/ILayout';
 import { t } from '../i18n';
 import { drawHudButton, hudButtonText, HudButtonVariant } from '../ui/widgets/hudButton';
 import { FS, snapFont, snapFontDown, currentFontFloor, fitFont } from './fontScale';
+import { surrenderButtonHeight, fitSurrenderLabel, fitActionLabel, setActionLabel, playerHpScale } from './HUDView/fitting';
 import { factionInk, fx } from './theme';
 import { buildIcon, preloadInkIconTextures } from './icons';
 import { HpBarView, HP_BAR_W } from './HUDView/hpBar';
@@ -72,6 +73,7 @@ export class HUDView {
   private surrenderBtnBg!:  PIXI.Graphics;
   /** Drawn width of the surrender/exit button: BTN_W, or wider when its label needs it. */
   private surrenderBtnW = BTN_W;
+  private surrenderBtnH = BTN_H;
 
   /** Monotonic phase driver for HP-danger blink + upgrade-affordable pulse. */
   private pulseT = 0;
@@ -169,12 +171,12 @@ export class HUDView {
 
     const cost = p.nextUpgradeCost;
     if (cost === null) {
-      this.upgradeBtnLabel.text = t('hud.upgradeMax');
+      setActionLabel(this.upgradeBtnLabel, t('hud.upgradeMax'), this.actionBtnW, this.actionBtnH, BTN_PAD_X);
       this.upgradeEnabled       = false;
       this.setUpgradeBtnStyle(false);
     } else {
       const canAfford = p.ink >= cost;
-      this.upgradeBtnLabel.text = t('hud.upgradeCost', { cost });
+      setActionLabel(this.upgradeBtnLabel, t('hud.upgradeCost', { cost }), this.actionBtnW, this.actionBtnH, BTN_PAD_X);
       this.upgradeEnabled       = canAfford;
       this.setUpgradeBtnStyle(canAfford);
     }
@@ -306,7 +308,8 @@ export class HUDView {
     // playback (spectator): there is nothing to surrender, and `_surrenderRect`
     // stays zero so input hit-testing never triggers the confirm dialog.
     this.surrenderBtnBg = new PIXI.Graphics();
-    const sBtnY = topR.y + (topR.h - BTN_H) / 2;
+    this.surrenderBtnH = surrenderButtonHeight(topR.h, BTN_H);
+    const sBtnY = topR.y + (topR.h - this.surrenderBtnH) / 2;
     const rightEdge = (isLandscape ? boardRight : topR.x + topR.w) - 8;
     let sBtnX = rightEdge - BTN_W;
     let sLabel: PIXI.Text | null = null;
@@ -315,18 +318,18 @@ export class HUDView {
       // The label is fitted to the button, and the button grows (leftwards, it is right-anchored)
       // only for what the floor cannot absorb: German "LEVEL VERLASSEN" under the phone type boost
       // ran past both ends of the fixed 100 px cell. The growth stops short of the enemy HP bar.
-      sLabel.style.fontSize = fitFont(FS.small, sLabel.width, BTN_W - 2 * BTN_PAD_X);
       const maxW = Math.max(BTN_W, rightEdge - (enemyHp.x + HP_BAR_W) - 8);
+      fitSurrenderLabel(sLabel, BTN_W, maxW, BTN_PAD_X);
       this.surrenderBtnW = Math.min(maxW, Math.max(BTN_W, Math.ceil(sLabel.width) + 2 * BTN_PAD_X));
       sBtnX = rightEdge - this.surrenderBtnW;
       this.surrenderBtnBg.x = sBtnX;
       this.surrenderBtnBg.y = sBtnY;
       this.drawSurrenderBtn();
-      this._surrenderRect = { x: sBtnX, y: sBtnY, w: this.surrenderBtnW, h: BTN_H };
+      this._surrenderRect = { x: sBtnX, y: sBtnY, w: this.surrenderBtnW, h: this.surrenderBtnH };
 
       sLabel.anchor.set(0.5);
       sLabel.x = sBtnX + this.surrenderBtnW / 2;
-      sLabel.y = sBtnY + BTN_H / 2;
+      sLabel.y = sBtnY + this.surrenderBtnH / 2;
     }
 
     // Bottom strip (full width) — rendered behind the hand cards so it
@@ -351,6 +354,7 @@ export class HUDView {
     // Player HP bar
     this.playerHpBar = new HpBarView(factionInk.friend);
     const playerHp   = this.playerHpBar.container;
+    let hpScale = 1;
     if (isLandscape) {
       // Right-anchored within the column (its inner edge, bordering the hand
       // strip) rather than the column's outer/screen edge — the column itself
@@ -359,7 +363,9 @@ export class HUDView {
       this.inkText.anchor.set(1, 0);
       this.inkText.x       = bLR.x + bLR.w - 14;
       this.inkText.y       = bLR.y + bLR.h * 0.22;
-      playerHp.x           = bLR.x + bLR.w - HP_BAR_W - 14;
+      hpScale = playerHpScale(board.x, HP_BAR_W); // see HUDView/fitting.ts
+      if (hpScale < 1) playerHp.scale.set(hpScale);
+      playerHp.x           = bLR.x + bLR.w - HP_BAR_W * hpScale - 14;
       playerHp.y           = bLR.y + bLR.h * 0.58;
     } else {
       // Shift the count right to leave room for the glyph at the strip's left edge.
@@ -368,7 +374,7 @@ export class HUDView {
       playerHp.x           = this.baseCenterX() - HP_BAR_W / 2;
       playerHp.y           = bLR.y + (bLR.h - HP_CELL_H) / 2;
     }
-    this._playerHpRect = { x: playerHp.x, y: playerHp.y, w: HP_BAR_W, h: HP_CELL_H };
+    this._playerHpRect = { x: playerHp.x, y: playerHp.y, w: HP_BAR_W * hpScale, h: HP_CELL_H * hpScale };
 
     // Bottom action buttons (refresh + upgrade) — larger than the surrender button,
     // laid out inside the bottom-right rect. Portrait: side by side (wide, short
@@ -402,6 +408,7 @@ export class HUDView {
     this.refreshBtnLabel.x = rRefresh.x + rRefresh.w / 2;
     this.refreshBtnLabel.y = rRefresh.y + rRefresh.h / 2;
     this._refreshRect      = rRefresh;
+    fitActionLabel(this.refreshBtnLabel, this.actionBtnW, this.actionBtnH, BTN_PAD_X);
     this.setRefreshBtnStyle(false);
 
     // Upgrade button — visual only, no interactive
@@ -413,6 +420,7 @@ export class HUDView {
     this.upgradeBtnLabel.x = rUpgrade.x + rUpgrade.w / 2;
     this.upgradeBtnLabel.y = rUpgrade.y + rUpgrade.h / 2;
     this._upgradeRect      = rUpgrade;
+    fitActionLabel(this.upgradeBtnLabel, this.actionBtnW, this.actionBtnH, BTN_PAD_X);
     this.setUpgradeBtnStyle(false);
 
     // Upgrade attention FX (§5): breathing glow ring (behind the button) + a bobbing
@@ -462,7 +470,7 @@ export class HUDView {
 
   private drawSurrenderBtn(): void {
     this.surrenderBtnBg.clear();
-    drawHudButton(this.surrenderBtnBg, this.surrenderBtnW, BTN_H, 'secondary', { radius: 4 });
+    drawHudButton(this.surrenderBtnBg, this.surrenderBtnW, this.surrenderBtnH, 'secondary', { radius: 4 });
   }
 
   private setUpgradeBtnStyle(enabled: boolean): void {

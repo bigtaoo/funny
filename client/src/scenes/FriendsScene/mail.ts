@@ -158,13 +158,15 @@ export class MailPanel {
       const label = txt(t('mail.attachments'), FS.heading, C.mid, true);
       label.anchor.set(0, 0); label.x = px; label.y = cy;
       core.container.addChild(label);
-      cy += Math.round(h * 0.04);
+      // Same rule as the lines above: an `h` fraction is the pitch on a tall page, the line's own
+      // height on a short one (a 640-tall landscape design since 2026-10-07 stacked them into each other).
+      cy += Math.max(Math.round(h * 0.04), Math.ceil(label.height));
       for (const a of m.attachments!) {
         const desc = attachmentLabel(a);
         const row = txt('· ' + desc, FS.heading, C.dark);
         row.anchor.set(0, 0); row.x = px + Math.round(w * 0.02); row.y = cy;
         core.container.addChild(row);
-        cy += Math.round(h * 0.04);
+        cy += Math.max(Math.round(h * 0.04), Math.ceil(row.height));
       }
       // One picture per attachment, laid out left-to-right below the name list.
       const iconSize = Math.round(h * 0.07);
