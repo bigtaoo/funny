@@ -154,8 +154,11 @@ export function buildCampaignHeader(root: PIXI.Container, hits: Hit[], opts: Cam
   if (subtitleStr) {
     const sub = txt(subtitleStr, FS.label, C.mid, false, Math.max(Math.round(w * 0.2), rightX - bandL));
     sub.anchor.set(0.5, 0.5);
-    // Centred on the bar, but never into the pills that now share this row.
-    sub.x = Math.min(w / 2, rightX - pillGap - sub.width / 2);
+    // Centred on the bar, but never into the pills that now share this row — nor, on the left,
+    // into the back pill: with the phone type boost the right-hand pills grow wide enough to push
+    // the owner line's centre left of the bar's middle, and "Tao's notebook" was drawn over Back
+    // at 722×406 (CrazyGames review audit, 2026-10-07).
+    sub.x = Math.max(bandL + sub.width / 2, Math.min(w / 2, rightX - pillGap - sub.width / 2));
     // Under the title rather than through it when the bar is too short for the fixed 0.40/0.72 rows.
     sub.y = Math.max(pillMidY, Math.round(title.y + title.height / 2 + sub.height / 2));
     sub.alpha = 0.75;

@@ -11,14 +11,14 @@ import { ApiError } from '../../net/ApiClient';
 import { t } from '../../i18n';
 import { showToastMessage } from '../../net/log';
 import { matchBadgeTelemetry } from '../../scenes/ResultScene';
-import type { EloResult, ResultRetentionPreview } from '../../scenes/ResultScene';
+import type { EloResult, ResultRetentionPreview, ResultSceneCallbacks } from '../../scenes/ResultScene';
 import { checkinClaimedCount, nextCheckinDay } from '../../game/meta/retention';
 import type { ProfileData } from '../../ui/dialogs/ProfilePopup';
 import { WorldApiClient } from '../../net/WorldApiClient';
 import { allEquippedSkins } from '../../game/meta/skinDefs';
 import type { NetGameView } from '../AppViews';
 import type { AppCtx, Nav } from '../appCtx';
-import { log, PLAYER_PUBLIC_ID_KEY } from '../appConstants';
+import { log, PLAYER_PUBLIC_ID_KEY, inkHintGate } from '../appConstants';
 
 type ResultNav = Pick<Nav, 'goResult' | 'goReplay' | 'goStatePlayer' | 'goGameNet'>;
 
@@ -207,7 +207,7 @@ export function createResultNav(ctx: AppCtx): ResultNav {
         });
         // Post-match badge/title distribution (ANALYTICS_DESIGN §5.8) — same computeBadges the
         // ResultScene renders, so what we log is exactly what the player sees on the result screen.
-        analytics.track('match_badges', { mode: isRanked ? 'pvp_ranked' : 'pvp_friendly', result, ...matchBadgeTelemetry(stats[localOwner]) });
+        analytics.track('match_badges', { mode: isRanked ? 'pvp_ranked' : 'pvp_friendly', result, ...matchBadgeTelemetry(stats[localOwner], result) });
         if (isRanked) {
           pending = { winner, stats, replay };
           // gameserver awaits meta's report() before sending match_over, and that internal
@@ -227,7 +227,7 @@ export function createResultNav(ctx: AppCtx): ResultNav {
         platform.rooms?.left();
         session.close(); nav.goLobby({ fade: true }); // exiting a match — one of the transitions that cross-fade
       },
-    }, { engine, net: true, profiles, equippedSkins: allEquippedSkins(saveManager.get().equipped), opponentSkins: info.opponentSkins });
+    }, { engine, net: true, profiles, equippedSkins: allEquippedSkins(saveManager.get().equipped), opponentSkins: info.opponentSkins, inkHint: inkHintGate(saveManager) });
 
     session.handlers = {
       onMatchStart: (i) => goGameNet(i),
@@ -288,6 +288,7 @@ export function createResultNav(ctx: AppCtx): ResultNav {
     onPlayAgain?: () => void,
     playAgainLabel?: string,
     onReturnToLobby?: () => void,
+    secondaryAction?: ResultSceneCallbacks['secondaryAction'],
   ): Promise<void> {
     state.inLobby = false;
     platform.onGameplayStop();
@@ -320,6 +321,7 @@ export function createResultNav(ctx: AppCtx): ResultNav {
         ...(replay ? { onWatchReplay: () => goReplay(replay) } : {}),
         ...(api ? { onShare: () => void doShareReplay({ winner: winner ?? -1 }) } : {}),
         ...(playAgainLabel ? { playAgainLabel } : {}),
+        ...(secondaryAction ? { secondaryAction } : {}),
         ...(worldApi ? { getProfileExtra: (publicId: string) => worldApi.getProfileExtra(publicId) } : {}),
       },
     });

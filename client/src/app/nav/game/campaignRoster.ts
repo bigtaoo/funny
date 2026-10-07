@@ -25,7 +25,7 @@ import { buildEquipmentActions } from './equipmentActions';
 import { createStaminaAd } from './staminaAd';
 import type { MountOpts } from '../../AppViews';
 import type { AppCtx, Nav } from '../../appCtx';
-import { TOKEN_KEY, SEEN_INTRO_FLAG } from '../../appConstants';
+import { TOKEN_KEY, SEEN_INTRO_FLAG, inkHintGate } from '../../appConstants';
 import { pickPracticeDifficulty } from '../lobby';
 import { resolveRealLayerInterlude } from '../../../scenes/realLayerInterludeArt';
 import openingStoryArtUrl from '../../../assets/story/intro_notebook.png';
@@ -62,7 +62,7 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
           duration_sec: Math.round((Date.now() - gameStartTs) / 1000),
         });
         // Post-match badge/title distribution (ANALYTICS_DESIGN §5.8) — local player is owner 0 in vs-AI.
-        analytics.track('match_badges', { mode, result, ...matchBadgeTelemetry(stats[0]) });
+        analytics.track('match_badges', { mode, result, ...matchBadgeTelemetry(stats[0], result) });
         // Bot-fallback matches are played entirely client-local (matchsvc issues no ticket/gameUrl),
         // so this is the only settlement hook for them: credits the daily task + (below threshold)
         // a small ELO nudge (SEASON_DESIGN §match_bot_fallback). Manually-chosen practice matches
@@ -89,6 +89,7 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
       },
     }, {
       equippedSkins: allEquippedSkins(saveManager.get().equipped),
+      inkHint: inkHintGate(saveManager),
       // PvP-vs-AI must honour the same ELO card-unlock gate as online PvP (PVP_LOADOUT §3/§6.3):
       // filter both sides' draw pool to the player's current-elo-validated deck (mirror match).
       // Without this the local engine draws from the full pool and leaks locked units (runner/splitter/…).
@@ -435,11 +436,12 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
         }
         // Post-match badge/title distribution (ANALYTICS_DESIGN §5.8), both win and loss — same
         // computeBadges the ResultScene renders. Local player is owner 0 in campaign.
+        const outcome = winner === 0 ? 'win' : winner === 1 ? 'loss' : 'draw';
         analytics.track('match_badges', {
           mode: 'campaign',
-          result: winner === 0 ? 'win' : winner === 1 ? 'loss' : 'draw',
+          result: outcome,
           level_id: levelId,
-          ...matchBadgeTelemetry(stats[0]),
+          ...matchBadgeTelemetry(stats[0], outcome),
         });
         const outroTexts = winner === 0 && level.story?.outroKey ? [t(level.story.outroKey as TranslationKey)] : undefined;
         // Each chapter's last level (chN_lv10.json) carries a `realLayerKey` — the Tao/Anna
@@ -453,6 +455,14 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
               onFinish: () => goCampaignMap(),
             })
           : goCampaignMap;
+        // A lost level offers the retry first (through level prep, which charges the stamina) and
+        // keeps the map one tap away — before, a defeat only had "back to map".
+        if (winner !== 0) {
+          void nav.goResult(winner, stats, 0, kept, undefined, undefined, outroTexts,
+            () => goLevelPrep(levelId), t('result.retry'), undefined,
+            { label: t('result.backToMap'), icon: 'mapPin', onTap: proceedToMap });
+          return;
+        }
         void nav.goResult(winner, stats, 0, kept, undefined, undefined, outroTexts, proceedToMap, t('result.backToMap'));
       },
       onExitToLobby() {
@@ -462,6 +472,7 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
     }, {
       level,
       equippedSkins: allEquippedSkins(saveManager.get().equipped),
+      inkHint: inkHintGate(saveManager),
       // Replay labels: human at the bottom, the level's forces at the top (owner-indexed).
       players: { bottom: ctx.playerName(), top: t('replay.aiOpponent') },
       // Hero Roster → engine (card level + per-card equipment buff blueprints, §9) and to the

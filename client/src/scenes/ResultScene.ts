@@ -120,7 +120,13 @@ const BADGES: Badge[] = [
   },
 ];
 
-function computeBadges(stats: PlayerStats): Badge[] {
+/** How the match ended for the local player — the badges only praise a match that wasn't lost. */
+export type MatchOutcome = 'win' | 'loss' | 'draw';
+
+function computeBadges(stats: PlayerStats, outcome: MatchOutcome): Badge[] {
+  // A defeat gets no praise: "[Iron Defense]" over a destroyed base read as a contradiction
+  // (CrazyGames review audit, 2026-10-07). The loss screen shows `result.keepGoing` instead.
+  if (outcome === 'loss') return [];
   // Return up to 3 badges with score > 0, sorted by score descending
   return BADGES
     .filter((b) => b.score(stats) > 0)
@@ -135,8 +141,8 @@ function computeBadges(stats: PlayerStats): Badge[] {
  * carried too so the backend can recalibrate the REF_* constants above from real
  * distributions instead of estimates (badge_dist ops dashboard).
  */
-export function matchBadgeTelemetry(local: PlayerStats): Record<string, unknown> {
-  const keys = computeBadges(local).map((b) => b.key);
+export function matchBadgeTelemetry(local: PlayerStats, outcome: MatchOutcome): Record<string, unknown> {
+  const keys = computeBadges(local, outcome).map((b) => b.key);
   return {
     hero: keys[0] ?? 'none', // top badge = the "title" the player sees; 'none' if all scores ≤ 0
     shown: keys,             // up to 3 medallions shown, hero first
@@ -162,6 +168,11 @@ export interface ResultSceneCallbacks {
   onShare?(): void;
   /** Override the "play again" button label (e.g. campaign uses 'Back to Map'). */
   playAgainLabel?: string;
+  /**
+   * An extra entry at the head of the secondary row — campaign's "back to map" once a defeat turns
+   * the primary CTA into "retry".
+   */
+  secondaryAction?: { label: string; icon: IconKind; onTap(): void };
   /** Unified profile-popup extras (rank/ELO + family/sect) — see ProfilePopup's `fetchExtra`. Omitted offline/AI. */
   getProfileExtra?(publicId: string): Promise<ProfileExtra>;
 }
@@ -365,8 +376,10 @@ export class ResultScene implements Scene {
         this.container, this.popup, w, h, t('result.vs', { name: opp.name }), headerBottom, opp, 0xaa2222);
     }
 
-    // Badges
-    const badges = computeBadges(playerStats);
+    // Badges — every node of the block is collected so it can be shrunk to fit above the CTA.
+    const badges = computeBadges(playerStats, isDraw ? 'draw' : (isWin ? 'win' : 'loss'));
+    const badgeTop = headerBottom;
+    const badgeBlock: PIXI.DisplayObject[] = [];
 
     if (badges.length > 0) {
       // Hero badge — the top one, shown large: gold glyph + title + detail sentence.
@@ -376,6 +389,7 @@ export class ResultScene implements Scene {
       glyph.x = (w - heroIcon) / 2;
       glyph.y = headerBottom + h * 0.03;
       this.container.addChild(glyph);
+      badgeBlock.push(glyph);
 
       const heroText = makeText(hero.title(), {
         fontSize: FS.display,
@@ -386,8 +400,9 @@ export class ResultScene implements Scene {
       heroText.x = w / 2;
       heroText.y = glyph.y + heroIcon + h * 0.008;
       this.container.addChild(heroText);
+      badgeBlock.push(heroText);
 
-      const heroDetail = makeText(`「${hero.detail(playerStats)}」`, {
+      const heroDetail = makeText(t('result.badgeQuote', { text: hero.detail(playerStats) }), {
         fontSize: FS.title,
         fill: 0x444444,
         fontStyle: 'italic',
@@ -397,6 +412,7 @@ export class ResultScene implements Scene {
       heroDetail.y = heroText.y + heroText.height + h * 0.01;
       heroDetail.name = 'resultHeroDetail'; // test hook — see test/ui/resultScenePortraitBadgeRow.ui.ts
       this.container.addChild(heroDetail);
+      badgeBlock.push(heroDetail);
 
       // Secondary badges — a centred row of small icon medallions (no text list).
       const rest = badges.slice(1);
@@ -409,8 +425,13 @@ export class ResultScene implements Scene {
         // short h=1080). In portrait h is the long axis (>=1920), so that same pull-up
         // scales past the actual gap available and drags the row up into heroDetail's text
         // (VICTORY screenshot: badge icons overlapping "took 0 damage") — use a plain
-        // downward gap there instead.
-        const rowY  = isPortrait
+        // downward gap there instead. The pull-up also needs heroDetail to end short of the
+        // nearest icon: under the phone type boost the quote widens into the icons (722×406
+        // portal frame: the castle glyph sat on the closing quote mark).
+        const iconHalf = (Math.round(h * 0.065) * 1.2) / 2;
+        const nearestIcon = Math.min(...rest.map((_, i) => Math.abs(rowX + i * (cellW + gap) + cellW / 2 - w / 2)));
+        const clearsDetail = heroDetail.width / 2 + w * 0.01 <= nearestIcon - iconHalf;
+        const rowY  = isPortrait || !clearsDetail
           ? heroDetail.y + heroDetail.height + h * 0.02
           : heroDetail.y + heroDetail.height - h * 0.041;
         rest.forEach((badge, i) => {
@@ -421,6 +442,7 @@ export class ResultScene implements Scene {
           medallion.y = rowY;
           medallion.name = 'resultSecondaryBadge'; // test hook — see test/ui/resultScenePortraitBadgeRow.ui.ts
           this.container.addChild(medallion);
+          badgeBlock.push(medallion);
         });
       }
     } else {
@@ -434,6 +456,7 @@ export class ResultScene implements Scene {
       no.x = w / 2;
       no.y = headerBottom + h * 0.06;
       this.container.addChild(no);
+      badgeBlock.push(no);
     }
 
     // ── Action buttons: one primary CTA + a row of low-key secondary entries ──
@@ -443,11 +466,20 @@ export class ResultScene implements Scene {
     const primaryH = Math.round(h * 0.085);
     const primaryX = (w - primaryW) / 2;
     const primaryY = Math.round(h * 0.78);
+    const hasRetentionRow = isWin && !!this.retentionPreview;
+
+    // The badge block is sized in font tokens, which the phone type boost lifts up to 1.4x
+    // (render/fontScale.ts) while the CTA stays pinned at 78% — on a 722×406 portal frame the
+    // secondary medallions' "[Unit Flood] 5 units" ran under PLAY AGAIN. Shrink the block about its
+    // top centre until it clears whatever sits above the CTA.
+    const badgeLimit = (hasRetentionRow ? primaryY - Math.round(h * 0.06) - Math.round(h * 0.04) : primaryY)
+      - Math.round(h * 0.02);
+    fitBlockAbove(badgeBlock, w / 2, badgeTop, badgeLimit);
 
     // "Come back tomorrow" check-in hook (RETENTION_LAUNCH_PLAN.md §3.3) — a one-line reward
     // preview sitting just above the primary CTA, independent of the badges block above it (which
     // varies in height) so it never collides regardless of how many badges this match earned.
-    if (isWin && this.retentionPreview) {
+    if (hasRetentionRow && this.retentionPreview) {
       const { day, reward } = this.retentionPreview;
       const rowY = primaryY - Math.round(h * 0.06);
       const rc = Math.round(h * 0.04);
@@ -480,7 +512,8 @@ export class ResultScene implements Scene {
     );
 
     const secs: { label: string; icon: IconKind; tap: () => void }[] = [];
-    if (cb.onWatchReplay)   secs.push({ label: t('result.watchReplay'), icon: 'replay', tap: () => cb.onWatchReplay!() });
+    if (cb.secondaryAction) secs.push({ label: cb.secondaryAction.label, icon: cb.secondaryAction.icon, tap: () => cb.secondaryAction!.onTap() });
+    if (cb.onWatchReplay)  secs.push({ label: t('result.watchReplay'), icon: 'replay', tap: () => cb.onWatchReplay!() });
     if (cb.onShare)         secs.push({ label: t('share.button'),       icon: 'share',  tap: () => cb.onShare!() });
 
     if (secs.length > 0) {
@@ -494,5 +527,23 @@ export class ResultScene implements Scene {
         addSecondaryButton(this.container, rowX + i * (cellW + gap), rowY, cellW, cellH, s.label, s.icon, s.tap);
       });
     }
+  }
+}
+
+/**
+ * Shrinks `nodes` (direct children laid out in the scene's own space) about (`cx`, `top`) so their
+ * lowest edge sits at or above `limit`. A no-op when they already fit, so every layout that never
+ * overflowed keeps its exact positions.
+ */
+function fitBlockAbove(nodes: PIXI.DisplayObject[], cx: number, top: number, limit: number): void {
+  if (nodes.length === 0) return;
+  // Parent-space extents (the scene container may itself be scaled on stage, so not getBounds()).
+  const bottom = Math.max(...nodes.map((n) => { const b = n.getLocalBounds(); return n.y + (b.y + b.height) * n.scale.y; }));
+  if (bottom <= limit || bottom <= top) return;
+  const s = Math.max(0.5, (limit - top) / (bottom - top));
+  for (const n of nodes) {
+    n.x = cx + (n.x - cx) * s;
+    n.y = top + (n.y - top) * s;
+    n.scale.set(n.scale.x * s, n.scale.y * s);
   }
 }

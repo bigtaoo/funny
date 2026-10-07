@@ -272,6 +272,9 @@ export function drawFactionMarker(
   g.beginFill(color, 0.22); g.drawEllipse(cx,       cy,       rx * 1.12, ry * 1.12); g.endFill();
   g.beginFill(color, 0.38); g.drawEllipse(cx + 1.0, cy + 0.4, rx * 0.82, ry * 0.82); g.endFill();
   g.beginFill(color, 0.55); g.drawEllipse(cx + 1.5, cy + 0.6, rx * 0.5,  ry * 0.5);  g.endFill();
+  // A crisp rim on top of the wash: the soft halo alone read as "a faint shadow" in the
+  // CrazyGames review audit (2026-10-07) — an enemy unit drawn in blue ink looked like ours.
+  g.lineStyle(2.5, color, 0.9); g.drawEllipse(cx, cy, rx, ry); g.lineStyle(0);
 }
 
 /**

@@ -11,7 +11,7 @@ import type { FeatureFlags } from '../net/featureFlags';
 import type { NetSession } from '../net/NetSession';
 import type { WorldApiClient, FamilyDetailView, SectDetailView } from '../net/WorldApiClient';
 import type { Replay, OwnerId, PlayerStats, MatchStartInfo, AIDifficulty } from '../game';
-import type { EloResult } from '../scenes/ResultScene';
+import type { EloResult, ResultSceneCallbacks } from '../scenes/ResultScene';
 import type { ProfileData } from '../ui/dialogs/ProfilePopup';
 import type { RoomIntent } from '../platform/IPlatform';
 import type { EntryNoticeHost } from '../ui/dialogs/EntryNoticeStrip';
@@ -126,6 +126,7 @@ export interface Nav {
     onPlayAgain?: () => void,
     playAgainLabel?: string,
     onReturnToLobby?: () => void,
+    secondaryAction?: ResultSceneCallbacks['secondaryAction'],
   ): Promise<void>;
 }
 
