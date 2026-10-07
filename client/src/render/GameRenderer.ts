@@ -80,6 +80,9 @@ export class GameRenderer {
   get onPauseChange(): ((paused: boolean) => void) | null { return this.core.onPauseChange; }
   set onPauseChange(fn: ((paused: boolean) => void) | null) { this.core.onPauseChange = fn; }
 
+  /** Logic ticks the match has run — what the battle BGM picks its phase from (`battleMusic.ts`). */
+  get elapsedTicks(): number { return this.core.engine.state.elapsedTicks; }
+
   /** Screen-edge base-damage flash alpha — read/reset directly by ReplayScene when playback stops. */
   get vignetteAlpha(): number { return this.events.vignetteAlpha; }
   set vignetteAlpha(v: number) { this.events.vignetteAlpha = v; }

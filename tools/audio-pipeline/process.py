@@ -415,10 +415,16 @@ def main() -> int:
             "files": entries,
         })
 
-    json.dump({
+    # The `music` / `music_sources` sections belong to process_music.py, which writes them into
+    # this same file. Carried over verbatim: dropping them here would unship the BGM licence
+    # record on every cue rebuild, and only `musicAssets.test.ts` would notice.
+    prev = json.load(open(CREDITS, encoding="utf-8")) if os.path.exists(CREDITS) else {}
+    music = {k: prev[k] for k in ("music", "music_sources") if k in prev}
+    credits = {
         "note": "Licence and provenance for every audio asset under client/src/assets/audio/. "
                 "Upstream pack details are in packs.json. Written by "
-                "tools/audio-pipeline/process.py -- edit that, not this.",
+                "tools/audio-pipeline/process.py (cues) and process_music.py (music, "
+                "music_sources) -- edit those, not this.",
         "bus_gain_measured_at": BUS_GAIN,
         "peak_reference": "AUDIO_DESIGN.md §0.3 measured delivered peaks (Chrome column); "
                           "file_peak = delivered_peak / (catalogue_gain * bus_gain)",
@@ -427,7 +433,11 @@ def main() -> int:
         "processing": "mono + trim(-40 dBFS, faded edges) + per-cue duration cap (faded) + "
                       "peak-match to the measured delivered peak + smallest-bytes MP3 among "
                       "bandwidth-legal sample rates (95% rolloff x 2.2).",
-    }, open(CREDITS, "w"), indent=1)
+        **music,
+    }
+    with open(CREDITS, "w", encoding="utf-8", newline="\n") as f:
+        json.dump(credits, f, indent=2, ensure_ascii=False)
+        f.write("\n")
 
     hdr = "%-22s %-42s %6s %8s %8s %8s %8s %8s" % (
         "cue", "source", "sr", "dur ms", "cap ms", "gain dB", "bytes", "src B")

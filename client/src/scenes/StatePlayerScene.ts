@@ -14,6 +14,8 @@ import { FS, snapFont } from '../render/fontScale';
 import { stateRecorder } from '../game/replay/StateRecorder';
 import { StatePlayerHud } from './StatePlayerScene/hud';
 import { tapHandler } from '../ui/hits';
+import { battleTrack } from '../audio/battleMusic';
+import type { MusicTrack } from '../audio/types';
 import type {
   StateReplay,
   StateFrame,
@@ -83,8 +85,10 @@ interface BoardLike {
 }
 
 export class StatePlayerScene implements Scene {
-  /** 状态回放/排障，同 `GameScene.music`。 */
-  readonly music = null;
+  /** 状态回放/排障，同 `GameScene.music`，按播放时钟换算出的 tick 选轨。 */
+  get music(): MusicTrack {
+    return battleTrack(this.clock * this.tickRate);
+  }
   readonly container: PIXI.Container;
 
   private readonly boardView: BoardView;

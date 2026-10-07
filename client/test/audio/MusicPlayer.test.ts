@@ -1,24 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-
-// **A second track, mocked in.** `MusicTrack` has exactly one member today — `bgm.battle` has no
-// master, and `types.ts` explains why an absent track must not be present-and-empty. But two
-// decks exist FOR the transition between two tracks, so the alternative to a mock here is to
-// leave the track-change half of this player untested until a second master arrives, and then
-// discover its bugs by ear. The mock keeps the real `bgm.lobby` entry untouched and adds one
-// beside it; nothing else the file asserts (envelope shape, wrap timing, duck ramps) depends on
-// which tracks exist.
-vi.mock('../../src/audio/musicCatalogue', async (importOriginal) => {
-  const real = await importOriginal<typeof import('../../src/audio/musicCatalogue')>();
-  return {
-    ...real,
-    MUSIC_CATALOGUE: {
-      ...real.MUSIC_CATALOGUE,
-      'bgm.battle': { path: '/test/bgm-battle.mp3', lengthS: 60.0, gain: 1.0 },
-    },
-  };
-});
-
-import { MusicPlayer, type MusicDeck } from '../../src/audio/MusicPlayer';
+import { describe, it, expect } from 'vitest';
+import { GAP_S, MusicPlayer, type MusicDeck } from '../../src/audio/MusicPlayer';
 import { MUSIC_CATALOGUE, XFADE_S } from '../../src/audio/musicCatalogue';
 import type { MusicTrack } from '../../src/audio/types';
 
@@ -31,8 +12,7 @@ import type { MusicTrack } from '../../src/audio/types';
 // So every case below asserts a NUMBER or an ORDER, not "it did something".
 
 const LOBBY: MusicTrack = 'bgm.lobby';
-/** Only reachable through the mock above — hence the cast rather than a union member. */
-const BATTLE = 'bgm.battle' as unknown as MusicTrack;
+const BATTLE: MusicTrack = 'bgm.battle.early';
 
 interface Call { fn: string; arg?: unknown }
 
@@ -101,6 +81,9 @@ function run(player: MusicPlayer, track: MusicTrack | null, ms: number, step = 1
 }
 
 const XFADE_MS = XFADE_S * 1000;
+const GAP_MS = GAP_S * 1000;
+
+const plays = (d: FakeDeck): unknown[] => d.calls.filter((c) => c.fn === 'play').map((c) => c.arg);
 
 describe('MusicPlayer — starting from silence', () => {
   it('starts the first deck on the requested track and leaves the second alone', () => {
@@ -133,37 +116,91 @@ describe('MusicPlayer — starting from silence', () => {
 });
 
 describe('MusicPlayer — changing track', () => {
-  it('crossfades onto the other deck and stops the outgoing one when it settles', () => {
+  it('fades the old track out, leaves a gap, then fades the new one in — never both at once', () => {
     const { player, decks } = makePlayer();
-    run(player, LOBBY, XFADE_MS + 64);
-    player.update(BATTLE, 16);
-    expect(decks[1].calls[0]).toEqual({ fn: 'play', arg: MUSIC_CATALOGUE[BATTLE].path });
-    expect(decks[0].playing).toBe(true); // still playing out its tail
-
-    run(player, BATTLE, XFADE_MS / 2);
-    // Both audible at once, summing to unity in power.
-    expect(decks[0].gain ** 2 + decks[1].gain ** 2).toBeCloseTo(1, 1);
-
-    run(player, BATTLE, XFADE_MS / 2 + 64);
-    expect(decks[1].gain).toBeCloseTo(MUSIC_CATALOGUE[BATTLE].gain, 5);
-    // Stopped, not merely faded to 0: a media element held at gain 0 keeps decoding, which on a
-    // phone is battery spent on something inaudible.
-    expect(decks[0].playing).toBe(false);
-    expect(decks[0].calls.some((c) => c.fn === 'stop')).toBe(true);
+    run(player, LOBBY, XFADE_MS + 64);          // lobby settled on deck 0
+    // Two different songs are almost never in the same key or tempo, so overlapping them for two
+    // seconds sounds like two bands fighting over the beat. The whole change is checked frame by
+    // frame: at no point may both decks be audible.
+    let overlap = 0;
+    let firstBattleFrame = -1;
+    const battleStarted = (): boolean =>
+      decks.some((d) => plays(d).includes(MUSIC_CATALOGUE[BATTLE].path));
+    for (let t = 0; t < XFADE_MS + GAP_MS + XFADE_MS + 200; t += 16) {
+      player.update(BATTLE, 16);
+      if (decks[0].gain > 0 && decks[1].gain > 0) overlap++;
+      if (firstBattleFrame < 0 && battleStarted()) firstBattleFrame = t;
+    }
+    expect(overlap).toBe(0);
+    // The new track starts only after the old fade (XFADE_S) AND the gap (GAP_S).
+    expect(firstBattleFrame).toBeGreaterThanOrEqual(XFADE_MS + GAP_MS - 32);
+    expect(firstBattleFrame).toBeLessThan(XFADE_MS + GAP_MS + 32);
+    // Both decks are free by then, so the first one is taken again -- and the outgoing stream was
+    // STOPPED before it, not merely faded to 0: a media element held at gain 0 keeps decoding,
+    // which on a phone is battery spent on something inaudible.
+    expect(decks[0].calls).toEqual([
+      { fn: 'play', arg: MUSIC_CATALOGUE[LOBBY].path },
+      { fn: 'stop' },
+      { fn: 'play', arg: MUSIC_CATALOGUE[BATTLE].path },
+    ]);
+    expect(decks[0].gain).toBeCloseTo(MUSIC_CATALOGUE[BATTLE].gain, 5);
+    expect(decks[1].calls).toEqual([]);
   });
 
-  it('a change arriving MID-crossfade reuses the deck that was fading out', () => {
+  it('reports the NEW track as current from the moment it is asked for', () => {
+    // The caller re-asks every frame; if `current` lagged until the gap ended, every one of those
+    // frames would look like a fresh change and restart the wait.
     const { player, decks } = makePlayer();
-    run(player, LOBBY, XFADE_MS + 64);          // lobby on deck 0
-    run(player, BATTLE, XFADE_MS / 4);          // fading 0 -> 1
-    player.update(LOBBY, 16);                   // back again, still mid-fade
-    // Deck 0 is the one still draining, so it is the one taken — and it is hard-stopped first so
-    // it cannot be left at a non-zero level with nothing driving it.
-    expect(decks[0].calls.filter((c) => c.fn === 'play').length).toBe(2);
     run(player, LOBBY, XFADE_MS + 64);
+    run(player, BATTLE, XFADE_MS / 2);
+    expect(player.current).toBe(BATTLE);
+    expect([...plays(decks[0]), ...plays(decks[1])]).toEqual([MUSIC_CATALOGUE[LOBBY].path]);
+  });
+
+  it('a change during the wait only retargets what starts — the timer does not restart', () => {
+    const { player, decks } = makePlayer();
+    run(player, LOBBY, XFADE_MS + 64);
+    run(player, BATTLE, XFADE_MS / 2);          // lobby half faded out
+    run(player, LOBBY, XFADE_MS / 2 + GAP_MS + 64);
+    // Lobby comes back from its head after the gap; battle never sounded at all.
+    expect([...plays(decks[0]), ...plays(decks[1])]).toEqual([
+      MUSIC_CATALOGUE[LOBBY].path, MUSIC_CATALOGUE[LOBBY].path,
+    ]);
     expect(player.current).toBe(LOBBY);
-    expect(decks[0].gain).toBeCloseTo(MUSIC_CATALOGUE[LOBBY].gain, 5);
-    expect(decks[1].playing).toBe(false);
+  });
+
+  it('null during the wait cancels the incoming track', () => {
+    const { player, decks } = makePlayer();
+    run(player, LOBBY, XFADE_MS + 64);
+    run(player, BATTLE, XFADE_MS / 2);
+    run(player, null, XFADE_MS + GAP_MS + XFADE_MS);
+    expect([...plays(decks[0]), ...plays(decks[1])]).toEqual([MUSIC_CATALOGUE[LOBBY].path]);
+    expect(decks[0].playing).toBe(false);
+    expect(player.current).toBeNull();
+  });
+
+  it('a track asked for while an earlier fade-out is still draining waits for it', () => {
+    const { player, decks } = makePlayer();
+    run(player, LOBBY, XFADE_MS + 64);
+    run(player, null, XFADE_MS / 2);            // lobby draining
+    player.update(BATTLE, 16);
+    run(player, BATTLE, XFADE_MS / 2 - 64);
+    expect([...plays(decks[0]), ...plays(decks[1])]).toEqual([MUSIC_CATALOGUE[LOBBY].path]);
+    run(player, BATTLE, GAP_MS + 128);
+    expect(plays(decks[0])).toEqual([MUSIC_CATALOGUE[LOBBY].path, MUSIC_CATALOGUE[BATTLE].path]);
+  });
+
+  it('a deck still fading IN is faded out from where it is, not from full level', () => {
+    const { player, decks } = makePlayer();
+    run(player, LOBBY, XFADE_MS / 4);           // lobby only part-way up
+    const before = decks[0].gain;
+    expect(before).toBeLessThan(0.5);
+    // The change frame still advances the in-flight fade-in by one step before the fade-out takes
+    // over, so allow that one step -- but never a jump back up to the track's full level.
+    const seen: number[] = [];
+    for (let t = 0; t < XFADE_MS / 2; t += 16) { player.update(BATTLE, 16); seen.push(decks[0].gain); }
+    expect(Math.max(...seen)).toBeLessThan(before + 0.05);
+    expect(seen[seen.length - 1]!).toBeLessThan(before);
   });
 
   it('null fades to silence and then stops the deck', () => {
@@ -173,6 +210,15 @@ describe('MusicPlayer — changing track', () => {
     expect(player.current).toBeNull();
     expect(decks[0].playing).toBe(false);
     expect(decks[0].gain).toBe(0);
+  });
+
+  it('stop() during the wait leaves nothing queued', () => {
+    const { player, decks } = makePlayer();
+    run(player, LOBBY, XFADE_MS + 64);
+    run(player, BATTLE, XFADE_MS / 2);
+    player.stop();
+    run(player, null, XFADE_MS + GAP_MS + 200);
+    expect([...plays(decks[0]), ...plays(decks[1])]).toEqual([MUSIC_CATALOGUE[LOBBY].path]);
   });
 });
 
@@ -210,8 +256,8 @@ describe('MusicPlayer — closing the loop', () => {
     run(player, LOBBY, XFADE_MS + 64);
     decks[0].pos = MUSIC_CATALOGUE[LOBBY].lengthS;   // past the seam
     run(player, BATTLE, 32);                          // ...but a track change is under way
-    expect(decks[1].calls.filter((c) => c.fn === 'play')
-      .every((c) => c.arg === MUSIC_CATALOGUE[BATTLE].path)).toBe(true);
+    // The outgoing lobby is fading out; restarting it here would put it back on a deck.
+    expect([...plays(decks[0]), ...plays(decks[1])]).toEqual([MUSIC_CATALOGUE[LOBBY].path]);
   });
 
   it('a deck that reports no position never triggers a wrap', () => {
