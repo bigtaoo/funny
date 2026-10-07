@@ -1,5 +1,6 @@
 import { Scene } from './SceneManager';
 import { GameRenderer, type GameProfiles } from '../render/GameRenderer';
+import type { InkHintGate } from '../render/GameRenderer/inkHint';
 import type { TutorialConfig } from '../render/TutorialDirector';
 import type { BattleLabelContext } from '../render/battleLabels';
 import { ILayout } from '../layout/ILayout';
@@ -105,6 +106,8 @@ export interface GameSceneOptions {
    * for netplay (server records that match) — netplay names are written in nav/result.ts instead.
    */
   players?: { bottom?: string; top?: string };
+  /** The one-time "not enough ink" bubble's gate (ONBOARDING_DESIGN §9 item 9); absent = never shown. */
+  inkHint?: InkHintGate;
 }
 
 export class GameScene implements Scene {
@@ -168,6 +171,7 @@ export class GameScene implements Scene {
     // surrendering to a stage reads oddly. Mirror createLocalMatch's mode resolution.
     const isCampaign = !opts.net && (opts.mode ?? (opts.level ? 'campaign' : 'pvp')) === 'campaign';
     this.renderer.setCampaignMode(isCampaign);
+    this.renderer.setInkHint(opts.inkHint ?? null);
     this.renderer.init();
     // Attach the recording (if any) to the end-of-game callback.
     this.renderer.onGameEnd = (winner, stats, summary) => this.cb.onGameEnd(winner, stats, buildReplay(winner), summary);

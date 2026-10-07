@@ -2,6 +2,7 @@
 // Extracted so the domain nav modules under app/nav/ can share the same storage keys
 // and logger without importing createAppCore (which would be circular).
 import { netLog } from '../net/log';
+import type { InkHintGate } from '../render/GameRenderer/inkHint';
 
 export const log = netLog('app');
 
@@ -13,6 +14,19 @@ export const log = netLog('app');
 export const SEEN_INTRO_FLAG = 'seen_intro';
 /** Set after the tutorial is completed or skipped; prevents auto-entry afterwards. Clearing it via "replay tutorial" in settings allows re-entry (ONBOARDING_DESIGN §3.4). */
 export const TUTORIAL_DONE_FLAG = 'tutorial_done';
+/** flags key — the one-time "not enough ink" bubble has been shown (ONBOARDING_DESIGN §9 item 9). */
+export const INK_HINT_FLAG = 'hint.ink';
+
+/** The battle renderer's gate for that bubble: owed until the flag is set, and claiming it sets it. */
+export function inkHintGate(save: { getFlag(key: string): boolean; setFlag(key: string, value: boolean): void }): InkHintGate {
+  return {
+    claim(): boolean {
+      if (save.getFlag(INK_HINT_FLAG)) return false;
+      save.setFlag(INK_HINT_FLAG, true);
+      return true;
+    },
+  };
+}
 /** flags key — set after the player accepts the GDPR / privacy consent (C5-c, L1-1). Mirrors server `flags.gdprConsent`. */
 export const GDPR_CONSENT_FLAG = 'gdprConsent';
 /**

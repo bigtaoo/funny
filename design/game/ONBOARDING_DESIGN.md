@@ -262,7 +262,7 @@
 5. **合规开机层**（年龄门 + EU/UK 同意，与 COMPLIANCE 联动，海外测试前必须）。
 6. ~~FTUE 漏斗埋点接入~~ ✅ 已完成（`tutorial_start/complete/skip` + 逐 beat `tutorial_step` 全部已埋，见 §8「FTUE 漏斗埋点」行——design-doc-audit-2026-07 核实此条目此前是过期记录）。
 7. 依教学完成率与 D1 数据迭代 beat 脚本与提示文案。数据：`tutorial_step` 逐拍漏斗 + `tutorial_beat_done`（空闲时长/幽灵卡/拖错）+ 未同意玩家的匿名逐拍计数（ANALYTICS_DESIGN §3.6d）。
-9. **待办：墨不够的情境提示**（原 O7 的内容，§3.1）。实战里玩家第一次按到墨不够的牌时弹一次轻提示，不暂停；新 flag `hint.ink`。
+9. ✅ **墨不够的情境提示**（原 O7 的内容，§3.1；2026-10-07 实现）。实战里玩家第一次按到墨不够的牌（拖或点选都算）时，在手牌上方弹一个深色气泡「Not enough ink yet — it refills over time.」，停 3 秒、最后 0.5 秒淡出，不暂停战斗。只弹一次：存档 flag `hint.ink`（`appConstants.ts` 的 `inkHintGate` 第一次 `claim()` 时写入并放行，之后一律拒绝）。PvE（vs AI、战役）和联机对局都接了，教学关里不弹，因为教学关有自己的引导。实现见 `render/GameRenderer/inkHint.ts`、`GameRenderer/input.ts` `rejectPlay`，测试见 `test/ui/reviewAuditFixes.ui.ts`。
 8. ✅ **SLG 开局多步引导链**（§4.2，2026-08-12，用户反馈"进大世界不知道点主城"后新增）：主城→建造→返回→占地四步高亮，`GuideOverlay` 组件 + `guide.world.step{1..4}` flags。
 
 ---

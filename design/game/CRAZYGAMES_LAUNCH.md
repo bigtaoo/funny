@@ -176,6 +176,33 @@ Basic 期间的运营信息：更新**自动通过**；评估指标参考值—�
 
 审核员没有走到这些地方，它们不是这次被拒的直接原因，但重投前也要修，清单在会话记忆 `crazygames-rejection-audit-2026-10-07` 里。
 
+### 7.1 体检问题修复（2026-10-07）
+
+都在 722×406 门户画框下用真 Chrome 看过，回归测试在 `client/test/ui/reviewAuditFixes.ui.ts`。
+
+| 问题 | 改法 |
+|---|---|
+| 战役地图：笔记本主人那行字压在 Back 上 | `CampaignMapScene/header.ts`：副标题中心夹在「Back 右缘 + 半宽」到「右侧按钮左缘 − 半宽」之间 |
+| 战役地图：START 被第 1 关圆圈挡成 "STA" | `CampaignMapScene/drawing.ts`：START 改到旗杆上方 |
+| 结算页：失败仍发夸奖徽章 | `computeBadges(stats, outcome)` 失败时返回空，只显示「Keep going!」；`badge_earned` 埋点同样不发 |
+| 结算页：英文里用中文直角引号 | 新 i18n `result.badgeQuote`：en “…” / de „…“ / zh 「…」 |
+| 结算页：徽章压在 PLAY AGAIN 下 | 徽章整块（主徽章 + 引语 + 次级徽章行）超出按钮上沿时，以顶部中点为基准等比缩小，最小 0.5 倍；有签到预览行时按它的上沿算。横屏原本让次级徽章行上提、与引语并排，现在只有引语宽度让得开图标时才上提（字体放大后引语会顶到图标上） |
+| 结算页：战役失败没有 Retry | 战役失败时主按钮改成「RETRY」（回本关准备页），「BACK TO MAP」放进次级按钮行（`ResultSceneCallbacks.secondaryAction`） |
+| 手牌：两词卡名折行压住插画 | `HandView/cellDraw.ts`：先不折行、按卡宽缩字；缩到下限仍放不下才折行；插画区底边跟着卡名上沿走 |
+| 阵营只靠脚下淡色阴影区分；两座基地是同一张黑墨城堡 | 基地旗杆上加阵营色三角旗（`BoardView/bases.ts`，旗面朝棋盘中间）；单位脚下的阵营圈加一道阵营色描边（`UnitView/assets.ts`） |
+| 墨不够时没有任何解释 | 一次性气泡提示，见 ONBOARDING_DESIGN §9 第 9 条 |
+
+**复核后不用改的**：
+- 「敌人从边框外排队走进来」：在当前 `ch1_lv1` 和新教学关里都没复现，刷怪点都在 12×18 棋盘内。
+- 旧教学关的面板挡目标、Skip 压陨石圈、陨石只放倒 2 个：旧教学关已经整体重做（ONBOARDING_DESIGN §11），这几条随之作废。
+- 「战役第 1 关一上来就输」：难度模拟器（`npx vitest run -c vitest.sim.config.ts test/difficulty/ch1`）显示新号打 `ch1_lv1` 胜率 100%，体检时输掉是我出牌的问题。但模拟器看到 `ch1_lv3` 新号胜率只有 40%（`ch1_lv4` 20%、`ch1_lv5` 0%），要到 T2 养成才稳过，这是一个难度断崖；平衡没动，待用户定。
+
+**仍未处理（需要用户拍板，或者是几何级改动）**：
+- 画风和字体混杂（卡通 / 火柴人 / 铅笔 / 精细黑墨；等宽 / 粗无衬线 / 衬线）。
+- 722×406 下单位约 12px 高、正文约 8px。
+- 大厅主按钮是 Ranked，新号第一局就打 PvP。
+- CG 包的大厅通知条还没在浏览器里看过。
+
 **查法**（只读）：
 1. 在 analyticsvc 容器里查 `events`，按 `platform` + 时间窗筛选，再按 `device_id` 分组，逐条导出事件。
 2. 拿 `user_id` 到 metaserver 容器查 `accounts`（看 `displayName`、`oauth`、`createdAt`）和 `saves`（看 `save.flags`）。

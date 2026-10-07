@@ -18,6 +18,7 @@ import { FS } from '../fontScale';
 import { EMPTY_UNIT_IDS, updatePlacementHighlights as updatePlacementHighlightsImpl } from './placementHighlights';
 import { playSfx } from '../../audio/audioBus';
 import { dispatchHit, type Hit } from '../../ui/hits';
+import { InkHintBubble, type InkHintGate } from './inkHint';
 
 // ── Drag state ─────────────────────────────────────────────────────────────────
 
@@ -67,7 +68,14 @@ export class InputPanel {
 
   private highlightRefreshAccum = 0;
 
+  /** One-time "not enough ink" bubble; inert until the scene hands it a gate (see setInkHint). */
+  private inkHint: InkHintBubble | null = null;
+
   constructor(private readonly core: GameRendererCore) {}
+
+  setInkHint(gate: InkHintGate | null): void {
+    this.inkHint = gate ? new InkHintBubble(this.core.container, gate) : null;
+  }
 
   // Board state (unit occupancy) changes every tick independent of pointer input,
   // so the active placement highlight must be re-evaluated periodically too — see
@@ -80,6 +88,7 @@ export class InputPanel {
       this.highlightRefreshAccum = 0;
       this.refreshPlacementHighlights();
     }
+    this.inkHint?.update(dt);
     // Tutorial idle escalation (§11.4): a card in the player's hand (pressed, dragged or
     // tap-selected) pauses the ghost-hand demo and its idle clock.
     this.core.tutorial?.setHoldingCard(!!(this.pendingCardDown || this.drag || this.tapSelect));
@@ -300,7 +309,7 @@ export class InputPanel {
   private startCardDrag(handIndex: number): void {
     const player = this.core.localPlayer(this.core.engine.state);
     const slot   = player.hand.slots[handIndex];
-    if (!slot || player.ink < slot.card.cost) { this.rejectPlay(!!slot); return; }
+    if (!slot || player.ink < slot.card.cost) { this.rejectPlay(!!slot, !!slot); return; }
 
     const card   = slot.card;
     const ghost  = this.buildDragGhost(t(card.nameKey as TranslationKey), card.cost);
@@ -322,7 +331,7 @@ export class InputPanel {
   private startTapSelect(handIndex: number): void {
     const player = this.core.localPlayer(this.core.engine.state);
     const slot   = player.hand.slots[handIndex];
-    if (!slot || player.ink < slot.card.cost) { this.rejectPlay(!!slot); return; }
+    if (!slot || player.ink < slot.card.cost) { this.rejectPlay(!!slot, !!slot); return; }
 
     const card = slot.card;
     this.tapSelect = { handIndex, cardType: card.cardType, spellType: card.spellType };
@@ -357,8 +366,10 @@ export class InputPanel {
    * "you pressed an empty hand slot". The latter is not a rejection, it is nothing at all, and
    * making blank space squeak would teach the player the sound means less than it does.
    */
-  private rejectPlay(real: boolean): void {
+  private rejectPlay(real: boolean, inkShort = false): void {
     if (real) playSfx('sfx.card.invalid');
+    // Real matches only — the tutorial deals enough ink that the hint could never be earned there.
+    if (inkShort && !this.core.tutorial) this.inkHint?.offer(this.core.layout.handRect);
   }
 
 

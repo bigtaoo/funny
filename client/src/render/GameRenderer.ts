@@ -27,6 +27,7 @@ import { GameRendererCore } from './GameRenderer/core';
 import type { GameProfiles } from './GameRenderer/core';
 import { EventsPanel } from './GameRenderer/events';
 import { InputPanel } from './GameRenderer/input';
+import type { InkHintGate } from './GameRenderer/inkHint';
 
 export type { GameProfiles } from './GameRenderer/core';
 
@@ -86,6 +87,7 @@ export class GameRenderer {
   drawVignette(): void { this.events.drawVignette(); }
 
   setCampaignMode(v: boolean): void { this.core.setCampaignMode(v); }
+  setInkHint(gate: InkHintGate | null): void { this.input.setInkHint(gate); }
   setReconnecting(v: boolean): void { this.core.setReconnecting(v); }
   setPeerDisconnected(v: boolean): void { this.core.setPeerDisconnected(v); }
   setDisconnected(v: boolean): void { this.core.setDisconnected(v); }
