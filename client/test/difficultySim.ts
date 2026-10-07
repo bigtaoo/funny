@@ -198,6 +198,7 @@ export class BaselinePlayer {
     const consumed = new Set<number>();
     let ink = player.ink;
     let meteorFired = false;
+    let rockslideFired = false;
     // Units / tanks already queued to each lane this tick (so intra-tick distribution is also accounted for).
     const queued = new Map<number, number>();
     const queuedTanks = new Map<number, number>();
@@ -270,6 +271,15 @@ export class BaselinePlayer {
           const row = Math.max(2, Math.min(15, clusterRow === Infinity ? 8 : clusterRow));
           play(idx, clusterLane, row); meteorFired = true; continue;
         }
+      }
+      // 1b) Rockslide (PvE-only level spell, 80 dmg to every enemy in one column) — same
+      //     cluster rule as Meteor. Until 2026-10-07 the AI never cast it, so on levels that
+      //     teach it (levelSpells, e.g. ch1_lv5) the force-dealt copies sat in the hand as dead
+      //     slots until their 30s refresh: the sim measured the level with its taught tool
+      //     removed AND a third of the hand blocked, i.e. strictly harder than any human plays it.
+      if (!rockslideFired && clusterLane >= 0 && clusterCnt >= 2) {
+        const idx = findCard((k, sub) => k === CardType.Spell && sub === SpellTypeRockslide);
+        if (idx >= 0) { play(idx, clusterLane); rockslideFired = true; continue; }
       }
       // 2) Escort protection (escort objective levels only): proactively hold the escort's
       //    current lane at blockersPerLane, regardless of whether an enemy is already adjacent —
@@ -434,6 +444,7 @@ export class BaselinePlayer {
 
 // String value of SpellType.Meteor (avoids importing another enum constant).
 const SpellTypeMeteor = 'meteor';
+const SpellTypeRockslide = 'rockslide';
 // Tower placement priority from center outward (base at columns 5/6, attack lanes on both sides).
 const TOWER_PRIORITY = [4, 7, 3, 8, 2, 9, 1, 10, 0, 11];
 
@@ -477,6 +488,13 @@ export interface SimOptions {
   maxTicks?: number;
   /** Override the level seed (for multi-seed evaluation: different seed = different deal / draw order, smoothing out single-run noise). */
   seed?: number;
+  /**
+   * Explicit card collection, overriding the preset's uniform one. For modelling a partial
+   * collection the presets cannot express, e.g. a ch1 player whose only progress is one fused
+   * L2 infantry card (DIFFICULTY_SIM_TUNING_CH1_STARS.md, 2026-10-07). Gear ids must exist in
+   * PROGRESSION_EQUIP_INV. `preset` still labels the result.
+   */
+  cards?: EngineCardInstance[];
 }
 
 export function simulateLevel(levelOrId: string | LevelDefinition, opts: SimOptions = {}): SimResult {
@@ -493,7 +511,7 @@ export function simulateLevel(levelOrId: string | LevelDefinition, opts: SimOpti
     players: [{ id: 0 }, { id: 1 }],
     mode: 'campaign',
     level,
-    cardInstances: progressionCards(preset),
+    cardInstances: opts.cards ?? progressionCards(preset),
     equipmentInv: PROGRESSION_EQUIP_INV,
   };
   const engine = createGameEngine(config);

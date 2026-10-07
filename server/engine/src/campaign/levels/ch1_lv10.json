@@ -6,8 +6,8 @@
     "kind": "boss"
   },
   "enemyScale": {
-    "hp": 1.318,
-    "damage": 1.182
+    "hp": 1,
+    "damage": 1
   },
   "loadout": [
     "infantry_1",
@@ -54,155 +54,155 @@
         "spacingTicks": 8
       },
       {
-        "atTick": 540,
+        "atTick": 600,
         "unitType": "lena",
         "col": 3,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 20
       },
       {
-        "atTick": 540,
+        "atTick": 600,
         "unitType": "lena",
         "col": 8,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 20
       },
       {
-        "atTick": 540,
+        "atTick": 600,
         "unitType": "lena",
         "col": 0,
         "count": 1,
         "spacingTicks": 40
       },
       {
-        "atTick": 540,
+        "atTick": 600,
         "unitType": "lena",
         "col": 11,
         "count": 1,
         "spacingTicks": 40
       },
       {
-        "atTick": 780,
+        "atTick": 900,
         "unitType": "max",
         "col": 1,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 6
       },
       {
-        "atTick": 780,
+        "atTick": 900,
         "unitType": "max",
         "col": 10,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 6
       },
       {
-        "atTick": 780,
+        "atTick": 900,
         "unitType": "lena",
         "col": 4,
         "count": 1,
         "spacingTicks": 35
       },
       {
-        "atTick": 780,
+        "atTick": 900,
         "unitType": "lena",
         "col": 7,
         "count": 1,
         "spacingTicks": 35
       },
       {
-        "atTick": 1020,
+        "atTick": 1200,
         "unitType": "lena",
         "col": 2,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 30
       },
       {
-        "atTick": 1020,
+        "atTick": 1200,
         "unitType": "lena",
         "col": 9,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 30
       },
       {
-        "atTick": 1020,
+        "atTick": 1200,
         "unitType": "lena",
         "col": 4,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 18
       },
       {
-        "atTick": 1020,
+        "atTick": 1200,
         "unitType": "lena",
         "col": 7,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 18
       },
       {
-        "atTick": 1020,
+        "atTick": 1200,
         "unitType": "max",
         "col": 0,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 8
       },
       {
-        "atTick": 1020,
+        "atTick": 1200,
         "unitType": "max",
         "col": 11,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 8
       },
       {
-        "atTick": 1032,
+        "atTick": 1212,
         "unitType": "max",
         "col": 1,
         "count": 1
       },
       {
-        "atTick": 1032,
+        "atTick": 1212,
         "unitType": "max",
         "col": 10,
         "count": 1
       },
       {
-        "atTick": 1260,
+        "atTick": 1500,
         "unitType": "lena",
         "col": 4,
         "count": 1,
         "isBoss": true
       },
       {
-        "atTick": 1260,
+        "atTick": 1500,
         "unitType": "lena",
         "col": 7,
         "count": 1,
         "isBoss": true
       },
       {
-        "atTick": 1260,
+        "atTick": 1500,
         "unitType": "max",
         "col": 0,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 6
       },
       {
-        "atTick": 1260,
+        "atTick": 1500,
         "unitType": "max",
         "col": 11,
-        "count": 3,
+        "count": 2,
         "spacingTicks": 6
       },
       {
-        "atTick": 1260,
+        "atTick": 1500,
         "unitType": "lena",
         "col": 3,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 18
       },
       {
-        "atTick": 1260,
+        "atTick": 1500,
         "unitType": "lena",
         "col": 8,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 18
       }
     ]
@@ -225,8 +225,8 @@
     "outroKey": "campaign.ch1.outro",
     "realLayerKey": "campaign.realLayer.ch1"
   },
-  "startInk": 30,
-  "inkRegenMult": 1.42,
+  "startInk": 40,
+  "inkRegenMult": 1.6,
   "lanePunish": {
     "units": 5,
     "sustainTicks": 120,
