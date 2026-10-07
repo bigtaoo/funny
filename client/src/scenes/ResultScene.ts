@@ -13,6 +13,7 @@ import {
   buildMarginDeco, buildBadgeMedallion, addMoodDeco, addProfileLine, addVersusLine,
   addPrimaryButton, addSecondaryButton, addHeader, addNewbieProtectLine,
 } from './ResultScene/builders';
+import { UI_FONT_FAMILY } from '../render/theme';
 
 /** Optional player identities for the result screen's tap-to-view profile popup. */
 export interface ResultProfiles {
@@ -255,7 +256,7 @@ export class ResultScene implements Scene {
       wordWrapWidth: w - margin * 2,
       lineHeight: Math.round(fontSize * 1.65),
       align: 'center',
-      fontFamily: 'monospace',
+      fontFamily: UI_FONT_FAMILY,
     });
     body.anchor.set(0.5, 0.5);
     body.x = w / 2;
@@ -265,7 +266,7 @@ export class ResultScene implements Scene {
     const hint = makeText(t('story.tapToContinue'), {
       fontSize: FS.label,
       fill: 0x8a7a60,
-      fontFamily: 'monospace',
+      fontFamily: UI_FONT_FAMILY,
     });
     hint.anchor.set(0.5, 1);
     hint.x = w / 2;
@@ -335,8 +336,7 @@ export class ResultScene implements Scene {
     const title = makeText(headline, {
       fontSize: FS.display,
       fill: headlineColor,
-      fontWeight: 'bold',
-      fontFamily: 'serif',
+      fontWeight: 'bold', // family: makeText's UI_FONT_FAMILY default
     });
     title.anchor.set(0.5, 0);
     title.x = w / 2;
@@ -354,7 +354,7 @@ export class ResultScene implements Scene {
           fontSize: FS.title,
           fill: this.elo.delta >= 0 ? 0x226622 : 0xaa2222,
           fontWeight: 'bold',
-          fontFamily: 'monospace',
+          fontFamily: UI_FONT_FAMILY,
         },
       );
       eloLine.anchor.set(0.5, 0);
@@ -456,7 +456,7 @@ export class ResultScene implements Scene {
       const no = makeText(t('result.keepGoing'), {
         fontSize: FS.headline,
         fill: 0x888888,
-        fontFamily: 'monospace',
+        fontFamily: UI_FONT_FAMILY,
       });
       no.anchor.set(0.5, 0);
       no.x = w / 2;
@@ -496,9 +496,9 @@ export class ResultScene implements Scene {
       const singleItem = reward.kind === 'card' || reward.kind === 'equipment';
       const icon = buildRewardIcon(reward, rc, ink);
       const countTxt = !singleItem
-        ? makeText(`+${reward.count ?? 0}`, { fontSize: FS.label, fill: ink, fontFamily: 'monospace' })
+        ? makeText(`+${reward.count ?? 0}`, { fontSize: FS.label, fill: ink, fontFamily: UI_FONT_FAMILY })
         : null;
-      const label = makeText(t('result.tomorrowReward', { day }), { fontSize: FS.label, fill: 0x555544, fontFamily: 'monospace' });
+      const label = makeText(t('result.tomorrowReward', { day }), { fontSize: FS.label, fill: 0x555544, fontFamily: UI_FONT_FAMILY });
 
       const groupW = (icon ? rc + gap : 0) + (countTxt ? countTxt.width + gap : 0) + label.width;
       let x = (w - groupW) / 2;

@@ -22,12 +22,38 @@
 // Landscape follows the same rule on its short axis, the design HEIGHT (2026-10-01, same ADR): a
 // phone held sideways (844x390) used to render at 0.36x exactly like the old portrait; it now gets a
 // 780-tall design and the long axis scales its 1920/2592 bounds by the same factor.
+//
+// ## Why landscape has its own target since 2026-10-07
+//
+// Reusing portrait's 0.5 left the CrazyGames reviewer's real canvas (1100x574) at 0.53x — 574 CSS px
+// asks for 1148, which clamps to 1080 — so body text was 9.6 CSS px and fine print 8.5 on a laptop
+// screen, and the portal's 722x406 preview tile sat at 0.50x. A landscape window is read from
+// further away than a phone in the hand and has width to spare (the long axis follows the aspect),
+// so it can afford a larger scale than portrait, whose width is what every grid is packed against.
+// Landscape therefore aims for {@link LANDSCAPE_TARGET_SCALE} (0.62) with its own floor
+// {@link LANDSCAPE_MIN_H} (640): 1100x574 → 926 tall at 0.62x, 722x406 → 654 at 0.62x, a phone held
+// sideways (844x390) → 640 at 0.61x. Anything ≥ ~670 CSS px tall still asks for ≥ 1080 and is
+// untouched (1280x720, 1366x768, 1920x1080, tablets). Portrait keeps 0.5 / 720.
 
 /** The classic short side of both layouts' design rect (portrait width, landscape height). */
 export const REFERENCE_SHORT = 1080;
 
-/** The design→screen scale both orientations aim for on their short axis on small screens. */
+/** The design→screen scale portrait aims for on its short axis (the width) on small screens. */
 export const PORTRAIT_TARGET_SCALE = 0.5;
+
+/**
+ * The design→screen scale landscape aims for on its short axis (the height) on small screens —
+ * larger than portrait's, see the header's 2026-10-07 section. Every landscape viewport under
+ * ~670 CSS px tall lands on it (or on the floor below); taller ones keep the 1080 reference.
+ */
+export const LANDSCAPE_TARGET_SCALE = 0.62;
+
+/**
+ * Floor on landscape's design height. At 0.62 a 360-tall phone held sideways would ask for 580,
+ * where the board's side margins (the ink/HP and refresh/upgrade columns, both `× k`) get too narrow
+ * for their literal-size text; below this the scale drops instead (360 → 0.56x).
+ */
+export const LANDSCAPE_MIN_H = 640;
 
 /**
  * Floor on the design short side. A 320-wide screen would otherwise ask for 640, where two-column
@@ -46,11 +72,14 @@ export function portraitDesignWidth(availW: number): number {
 }
 
 /**
- * Landscape design height for a safe drawable area `availH` CSS px tall — the same rule as
- * {@link portraitDesignWidth}, applied to landscape's short axis. ≥ 540 CSS px tall stays 1080.
+ * Landscape design height for a safe drawable area `availH` CSS px tall: `availH / 0.62`, rounded to
+ * an even number, clamped to [{@link LANDSCAPE_MIN_H}, {@link REFERENCE_SHORT}] — portrait's rule
+ * with landscape's own target and floor. ≥ ~670 CSS px tall stays 1080.
  */
 export function landscapeDesignHeight(availH: number): number {
-  return portraitDesignWidth(availH);
+  if (!Number.isFinite(availH) || availH <= 0) return REFERENCE_SHORT;
+  const h = 2 * Math.round(availH / LANDSCAPE_TARGET_SCALE / 2);
+  return Math.min(REFERENCE_SHORT, Math.max(LANDSCAPE_MIN_H, h));
 }
 
 /**

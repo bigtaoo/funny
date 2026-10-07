@@ -9,6 +9,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { makeText } from '../render/pixiText';
 import { FS } from '../render/fontScale';
+import { UI_FONT_FAMILY } from '../render/theme';
 
 const INK = 0x3a3a3a;        // pencil/pen ink
 const HIGHLIGHT = 0x4a7fb5;  // faction-blue highlighter wash (our side, §3.2)
@@ -29,7 +30,7 @@ export class LoadingOverlay {
     this.container.addChild(this.bg);
 
     this.pct = makeText('0%', {
-      fontFamily: 'sans-serif',
+      fontFamily: UI_FONT_FAMILY,
       fontSize: FS.body,
       fill: INK,
     });

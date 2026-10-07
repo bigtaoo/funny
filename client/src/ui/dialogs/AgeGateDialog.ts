@@ -30,6 +30,7 @@ import { snapFont } from '../../render/fontScale';
 import { t } from '../../i18n/index';
 import { tapHandler } from '../hits';
 import { MIN_AGE_YEARS } from '../../app/appConstants';
+import { UI_FONT_FAMILY } from '../../render/theme';
 
 /**
  * 'ask' collects the birth year; 'blocked' is the dead end shown to a player whose recorded
@@ -152,7 +153,7 @@ export class AgeGateDialog implements Scene {
         : this.confirming ? t('ageGate.confirmBody', { year: this.year })
         : t('ageGate.body'),
       {
-        fontSize: snapFont(Math.round(unit * 0.04)), fill: C.dark, fontFamily: 'monospace',
+        fontSize: snapFont(Math.round(unit * 0.04)), fill: C.dark, fontFamily: UI_FONT_FAMILY,
         wordWrap: true, wordWrapWidth: cardW * 0.84, breakWords: true, lineHeight: Math.round(unit * 0.06),
       },
     );

@@ -3,6 +3,7 @@ import { makeText } from '../../render/pixiText';
 import { ui as C, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
 import { buildFittedSprite } from '../../render/cardArt';
+import { UI_FONT_FAMILY } from '../../render/theme';
 
 // ── One-shot story card over the campaign map (ONBOARDING_DESIGN §11.7) ─────────
 //
@@ -53,7 +54,7 @@ export class StoryCard {
     const line = makeText(spec.text, {
       fontSize: FS.heading,
       fill: C.dark,
-      fontFamily: 'serif',
+      fontFamily: UI_FONT_FAMILY,
       wordWrap: true,
       wordWrapWidth: artW,
       align: 'center',

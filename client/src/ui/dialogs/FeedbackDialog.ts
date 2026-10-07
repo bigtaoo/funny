@@ -26,6 +26,7 @@ import { t } from '../../i18n/index';
 import { caretDisplay } from '../inputDisplay';
 import { tapHandler } from '../hits';
 import type { IPlatform, ITextInput } from '../../platform/IPlatform';
+import { UI_FONT_FAMILY } from '../../render/theme';
 
 // Mirrors server/shared/src/social.ts FEEDBACK_TEXT_MAX (1000) — not imported: '@nw/shared' resolves to a
 // curated browser-safe subset (see client/webpack.config.js), same reason AppealDialog hardcodes its own max.
@@ -165,7 +166,7 @@ export class FeedbackDialog implements Scene {
     title.anchor.set(0.5, 0);
 
     const body = makeText(t('feedback.body'), {
-      fontSize: snapFont(Math.round(unit * 0.04)), fill: C.dark, fontFamily: 'monospace',
+      fontSize: snapFont(Math.round(unit * 0.04)), fill: C.dark, fontFamily: UI_FONT_FAMILY,
       wordWrap: true, wordWrapWidth: cardW * 0.84, breakWords: true, lineHeight: Math.round(unit * 0.055),
     });
     body.anchor.set(0.5, 0);

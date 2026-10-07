@@ -14,11 +14,14 @@ import { ATTACK_LANES } from '@nw/engine/config';
 import { CardType, SpellType } from '../../game';
 import { t, type TranslationKey } from '../../i18n';
 import type { GameRendererCore } from './core';
-import { FS } from '../fontScale';
+import { FS, fitFont } from '../fontScale';
 import { EMPTY_UNIT_IDS, updatePlacementHighlights as updatePlacementHighlightsImpl } from './placementHighlights';
 import { playSfx } from '../../audio/audioBus';
 import { dispatchHit, type Hit } from '../../ui/hits';
 import { InkHintBubble, type InkHintGate } from './inkHint';
+
+/** Width of the drag ghost card (design px). */
+const GHOST_W = 64;
 
 // ── Drag state ─────────────────────────────────────────────────────────────────
 
@@ -444,15 +447,27 @@ export class InputPanel {
 
   private buildDragGhost(label: string, cost: number, accentColor = 0x2244aa): PIXI.Container {
     const c   = new PIXI.Container();
+    const nameText = makeText(label, { fontSize: FS.micro, fill: 0x222222, align: 'center' });
+    // Fitted to the ghost: FS.micro is lifted to the legibility floor on small screens, where
+    // "Meteor Strike" / "Shield Bearer" ran out of both sides of the 64-px card. Step the size down
+    // the scale first; a name that still does not fit at the floor wraps at its space (the name sits
+    // above the card's middle and the cost below it, so a second line has room), and a single word
+    // that is still too wide ("Infantry" at the floor) widens the card rather than being cut.
+    const nameMaxW = GHOST_W - 8;
+    nameText.style.fontSize = fitFont(FS.micro, nameText.width, nameMaxW);
+    if (nameText.width > nameMaxW && label.includes(' ')) {
+      nameText.style.wordWrap = true;
+      nameText.style.wordWrapWidth = nameMaxW;
+    }
+    const ghostW = Math.max(GHOST_W, Math.ceil(nameText.width) + 8);
+    nameText.anchor.set(0.5, 0.5);
+    nameText.y = -10;
+
     const gfx = new PIXI.Graphics();
     gfx.beginFill(0xfaf6ee, 0.9);
     gfx.lineStyle(2, accentColor);
-    gfx.drawRoundedRect(-32, -42, 64, 84, 6);
+    gfx.drawRoundedRect(-ghostW / 2, -42, ghostW, 84, 6);
     gfx.endFill();
-
-    const nameText = makeText(label, { fontSize: FS.micro, fill: 0x222222, align: 'center' });
-    nameText.anchor.set(0.5, 0.5);
-    nameText.y = -10;
 
     const costText = makeText(String(cost), { fontSize: FS.tiny, fill: accentColor, fontWeight: 'bold' });
     costText.anchor.set(0.5, 0.5);

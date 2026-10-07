@@ -37,6 +37,7 @@ import { tapHandler } from '../hits';
 import { isNativeShell } from '../../platform/nativeShell';
 import { clientPlatformName } from '../../app/appConstants';
 import { openExternalUrl } from '../../platform/externalLink';
+import { UI_FONT_FAMILY } from '../../render/theme';
 
 /** Hosted marketing/legal site (Cloudflare Worker `nivara-client`, deploy-cloudflare.md §domains). */
 const LEGAL_SITE = 'https://nivara.gamestao.com';
@@ -255,7 +256,7 @@ export class ConsentDialog implements Scene {
     // The two modes make different promises, so they cannot share a sentence: accept-only says
     // analytics follows from accepting, choice has to say what the second button actually does.
     const body = makeText(t(choice ? 'consent.bodyChoice' : 'consent.body'), {
-      fontSize: snapFont(Math.round(unit * 0.04)), fill: C.dark, fontFamily: 'monospace',
+      fontSize: snapFont(Math.round(unit * 0.04)), fill: C.dark, fontFamily: UI_FONT_FAMILY,
       wordWrap: true, wordWrapWidth: innerW, breakWords: true, lineHeight: Math.round(unit * 0.06),
     });
     body.anchor.set(0.5, 0);

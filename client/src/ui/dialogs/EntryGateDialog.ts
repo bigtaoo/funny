@@ -36,6 +36,7 @@ import { tapHandler } from '../hits';
 import { MIN_AGE_YEARS } from '../../app/appConstants';
 import { legalUrl, type ConsentMode } from './ConsentDialog';
 import { openExternalUrl } from '../../platform/externalLink';
+import { UI_FONT_FAMILY } from '../../render/theme';
 
 export interface EntryGateMode {
   /** 'ask' shows the birth-year picker; 'ok' means age is already known — only consent is asked. */
@@ -369,7 +370,7 @@ export class EntryGateDialog implements Scene {
     const bodyParams: Record<string, string | number> =
       confirming ? { year: this.year } : this.mode.age === 'ok' ? {} : { min: this.minAge };
     const body = makeText(t(bodyKey as Parameters<typeof t>[0], bodyParams), {
-      fontSize: snapFont(Math.round(unit * 0.038)), fill: C.dark, fontFamily: 'monospace',
+      fontSize: snapFont(Math.round(unit * 0.038)), fill: C.dark, fontFamily: UI_FONT_FAMILY,
       wordWrap: true, wordWrapWidth: innerW, breakWords: true, lineHeight: Math.round(unit * 0.054),
     });
     body.anchor.set(0.5, 0);

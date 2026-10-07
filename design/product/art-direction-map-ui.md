@@ -182,6 +182,14 @@ client/src/assets/decor/   # 最终透明 PNG / 图集
 - 标题/装饰文字：随意手写风字体，可略歪
 - 禁止：系统默认字体、过度设计的艺术字体
 
+**现状（2026-10-07）：全游戏只有一个字体族常量。** `client/src/render/theme.ts` 的 `UI_FONT_FAMILY`，目前仍是 `'monospace'`（没打包任何字体面）。
+
+- **之前**：`client/src` 里 91 处行内 `fontFamily:` 字面量——82 处 `'monospace'`、6 处 `'serif'`（开场/插画过场/关卡前情/战役故事卡、结算与回放大标题）、2 处 `'sans-serif'`（加载遮罩、世界地图加载字样）；另有手牌卡名/费用、拖拽幽灵卡、墨水提示气泡、`unitLab` 根本没写字体族，落到 PIXI 默认的 **Arial**。同一屏能同时出现三种字面。
+- **现在**：所有字面量换成常量；`makeText()`（`render/pixiText.ts`）在样式没写字体族时自动补上，`installUiFontDefault()` 在启动时把它设为 PIXI 的默认字体族，兜住绕过工厂的 `new PIXI.Text`。门禁 `client/test/uiFontFamily.test.ts`：`src/` 里出现新的 `fontFamily: '<字面量>'` 就红（唯一豁免：世界地图资源等级的预烘 `BitmapFont`，只含 `Lv.0-9`）；运行时一半在 `test/ui/uiFontFamily.ui.ts`。
+- **不在范围内**：世界地图那张 `BitmapFont`、静态 HTML 页面（隐私政策等）。
+- **换成手写字体怎么做**：改 `UI_FONT_FAMILY` 这一行（写成字体栈，如 `"'某手写体', monospace"`——CJK 字形要靠后面的通用族兜底），再在第一段文字建出来之前把字体面加载好（Web 用 `FontFace`，微信用 `wx.loadFont`）。两处默认「等宽」的代码要一起复核：`monospaceWidth()`/`MONO_CELL`（`render/pixiText.ts`，有 `test/browser/textMetrics.spec.ts` 守着）和 `fitFont()` 的线性求字号（`render/fontScale.ts`）。比例字体下二者都会退化成「实测宽度说了算」而不会直接坏，但 headless 测试里的估算会变得不那么准。
+- 字形变宽的影响：Arial → monospace 后同一字号更宽。手牌卡名本来就走 `fitFont` 单行收缩；故事页/结算标题是 `wordWrap` 或单行大字，2026-10-07 实拍核过（见 `UI_DESIGN_LOG_2026-10.md` §76）。
+
 ### 7.5 按钮与菜单
 
 - 按钮：矩形 + 不规则手绘描边（非完美圆角）
@@ -202,7 +210,7 @@ client/src/assets/decor/   # 最终透明 PNG / 图集
 - 「按下放大」是 v0.3 起对旧条款「按下=轻微下压 + 纸张褶皱」的口径修订：先用**放大回弹**做点击确认（实现简单、反馈明确）；后续做正式纸面动效时可叠加褶皱，但「中心放大 + 延迟触发」的反馈契约保留。
 - 错误信息为「黏性」时必须可被编辑清除：用户一改输入就清掉上一条错误（实时合规提示同步刷新），避免按钮看着像卡死。
 - 首个落地参考实现：登录/注册场景 `client/src/scenes/LoginScene.ts`（`submitEnabled()` 判定 + `addButton(enabled)` 灰显 + `press` 放大回弹）。
-- **全屏场景共享原语**：所有 canvas 绘制的全屏场景（login / room / shop / gacha / result / replay / intro / settings）统一从 `client/src/render/sketchUi.ts` 取手绘 UI 原语——`buildPaperBackground`（纸底 + 抖动格线 + 红装订线，bake 缓存）、`sketchPanel`（平涂 `Graphics` + 九宫装配的手绘边框——四条长边条按原生尺寸平铺 + 四个**半径各不相同**的手绘圆转角，切片来自 `render/panelFrame.ts` 启动时烘一次的图集；**替代 `drawRoundedRect`**，落实「按钮非完美圆角」——注意本条禁的是等半径/模板画的圆角，手转的不等半径圆角正是它要的东西，2026-08-20 起转角就是圆的，详见 [`panel-frame-art-prompts.md`](panel-frame-art-prompts.md)）、`sketchAccentBar`、`ui` 调色板（纸底/格线/红色引自 `theme.palette`）、`seedFor`（稳定 seed 防重渲染抖动）。新场景一律复用，不再各自手画背景/圆角按钮或硬编码调色板。**字体暂留 `monospace`**（手写字体需打包字体面，单列任务）。
+- **全屏场景共享原语**：所有 canvas 绘制的全屏场景（login / room / shop / gacha / result / replay / intro / settings）统一从 `client/src/render/sketchUi.ts` 取手绘 UI 原语——`buildPaperBackground`（纸底 + 抖动格线 + 红装订线，bake 缓存）、`sketchPanel`（平涂 `Graphics` + 九宫装配的手绘边框——四条长边条按原生尺寸平铺 + 四个**半径各不相同**的手绘圆转角，切片来自 `render/panelFrame.ts` 启动时烘一次的图集；**替代 `drawRoundedRect`**，落实「按钮非完美圆角」——注意本条禁的是等半径/模板画的圆角，手转的不等半径圆角正是它要的东西，2026-08-20 起转角就是圆的，详见 [`panel-frame-art-prompts.md`](panel-frame-art-prompts.md)）、`sketchAccentBar`、`ui` 调色板（纸底/格线/红色引自 `theme.palette`）、`seedFor`（稳定 seed 防重渲染抖动）。新场景一律复用，不再各自手画背景/圆角按钮或硬编码调色板。**字体族统一走 `theme.ts` 的 `UI_FONT_FAMILY`**（目前仍是 `monospace`；手写字体需打包字体面，单列任务，换法见 §7.4）。
 
 ### 7.6 页签主图标 AI 化（v0.7 试点 · 2026-08-14，状态：试点批 + 批次 2/3/4/5 全部出图并接线完成；共 43 个光栅图标 / 129 张 PNG）
 

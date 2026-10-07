@@ -24,6 +24,7 @@ import { buildIcon, type IconKind } from '../../../render/icons';
 import { buildStatRow, statFont, statBlockH, STAT_ROW_GAP } from './statRow';
 import { drawButtonLabel } from '../../../ui/widgets/buttonLabel';
 import type { WorldMapContext, DeployKind } from '../WorldMapContext';
+import { UI_FONT_FAMILY } from '../../../render/theme';
 
 /**
  * Breathing room a wrapped button label needs inside the button's own height before it reads as
@@ -52,7 +53,7 @@ function labelFitsBesideGlyph(label: string, labelW: number, lead: number, btnH:
     PIXI.TextMetrics.measureText(
       label,
       new PIXI.TextStyle({
-        fontSize: FS.title, fontFamily: 'monospace', wordWrap: true, wordWrapWidth: wrapW, breakWords: true,
+        fontSize: FS.title, fontFamily: UI_FONT_FAMILY, wordWrap: true, wordWrapWidth: wrapW, breakWords: true,
       }),
     );
   const withGlyph = measure(labelW - lead);

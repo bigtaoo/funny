@@ -20,6 +20,7 @@ import { legalUrl } from './ConsentDialog';
 import type { SubscriptionDisclosureInfo } from './subscriptionDisclosure';
 import { MONTHLY_CARD_DAILY_COINS, MONTHLY_CARD_IMMEDIATE_COINS, YEAR_CARD_IMMEDIATE_COINS } from '@nw/shared/economy/subscriptions';
 import { openExternalUrl } from '../../platform/externalLink';
+import { UI_FONT_FAMILY } from '../../render/theme';
 
 /** App Store Connect uses Apple's standard license agreement for this app, so that is the EULA. */
 export const APPLE_STANDARD_EULA_URL = 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
@@ -197,7 +198,7 @@ export class SubscriptionDisclosureDialog implements Scene {
     // floor while `unit` keeps shrinking, and a unit-proportional line height stacked the rows.
     const detailsSize = snapFont(Math.round(unit * 0.042));
     const details = makeText(detailLines.join('\n'), {
-      fontSize: detailsSize, fill: C.dark, fontFamily: 'monospace', align: 'center',
+      fontSize: detailsSize, fill: C.dark, fontFamily: UI_FONT_FAMILY, align: 'center',
       lineHeight: Math.round(detailsSize * 1.35),
       wordWrap: true, wordWrapWidth: colW, breakWords: true,
     });
@@ -205,7 +206,7 @@ export class SubscriptionDisclosureDialog implements Scene {
 
     const termsSize = snapFont(Math.round(unit * 0.032));
     const terms = makeText(t('subDisclosure.terms'), {
-      fontSize: termsSize, fill: C.mid, fontFamily: 'monospace', align: 'center',
+      fontSize: termsSize, fill: C.mid, fontFamily: UI_FONT_FAMILY, align: 'center',
       lineHeight: Math.round(termsSize * 1.3),
       wordWrap: true, wordWrapWidth: colW, breakWords: true,
     });

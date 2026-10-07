@@ -57,14 +57,15 @@ describe('ScalingManager feeds the bake layer its on-screen scale', () => {
     // Nothing in this test calls setDesignScale. If applyScaling stops pushing it, designScale stays
     // at its default 1 and pageBakeResolution reports the raw dpr — the pre-fix behaviour.
     const { scaling, layout } = build(CRASH_VP.w, CRASH_VP.h, CRASH_VP.dpr);
-    // 270 tall floors the design height at 720 (ADR-105), so the capped box is 1728x720 at 0.375.
-    expect(scaling.gameLayer.scale.x).toBeCloseTo(0.375, 6);
-    expect(pageBakeResolution()).toBe(1.125);
+    // 270 tall floors the landscape design height at 640 (ADR-105, 2026-10-07 landscape section), so
+    // the capped box is 1536x640 at 270/640.
+    expect(scaling.gameLayer.scale.x).toBeCloseTo(270 / 640, 6);
+    expect(pageBakeResolution()).toBe(1.3125);
     expect(pageBakeResolution()).toBeLessThan(CRASH_VP.dpr);
 
-    // And the texture that comes out is the whole point: 1944x810, not 9000x3240.
+    // And the texture that comes out is the whole point: 2016x840, not 9000x3240.
     const tex = bake('paper', new PIXI.Container(), layout.designWidth, layout.designHeight, { pageScale: true });
-    expect(realSize(tex)).toEqual({ w: 1944, h: 810 });
+    expect(realSize(tex)).toEqual({ w: 2016, h: 840 });
     const mb = realSize(tex).w * realSize(tex).h * 4 / (1024 * 1024);
     expect(mb).toBeLessThan(10);
   });
@@ -110,7 +111,7 @@ describe('ScalingManager feeds the bake layer its on-screen scale', () => {
     // of applyScaling's math; this asserts the actual ScalingManager reaches that state at the
     // reported viewport — i.e. that the cap and the surround are really connected.
     const { scaling, layout } = build(CRASH_VP.w, CRASH_VP.h, CRASH_VP.dpr);
-    expect(layout.designWidth).toBe(1728);            // capped at 2592 x 720/1080, not 2000
+    expect(layout.designWidth).toBe(1536);            // capped at 2592 x 640/1080, not 1778
     expect(scaling.deskLayer.visible).toBe(true);     // therefore bands, therefore desk
     expect(scaling.gameLayer.x).toBeGreaterThanOrEqual(2);
   });

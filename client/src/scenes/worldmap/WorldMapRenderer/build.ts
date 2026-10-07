@@ -12,6 +12,7 @@ import { HUD_H } from '../logic/constants';
 import { beginLoadingErase } from './loadingReveal';
 import type { WorldMapRendererCore } from './core';
 import type { WorldMapRendererPool } from './pool';
+import { UI_FONT_FAMILY } from '../../../render/theme';
 
 export interface BuildHandlers {
   build(): void;
@@ -158,7 +159,7 @@ export class WorldMapRendererBuild implements BuildHandlers {
     layer.addChild(spinner);
 
     const label = makeText(t('world.loading'), {
-      fontFamily: 'sans-serif', fontSize: FS.body, fill: 0x3a3a3a,
+      fontFamily: UI_FONT_FAMILY, fontSize: FS.body, fill: 0x3a3a3a,
     });
     label.anchor.set(0.5);
     label.position.set(cx, cy + 50);
