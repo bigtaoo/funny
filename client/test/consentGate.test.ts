@@ -267,15 +267,18 @@ describe('needsConsentChoice', () => {
   // Spot checks, not a table of every zone: what is worth pinning is the SHAPE of each rule, since
   // each one is a judgement about which way to be wrong (see consentRegion.ts's header).
   const covered = [
-    'Europe/Berlin', 'Europe/London', 'Europe/Dublin',
+    'Europe/Berlin', 'Europe/Dublin',
     'Europe/Moscow',        // deliberately over-inclusive: the prefix rule does not carve out non-EEA Europe
+    'Europe/Jersey', 'Europe/Gibraltar', // own data-protection law, not PECR: stay covered
     'Atlantic/Reykjavik', 'Atlantic/Canary', 'Asia/Nicosia',
-    'America/New_York', 'America/Los_Angeles', 'America/Indiana/Knox', 'Pacific/Honolulu', 'US/Eastern',
   ];
   const notCovered = [
     'Asia/Tokyo', 'Asia/Shanghai', 'Australia/Sydney',
     'America/Toronto', 'America/Sao_Paulo', 'America/Mexico_City', // `America/` is NOT a prefix rule
     'Africa/Cairo',
+    // Opt-out jurisdictions (COMPLIANCE_GLOBAL §3.3b): analytics on by default, off in Settings.
+    'America/New_York', 'America/Los_Angeles', 'America/Indiana/Knox', 'Pacific/Honolulu', 'US/Eastern',
+    'Europe/London', 'Europe/Belfast', 'GB',
   ];
 
   for (const tz of covered) {

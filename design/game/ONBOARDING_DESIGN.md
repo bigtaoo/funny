@@ -123,6 +123,7 @@
 
 - 陨石放行后，等场上敌人清空（最多 2 s）再停 0.5 s → `forceVictory()`：HUD 的 WIN 印章 + 结算音效，**不**自动退场。
 - 再 0.5 s 毕业卡以「盖章」的弹性动画弹出：一句目标（*Protect your notebook. Break theirs.*）、一行奖励预告、一个按钮。按钮之外的点击都吃掉，避免误触跳过这一刻。
+- **CG 包、非 EU 地区、还没告知过统计的玩家**：按钮下面多一行 ≥14 CSS px 的小字「我们会收集游玩数据用于改进游戏，可随时在设置里关闭」。卡弹出那一刻才放行同意前缓冲里的埋点——「先告知再上传」（COMPLIANCE_GLOBAL §3.3b）。EU 玩家不加这行：他们在大厅被问。
 - **新账号**（没写过 `tutorial_done`、`progress.cleared` 为空）：预告「First win: +1,000 coins」，按钮 **Next battle »**，一键进 `ch1_lv1`（记 `level_attempt`、扣入场体力，体力不够就退回准备页）。这 1000 金币就是服务器在首次通关时寄出的作者信（§5.1），数值读同一个常量 `@nw/shared/onboarding` 的 `WELCOME_MAIL_COINS`，不新开金币口子。
 - **重看教学 / 已通关的账号**：不预告，按钮 **Continue**，回大厅。
 - Skip 任何时候都回大厅（写 `tutorial_done`）。

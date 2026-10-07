@@ -26,8 +26,9 @@ export function createTutorialNav(ctx: AppCtx): TutorialNav {
    * the promise is only shown while it is still true. A replay from settings, or an account that has
    * already cleared a level, just returns to the lobby. Skip always returns to the lobby.
    *
-   * Every step also ticks the anonymous per-step counter, which is a no-op once analytics consent is
-   * granted — it is what still shows where unconsented players stop (ANALYTICS_DESIGN §3.6d).
+   * Every step also ticks the anonymous first-session funnel counter, which counts every player
+   * whatever their analytics answer — the one funnel that also covers unconsented players
+   * (ANALYTICS_DESIGN §3.6d).
    */
   function goTutorial(): void {
     const level = getLevel(TUTORIAL_LEVEL_ID);
@@ -35,7 +36,7 @@ export function createTutorialNav(ctx: AppCtx): TutorialNav {
     state.inLobby = false;
     platform.onGameplayStart();
     analytics.track('tutorial_start', { level_id: TUTORIAL_LEVEL_ID });
-    analytics.countAnonymousTutorialStep('tutorial_start');
+    analytics.countAnonymousFunnelStep('tutorial_start');
     const firstLevelId = CAMPAIGN_LEVEL_ORDER[0];
     const freshAccount = !saveManager.getFlag(TUTORIAL_DONE_FLAG) && saveManager.get().progress.cleared.length === 0;
     const nextLevelId = freshAccount && firstLevelId && getLevel(firstLevelId) ? firstLevelId : null;
@@ -43,13 +44,14 @@ export function createTutorialNav(ctx: AppCtx): TutorialNav {
       onGameEnd(_winner, _stats, _replay) {
         saveManager.setFlag(TUTORIAL_DONE_FLAG, true);
         analytics.track('tutorial_complete', { level_id: TUTORIAL_LEVEL_ID });
-        analytics.countAnonymousTutorialStep('tutorial_complete');
+        analytics.countAnonymousFunnelStep('tutorial_complete');
         if (nextLevelId) startLevelFromTutorial(nextLevelId);
         else nav.goLobby({ fade: true }); // exiting a match — one of the transitions that cross-fade
       },
       onExitToLobby() {  // Skip tutorial
         saveManager.setFlag(TUTORIAL_DONE_FLAG, true);
         analytics.track('tutorial_skip', { step: 'tutorial' });
+        analytics.countAnonymousFunnelStep('tutorial_skip');
         nav.goLobby({ fade: true }); // exiting a match — one of the transitions that cross-fade
       },
     }, {
@@ -57,10 +59,16 @@ export function createTutorialNav(ctx: AppCtx): TutorialNav {
       tutorial: {
         ctaLabel: t(nextLevelId ? 'tutorial.grad.cta' : 'tutorial.grad.ctaReplay'),
         ...(nextLevelId ? { teaser: t('tutorial.grad.teaser', { coins: WELCOME_MAIL_COINS.toLocaleString() }) } : {}),
+        // Notice-only build, outside the EEA: the analytics notice rides on the card, so a player who
+        // plays straight on into level 1 has seen it within the first minute (COMPLIANCE_GLOBAL §3.3b).
+        ...(ctx.statsNoticePending?.() ? {
+          footnote: t('entryNotice.stats'),
+          onFootnoteShown: () => ctx.acknowledgeStatsNotice?.(),
+        } : {}),
         onStep(stepKey) {
           analytics.track('tutorial_step', { level_id: TUTORIAL_LEVEL_ID, step_key: stepKey });
-          if ((analytics.ANONYMOUS_TUTORIAL_STEPS as readonly string[]).includes(stepKey)) {
-            analytics.countAnonymousTutorialStep(stepKey as analytics.AnonymousTutorialStep);
+          if ((analytics.ANONYMOUS_FUNNEL_STEPS as readonly string[]).includes(stepKey)) {
+            analytics.countAnonymousFunnelStep(stepKey as analytics.AnonymousFunnelStep);
           }
         },
         onBeatDone(info) {

@@ -19,6 +19,7 @@ import {
 import type { AdminCollections, AuditDoc } from '../db';
 import type { StatsClient, PlayerClient, AntiCheatClient, MismatchClient, PvpCardStatsClient, SuspiciousPveClient, MailDispatcher, AnalyticsClient, WorldClient, AuctionClient, LadderClient, EventsClient, GachaPoolsClient, PaddleEventsClient, ReportsClient, AppealsClient, EnforcementClient, FeedbackClient, ModerationClient } from '../clients';
 import { nullModerationClient } from '../clients/moderation';
+import { nullRetentionClient, type RetentionClient } from '../clients/retention';
 import { AdminError } from './errors';
 
 const log = createLogger('admin:service');
@@ -53,6 +54,8 @@ export interface AdminServiceDeps {
   feedback: FeedbackClient;
   /** Staff content removal (Guideline 1.2) in socialsvc + worldsvc; omit = unavailable (tests, partial stacks). */
   moderation?: ModerationClient;
+  /** Consent-free server retention report (metaserver /internal/retention); omit = unavailable (tests, partial stacks). */
+  retention?: RetentionClient;
   now: () => number;
 }
 
@@ -95,6 +98,7 @@ export class AdminCore {
   readonly enforcement: EnforcementClient;
   readonly feedback: FeedbackClient;
   readonly moderation: ModerationClient;
+  readonly retention: RetentionClient;
   readonly now: () => number;
 
   constructor(deps: AdminServiceDeps) {
@@ -118,6 +122,7 @@ export class AdminCore {
     this.enforcement = deps.enforcement;
     this.feedback = deps.feedback;
     this.moderation = deps.moderation ?? nullModerationClient;
+    this.retention = deps.retention ?? nullRetentionClient;
     this.now = deps.now;
   }
 

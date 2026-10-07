@@ -59,7 +59,7 @@ export class AnalyticsService {
   queryFirstSession(...args: Parameters<TrafficService['queryFirstSession']>) { return this.traffic.queryFirstSession(...args); }
   countBoot(...args: Parameters<TrafficService['countBoot']>) { return this.traffic.countBoot(...args); }
   countDeclinedLaunch(...args: Parameters<TrafficService['countDeclinedLaunch']>) { return this.traffic.countDeclinedLaunch(...args); }
-  countAnonymousTutorialStep(...args: Parameters<TrafficService['countAnonymousTutorialStep']>) { return this.traffic.countAnonymousTutorialStep(...args); }
+  countAnonymousFunnelStep(...args: Parameters<TrafficService['countAnonymousFunnelStep']>) { return this.traffic.countAnonymousFunnelStep(...args); }
   queryBootFunnel(...args: Parameters<TrafficService['queryBootFunnel']>) { return this.traffic.queryBootFunnel(...args); }
 
   // ── funnel ──

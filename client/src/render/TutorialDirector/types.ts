@@ -20,6 +20,13 @@ export interface TutorialConfig {
   ctaLabel: string;
   /** Optional reward line under the graduation message (only when it is true for this player). */
   teaser?: string;
+  /**
+   * Optional small print at the foot of the graduation card — the notice-only build's analytics
+   * notice (COMPLIANCE_GLOBAL §3.3b), so a player who plays straight on into level 1 has read it
+   * within the first minute. {@link onFootnoteShown} fires once, when the card pops in.
+   */
+  footnote?: string;
+  onFootnoteShown?(): void;
   /** Step-level analytics (A9-9); keys match analyticsvc's TUTORIAL_ORDERED_KEYS. */
   onStep?(stepKey: string): void;
   onBeatDone?(info: TutorialBeatDone): void;

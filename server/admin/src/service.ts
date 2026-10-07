@@ -166,6 +166,7 @@ export class AdminService {
   trend(...args: Parameters<AnalyticsService['trend']>) { return this.analytics.trend(...args); }
   analyticsSummary(...args: Parameters<AnalyticsService['analyticsSummary']>) { return this.analytics.analyticsSummary(...args); }
   analyticsQuery(...args: Parameters<AnalyticsService['analyticsQuery']>) { return this.analytics.analyticsQuery(...args); }
+  serverRetention(...args: Parameters<AnalyticsService['serverRetention']>) { return this.analytics.serverRetention(...args); }
   lookupPlayer(...args: Parameters<AnalyticsService['lookupPlayer']>) { return this.analytics.lookupPlayer(...args); }
   lookupPlayerByAccountId(...args: Parameters<AnalyticsService['lookupPlayerByAccountId']>) { return this.analytics.lookupPlayerByAccountId(...args); }
   searchPlayers(...args: Parameters<AnalyticsService['searchPlayers']>) { return this.analytics.searchPlayers(...args); }

@@ -39,6 +39,13 @@ export async function handleMonitorRoutes(ctx: RouteCtx): Promise<boolean> {
     send(res, 200, { ok: true, ...(await svc.analyticsQuery(type, days, platform, newCohort, dimension)) });
     return true;
   }
+  // Consent-free server retention report (metaserver /internal/retention): days 1..90, default 30.
+  if (method === 'GET' && path === '/admin/analytics/retention') {
+    requireCap(actor, 'analytics.view');
+    const days = Math.min(90, Math.max(1, Math.floor(Number(url.searchParams.get('days') ?? '30')) || 30));
+    send(res, 200, { ok: true, days, ...(await svc.serverRetention(days)) });
+    return true;
+  }
 
   // ── PvP card win-rate report (BALANCE data pipeline P1) ──
   if (method === 'GET' && path === '/admin/pvp-card-stats') {

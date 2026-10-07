@@ -375,12 +375,25 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
     }, opts);
   }
 
+  /**
+   * The anonymous first-session funnel step (ANALYTICS_DESIGN §3.6d) for starting / clearing one of
+   * the first three campaign levels — only while that level has never been cleared, so the row means
+   * "a new player got this far", not "someone replayed level 1". Read before recordClear updates it.
+   */
+  function anonLevelStep(levelId: string, phase: 'start' | 'clear'): analytics.AnonymousFunnelStep | null {
+    const n = CAMPAIGN_LEVEL_ORDER.indexOf(levelId) + 1;
+    if (n < 1 || n > 3 || saveManager.get().progress.cleared.includes(levelId)) return null;
+    return `lv${n}_${phase}` as analytics.AnonymousFunnelStep;
+  }
+
   function goCampaign(levelId: string | undefined): void {
     const level = levelId ? getLevel(levelId) : null;
     if (!level || !levelId) { nav.goLobby(); return; }
     state.inLobby = false;
     platform.onGameplayStart();
     analytics.track('game_start', { mode: 'campaign', level_id: levelId });
+    const startStep = anonLevelStep(levelId, 'start');
+    if (startStep) analytics.countAnonymousFunnelStep(startStep);
     const campaignStartTs = Date.now();
     views.showGame({
       onGameEnd(winner, stats, replay, summary) {
@@ -407,7 +420,11 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
           // the kept replay is submitted via /pve/verify for re-evaluation);
           // offline → enqueue for deferred settlement (fire-and-forget; save / pending are re-read on
           // returning to CampaignMap to reflect the state).
-          if (stars > 0) void saveManager.recordClear(levelId, stars, kept, achievementStatDelta(stats[0]));
+          if (stars > 0) {
+            const clearStep = anonLevelStep(levelId, 'clear');
+            if (clearStep) analytics.countAnonymousFunnelStep(clearStep);
+            void saveManager.recordClear(levelId, stars, kept, achievementStatDelta(stats[0]));
+          }
         } else {
           analytics.track('game_end', {
             mode: 'campaign',

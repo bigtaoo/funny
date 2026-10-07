@@ -92,6 +92,14 @@ export interface AccountDoc {
   purge?: AccountPurgeState;
   /** Set when the purge finished: the row is now a tombstone `{ _id, createdAt, deletedAt, purgedAt }`. */
   purgedAt?: number;
+  /**
+   * Consent-free server retention report (metaserver activityDays.ts / retentionReport.ts): the set of
+   * 24h-window offsets (0..ACTIVITY_WINDOW_DAYS-1) since `createdAt` in which the account made at least
+   * one authenticated metaserver request. Written only while the account is young enough and has not
+   * objected (`flags.gdprConsent !== false`); unset when the player turns analytics off, dropped by the
+   * purge tombstone. Unordered (maintained with $setUnion) — read with `$in`, never by position.
+   */
+  activeDays?: number[];
 }
 
 /**
@@ -170,6 +178,9 @@ export async function ensureAccountIndexes(
     { deletedAt: 1 },
     { partialFilterExpression: { deletedAt: { $exists: true } } },
   );
+  // Consent-free retention report (metaserver retentionReport.ts): signup cohorts are selected by a
+  // createdAt range, so the report reads only the last N days of signups instead of scanning every account.
+  await accounts.createIndex({ createdAt: 1 });
   // token revocation list: incremental poll by revokedAt (every verifying process, once a minute) + TTL.
   await tokenRevocations.createIndex({ revokedAt: 1 });
   await tokenRevocations.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });

@@ -59,6 +59,7 @@ function build(spec: Partial<EntryNoticeSpec>, w = 800, h = 1280): Built {
   scene.showEntryNotice({
     terms: spec.terms ?? true,
     consent: spec.consent ?? false,
+    ...(spec.stats ? { stats: true } : {}),
     onAnswer: (g) => { out.answers.push(g); },
     onClose: () => { out.closed++; },
   });
@@ -79,12 +80,18 @@ function stripTexts(scene: LobbyScene): PIXI.Rectangle[] {
 
 describe('the entry notice strip fits', () => {
   const sizes: [number, number][] = [[800, 1280], [1170, 2532], [1568, 744], [375, 812], [722, 406]];
+  // The EEA ask (two answers) and the opt-out notice (terms + analytics sentence, a single OK —
+  // COMPLIANCE_GLOBAL §3.3b): the longest copy each shape carries.
+  const shapes: Array<{ name: string; spec: Partial<EntryNoticeSpec>; hits: number }> = [
+    { name: 'ask', spec: { terms: true, consent: true }, hits: 4 },
+    { name: 'notice', spec: { terms: true, stats: true }, hits: 3 },
+  ];
   for (const loc of ['zh', 'en', 'de'] as Locale[]) {
-    for (const [vw, vh] of sizes) {
-      it(`[${loc}] ${vw}x${vh}: inside the screen, above the bottom nav, every label inside the strip`, () => {
+    for (const [vw, vh] of sizes) for (const shape of shapes) {
+      it(`[${loc}] ${vw}x${vh} ${shape.name}: inside the screen, above the bottom nav, every label inside the strip`, () => {
         setLocale(loc);
         try {
-          const { scene, core } = build({ terms: true, consent: true }, vw, vh);
+          const { scene, core } = build(shape.spec, vw, vh);
           const r = core.noticeRect!;
           expect(r.x).toBeGreaterThanOrEqual(0);
           expect(r.y).toBeGreaterThanOrEqual(0);
@@ -96,8 +103,8 @@ describe('the entry notice strip fits', () => {
             expect(b.x + b.width).toBeLessThanOrEqual(r.x + r.w + 0.5);
             expect(b.y + b.height).toBeLessThanOrEqual(r.y + r.h + 0.5);
           }
-          // Two links + two answers, each its own rect.
-          expect(core.noticeHits).toHaveLength(4);
+          // Two links + two answers (or one OK), each its own rect.
+          expect(core.noticeHits).toHaveLength(shape.hits);
         } finally {
           setLocale('en');
         }

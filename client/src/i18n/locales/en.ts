@@ -1522,7 +1522,7 @@ export const en: Record<TranslationKey, string> = {
 
   // ── GDPR first-launch consent (C5-c, L1-1) ──────────────────────────────────
   'consent.title': 'Terms & Privacy',
-  'consent.body': 'Before you play, please read and accept our Terms of Use (EULA) and Privacy Policy. We have zero tolerance for objectionable content and abusive players — you can report or block anyone in game. Only after you consent do we collect anonymous gameplay data to improve the game, and you can delete your account anytime in Settings.',
+  'consent.body': 'Before you play, please read and accept our Terms of Use (EULA) and Privacy Policy. We have zero tolerance for objectionable content and abusive players — you can report or block anyone in game. We collect gameplay data to improve the game — you can turn this off, or delete your account, anytime in Settings.',
   'consent.privacyPolicy': 'Privacy Policy',
   'consent.terms': 'Terms of Use (EULA)',
   'consent.accept': 'Accept & Continue',
@@ -1542,7 +1542,7 @@ export const en: Record<TranslationKey, string> = {
   // Merged age-gate + consent screen (RETENTION_LAUNCH_PLAN.md §3.1) — only used when both are
   // still unanswered; the standalone ageGate.*/consent.* copy above covers every other case.
   'entryGate.title': 'Before you play',
-  'entryGate.body': 'Pick your birth year, then accept our Terms of Use (EULA) and Privacy Policy. Zero tolerance for abusive players. We use anonymous gameplay data to improve the game.',
+  'entryGate.body': 'Pick your birth year, then accept our Terms of Use (EULA) and Privacy Policy. Zero tolerance for abusive players. We collect gameplay data to improve the game — off anytime in Settings.',
   'entryGate.bodyChoice': 'Pick your birth year and accept our Terms of Use (EULA) and Privacy Policy. Zero tolerance for abusive players. Anonymous gameplay data is your choice — "Essentials only" plays the same.',
   'entryGate.yearPick': 'Birth year: {year}',
   'entryGate.pickDecade': 'When were you born?',
@@ -1550,6 +1550,7 @@ export const en: Record<TranslationKey, string> = {
   'entryGate.decade': '{decade}s',
   'entryGate.pickBack': 'Back',
   'entryNotice.terms': 'By playing, you agree to our Terms of Use (EULA) and Privacy Policy.',
+  'entryNotice.stats': 'We collect gameplay data to improve the game — you can turn it off anytime in Settings.',
   'entryNotice.consent': 'Help improve the game with anonymous gameplay data? You can change this anytime in Settings.',
   'entryNotice.allow': 'Allow',
   'entryNotice.decline': 'No thanks',

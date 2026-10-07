@@ -88,28 +88,30 @@ export interface BootFunnelRow {
   /** sessions / boots — the share of launches that got far enough to report anything at all. */
   reach_rate?: number;
   /**
-   * Anonymous tutorial-step ticks from launches WITHOUT analytics consent (COMPLIANCE_GLOBAL §3.3,
-   * `?t=` on `GET /analytics/config`): how far the players nothing else can see got into the first
-   * minute. Launch counts per step, not devices; only steps that ticked are present. Consented
-   * players are not in here — their real `tutorial_step` events are.
+   * Anonymous first-session funnel ticks from every launch, whatever its analytics answer
+   * (COMPLIANCE_GLOBAL §3.3b, `?t=` on `GET /analytics/config`): how far players got into the
+   * tutorial and the first three levels — the only funnel that also covers EEA players who never
+   * said yes. Launch counts per step, not devices; only steps that ticked are present.
    */
-  anon_tutorial?: Partial<Record<AnonTutorialStep, number>>;
+  anon_funnel?: Partial<Record<AnonFunnelStep, number>>;
 }
 
 /**
- * The tutorial steps the anonymous counter accepts (`?t=` on `GET /analytics/config`). A fixed
- * allow-list for the same reason `?p=` has one: the value becomes part of a document `_id` on an
- * endpoint with no auth, so anything else is dropped rather than stored. Mirrors the client's
- * `AnonymousTutorialStep` (client/src/analytics/index.ts) and the v2 tutorial sequence
- * (ONBOARDING_DESIGN §11.9).
+ * The first-session steps the anonymous counter accepts (`?t=` on `GET /analytics/config`), in
+ * funnel order. A fixed allow-list for the same reason `?p=` has one: the value becomes part of a
+ * document `_id` on an endpoint with no auth, so anything else is dropped rather than stored.
+ * Mirrors the client's `ANONYMOUS_FUNNEL_STEPS` (client/src/analytics/index.ts): the v2 tutorial
+ * sequence (ONBOARDING_DESIGN §11.9), its Skip, and the first attempt / first clear of campaign
+ * levels 1–3.
  */
-export const ANON_TUTORIAL_STEPS = [
-  'tutorial_start', 'beat_unit', 'beat_building', 'beat_spell', 'graduate', 'tutorial_complete',
+export const ANON_FUNNEL_STEPS = [
+  'tutorial_start', 'beat_unit', 'beat_building', 'beat_spell', 'graduate', 'tutorial_complete', 'tutorial_skip',
+  'lv1_start', 'lv1_clear', 'lv2_start', 'lv2_clear', 'lv3_start', 'lv3_clear',
 ] as const;
-export type AnonTutorialStep = (typeof ANON_TUTORIAL_STEPS)[number];
+export type AnonFunnelStep = (typeof ANON_FUNNEL_STEPS)[number];
 
-export function isAnonTutorialStep(s: string): s is AnonTutorialStep {
-  return (ANON_TUTORIAL_STEPS as readonly string[]).includes(s);
+export function isAnonFunnelStep(s: string): s is AnonFunnelStep {
+  return (ANON_FUNNEL_STEPS as readonly string[]).includes(s);
 }
 
 /**

@@ -5408,8 +5408,8 @@ export interface operations {
                 p?: "web" | "wechat" | "crazygames";
                 /** @description `1` marks this as a launch by a player who refused analytics ("essentials only", ANALYTICS_DESIGN §3.6c). The client sends it as a second, throwaway call of this same endpoint, which then bumps a refusal count on the (date, platform) row instead of the launch count — so the launch is still counted exactly once, and the launch funnel can tell "left at a gate" from "playing and reporting nothing". It is the only thing the refusal path ever sends: a refusal cannot be reported as an event, and this endpoint stores no one. */
                 d?: "1";
-                /** @description A tutorial step reached by a launch that has NOT granted analytics consent (COMPLIANCE_GLOBAL §3.3 — the CrazyGames build plays its first minute before that question is answered). Bumps a (date, platform, step) count in `tutorial_anon_daily` instead of the launch counter — it is not a launch. Nothing identifying is sent or stored; a value outside the enum counts nothing. The response body is the ordinary config and is thrown away. */
-                t?: "tutorial_start" | "beat_unit" | "beat_building" | "beat_spell" | "graduate" | "tutorial_complete";
+                /** @description A first-session funnel step (the tutorial, its Skip, the first attempt / first clear of campaign levels 1–3) reached by a launch, whatever its analytics answer (COMPLIANCE_GLOBAL §3.3b — the one funnel that also covers EEA players who never consented). Bumps a (date, platform, step) count in `funnel_anon_daily` instead of the launch counter — it is not a launch. Nothing identifying is sent or stored; a value outside the enum counts nothing. The response body is the ordinary config and is thrown away. */
+                t?: "tutorial_start" | "beat_unit" | "beat_building" | "beat_spell" | "graduate" | "tutorial_complete" | "tutorial_skip" | "lv1_start" | "lv1_clear" | "lv2_start" | "lv2_clear" | "lv3_start" | "lv3_clear";
             };
             header?: never;
             path?: never;

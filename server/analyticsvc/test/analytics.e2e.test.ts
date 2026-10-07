@@ -164,24 +164,28 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
   });
 
   /**
-   * The anonymous tutorial tick (COMPLIANCE_GLOBAL §3.3). `?t=<step>` is sent by a launch that has
-   * not granted analytics consent as it passes a tutorial step. It is not a launch — counting it as
-   * one would inflate the funnel's denominator — and a step outside the allow-list mints nothing.
+   * The anonymous first-session funnel tick (COMPLIANCE_GLOBAL §3.3b). `?t=<step>` is sent by every
+   * launch as it passes a tutorial step or a first try / first clear of levels 1–3. It is not a
+   * launch — counting it as one would inflate the funnel's denominator — and a step outside the
+   * allow-list mints nothing.
    */
-  it('GET /analytics/config?t=<step> counts a tutorial step, never a launch, and only allow-listed steps', async () => {
+  it('GET /analytics/config?t=<step> counts a funnel step, never a launch, and only allow-listed steps', async () => {
     await mongo!.collections.boots_daily.deleteMany({});
-    await mongo!.collections.tutorial_anon_daily.deleteMany({});
+    await mongo!.collections.funnel_anon_daily.deleteMany({});
     await fetch(`${base}/analytics/config?p=crazygames&t=tutorial_start`);
     await fetch(`${base}/analytics/config?p=crazygames&t=tutorial_start`);
     await fetch(`${base}/analytics/config?p=crazygames&t=beat_unit`);
+    await fetch(`${base}/analytics/config?p=crazygames&t=lv1_clear`);
+    await fetch(`${base}/analytics/config?p=crazygames&t=lv9_clear`);
     await fetch(`${base}/analytics/config?p=crazygames&t=../../etc/passwd`);
     await fetch(`${base}/analytics/config?p=nope&t=graduate`);
 
     await new Promise((r) => setTimeout(r, 150));
     expect(await mongo!.collections.boots_daily.countDocuments({}), 'a step tick is not a launch').toBe(0);
-    const docs = await mongo!.collections.tutorial_anon_daily.find({}).toArray();
+    const docs = await mongo!.collections.funnel_anon_daily.find({}).toArray();
     expect(docs.map((d) => [d.platform, d.step, d.count]).sort()).toEqual([
       ['crazygames', 'beat_unit', 1],
+      ['crazygames', 'lv1_clear', 1],
       ['crazygames', 'tutorial_start', 2],
       ['unknown', 'graduate', 1],
     ]);

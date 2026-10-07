@@ -7,13 +7,17 @@
  *
  *  * **Terms + privacy policy** — contract necessity (GDPR Art 6(1)(b)). Declining means declining
  *    to play, everywhere. That is the single-button dialog.
- *  * **Analytics** — a non-essential purpose that can only rest on consent, and consent is not
- *    "freely given" when access is conditional on it (Art 7(4), Recital 43). Where that applies the
- *    player gets two buttons and *both* of them enter the game.
+ *  * **Analytics** — in the EEA a non-essential purpose that can only rest on consent (ePrivacy
+ *    Art 5(3) for the device id it stores), and consent is not "freely given" when access is
+ *    conditional on it (Art 7(4), Recital 43). There the player gets two buttons and *both* of them
+ *    enter the game.
  *
- * Outside those jurisdictions the game asks for acceptance only. It deliberately does NOT show a
- * second button it would then ignore: a choice that is presented and discarded is worse than no
- * choice — it contradicts whatever the privacy policy and the store data-safety forms say.
+ * Elsewhere — including the United States (state privacy laws regulate selling data and targeted
+ * advertising, not a game measuring its own play) and, since 2026, the United Kingdom (see
+ * {@link UK_ZONES}) — analytics are on by default with an opt-out in Settings, and the game asks for
+ * acceptance only. It deliberately does NOT show a second button it would then ignore: a choice
+ * that is presented and discarded is worse than no choice — it contradicts whatever the privacy
+ * policy and the store data-safety forms say.
  *
  * ## Why the timezone and not an IP lookup
  *
@@ -53,24 +57,15 @@ const EEA_OUTLIER_ZONES: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * US zones, listed rather than matched by an `America/` prefix: that prefix also covers Canada and
- * all of Latin America, whose analytics would then be dropped for no legal reason. Includes the
- * legacy `US/*` aliases, which older runtimes (and a few Linux images) still resolve to.
+ * United Kingdom zones, carved out of the `Europe/` prefix rule. Since 5 Feb 2026 (Data (Use and
+ * Access) Act 2025, PECR Schedule A1) first-party analytics "for statistical purposes" to improve
+ * the service no longer needs prior consent there, provided the player is told and can object for
+ * free — which the notice and the Settings toggle do (COMPLIANCE_GLOBAL §3.3b). `GB`/`GB-Eire` and
+ * `Europe/Belfast` are the legacy aliases. The Crown Dependencies (`Europe/Jersey`, `Guernsey`,
+ * `Isle_of_Man`) and Gibraltar have their own data-protection law and stay covered.
  */
-const US_ZONES: ReadonlySet<string> = new Set([
-  'America/New_York', 'America/Detroit', 'America/Chicago', 'America/Denver',
-  'America/Los_Angeles', 'America/Phoenix', 'America/Anchorage', 'America/Juneau',
-  'America/Sitka', 'America/Metlakatla', 'America/Yakutat', 'America/Nome',
-  'America/Adak', 'America/Boise', 'America/Menominee',
-  'America/Indiana/Indianapolis', 'America/Indiana/Vincennes', 'America/Indiana/Winamac',
-  'America/Indiana/Marengo', 'America/Indiana/Petersburg', 'America/Indiana/Vevay',
-  'America/Indiana/Tell_City', 'America/Indiana/Knox',
-  'America/Kentucky/Louisville', 'America/Kentucky/Monticello',
-  'America/North_Dakota/Center', 'America/North_Dakota/New_Salem',
-  'America/North_Dakota/Beulah',
-  'Pacific/Honolulu',
-  'US/Eastern', 'US/Central', 'US/Mountain', 'US/Pacific', 'US/Alaska', 'US/Hawaii',
-  'US/Arizona', 'US/East-Indiana', 'US/Indiana-Starke', 'US/Michigan', 'US/Aleutian',
+const UK_ZONES: ReadonlySet<string> = new Set([
+  'Europe/London', 'Europe/Belfast', 'GB', 'GB-Eire',
 ]);
 
 /** The player's IANA timezone, or '' when the runtime has no usable `Intl` (see `needsConsentChoice`). */
@@ -94,6 +89,7 @@ export function needsConsentChoice(): boolean {
   if (clientPlatformName() === 'wechat') return false;
   const tz = timeZone();
   if (tz === '') return true; // unreadable → assume covered (see header)
+  if (UK_ZONES.has(tz)) return false;
   if (tz.startsWith('Europe/')) return true;
-  return EEA_OUTLIER_ZONES.has(tz) || US_ZONES.has(tz);
+  return EEA_OUTLIER_ZONES.has(tz);
 }

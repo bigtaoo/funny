@@ -10,7 +10,7 @@ import {
   type MetricKey,
   type TrendPoint,
 } from '@nw/shared';
-import type { AnalyticsQueryResult, AntiCheatReviewRow, PlayerProfile, PlayerSummary } from '../clients';
+import type { AnalyticsQueryResult, AntiCheatReviewRow, PlayerProfile, PlayerSummary, RetentionCohortRow } from '../clients';
 import type { Actor, AdminCore } from './base';
 import { AdminError } from './errors';
 
@@ -33,6 +33,7 @@ export interface AnalyticsHandlers {
     tickets: Record<CompTicketStatus, number>;
   }>;
   analyticsQuery(type: string, days: number, platform?: string, newCohort?: boolean, dimension?: string): Promise<AnalyticsQueryResult & { available: boolean }>;
+  serverRetention(days: number): Promise<{ available: boolean; cohorts: RetentionCohortRow[] }>;
   lookupPlayer(publicId: string): Promise<PlayerProfile>;
   lookupPlayerByAccountId(accountId: string): Promise<PlayerProfile>;
   searchPlayers(actor: string, q: string): Promise<PlayerSummary[]>;
@@ -159,6 +160,19 @@ export class AnalyticsService {
           ? await this.core.analytics.query(type, days, platform, newCohort)
           : await this.core.analytics.query(type, days, platform);
       return { ...result, available: true };
+    }
+
+    /**
+     * Consent-free server retention report (metaserver /internal/retention): signup cohorts with tutorial /
+     * ch1 clear counts and D1..D30 activity, excluding players who turned analytics off. `days` is clamped
+     * by the route (1..90). Unconfigured → available:false; a failed call → 502, so ops can tell
+     * "nothing to show" from "could not ask".
+     */
+    async serverRetention(days: number): Promise<{ available: boolean; cohorts: RetentionCohortRow[] }> {
+      if (!this.core.retention.available) return { available: false, cohorts: [] };
+      const cohorts = await this.core.retention.getRetention(days);
+      if (cohorts === null) throw new AdminError(502, 'upstream_error', 'retention report backend failed');
+      return { available: true, cohorts };
     }
 
     /** Player lookup (player.lookup). */

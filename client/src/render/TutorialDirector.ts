@@ -89,6 +89,7 @@ export class TutorialDirector {
   private finaleAt = 0;
   private victoryAt = Infinity;
   private gradAt = Infinity;
+  private footnoteShown = false;
   private shakeLeft = 0;
   private readonly shakeOrigin = { x: 0, y: 0 };
 
@@ -333,7 +334,7 @@ export class TutorialDirector {
     this.skipBtn.visible = false;
     this.host.forceVictory();
     const cfg = this.host.config;
-    drawGradCard(this.panelHost(), t('tutorial.grad.body'), cfg.teaser, cfg.ctaLabel);
+    drawGradCard(this.panelHost(), t('tutorial.grad.body'), cfg.teaser, cfg.ctaLabel, cfg.footnote);
     this.gradCard.scale.set(0);
     this.gradAt = this.time + GRAD_CARD_DELAY_SEC;
     cfg.onStep?.('graduate');
@@ -377,6 +378,7 @@ export class TutorialDirector {
   }
 
   private animateGradCard(): void {
+    if (!this.footnoteShown) { this.footnoteShown = true; this.host.config.onFootnoteShown?.(); }
     const k = Math.min(1, (this.time - this.gradAt) / GRAD_POP_SEC);
     // easeOutBack — a small overshoot reads as a stamp landing.
     const c = 1.70158;

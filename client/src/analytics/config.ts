@@ -71,14 +71,14 @@ export function pingDeclinedLaunch(analyticsBaseUrl: string, platform: string): 
 }
 
 /**
- * Tell the server that a launch WITHOUT analytics consent reached a tutorial step
- * (COMPLIANCE_GLOBAL §3.3): the same unauthenticated endpoint again, plus `&t=<step>`, response
+ * Tell the server that a launch reached a first-session funnel step (COMPLIANCE_GLOBAL §3.3b):
+ * the same unauthenticated endpoint again, plus `&t=<step>`, response
  * thrown away. Same position as {@link pingDeclinedLaunch} — the server bumps a (date, platform,
  * step) number and stores nothing else; no device id, no token, no session id is sent.
  *
  * Fire-and-forget: a failure costs one tick in a trend and must never be visible to the player.
  */
-export function pingAnonymousTutorialStep(analyticsBaseUrl: string, platform: string, step: string): void {
+export function pingAnonymousFunnelStep(analyticsBaseUrl: string, platform: string, step: string): void {
   void netTransport()
     .request({
       method: 'GET',

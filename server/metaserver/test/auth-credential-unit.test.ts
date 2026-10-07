@@ -43,6 +43,7 @@ interface AccountSeed {
   deletedAt?: number;
   deletionConfirmToken?: string;
   flags?: { banned?: boolean; bannedUntil?: number; mutedUntil?: number; gdprConsent?: boolean; reputationScore?: number };
+  activeDays?: number[];
 }
 
 /** insertOne always rejects with a caller-supplied error — used to drive submitAppealHandler's E11000
@@ -726,16 +727,20 @@ describe('accountLifecycle.ts (bonus, deleteAccount / cancelAccountDeletion / re
     await app.close();
   });
 
-  it('recordGdprConsent writes flags.gdprConsent (true then false)', async () => {
-    const cols = fakeCols({ accounts: [{ _id: 'life-4' }] });
-    const app = await makeApp(cols);
+  it('recordGdprConsent writes flags.gdprConsent (true then false); false also erases activeDays', async () => {
+    const cols = fakeCols({ accounts: [{ _id: 'life-4', activeDays: [0, 2] }] });
+    const app = await makeApp(cols, { activity: null });
     const on = await app.inject({ method: 'POST', url: '/account/gdpr-consent', headers: authHeader('life-4'), payload: { consent: true } });
     expect(on.statusCode).toBe(200);
-    expect((await cols.accounts.findOne({ _id: 'life-4' }))?.flags?.gdprConsent).toBe(true);
+    const afterOn = await cols.accounts.findOne({ _id: 'life-4' });
+    expect(afterOn?.flags?.gdprConsent).toBe(true);
+    expect(afterOn?.activeDays).toEqual([0, 2]); // consenting keeps what was recorded
 
     const off = await app.inject({ method: 'POST', url: '/account/gdpr-consent', headers: authHeader('life-4'), payload: { consent: false } });
     expect(off.statusCode).toBe(200);
-    expect((await cols.accounts.findOne({ _id: 'life-4' }))?.flags?.gdprConsent).toBe(false);
+    const afterOff = await cols.accounts.findOne({ _id: 'life-4' });
+    expect(afterOff?.flags?.gdprConsent).toBe(false);
+    expect(afterOff?.activeDays).toBeUndefined(); // objecting erases the retention-report activity
     await app.close();
   });
 });

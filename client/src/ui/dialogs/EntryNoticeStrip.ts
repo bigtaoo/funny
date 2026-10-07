@@ -4,6 +4,7 @@
  * §3.3). A small card along the bottom of the host screen, above its bottom bar:
  *
  *   By playing, you agree to our Terms of Use (EULA) and Privacy Policy.   ← `terms`
+ *   We collect gameplay data to improve the game. Turn it off in Settings. ← `stats`
  *   Help improve the game with anonymous gameplay data? …                  ← `consent`
  *   · Privacy Policy  · Terms of Use (EULA)          [ Allow ] [ No thanks ]   (or [ OK ])
  *
@@ -30,6 +31,11 @@ import { openExternalUrl } from '../../platform/externalLink';
 export interface EntryNoticeSpec {
   /** Show the "by playing you agree to our Terms and Privacy Policy" line. */
   terms: boolean;
+  /**
+   * Show the analytics notice — on by default, off in Settings (outside the EEA, COMPLIANCE_GLOBAL
+   * §3.3b). Never together with `consent`, which asks instead of telling.
+   */
+  stats?: boolean;
   /** Ask the analytics question — Allow / No thanks. Without it the strip has a single OK. */
   consent: boolean;
   /** `consent` only: the answer. Never called when the strip simply goes away with its screen. */
@@ -73,6 +79,7 @@ export function buildEntryNoticeStrip(
 
   const sentences: string[] = [];
   if (spec.terms) sentences.push(t('entryNotice.terms'));
+  if (spec.stats) sentences.push(t('entryNotice.stats'));
   if (spec.consent) sentences.push(t('entryNotice.consent'));
   const body = makeText(sentences.join(' '), {
     fontSize: fs, fill: C.dark, fontFamily: 'monospace',

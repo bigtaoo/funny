@@ -220,13 +220,17 @@
       - name: t
         in: query
         required: false
-        schema: { type: string, enum: [tutorial_start, beat_unit, beat_building, beat_spell, graduate, tutorial_complete] }
+        schema:
+          type: string
+          enum: [tutorial_start, beat_unit, beat_building, beat_spell, graduate, tutorial_complete, tutorial_skip,
+            lv1_start, lv1_clear, lv2_start, lv2_clear, lv3_start, lv3_clear]
         description: >
-          A tutorial step reached by a launch that has NOT granted analytics consent
-          (COMPLIANCE_GLOBAL §3.3 — the CrazyGames build plays its first minute before that question
-          is answered). Bumps a (date, platform, step) count in `tutorial_anon_daily` instead of the
-          launch counter — it is not a launch. Nothing identifying is sent or stored; a value outside
-          the enum counts nothing. The response body is the ordinary config and is thrown away.
+          A first-session funnel step (the tutorial, its Skip, the first attempt / first clear of
+          campaign levels 1–3) reached by a launch, whatever its analytics answer (COMPLIANCE_GLOBAL
+          §3.3b — the one funnel that also covers EEA players who never consented). Bumps a (date,
+          platform, step) count in `funnel_anon_daily` instead of the launch counter — it is not a
+          launch. Nothing identifying is sent or stored; a value outside the enum counts nothing. The
+          response body is the ordinary config and is thrown away.
     responses:
       '200':
         description: Collection config

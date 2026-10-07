@@ -1636,7 +1636,14 @@ const QUERY_SCHEMAS: Record<string, unknown> = {
           "beat_building",
           "beat_spell",
           "graduate",
-          "tutorial_complete"
+          "tutorial_complete",
+          "tutorial_skip",
+          "lv1_start",
+          "lv1_clear",
+          "lv2_start",
+          "lv2_clear",
+          "lv3_start",
+          "lv3_clear"
         ]
       }
     }

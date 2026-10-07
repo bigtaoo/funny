@@ -4,8 +4,10 @@
 // game's own terms/privacy policy "a simple notice rather than a pop-up blocking the user". So on that
 // build there is no entry screen at all. What has to stay true underneath, and is pinned here:
 //   * nothing blocks: the first screen is the game, not an age gate or a consent wall;
-//   * outside the covered regions the notice is the whole answer — analytics on, the flag persisted,
-//     `gdpr_consent { mode: 'notice' }` tracked — exactly like the accept-only gate elsewhere;
+//   * outside the covered regions (the EEA) analytics are on by default, but only once the analytics
+//     notice has been on screen (COMPLIANCE_GLOBAL §3.3b): until then nothing is recorded or sent;
+//     the lobby strip (or the tutorial's graduation card) showing it is what persists the flag and
+//     tracks `gdpr_consent { mode: 'notice' }`;
 //   * inside them nothing is granted until the player answers the non-blocking prompt, and its two
 //     answers go through the same recording path as the gate's (refusal: flag false + the anonymous
 //     refusal tick, nothing tracked);
@@ -77,17 +79,70 @@ describe('notice-only entry (CrazyGames)', () => {
     }
   });
 
-  it('outside the covered regions: the notice is the answer — analytics on, recorded as mode "notice"', async () => {
-    withTimeZone('Asia/Tokyo');
-    const { views, platform } = launch();
-    expect(storedFlags(platform)[GDPR_CONSENT_FLAG]).toBe(true);
-    expect(consentEvents()).toEqual([{ granted: true, mode: 'notice' }]);
-    // No age is fabricated: the portal is 13+, we just do not ask.
-    expect(storedFlags(platform)[AGE_DECLARED_FLAG]).toBeUndefined();
+  for (const tz of ['Asia/Tokyo', 'America/New_York', 'Europe/London']) {
+    it(`outside the covered regions (${tz}): analytics on once the notice is shown, recorded as mode "notice"`, async () => {
+      withTimeZone(tz);
+      const { views, platform } = launch();
+      // Before any notice: nothing recorded, nothing tracked (events wait in the pre-consent buffer).
+      expect(storedFlags(platform)[GDPR_CONSENT_FLAG]).toBeUndefined();
+      expect(consentEvents()).toEqual([]);
+      // No age is fabricated: the portal is 13+, we just do not ask.
+      expect(storedFlags(platform)[AGE_DECLARED_FLAG]).toBeUndefined();
 
+      await untilLobby(views);
+      // The lobby carries the terms + analytics notice — no question, a single OK — and showing it
+      // is the acknowledgement.
+      expect(views.lastEntryNotice).toMatchObject({ terms: true, stats: true, consent: false });
+      expect(storedFlags(platform)[GDPR_CONSENT_FLAG]).toBe(true);
+      expect(consentEvents()).toEqual([{ granted: true, mode: 'notice' }]);
+      expect(storedFlags(platform)[TERMS_ACCEPTED_FLAG], 'being shown the notice is what accepts the terms here').toBe(true);
+      vi.restoreAllMocks();
+      tracked.length = 0;
+    });
+  }
+
+  it('a brand-new player is told on the tutorial graduation card, and that is the acknowledgement', async () => {
+    withTimeZone('America/New_York');
+    const platform = new HeadlessPlatform({ storage: { nw_save_v1: JSON.stringify({ flags: {} }) } });
+    Object.defineProperty(platform, 'entryNoticeOnly', { value: true });
+    Object.defineProperty(platform, 'silentAccountOnly', { value: true });
+    const views = new HeadlessAppViews();
+    const seen: Array<{ footnote?: string; flagBefore: unknown; flagAfter: unknown }> = [];
+    views.onTutorial = (cfg) => {
+      const flagBefore = storedFlags(platform)[GDPR_CONSENT_FLAG];
+      cfg.onFootnoteShown?.();
+      seen.push({ ...(cfg.footnote ? { footnote: cfg.footnote } : {}), flagBefore, flagAfter: storedFlags(platform)[GDPR_CONSENT_FLAG] });
+    };
+    createAppCore(platform, views).start();
     await untilLobby(views);
-    // The lobby carries the terms notice — no analytics question, a single OK.
-    expect(views.lastEntryNotice).toMatchObject({ terms: true, consent: false });
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.footnote).toBeTruthy();
+    expect(seen[0]!.flagBefore).toBeUndefined();
+    expect(seen[0]!.flagAfter).toBe(true);
+    expect(consentEvents()).toEqual([{ granted: true, mode: 'notice' }]);
+    // Already told: the lobby strip carries the terms only.
+    expect(views.lastEntryNotice).toMatchObject({ terms: true, stats: false });
+  });
+
+  it('in the EEA the graduation card has no footnote — the lobby prompt asks instead', async () => {
+    withTimeZone('Europe/Berlin');
+    const platform = new HeadlessPlatform({ storage: { nw_save_v1: JSON.stringify({ flags: {} }) } });
+    Object.defineProperty(platform, 'entryNoticeOnly', { value: true });
+    Object.defineProperty(platform, 'silentAccountOnly', { value: true });
+    const views = new HeadlessAppViews();
+    let footnote: string | undefined = 'unset';
+    views.onTutorial = (cfg) => { footnote = cfg.footnote; };
+    createAppCore(platform, views).start();
+    await untilLobby(views);
+    expect(footnote).toBeUndefined();
+    expect(storedFlags(platform)[GDPR_CONSENT_FLAG]).toBeUndefined();
+  });
+
+  it('a returning player who already has analytics on is not told again', async () => {
+    withTimeZone('Asia/Tokyo');
+    const { views, platform } = launch({ [GDPR_CONSENT_FLAG]: true });
+    await untilLobby(views);
+    expect(views.lastEntryNotice).toMatchObject({ terms: true, stats: false, consent: false });
     expect(storedFlags(platform)[TERMS_ACCEPTED_FLAG], 'being shown the notice is what accepts the terms here').toBe(true);
   });
 

@@ -23,6 +23,7 @@ import { HttpAppealsClient } from '../src/clients/appeals';
 import { HttpReportsClient } from '../src/clients/reports';
 import { HttpEnforcementClient } from '../src/clients/enforcement';
 import { HttpModerationClient } from '../src/clients/moderation';
+import { HttpRetentionClient } from '../src/clients/retention';
 
 const fetchMock = fetchInternalJson as unknown as Mock;
 
@@ -114,6 +115,24 @@ describe('HttpPvpCardStatsClient', () => {
     expect(await new HttpPvpCardStatsClient(null, 'k').listPvpCardStats({})).toEqual([]);
     fetchMock.mockResolvedValue({ ok: false, status: 500, body: null });
     expect(await new HttpPvpCardStatsClient('http://meta', 'k').listPvpCardStats({})).toEqual([]);
+  });
+});
+
+describe('HttpRetentionClient', () => {
+  it('getRetention asks meta /internal/retention with days and returns the cohorts', async () => {
+    const row = { date: '2026-10-01', signups: 3 };
+    fetchMock.mockResolvedValue({ ok: true, status: 200, body: { ok: true, days: 14, cohorts: [row] } });
+    expect(await new HttpRetentionClient('http://meta', 'k').getRetention(14)).toEqual([row]);
+    expect(fetchMock.mock.calls[0]![0]).toBe('http://meta/internal/retention?days=14');
+    expect(fetchMock.mock.calls[0]![1]).toMatchObject({ caller: 'admin', key: 'k' });
+  });
+
+  it('getRetention reports null (not []) unconfigured or on failure, so the caller can tell them apart', async () => {
+    const off = new HttpRetentionClient(null, 'k');
+    expect(off.available).toBe(false);
+    expect(await off.getRetention(30)).toBeNull();
+    fetchMock.mockResolvedValue({ ok: false, status: 500, body: null });
+    expect(await new HttpRetentionClient('http://meta', 'k').getRetention(30)).toBeNull();
   });
 });
 

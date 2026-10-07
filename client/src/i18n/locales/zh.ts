@@ -103,7 +103,7 @@ export const zh = {
   'settings.dataSaverOn': '已开启',
   'settings.dataSaverOff': '已关闭',
   'settings.dataSaverHint': '开启后不再提前预载后续界面的图片，进入时改为现下载。',
-  'settings.analytics': '匿名数据',
+  'settings.analytics': '数据统计',
   'settings.analyticsOn': '已开启',
   'settings.analyticsOff': '已关闭',
   'settings.analyticsHint': '关闭后不再上报任何游玩数据。只用于改进游戏，不含聊天，不外卖。',
@@ -1547,7 +1547,7 @@ export const zh = {
 
   // ── GDPR first-time consent (C5-c, L1-1) ─────────────────────────────────
   'consent.title': '用户协议与隐私',
-  'consent.body': '继续游戏前，请阅读并同意我们的用户协议（EULA）与隐私政策。我们对不良内容和辱骂他人的玩家零容忍——你可以在游戏内随时举报或拉黑任何玩家。仅在你同意后，我们才会收集匿名游玩数据用于改进游戏；你可随时在设置中删除账号。',
+  'consent.body': '继续游戏前，请阅读并同意我们的用户协议（EULA）与隐私政策。我们对不良内容和辱骂他人的玩家零容忍——你可以在游戏内随时举报或拉黑任何玩家。我们会收集游玩数据用于改进游戏——你可随时在设置中关闭，也可在设置中删除账号。',
   'consent.privacyPolicy': '隐私政策',
   'consent.terms': '用户协议（EULA）',
   'consent.accept': '同意并继续',
@@ -1567,7 +1567,7 @@ export const zh = {
   // Merged age-gate + consent screen (RETENTION_LAUNCH_PLAN.md §3.1) — only used when both are
   // still unanswered; the standalone ageGate.*/consent.* copy above covers every other case.
   'entryGate.title': '开始之前',
-  'entryGate.body': '选好出生年份，并同意我们的用户协议（EULA）与隐私政策。对辱骂他人的玩家零容忍。我们会用匿名游玩数据改进游戏。',
+  'entryGate.body': '选好出生年份，并同意我们的用户协议（EULA）与隐私政策。对辱骂他人的玩家零容忍。我们会收集游玩数据改进游戏，可随时在设置里关闭。',
   'entryGate.bodyChoice': '选好出生年份，并同意我们的用户协议（EULA）与隐私政策。对辱骂他人的玩家零容忍。是否提供匿名游玩数据由你决定——选「仅必要」同样正常游戏。',
   'entryGate.yearPick': '出生年份：{year}',
   'entryGate.pickDecade': '你是哪一年出生的？',
@@ -1575,6 +1575,7 @@ export const zh = {
   'entryGate.decade': '{decade}年代',
   'entryGate.pickBack': '返回',
   'entryNotice.terms': '开始游戏即表示你同意我们的用户协议（EULA）与隐私政策。',
+  'entryNotice.stats': '我们会收集游玩数据用于改进游戏，可随时在设置里关闭。',
   'entryNotice.consent': '愿意提供匿名游玩数据帮我们改进游戏吗？随时可在设置里更改。',
   'entryNotice.allow': '允许',
   'entryNotice.decline': '不用了',

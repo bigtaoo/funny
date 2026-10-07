@@ -9,7 +9,7 @@ import type { ApiClient } from '../net/ApiClient';
 import { getOrCreateDeviceId } from '../platform/uuid';
 import { onAppLifecycleChange } from '../platform/appLifecycle';
 import { getLocale } from '../i18n';
-import { fetchAnalyticsConfig, pingAnonymousTutorialStep, pingDeclinedLaunch, shouldTrack } from './config';
+import { fetchAnalyticsConfig, pingAnonymousFunnelStep, pingDeclinedLaunch, shouldTrack } from './config';
 import { EventQueue, type AnalyticsEvent, type BatchMeta } from './queue';
 import { telemetrySessionId } from './session';
 
@@ -75,35 +75,40 @@ export function countDeclinedLaunch(): void {
 }
 
 /**
- * The tutorial steps {@link countAnonymousTutorialStep} accepts — the v2 tutorial sequence
- * (ONBOARDING_DESIGN §11.9). Must match analyticsvc's `ANON_TUTORIAL_STEPS` (service/defs.ts) and the
- * `t` enum on `GET /analytics/config`; the server drops anything else.
+ * The first-session steps {@link countAnonymousFunnelStep} accepts: the v2 tutorial sequence
+ * (ONBOARDING_DESIGN §11.9), its Skip, and the first attempt / first clear of the first three
+ * campaign levels. Must match analyticsvc's `ANON_FUNNEL_STEPS` (service/defs.ts) and the `t` enum on
+ * `GET /analytics/config`; the server drops anything else.
  */
-export const ANONYMOUS_TUTORIAL_STEPS = [
-  'tutorial_start', 'beat_unit', 'beat_building', 'beat_spell', 'graduate', 'tutorial_complete',
+export const ANONYMOUS_FUNNEL_STEPS = [
+  'tutorial_start', 'beat_unit', 'beat_building', 'beat_spell', 'graduate', 'tutorial_complete', 'tutorial_skip',
+  'lv1_start', 'lv1_clear', 'lv2_start', 'lv2_clear', 'lv3_start', 'lv3_clear',
 ] as const;
-export type AnonymousTutorialStep = (typeof ANONYMOUS_TUTORIAL_STEPS)[number];
+export type AnonymousFunnelStep = (typeof ANONYMOUS_FUNNEL_STEPS)[number];
 
-/** Steps already ticked this launch — see {@link countAnonymousTutorialStep}. */
-let anonTutorialSent = new Set<string>();
+/** Steps already ticked this launch — see {@link countAnonymousFunnelStep}. */
+let anonFunnelSent = new Set<string>();
 
 /**
- * Tick the anonymous, aggregate tutorial-funnel counter for a launch that has NOT granted analytics
- * consent (COMPLIANCE_GLOBAL §3.3). The CrazyGames build plays its first minute before the analytics
- * question is answered (EU/US time zones), and without this nothing at all would say where those
- * players drop. Sends only the build target and `step` (`GET /analytics/config?p=…&t=…`): no device
- * id, no token, no session id — the server keeps a (date, platform, step) count and nothing else.
+ * Tick the anonymous, aggregate first-session funnel counter (COMPLIANCE_GLOBAL §3.3b,
+ * ANALYTICS_DESIGN §3.6d). Sends only the build target and `step` (`GET /analytics/config?p=…&t=…`):
+ * no device id, no token, no session id, nothing stored on the device — the server keeps a (date,
+ * platform, step) count and nothing else. Being neither personal data nor device access, it needs no
+ * consent, so it counts **every** player whatever their analytics answer: it is the one funnel that
+ * covers the EEA players who never said yes, and the one consented and unconsented players can be
+ * compared on.
  *
- * A no-op once consent is granted (those players send real `tutorial_step` events), offline (no base
- * URL), and for a step already ticked this launch — a settings "replay tutorial" in the same launch is
- * not a second player reaching the step. Safe to call from anywhere, unconditionally.
+ * Once per step per launch: a settings "replay tutorial", or a second try at a level in the same
+ * launch, is not a second player reaching the step. (A level failed in two separate launches does
+ * tick twice — the `lvN_start` row counts attempt-launches, read it against `lvN_clear`.) A no-op
+ * offline (no base URL). Safe to call from anywhere, unconditionally.
  */
-export function countAnonymousTutorialStep(step: AnonymousTutorialStep): void {
-  if (consentGranted || !bootCounterBase) return;
-  if (!(ANONYMOUS_TUTORIAL_STEPS as readonly string[]).includes(step)) return; // JS callers / stale keys
-  if (anonTutorialSent.has(step)) return;
-  anonTutorialSent.add(step);
-  pingAnonymousTutorialStep(bootCounterBase, getPlatformName(), step);
+export function countAnonymousFunnelStep(step: AnonymousFunnelStep): void {
+  if (!bootCounterBase) return;
+  if (!(ANONYMOUS_FUNNEL_STEPS as readonly string[]).includes(step)) return; // JS callers / stale keys
+  if (anonFunnelSent.has(step)) return;
+  anonFunnelSent.add(step);
+  pingAnonymousFunnelStep(bootCounterBase, getPlatformName(), step);
 }
 
 /**
@@ -184,7 +189,7 @@ export async function init(
   // here rather than living for the lifetime of the module.
   bootCounterBase = null;
   declinedLaunchSent = false;
-  anonTutorialSent = new Set();
+  anonFunnelSent = new Set();
 
   if (!apiBase) return; // no server → analytics disabled silently
 

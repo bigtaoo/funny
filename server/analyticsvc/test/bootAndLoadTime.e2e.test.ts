@@ -125,16 +125,16 @@ describe.skipIf(!mongo)('launch counter + load time', () => {
     });
   });
 
-  // ─── countAnonymousTutorialStep (COMPLIANCE_GLOBAL §3.3) ───────────────────
+  // ─── countAnonymousFunnelStep (COMPLIANCE_GLOBAL §3.3) ───────────────────
 
-  describe('countAnonymousTutorialStep', () => {
+  describe('countAnonymousFunnelStep', () => {
     it('accumulates one document per (date, platform, step) and stores nothing else', async () => {
-      await mongo!.collections.tutorial_anon_daily.deleteMany({});
-      await svc.countAnonymousTutorialStep('crazygames', 'tutorial_start');
-      await svc.countAnonymousTutorialStep('crazygames', 'tutorial_start');
-      await svc.countAnonymousTutorialStep('crazygames', 'beat_unit');
+      await mongo!.collections.funnel_anon_daily.deleteMany({});
+      await svc.countAnonymousFunnelStep('crazygames', 'tutorial_start');
+      await svc.countAnonymousFunnelStep('crazygames', 'tutorial_start');
+      await svc.countAnonymousFunnelStep('crazygames', 'beat_unit');
 
-      const docs = await mongo!.collections.tutorial_anon_daily.find({}).toArray();
+      const docs = await mongo!.collections.funnel_anon_daily.find({}).toArray();
       expect(docs).toHaveLength(2);
       const start = docs.find((d) => d.step === 'tutorial_start')!;
       expect(start.count).toBe(2);
@@ -144,27 +144,27 @@ describe.skipIf(!mongo)('launch counter + load time', () => {
     });
 
     it('runs concurrently without losing counts', async () => {
-      await mongo!.collections.tutorial_anon_daily.deleteMany({});
-      await Promise.all(Array.from({ length: 25 }, () => svc.countAnonymousTutorialStep('web', 'graduate')));
-      const doc = await mongo!.collections.tutorial_anon_daily.findOne({ platform: 'web', step: 'graduate' });
+      await mongo!.collections.funnel_anon_daily.deleteMany({});
+      await Promise.all(Array.from({ length: 25 }, () => svc.countAnonymousFunnelStep('web', 'graduate')));
+      const doc = await mongo!.collections.funnel_anon_daily.findOne({ platform: 'web', step: 'graduate' });
       expect(doc?.count).toBe(25);
     });
 
     it('rides along on the boot funnel row it describes, and is absent where nothing ticked', async () => {
       await mongo!.collections.boots_daily.deleteMany({});
       await mongo!.collections.events.deleteMany({});
-      await mongo!.collections.tutorial_anon_daily.deleteMany({});
+      await mongo!.collections.funnel_anon_daily.deleteMany({});
       for (let i = 0; i < 5; i++) await svc.countBoot('crazygames');
       await svc.countBoot('web');
-      for (let i = 0; i < 3; i++) await svc.countAnonymousTutorialStep('crazygames', 'tutorial_start');
-      await svc.countAnonymousTutorialStep('crazygames', 'beat_unit');
+      for (let i = 0; i < 3; i++) await svc.countAnonymousFunnelStep('crazygames', 'tutorial_start');
+      await svc.countAnonymousFunnelStep('crazygames', 'beat_unit');
 
       const rows = await svc.queryBootFunnel(7);
       const cg = rows.find((r) => r.platform === 'crazygames')!;
-      expect(cg).toMatchObject({ boots: 5, anon_tutorial: { tutorial_start: 3, beat_unit: 1 } });
-      expect(rows.find((r) => r.platform === 'web')!.anon_tutorial).toBeUndefined();
+      expect(cg).toMatchObject({ boots: 5, anon_funnel: { tutorial_start: 3, beat_unit: 1 } });
+      expect(rows.find((r) => r.platform === 'web')!.anon_funnel).toBeUndefined();
       // The queryBootFunnel cases below count rows; leave no step ticks behind to add one.
-      await mongo!.collections.tutorial_anon_daily.deleteMany({});
+      await mongo!.collections.funnel_anon_daily.deleteMany({});
     });
   });
 
