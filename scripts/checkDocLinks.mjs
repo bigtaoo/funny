@@ -143,6 +143,7 @@ const PATH_ALLOW_HISTORICAL = new Map([
   ['tools/ops/src/pages/promo.ts', 'deleted with promo codes, ADR-108 (2026-10-04); passages are marked as history'],
   ['tools/ops/test/promo.test.ts', 'deleted with promo codes, ADR-108 (2026-10-04); passages are marked as history'],
   ['server/admin/test/promo.test.ts', 'deleted with promo codes, ADR-108 (2026-10-04); passages are marked as history'],
+  ['art/audio/suno/BRIEFS.md', 'Suno route dropped for FreePD CC0 BGM, 2026-10-07 (8ee564a6b); passages are 0.5 kept-as-measured, the deletion log, and the 7 plan history'],
 ]);
 
 const allowReason = (p) => {

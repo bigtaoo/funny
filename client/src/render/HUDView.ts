@@ -7,7 +7,7 @@ import { OwnerId } from '@nw/engine/types';
 import { ILayout, Rect } from '../layout/ILayout';
 import { t } from '../i18n';
 import { drawHudButton, hudButtonText, HudButtonVariant } from '../ui/widgets/hudButton';
-import { FS, snapFont, snapFontDown, currentFontFloor, fitFont } from './fontScale';
+import { FS, snapFont, snapFontDown, currentFontFloor } from './fontScale';
 import { surrenderButtonHeight, fitSurrenderLabel, fitActionLabel, setActionLabel, playerHpScale } from './HUDView/fitting';
 import { factionInk, fx } from './theme';
 import { buildIcon, preloadInkIconTextures } from './icons';

@@ -628,7 +628,7 @@ reward 0.08915 / error 0.07825 / gacha common 0.06680 · rare 0.07756 · epic 0.
 24 kHz 立体声、**74.0 s 循环**、70.6 kbps VBR，频带电平 **−29.00 dBFS**（250–2000 Hz RMS）、
 接缝 **0.57 dB**。母带是**项目自有**素材（`art/audio/sources/first-party/doodle-bed.flac`，13266428
 字节，由投进来的 40.9 MB WAV 无损转出——逐样本比对相等），不需要署名。§2.3 的另一条轨 `bgm.battle`
-仍然缺 master（brief 在 [`art/audio/suno/BRIEFS.md`](../../art/audio/suno/BRIEFS.md)），**它不在 `MusicTrack` union 里**，所以对局
+仍然缺 master（brief 当时在 `art/audio/suno/BRIEFS.md`，2026-10-07 已随 FreePD 换曲删除），**它不在 `MusicTrack` union 里**，所以对局
 现在是三处显式的 `music: null`，而不是漏接。
 
 #### ⚠️ 这一轮真正的教训在代码之外：同一件事被做了两遍
