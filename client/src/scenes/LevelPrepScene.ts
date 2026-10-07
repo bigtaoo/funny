@@ -13,6 +13,7 @@ import { buildMaterialIcon, type MaterialKind } from '../render/atlas/materialAt
 import { FS, snapFont } from '../render/fontScale';
 import { dispatchHit, type Hit } from '../ui/hits';
 import { drawButtonLabel } from '../ui/widgets/buttonLabel';
+import { UI_FONT_FAMILY } from '../render/theme';
 
 // ── LevelPrepScene — objective / brief / stamina + Start ────────────────────
 //
@@ -418,7 +419,7 @@ export class LevelPrepScene implements Scene {
       const text = makeText(line, {
         fontSize,
         fill: 0xe8dfc0,
-        fontFamily: 'serif',
+        fontFamily: UI_FONT_FAMILY,
         wordWrap: true,
         wordWrapWidth: w * 0.78,
         align: 'center',
@@ -435,7 +436,7 @@ export class LevelPrepScene implements Scene {
     const hint = makeText(t('story.tapToContinue'), {
       fontSize: FS.label,
       fill: 0x8a7a60,
-      fontFamily: 'monospace',
+      fontFamily: UI_FONT_FAMILY,
     });
     hint.anchor.set(0.5, 1);
     hint.x = w / 2;
@@ -445,7 +446,7 @@ export class LevelPrepScene implements Scene {
     const skipText = makeText(t('story.skip'), {
       fontSize: FS.label,
       fill: 0x8a7a60,
-      fontFamily: 'monospace',
+      fontFamily: UI_FONT_FAMILY,
     });
     skipText.anchor.set(1, 0);
     skipText.x = w - Math.round(w * 0.04);

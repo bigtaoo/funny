@@ -3,6 +3,7 @@ import { makeText } from './pixiText';
 import { ILayout } from '../layout/ILayout';
 import { t } from '../i18n';
 import { FS } from './fontScale';
+import { UI_FONT_FAMILY } from './theme';
 
 /**
  * NetStatusView — thin in-battle network feedback layer (S1-9, UI_DESIGN §5).
@@ -46,7 +47,7 @@ export class NetStatusView {
 
     this.pill = new PIXI.Graphics();
     this.label = makeText('', {
-      fontSize: FS.label, fill: 0xffffff, fontWeight: 'bold', fontFamily: 'monospace',
+      fontSize: FS.label, fill: 0xffffff, fontWeight: 'bold', fontFamily: UI_FONT_FAMILY,
     });
     this.label.anchor.set(0.5);
     this.container.addChild(this.pill, this.label);

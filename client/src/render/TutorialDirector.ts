@@ -190,16 +190,7 @@ export class TutorialDirector {
    */
   allowCardPlay(cardId: string, col: number, row: number): { col: number; row: number } | null {
     if (!this.prompting || this.pendingRelease) return null;
-    const beat = BEATS[this.beatIndex]!;
-    let target: { col: number; row: number } | null = null;
-    if (cardId === beat.cardId) {
-      if (beat.kind === 'spell') {
-        const a = this.meteorAnchor;
-        if (a && Math.abs(col - a.col) <= METEOR_SNAP_CELLS && Math.abs(row - a.row) <= METEOR_SNAP_CELLS) target = a;
-      } else if (Math.abs(col - beat.col) <= LANE_SNAP_COLS) {
-        target = { col: beat.col, row };
-      }
-    }
+    const target = this.snapCardPlay(cardId, col, row);
     if (!target) {
       this.wrongDrops++;
       this.holdingCard = false;
@@ -208,6 +199,22 @@ export class TutorialDirector {
     }
     this.pendingRelease = true;
     return target;
+  }
+
+  /**
+   * Where a drop of `cardId` at (col, row) would land, or null if it would be rejected — the aim
+   * assist of allowCardPlay without its side effects (no wrong-drop count, no ghost demo), so the
+   * drag's landing preview can ask on every pointer move.
+   */
+  snapCardPlay(cardId: string, col: number, row: number): { col: number; row: number } | null {
+    if (!this.prompting || this.pendingRelease) return null;
+    const beat = BEATS[this.beatIndex]!;
+    if (cardId !== beat.cardId) return null;
+    if (beat.kind === 'spell') {
+      const a = this.meteorAnchor;
+      return a && Math.abs(col - a.col) <= METEOR_SNAP_CELLS && Math.abs(row - a.row) <= METEOR_SNAP_CELLS ? a : null;
+    }
+    return Math.abs(col - beat.col) <= LANE_SNAP_COLS ? { col: beat.col, row } : null;
   }
 
   // ── Per-frame (end of GameRenderer.update): clock control, never-fail clamp, state machine, anims ──

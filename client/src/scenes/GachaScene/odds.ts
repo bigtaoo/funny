@@ -17,6 +17,7 @@ import { peekViewportH } from '../../ui/widgets/scrollPeek';
 import { FS, snapFont } from '../../render/fontScale';
 import { MATERIAL_ICON, RARITY_COLOR } from './core';
 import type { GachaSceneCore } from './core';
+import { UI_FONT_FAMILY } from '../../render/theme';
 
 export interface OddsHandlers {
   drawOdds(pool: GachaPool): void;
@@ -148,7 +149,7 @@ export class OddsPanel implements OddsHandlers {
       const pityLbl = makeText(t('gacha.oddsDetail.pityRule', { n: pity }), {
         fontSize: FS.label,
         fill: C.dark,
-        fontFamily: 'monospace',
+        fontFamily: UI_FONT_FAMILY,
         wordWrap: true,
         wordWrapWidth: pw * 0.84,
         align: 'center',

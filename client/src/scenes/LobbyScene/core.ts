@@ -52,6 +52,7 @@ import { makeText } from '../../render/pixiText';
 import { tearDownChildren, sketchPanel as sharedSketchPanel, buildPaperBackground } from '../../render/sketchUi';
 import { addPanelFrame } from '../../render/panelFrame';
 import type { Hit } from '../../ui/hits';
+import { UI_FONT_FAMILY } from '../../render/theme';
 
 export { fmtCoins } from './format';
 
@@ -102,7 +103,7 @@ export const TIER_COLORS: Record<string, number> = {
 
 export function txt(label: string, size: number, color: number, bold = false): PIXI.Text {
   return makeText(label, {
-    fontSize: size, fill: color, fontFamily: 'monospace',
+    fontSize: size, fill: color, fontFamily: UI_FONT_FAMILY,
     fontWeight: bold ? 'bold' : 'normal',
   });
 }

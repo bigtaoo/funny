@@ -46,7 +46,7 @@ export function buildCampaignHeader(root: PIXI.Container, hits: Hit[], opts: Cam
   // Laid out right→left; `rightX` walks left by each pill's width + gap.
   const fontSz = FS.label;
   const padX = Math.round(fontSz * 0.8);
-  const pillH = Math.round(fontSz + padX * 1.4);
+  let pillH = Math.round(fontSz + padX * 1.4);
   const pillGap = Math.round(w * 0.02);
   let rightX = w - Math.round(w * 0.04);
   // The pills ride the SUBTITLE's row when there is one, not the title's (2026-09-12). The bar is
@@ -57,7 +57,13 @@ export function buildCampaignHeader(root: PIXI.Container, hits: Hit[], opts: Cam
   // pills (sweep §50.12), and shrinking it to the band would have meant a 12-design-px scene
   // title. On the owner's row the title gets the whole bar right of the back pill and needs no
   // shrinking at all; the owner line is short and centred, and is clamped off the pills below.
-  const pillMidY = subtitleStr ? Math.round(tbH * 0.72) : Math.round(tbH / 2);
+  let pillMidY = subtitleStr ? Math.round(tbH * 0.72) : Math.round(tbH / 2);
+  // The bar is a share of the design height while the pill is sized from its label, so on a short
+  // landscape design (640–926 tall since 2026-10-07; the 722x406 portal tile is 654) the pills hung
+  // below the bar's bottom edge onto the page. Keep them inside: trim the padding first, then lift.
+  const pillBottomMax = tbH - 3;
+  pillH = Math.min(pillH, Math.max(Math.round(fontSz * 1.3), 2 * (pillBottomMax - pillMidY)));
+  pillMidY = Math.min(pillMidY, Math.round(pillBottomMax - pillH / 2));
 
   // Each pill carries a leading glyph, the same [icon][gap][label] shape the
   // title beside it and the world-map header entries (WorldMapPanels/headerHud)

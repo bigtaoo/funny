@@ -224,7 +224,8 @@ const REFERENCE_SHORT_SIDE = 1080;
  * 30 CSS px, and German task names, result-screen buttons and the header coin readout broke out of
  * boxes whose WIDTH had not grown. So the ceiling scales with the short side — 42 on a phone,
  * which is the old ~21 CSS px — and is the untouched `display` wherever the short side is 1080
- * (every landscape rect, tablets, desktop).
+ * (tablets, desktop, and every landscape window from ~670 CSS px tall; shorter landscape designs
+ * are 640–1078 tall since 2026-10-07 and get the scaled ceiling too).
  */
 function snapCeilFor(designShort: number): number {
   if (!(designShort > 0) || designShort >= REFERENCE_SHORT_SIDE) return BASE.display;

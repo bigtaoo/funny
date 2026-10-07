@@ -10,7 +10,7 @@
  */
 import * as PIXI from 'pixi.js-legacy';
 import { UnitType } from '@nw/engine/types';
-import { palette } from './theme';
+import { palette, UI_FONT_FAMILY } from './theme';
 import { STICKMAN_ASSETS, FRAME_ASSETS, resolveSkinOverrides, resolveSkinFrameOverrides } from './UnitView/assets';
 import { StickmanRuntime } from './stickman/StickmanRuntime';
 import { FrameRuntime } from './frames/FrameRuntime';
@@ -49,7 +49,7 @@ export async function startUnitLab(canvas: HTMLCanvasElement): Promise<void> {
     const [asset, sheet] = await Promise.all([
       StickmanRuntime.loadAsset(rigs[type]!, h), loadFrameSheet(png, json),
     ]);
-    const label = new PIXI.Text(`${skin ? `${skin} ` : ''}${type} — left: bone rig, right: frame sheet`, { fontSize: 14, fill: 0x333333 });
+    const label = new PIXI.Text(`${skin ? `${skin} ` : ''}${type} — left: bone rig, right: frame sheet`, { fontSize: 14, fill: 0x333333, fontFamily: UI_FONT_FAMILY });
     label.position.set(10, y);
     app.stage.addChild(label);
     y += 24;
@@ -69,7 +69,7 @@ export async function startUnitLab(canvas: HTMLCanvasElement): Promise<void> {
           figures.push({ runtime, clip });
         });
         if (scale !== 1) {
-          const t = new PIXI.Text(clip, { fontSize: 13, fill: 0x666666 });
+          const t = new PIXI.Text(clip, { fontSize: 13, fill: 0x666666, fontFamily: UI_FONT_FAMILY });
           t.position.set(x0, y);
           app.stage.addChild(t);
         }

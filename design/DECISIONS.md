@@ -122,7 +122,7 @@
 | [ADR-102](DECISIONS_ADR-086-onward.md#adr-102-世界地图格子池视口裁剪屏幕外的格子隐藏滚进来才画--accepted--2026-09-29) | 世界地图格子池视口裁剪：屏幕外的格子隐藏、滚进来才画 | Accepted | 2026-09-29 |
 | [ADR-103](DECISIONS_ADR-086-onward.md#adr-103-世界地图城池层空的特效层隐藏不留在可见树上--accepted--2026-09-29) | 世界地图城池层：空的特效层隐藏，不留在可见树上 | Accepted | 2026-09-29 |
 | [ADR-104](DECISIONS_ADR-086-onward.md#adr-104-纸背景横线并成网格每页约-80-个-sprite-变成-2-个-mesh--accepted--2026-09-29) | 纸背景横线并成网格：每页约 80 个 Sprite 变成 2 个 Mesh | Accepted | 2026-09-29 |
-| [ADR-105](DECISIONS_ADR-086-onward.md#adr-105-竖屏设计宽度跟着屏宽走手机-720860平板及以上仍是-1080--accepted--2026-10-01) | 竖屏设计宽度跟着屏宽走：手机 720–860，平板及以上仍是 1080（同日补：横屏设计高同规则） | Accepted | 2026-10-01 |
+| [ADR-105](DECISIONS_ADR-086-onward.md#adr-105-竖屏设计宽度跟着屏宽走手机-720860平板及以上仍是-1080--accepted--2026-10-01) | 竖屏设计宽度跟着屏宽走：手机 720–860，平板及以上仍是 1080（同日补：横屏设计高同规则；2026-10-07 横屏改用自己的 0.62 目标、640 下限） | Accepted | 2026-10-01 |
 | [ADR-106](DECISIONS_ADR-086-onward.md#adr-106-render_profile-隐藏时补发短会话里出现过慢帧也报一条--accepted--2026-10-01) | `render_profile` 隐藏时补发：短会话里出现过慢帧也报一条 | Accepted | 2026-10-01 |
 | [ADR-107](DECISIONS_ADR-086-onward.md#adr-107-边框图集预烘焙挪到第一次上屏之后first_frame-只认上屏的那次-render--accepted--2026-10-01) | 边框图集预烘焙挪到第一次上屏之后，`first_frame` 只认上屏的那次 render | Accepted | 2026-10-01 |
 | [ADR-108](DECISIONS_ADR-086-onward.md#adr-108-兑换码整体移除奖励改走邮件--accepted--2026-10-04) | 兑换码整体移除，奖励改走邮件 | Accepted | 2026-10-04 |

@@ -11,6 +11,7 @@ import { txtFit } from '../../render/sketchUi';
 import { C, txt, sketchPanel, type LobbySceneCore } from './core';
 import { snapFont } from '../../render/fontScale';
 import { buildEntryNoticeStrip, type EntryNoticeSpec } from '../../ui/dialogs/EntryNoticeStrip';
+import { UI_FONT_FAMILY } from '../../render/theme';
 
 export class OverlaysPanel {
   constructor(private readonly core: LobbySceneCore) {}
@@ -321,7 +322,7 @@ export class OverlaysPanel {
 /** A card's wrapped body paragraph, anchored top-centre. */
 function wrappedBody(text: string, fontSize: number, cardW: number): PIXI.Text {
   const lbl = makeText(text, {
-    fontSize, fill: C.mid, fontFamily: 'monospace', align: 'center',
+    fontSize, fill: C.mid, fontFamily: UI_FONT_FAMILY, align: 'center',
     lineHeight: Math.round(fontSize * 1.4),
     wordWrap: true, wordWrapWidth: cardW - Math.round(cardW * 0.12), breakWords: true,
   });

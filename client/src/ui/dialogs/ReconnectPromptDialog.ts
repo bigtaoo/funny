@@ -15,6 +15,7 @@ import { drawButtonLabel } from '../widgets/buttonLabel';
 import { snapFont } from '../../render/fontScale';
 import { t } from '../../i18n/index';
 import { tapHandler } from '../hits';
+import { UI_FONT_FAMILY } from '../../render/theme';
 
 export interface ReconnectPromptCallbacks {
   /** Player chose to resume — caller reconnects into the cached match. */
@@ -74,7 +75,7 @@ export class ReconnectPromptDialog implements Scene {
     title.anchor.set(0.5, 0);
 
     const body = makeText(t('reconnect.body'), {
-      fontSize: snapFont(Math.round(unit * 0.05)), fill: C.dark, fontFamily: 'monospace',
+      fontSize: snapFont(Math.round(unit * 0.05)), fill: C.dark, fontFamily: UI_FONT_FAMILY,
       wordWrap: true, wordWrapWidth: cardW * 0.84, lineHeight: Math.round(unit * 0.07),
     });
     body.anchor.set(0.5, 0);

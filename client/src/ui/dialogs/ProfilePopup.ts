@@ -27,6 +27,7 @@ import { snapFont, fitFont } from '../../render/fontScale';
 import { drawHudButton, hudButtonText } from '../widgets/hudButton';
 import { buildEmblemIcon, loadEmblemAtlas, type EmblemKey } from '../../render/emblemIcon';
 import { dispatchHit, tapHandler, type Hit } from '../hits';
+import { UI_FONT_FAMILY } from '../../render/theme';
 
 export interface ProfileData {
   /** Display name (nickname). */
@@ -188,7 +189,7 @@ export class ProfilePopup {
     // Title bar.
     const title = makeText(t('profile.title'), {
       fontSize: snapFont(Math.round(cardH * 0.075)), fill: palette.pencil,
-      fontWeight: 'bold', fontFamily: 'monospace',
+      fontWeight: 'bold', fontFamily: UI_FONT_FAMILY,
     });
     title.anchor.set(0.5, 0);
     title.x = cardW / 2;
@@ -206,7 +207,7 @@ export class ProfilePopup {
     const nameStr = data.name + (data.isSelf ? ' ' + t('profile.you') : '');
     const name = makeText(nameStr || '?', {
       fontSize: snapFont(Math.round(cardH * 0.085)), fill: palette.pencil,
-      fontWeight: 'bold', fontFamily: 'monospace',
+      fontWeight: 'bold', fontFamily: UI_FONT_FAMILY,
     });
     name.anchor.set(0.5, 0);
     name.x = cardW / 2;
@@ -219,7 +220,7 @@ export class ProfilePopup {
     if (data.publicId) {
       const idText = `${t('profile.id')}  #${data.publicId}`;
       const idLine = makeText(idText, {
-        fontSize: snapFont(Math.round(cardH * 0.05)), fill: palette.inkBlue, fontFamily: 'monospace',
+        fontSize: snapFont(Math.round(cardH * 0.05)), fill: palette.inkBlue, fontFamily: UI_FONT_FAMILY,
       });
       idLine.anchor.set(0.5, 0);
       idLine.x = cardW / 2;
@@ -239,7 +240,7 @@ export class ProfilePopup {
         : formatLadderTitle(data.equippedTitle);
       const titleLine = makeText(`「${titleLabel}」`, {
         fontSize: snapFont(Math.round(cardH * 0.048)), fill: palette.inkBlue,
-        fontFamily: 'monospace',
+        fontFamily: UI_FONT_FAMILY,
       });
       titleLine.anchor.set(0.5, 0);
       titleLine.x = cardW / 2;
@@ -253,7 +254,7 @@ export class ProfilePopup {
       const rankName = t(('rank.' + data.rankKey.replace(/^rank\./, '')) as TranslationKey);
       const eloPart = data.elo !== undefined ? `  ·  ELO ${data.elo}` : '';
       const rankLine = makeText(`${t('profile.rank')}  ${rankName}${eloPart}`, {
-        fontSize: snapFont(Math.round(cardH * 0.05)), fill: palette.pencil, fontFamily: 'monospace',
+        fontSize: snapFont(Math.round(cardH * 0.05)), fill: palette.pencil, fontFamily: UI_FONT_FAMILY,
       });
       rankLine.anchor.set(0.5, 0);
       rankLine.x = cardW / 2;
@@ -271,7 +272,7 @@ export class ProfilePopup {
       if (data.sectName) parts.push(`${t('profile.sect')} ${data.sectName}`);
       const orgFontSize = snapFont(Math.round(cardH * 0.05));
       const orgLine = makeText(parts.join('   '), {
-        fontSize: orgFontSize, fill: palette.pencil, fontFamily: 'monospace',
+        fontSize: orgFontSize, fill: palette.pencil, fontFamily: UI_FONT_FAMILY,
       });
       const orgY = yBottom + cardH * 0.025;
       const emblemSize = Math.round(orgFontSize * 1.3);
@@ -330,7 +331,7 @@ export class ProfilePopup {
         const labelSize = snapFont(Math.round(aH * 0.4));
         const al = makeText(label, {
           fontSize: fitFont(labelSize, monospaceWidth(label, labelSize), aW * 0.9), fill: hudButtonText(actVariant),
-          fontWeight: 'bold', fontFamily: 'monospace',
+          fontWeight: 'bold', fontFamily: UI_FONT_FAMILY,
         });
         al.anchor.set(0.5, 0.5);
         al.x = ax + aW / 2; al.y = aY + aH / 2;
@@ -355,7 +356,7 @@ export class ProfilePopup {
     this.card.addChild(btn);
 
     const btnLabel = makeText(t('profile.close'), {
-      fontSize: snapFont(Math.round(bH * 0.42)), fill: hudButtonText('primary'), fontWeight: 'bold', fontFamily: 'monospace',
+      fontSize: snapFont(Math.round(bH * 0.42)), fill: hudButtonText('primary'), fontWeight: 'bold', fontFamily: UI_FONT_FAMILY,
     });
     btnLabel.anchor.set(0.5, 0.5);
     btnLabel.x = bX + bW / 2;

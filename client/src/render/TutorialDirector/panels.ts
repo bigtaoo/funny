@@ -13,6 +13,7 @@ import { t, type TranslationKey } from '../../i18n';
 import { drawHudButton, hudButtonText } from '../../ui/widgets/hudButton';
 import { fitFont, FS } from '../fontScale';
 import { currentDesignScale } from '../bake';
+import { UI_FONT_FAMILY } from '../theme';
 
 export interface PanelHost {
   readonly root: PIXI.Container;
@@ -86,7 +87,7 @@ function drawBaseLabels(host: PanelHost): void {
   const L = host.layout;
   const fontSize = legible(16, FS.label);
   const put = (rect: Rect, text: string, color: number): void => {
-    const lbl = makeText(text, { fontFamily: 'monospace', fontSize, fontWeight: 'bold', fill: 0xffffff });
+    const lbl = makeText(text, { fontFamily: UI_FONT_FAMILY, fontSize, fontWeight: 'bold', fill: 0xffffff });
     lbl.anchor.set(0.5);
     const padX = Math.round(fontSize * 0.6);
     const padY = Math.round(fontSize * 0.25);
@@ -113,7 +114,7 @@ function drawSkipButton(host: PanelHost): void {
   const pad = Math.round(bh * 0.4);
   const maxW = Math.round(W * 0.34);
   const lbl = makeText(t('tutorial.skip' as TranslationKey), {
-    fontFamily: 'monospace', fontSize, fill: hudButtonText('primary'),
+    fontFamily: UI_FONT_FAMILY, fontSize, fill: hudButtonText('primary'),
   });
   if (lbl.width + pad * 2 > maxW) {
     lbl.style.fontSize = fitFont(Number(lbl.style.fontSize), lbl.width, maxW - pad * 2);
@@ -160,13 +161,13 @@ export function drawStrip(host: PanelHost, title: string | null, body: string | 
   const parts: PIXI.Text[] = [];
   if (title) {
     parts.push(makeText(title, {
-      fontFamily: 'monospace', fontSize: titleSize, fontWeight: 'bold', fill: C_INK,
+      fontFamily: UI_FONT_FAMILY, fontSize: titleSize, fontWeight: 'bold', fill: C_INK,
       wordWrap: true, wordWrapWidth: pw - padX * 2, align: 'center',
     }));
   }
   if (body) {
     parts.push(makeText(body, {
-      fontFamily: 'monospace', fontSize: bodySize, fill: C_INK,
+      fontFamily: UI_FONT_FAMILY, fontSize: bodySize, fill: C_INK,
       wordWrap: true, wordWrapWidth: pw - padX * 2, align: 'center',
     }));
   }
@@ -227,19 +228,19 @@ export function drawGradCard(
   const pad = Math.round(bodySize * 0.8);
 
   const bodyLbl = makeText(body, {
-    fontFamily: 'monospace', fontSize: bodySize, fontWeight: 'bold', fill: C_INK,
+    fontFamily: UI_FONT_FAMILY, fontSize: bodySize, fontWeight: 'bold', fill: C_INK,
     wordWrap: true, wordWrapWidth: pw - pad * 2, align: 'center',
   });
   const teaserLbl = teaser
-    ? makeText(teaser, { fontFamily: 'monospace', fontSize: teaserSize, fontWeight: 'bold', fill: 0xb7791f, align: 'center' })
+    ? makeText(teaser, { fontFamily: UI_FONT_FAMILY, fontSize: teaserSize, fontWeight: 'bold', fill: 0xb7791f, align: 'center' })
     : null;
-  const btnLbl = makeText(cta, { fontFamily: 'monospace', fontSize: btnSize, fontWeight: 'bold', fill: hudButtonText('accent') });
+  const btnLbl = makeText(cta, { fontFamily: UI_FONT_FAMILY, fontSize: btnSize, fontWeight: 'bold', fill: hudButtonText('accent') });
   const bh = Math.ceil(btnLbl.height * 1.9);
   const bw = Math.min(pw - pad * 2, Math.ceil(btnLbl.width + bh * 1.2));
   // Small print, but still ≥ 14 CSS px (§11.5): a notice nobody can read is not a notice.
   const noteLbl = footnote
     ? makeText(footnote, {
-      fontFamily: 'monospace', fontSize: legible(14, FS.small), fill: C_INK_SOFT,
+      fontFamily: UI_FONT_FAMILY, fontSize: legible(14, FS.small), fill: C_INK_SOFT,
       wordWrap: true, wordWrapWidth: pw - pad * 2, align: 'center',
     })
     : null;

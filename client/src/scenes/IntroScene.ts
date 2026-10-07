@@ -9,6 +9,7 @@ import { FS } from '../render/fontScale';
 import { getArtTexture } from '../render/cardArt';
 import introIllustrationUrl from '../assets/story/intro_notebook.png';
 import { dispatchHit } from '../ui/hits';
+import { UI_FONT_FAMILY } from '../render/theme';
 
 // ── Opening story (full 7-line version) ───────────────────────────────────────
 //
@@ -212,7 +213,7 @@ export class IntroScene implements Scene {
       const text = makeText(t(key), {
         fontSize,
         fill: ui.dark,
-        fontFamily: 'serif',
+        fontFamily: UI_FONT_FAMILY,
         wordWrap: true,
         wordWrapWidth: w * 0.78,
         align: 'center',
@@ -230,7 +231,7 @@ export class IntroScene implements Scene {
     this.hintText = makeText(t('story.tapToContinue'), {
       fontSize: FS.label,
       fill: ui.mid,
-      fontFamily: 'monospace',
+      fontFamily: UI_FONT_FAMILY,
     });
     this.hintText.anchor.set(0.5, 1);
     this.hintText.x = w / 2;
@@ -241,7 +242,7 @@ export class IntroScene implements Scene {
     const skipText = makeText(t('story.skip'), {
       fontSize: FS.label,
       fill: ui.mid,
-      fontFamily: 'monospace',
+      fontFamily: UI_FONT_FAMILY,
     });
     skipText.anchor.set(1, 0);
     skipText.x = w - Math.round(w * 0.04);

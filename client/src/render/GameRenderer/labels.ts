@@ -12,6 +12,7 @@ import { snapFont } from '../fontScale';
 import { factionInk } from '../theme';
 import type { Rect } from '../../layout/ILayout';
 import type { GameRendererCore } from './core';
+import { UI_FONT_FAMILY } from '../theme';
 
 /**
  * The shared "name chip": a secondary HUD button sized to the label it holds, placed by
@@ -28,7 +29,7 @@ function drawNameChip(
 ): Rect {
   const label = makeText(name || '?', {
     fontSize: snapFont(Math.max(12, Math.round(bh * 0.5))),
-    fill, fontWeight: 'bold', fontFamily: 'monospace',
+    fill, fontWeight: 'bold', fontFamily: UI_FONT_FAMILY,
   });
   const padX = 14;
   const bw = Math.ceil(label.width) + padX * 2;

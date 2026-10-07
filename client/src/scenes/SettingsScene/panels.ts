@@ -75,7 +75,11 @@ export function drawProfile(host: PanelHost, page: Page, col: Column): void {
     // is enabled (onSetAvatar present).
     if (cb.onSetAvatar) {
       const badgeR = Math.round(av * 0.16);
-      const bcx = sec.x0 + av - badgeR, bcy = ay + av - badgeR;
+      // Hangs a little past the avatar's corner rather than sitting inside it, so it marks the
+      // corner without covering the letter initial (which `snapFont` can round up to fill the
+      // circle — the landscape sweep caught it over a fifth of "玄" at 1100x574, 2026-10-07).
+      const off = av - Math.round(badgeR * 0.4);
+      const bcx = sec.x0 + off, bcy = ay + off;
       const badge = new PIXI.Graphics();
       badge.beginFill(C.accent); badge.drawCircle(bcx, bcy, badgeR); badge.endFill();
       page.add(badge);

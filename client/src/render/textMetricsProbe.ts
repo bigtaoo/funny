@@ -8,7 +8,7 @@
  * rather than iterating, and it may do that only because a monospace advance width is linear in
  * font size. `drawButtonLabel` drops its icon when the text will not fit. The portrait sweep's
  * whole legibility floor is a claim about how large a glyph ends up on screen. All three are
- * statements about `ctx.measureText(...).width` for `fontFamily: 'monospace'` — which is the font
+ * statements about `ctx.measureText(...).width` for `fontFamily: UI_FONT_FAMILY` — which is the font
  * every text style in this codebase asks for, and which is not a font but a *request the runtime
  * resolves however it likes*.
  *
@@ -29,9 +29,10 @@
  *
  * Never imported by a shipped entry — same standing as platform/wechat/hostProbe.ts.
  */
+import { UI_FONT_FAMILY } from './theme';
 
-/** Font stack every text style in this codebase asks for (see render/sketchUi.ts, HUDView.ts). */
-export const PROBE_FONT_FAMILY = 'monospace';
+/** Font stack every text style in this codebase asks for — the shared UI_FONT_FAMILY (render/theme.ts). */
+export const PROBE_FONT_FAMILY = UI_FONT_FAMILY;
 
 /**
  * The corpus, chosen so each row isolates one thing that could differ:

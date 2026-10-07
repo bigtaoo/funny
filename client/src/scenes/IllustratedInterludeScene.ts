@@ -8,6 +8,7 @@ import { buildPaperBackground, ui } from '../render/sketchUi';
 import { FS } from '../render/fontScale';
 import { getArtTexture } from '../render/cardArt';
 import { dispatchHit } from '../ui/hits';
+import { UI_FONT_FAMILY } from '../render/theme';
 
 // ── Chapter-end "real layer" interlude (Tao/Anna) ──────────────────────────────
 //
@@ -199,7 +200,7 @@ export class IllustratedInterludeScene implements Scene {
       const text = makeText(beat, {
         fontSize,
         fill: ui.dark,
-        fontFamily: 'serif',
+        fontFamily: UI_FONT_FAMILY,
         wordWrap: true,
         wordWrapWidth: w * 0.82,
         align: 'center',
@@ -220,7 +221,7 @@ export class IllustratedInterludeScene implements Scene {
     this.hintText = makeText(t('story.tapToContinue'), {
       fontSize: FS.label,
       fill: ui.mid,
-      fontFamily: 'monospace',
+      fontFamily: UI_FONT_FAMILY,
     });
     this.hintText.anchor.set(0.5, 1);
     this.hintText.x = w / 2;
@@ -231,7 +232,7 @@ export class IllustratedInterludeScene implements Scene {
     const skipText = makeText(t('story.skip'), {
       fontSize: FS.label,
       fill: ui.mid,
-      fontFamily: 'monospace',
+      fontFamily: UI_FONT_FAMILY,
     });
     skipText.anchor.set(1, 0);
     skipText.x = w - Math.round(w * 0.04);

@@ -9,12 +9,12 @@
 // call `super.update(dt)` then run the highlight-refresh accumulator is now a plain `update(dt)`
 // method the outer assembly calls AFTER `core.update(dt)` — same order, no `super` needed.
 import * as PIXI from 'pixi.js-legacy';
-import { makeText } from '../pixiText';
 import { ATTACK_LANES } from '@nw/engine/config';
+import type { CardDefinition } from '@nw/engine/types';
 import { CardType, SpellType } from '../../game';
 import { t, type TranslationKey } from '../../i18n';
 import type { GameRendererCore } from './core';
-import { FS } from '../fontScale';
+import { buildDragGhost, landingSpot, LandingPreview, GHOST_ALPHA, GHOST_ALPHA_OVER_LANDING } from './dragGhost';
 import { EMPTY_UNIT_IDS, updatePlacementHighlights as updatePlacementHighlightsImpl } from './placementHighlights';
 import { playSfx } from '../../audio/audioBus';
 import { dispatchHit, type Hit } from '../../ui/hits';
@@ -27,7 +27,12 @@ interface CardDragState {
   handIndex: number;
   cardType: CardType;
   spellType?: SpellType;
+  /** The card itself — its unit / building type and id drive the landing preview. */
+  card: CardDefinition;
+  /** The hand card's illustration (null: none loaded) — shared by the ghost and the unit preview. */
+  art: PIXI.Texture | null;
   ghost: PIXI.Container;
+  landing: LandingPreview;
 }
 
 export type DragState = CardDragState;
@@ -311,14 +316,16 @@ export class InputPanel {
     const slot   = player.hand.slots[handIndex];
     if (!slot || player.ink < slot.card.cost) { this.rejectPlay(!!slot, !!slot); return; }
 
-    const card   = slot.card;
-    const ghost  = this.buildDragGhost(t(card.nameKey as TranslationKey), card.cost);
-    const center = this.core.handView.slotCenter(handIndex);
+    const card    = slot.card;
+    const art     = this.core.handView.artTextureAt(handIndex);
+    const ghost   = buildDragGhost(card.cardType, t(card.nameKey as TranslationKey), card.cost, art);
+    const landing = new LandingPreview();
+    const center  = this.core.handView.slotCenter(handIndex);
     ghost.x = center.x;
     ghost.y = center.y;
-    this.core.container.addChild(ghost);
+    this.core.container.addChild(landing.sprite, ghost);
 
-    this.drag        = { kind: 'card', handIndex, cardType: card.cardType, spellType: card.spellType, ghost };
+    this.drag = { kind: 'card', handIndex, cardType: card.cardType, spellType: card.spellType, card, art, ghost, landing };
     this.dragCol     = -1;
     this.dragRow     = -1;
     this.dragOnBoard = false;
@@ -417,6 +424,20 @@ export class InputPanel {
     col: number, row: number, x: number, y: number,
   ): void {
     updatePlacementHighlightsImpl(this.core, cardType, spellType, col, row, x, y);
+    if (this.drag) this.updateLanding(this.drag, col, row, !this.core.layout.isOutsideBoard(x, y));
+  }
+
+  /**
+   * Show the translucent unit / building where this drop would place it, or hide it when the drop
+   * would be rejected — the same checks commitCardPlay makes, and in the tutorial the same aim assist
+   * (snapped onto the guided lane). The ghost fades while the preview is up so the finger's card does
+   * not cover what it is about to place (art-direction-map-ui.md §7.2.2).
+   */
+  private updateLanding(drag: CardDragState, col: number, row: number, onBoard: boolean): void {
+    const spot = onBoard ? landingSpot(this.core, drag.card, drag.art, col, row) : null;
+    if (spot) drag.landing.show(spot.tex, spot.x, spot.y, spot.w, spot.h);
+    else drag.landing.hide();
+    drag.ghost.alpha = drag.landing.visible ? GHOST_ALPHA_OVER_LANDING : GHOST_ALPHA;
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
@@ -425,7 +446,8 @@ export class InputPanel {
     this.pendingCardDown = null;
     if (!this.drag) return;
     this.drag.ghost.parent?.removeChild(this.drag.ghost);
-    this.drag.ghost.destroy();
+    this.drag.ghost.destroy({ children: true });
+    this.drag.landing.destroy();
     this.drag        = null;
     this.dragCol     = -1;
     this.dragRow     = -1;
@@ -439,28 +461,9 @@ export class InputPanel {
   /** The drag ghost of the card in hand slot `handIndex` — the tutorial's ghost-hand demo reuses it. */
   buildCardGhost(handIndex: number): PIXI.Container | null {
     const slot = this.core.localPlayer(this.core.engine.state).hand.slots[handIndex];
-    return slot ? this.buildDragGhost(t(slot.card.nameKey as TranslationKey), slot.card.cost) : null;
-  }
-
-  private buildDragGhost(label: string, cost: number, accentColor = 0x2244aa): PIXI.Container {
-    const c   = new PIXI.Container();
-    const gfx = new PIXI.Graphics();
-    gfx.beginFill(0xfaf6ee, 0.9);
-    gfx.lineStyle(2, accentColor);
-    gfx.drawRoundedRect(-32, -42, 64, 84, 6);
-    gfx.endFill();
-
-    const nameText = makeText(label, { fontSize: FS.micro, fill: 0x222222, align: 'center' });
-    nameText.anchor.set(0.5, 0.5);
-    nameText.y = -10;
-
-    const costText = makeText(String(cost), { fontSize: FS.tiny, fill: accentColor, fontWeight: 'bold' });
-    costText.anchor.set(0.5, 0.5);
-    costText.y = 18;
-
-    c.addChild(gfx, nameText, costText);
-    c.alpha = 0.9;
-    return c;
+    if (!slot) return null;
+    const card = slot.card;
+    return buildDragGhost(card.cardType, t(card.nameKey as TranslationKey), card.cost, this.core.handView.artTextureAt(handIndex));
   }
 
   /**
@@ -471,7 +474,8 @@ export class InputPanel {
    * runs in the destroy() sequence).
    */
   destroy(): void {
-    this.drag?.ghost.destroy();
+    this.drag?.ghost.destroy({ children: true });
+    this.drag?.landing.destroy();
     this.drag            = null;
     this.tapSelect       = null;
     this.pendingCardDown = null;

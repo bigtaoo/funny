@@ -12,7 +12,7 @@ import { buildAvatar } from '../../render/avatar';
 import logoUrl from '../../assets/logo.png';
 import { C, TIER_COLORS, txt, fmtCoins, sketchPanel, type LobbySceneCore } from './core';
 import { headerMetrics } from './format';
-import { FS, snapFont, snapFontDown } from '../../render/fontScale';
+import { FS, snapFont, snapFontDown, currentFontFloor } from '../../render/fontScale';
 import { fitToWidth } from '../../ui/widgets/truncateText';
 import { measuredWidth } from '../../render/pixiText';
 
@@ -134,6 +134,22 @@ export function drawHeaderChrome(core: LobbySceneCore): void {
   core.titleBoil.x = title.x + title.width / 2 - ulW / 2;
   core.titleBoil.y = brandMidY + title.height / 2;
   core.container.addChild(core.titleBoil);
+
+  // The subtitle's row is a fraction of the band, but the title above it is a snapped token and the
+  // underline hangs off the title's bottom: on a shorter landscape design (926 tall at 1100x574 since
+  // 2026-10-07) the marker stroke ran through the subtitle's caps. Put the caps (≈ 0.4 em above the
+  // centre) under the stroke's lower edge (≈ 0.75 ulH into the sprite) — the 1080 layout already
+  // clears this, so it does not move — and step the subtitle down the scale only if the band cannot
+  // hold it there.
+  if (!core.portrait) {
+    const strokeBottom = core.titleBoil.y + ulH * 0.75 + 1;
+    const bandBottom = tbH - 2;
+    let subFs = Number(subtitle.style.fontSize);
+    const fits = (fs: number): boolean => strokeBottom + fs * 0.4 + fs * 0.6 <= bandBottom;
+    while (!fits(subFs) && subFs > currentFontFloor()) subFs = snapFontDown(subFs - 1);
+    if (subFs !== Number(subtitle.style.fontSize)) subtitle.style.fontSize = subFs;
+    subtitle.y = Math.max(subtitleY, Math.ceil(strokeBottom + subFs * 0.4));
+  }
 
   // Top-right account chip (SA-4): offline → login/register entry; online →
   // server-authoritative ladder badge with a small logout affordance.
