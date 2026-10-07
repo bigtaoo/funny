@@ -1020,6 +1020,9 @@ music` 3/3 过、`selftest.py` 全过。头注里的取舍：
   `musicAssets.test.ts` 按 MP3 帧数钉住。
 - **包体门禁当时没跑。** 三首共多出约 1783 KiB，把 `dist.total` 顶到 28734 KiB，超出 27000 的预算；
   PR 的 CI 才发现。2026-10-07 把预算抬到 29500 KiB（理由见 ASSET_PACKAGING §13.4），没有为它压码率。
+- **`battleTrack` 当时没有单元测试**（`checkNewFileCoverage` 在 PR 上报 0 行覆盖）。补了
+  `test/audio/battleMusic.test.ts` 4 例：切点两侧（`ACCEL_THRESHOLD_2_TICKS − 1` / 恰好等于）、阈值就是 6 分钟、两条答案都在
+  `MUSIC_CATALOGUE` 里。
 
 ---
 
