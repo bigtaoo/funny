@@ -403,7 +403,7 @@ export function addEloProtectLine(
   const line = makeText(t(key, { n: elo.protectedGame, total: elo.protectedTotal }), {
     fontSize: FS.body,
     fill: 0x555555,
-    fontFamily: 'serif',
+    fontFamily: UI_FONT_FAMILY,
   });
   line.anchor.set(0.5, 0);
   line.x = w / 2;
