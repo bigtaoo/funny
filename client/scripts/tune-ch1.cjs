@@ -1,3 +1,13 @@
+// HISTORICAL — DO NOT RE-RUN. This was the 2026-06-24 one-off pass. Its POLICY table no longer
+// describes the shipped levels (later rounds: 2026-07-26 wave-variance spikes, 2026-10-07 fresh-
+// account retune — see design/game/DIFFICULTY_SIM_TUNING_CH1_STARS.md), and it rewrites lv2..lv10
+// in place, so running it now would silently revert all of that. Tune levels by editing the JSON
+// and measuring with client/test/difficultySim.ts instead. Kept only as the record of that pass.
+if (process.env.NW_RUN_HISTORICAL_TUNE_CH1 !== '1') {
+  console.error('tune-ch1.cjs is historical and would overwrite the current ch1 levels; refusing to run.');
+  process.exit(1);
+}
+
 // One-off tuning script: reparameterises ch1 lv2..lv10 for a smooth difficulty ramp.
 // Preserves each level's objective/loadout/rewards/seed/wave structure; only changes:
 //   startInk / inkRegenMult / enemyScale / wave atTick (shifted so the first wave is ≥4s) / per-wave count (scaled to the target total).
