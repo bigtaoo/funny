@@ -1,7 +1,7 @@
 # Nivara Privacy Policy
 
 > **Effective date**: {{EFFECTIVE_DATE}} (to be confirmed by legal before launch)
-> **Last updated**: 2026-09-29 (draft)
+> **Last updated**: 2026-10-07 (draft)
 > **Applies to**: Nivara (development codename *Notebook Wars*; the "Game"), including the web version, iOS / Android clients, the WeChat Mini Game, and aggregator platforms such as CrazyGames.
 >
 > ⚠️ **This is a product/engineering draft, not final legal text.** It must be reviewed and approved by counsel before release and reconciled against each distribution channel (App Store / Google Play / WeChat / CrazyGames) and applicable regional law (GDPR / UK GDPR / PIPL / CCPA, etc.). Placeholder items (URLs, legal entity, contact email, effective date, third-party SDK list) must be replaced with real values before launch.
@@ -14,7 +14,7 @@
 
 {{COMPANY_LEGAL_NAME}} ("we", "us") develops and operates the Game. We respect your privacy. This Policy explains **what information we collect, how we use it, who we share it with, how long we keep it, what rights you have**, and how to contact us.
 
-By continuing to use the Game you confirm you have read and understood this Policy. If you are located in the EU / UK, certain non-essential processing requires your **prior consent** (see §6).
+By continuing to use the Game you confirm you have read and understood this Policy. If you are located in the EU / EEA, certain non-essential processing requires your **prior consent**; elsewhere (including the UK and the US) gameplay analytics are on by default and you can turn them off at any time (see §6).
 
 ---
 
@@ -28,7 +28,9 @@ We follow the principle of **data minimization** and collect only what is necess
 | **Account info** | Email / login ID, password (stored salted-hashed) | Provided when you register | Optional (not collected in anonymous/offline mode) | Registration, cloud save, cross-device sync |
 | **Profile info** | Display name, avatar choice | Provided by you | Optional | Social display, match identity |
 | **Transaction info** | Purchase orders, platform payment receipts/tickets, virtual currency & item balances | App store IAP / payment channels | Only when you purchase | Fulfilling purchases, fraud prevention, support |
-| **Analytics events** | Game events keyed to a pseudonymous user_id (level progress, match results, click paths, etc.) | Reported automatically by the client | Non-essential (consent required in EU/UK) | Operations analytics, balancing, troubleshooting |
+| **Analytics events** | Game events keyed to a pseudonymous user_id (level progress, match results, click paths, etc.) | Reported automatically by the client | Non-essential (consent required in the EU/EEA; on by default with an opt-out elsewhere) | Operations analytics, balancing, troubleshooting |
+| **Service statistics** | Sign-up date, which days of your first 30 you played, tutorial completion, levels cleared — taken from the records the Game keeps to run | Recorded by our servers | Not collected once you turn analytics off | Aggregate retention statistics (how many new players come back) |
+| **Anonymous step counts** | A count of launches reaching a tutorial or early-level step — no identifier of any kind is sent or stored | Reported automatically by the client | Not personal data | Seeing where new players stop |
 | **Communications** | Private chat text, report content | Sent by you | Only when you use social features | Messaging, content moderation, safety |
 
 We **do not collect**: precise location, contacts, camera/microphone, or cross-app advertising identifiers (unless separately prompted for consent, see §6.3).
@@ -55,8 +57,8 @@ We **do not** use your personal information for automated decisions that produce
 For users protected by GDPR / UK GDPR, our legal bases are:
 
 - **Performance of a contract**: account, cloud save, matches, purchases.
-- **Consent**: analytics events, optional analytics cookies, any targeted advertising (see §6). You may withdraw consent at any time.
-- **Legitimate interests**: anti-cheat, security, fraud prevention, and necessary operational analytics (balanced against your rights, with an opt-out).
+- **Consent**: in the EU/EEA, analytics events; anywhere, any targeted advertising (see §6). You may withdraw consent at any time.
+- **Legitimate interests**: anti-cheat, security, fraud prevention; analytics events outside the EU/EEA (on by default, off in Settings — in the UK under the PECR statistical-purposes exemption); and aggregate service statistics (§2). Turning analytics off in Settings is an objection we honour for all of these statistics.
 - **Legal obligation**: minor protection, transaction/tax-record retention, odds disclosure, etc.
 
 ---
@@ -80,8 +82,12 @@ We **do not sell** your personal information. We share only what is necessary, i
 
 ## 6. Your choices & consent
 
-### 6.1 Analytics consent (EU/UK opt-in)
-For EU / UK users, analytics events and non-essential analytics are **off by default** and enabled only after you explicitly accept the first-launch consent dialog. You may turn them off any time in **Settings → Privacy**; we then stop collecting new analytics events.
+### 6.1 Analytics: opt-in in the EU/EEA, opt-out elsewhere
+- **EU / EEA**: analytics events are **off by default** and enabled only after you explicitly agree (the first-launch dialog, or a non-blocking prompt on aggregator builds such as CrazyGames). Saying no plays exactly the same.
+- **Elsewhere, including the UK and the US**: analytics events are **on by default** to improve the Game. We tell you so when you start playing (on aggregator builds, before any analytics data leaves your device).
+- **Everywhere**: you can turn analytics off at any time in **Settings → Analytics**. We then stop collecting new analytics events, and stop recording and counting you in the service statistics (§2).
+
+Anonymous step counts (§2) carry no identifier and are not personal data; they are counted for every player.
 
 ### 6.2 Cookies / local storage (web)
 The web version uses essential local storage (localStorage) to keep your login and game state; any analytics cookies are subject to a cookie consent banner. Essential storage is required for the service and cannot be disabled.
@@ -97,6 +103,7 @@ We **do not perform cross-app ad tracking**. Rewarded video in the mobile app is
 - **Shared spaces**: messages you posted in family/sect/world channels are deleted. If you led a family or sect, leadership passes automatically to another member (or it is disbanded if no one is left). Other players' match history and battle reports are kept, but your name is removed from them.
 - **Transaction records**: a minimal set is retained as legally/platform required (tax, refund disputes) for **10 full calendar years** (counted from the end of the year of the transaction) and then deleted. It may be kept after account deletion for that period; it is then no longer linked to your identity, and raw receipts/payment-provider payloads are removed.
 - **Analytics events**: retained for a limited operational period; deleted in bulk on account deletion, both by pseudonymous user_id and by the device identifier of events recorded before you logged in.
+- **Service statistics**: the record of which of your first 30 days you played is erased when you turn analytics off and on account deletion.
 - **Chat/reports**: retained for a limited period for moderation and safety. On account deletion, reports against you are removed; reports you filed about other players are kept without your identity so they can still be reviewed.
 - **Backups**: erased data disappears from our rolling database backups as they expire (7 days by default).
 
@@ -112,7 +119,7 @@ Depending on your region (GDPR / UK GDPR / PIPL / CCPA, etc.), you may have the 
 - **Access & export** a copy of your personal information (DSAR). Handled manually via the contact email during the test phase; self-service export at general availability.
 - **Rectify** inaccurate information (e.g., display name).
 - **Erase** ("right to be forgotten") — exercised via in-app account deletion (see §7).
-- **Restrict / object** to certain processing where applicable.
+- **Restrict / object** to certain processing where applicable — for analytics and service statistics, simply turn analytics off in Settings.
 - **Withdraw consent** for consent-based processing (analytics/ads) at any time (see §6).
 - **Complain** to your local data-protection authority.
 

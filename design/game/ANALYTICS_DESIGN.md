@@ -304,21 +304,26 @@ Art 7(1) 的举证留痕，不是遥测。
 欧盟/美国时区的新玩家是在**埋点还没被回答**的状态下玩完第一分钟的——事件都在 §3.6 的内存缓冲里，
 他在大厅点「允许」才发，点「不用了」或没点就关页则一条都不发。可第一分钟恰恰是审核员走掉的地方。
 
-**匿名教学步计数**：没同意的启动每经过一个教学步，客户端打一次
-`GET /analytics/config?p=<平台>&t=<step>`（`analytics.countAnonymousTutorialStep(step)`，
-`analytics/index.ts` → `config.ts` `pingAnonymousTutorialStep`），服务端在 `tutorial_anon_daily`
-上按 `(日期, 平台, step)` 做 `$inc`（`traffic.ts` `countAnonymousTutorialStep`）。立场与 §3.6b/§3.6c
+**匿名首局漏斗计数**（当天下午从「匿名教学步计数」扩成现在这样，COMPLIANCE §3.3b）：每次启动每经过一个首局步骤，客户端打一次
+`GET /analytics/config?p=<平台>&t=<step>`（`analytics.countAnonymousFunnelStep(step)`，
+`analytics/index.ts` → `config.ts` `pingAnonymousFunnelStep`），服务端在 `funnel_anon_daily`
+上按 `(日期, 平台, step)` 做 `$inc`（`traffic.ts` `countAnonymousFunnelStep`）。立场与 §3.6b/§3.6c
 完全一样：只有日期、平台、步骤键、计数；没有 device id、token、session id。
 - `step` 白名单 = v2 教学序列 `tutorial_start / beat_unit / beat_building / beat_spell / graduate / tutorial_complete`
-  （客户端 `ANONYMOUS_TUTORIAL_STEPS`、服务端 `ANON_TUTORIAL_STEPS`、OpenAPI `t` 枚举三处一致）；白名单外的值**什么都不记**。
+  + `tutorial_skip` + 前三关 `lv1_start / lv1_clear / lv2_start / lv2_clear / lv3_start / lv3_clear`
+  （客户端 `ANONYMOUS_FUNNEL_STEPS`、服务端 `ANON_FUNNEL_STEPS`、OpenAPI `t` 枚举三处一致）；白名单外的值**什么都不记**。
+- `lvN_*` 只在该关**还没通过**时计（`campaignRoster.ts` `anonLevelStep`），所以它表示「新玩家走到这里」，不是「有人重刷第一关」。
+  `lvN_start` 按启动去重：同一次启动里重试不重复计，分两次启动各失败一次会计两次——读的时候跟 `lvN_clear` 对着看。
 - `?t=` **不是启动**，绝不动 `boots_daily`。
-- 只在**没同意**时发（同意了的人发的是真的 `tutorial_step`）；同一步每次启动至多一次（设置里重玩教学不算第二个人到达）；离线不发。
-- 读法：ops「Launch funnel」卡的 `Unconsented tutorial` 列（`boot_funnel` 每行带 `anon_tutorial: { step: count }`），
+- **对所有人发**，不管同意与否（不带标识、不碰设备存储，不需要同意）。所以它是同意的和没同意的玩家**同一口径**的漏斗，
+  EU 没同意的人在哪一步掉也在里面。同一步每次启动至多一次；离线不发。
+- 读法：ops「Launch funnel」卡的 `First session (anonymous)` 列（`boot_funnel` 每行带 `anon_funnel: { step: count }`），
   跟同一行的 `Launches` 对着看。这是**按启动计**的趋势，不是人。
-- 覆盖：`client/test/analyticsAnonTutorial.test.ts` + `analyticsvc/test/bootAndLoadTime.e2e.test.ts` / `analytics.e2e.test.ts`。
+- 覆盖：`client/test/analyticsAnonFunnel.test.ts` + `analyticsvc/test/bootAndLoadTime.e2e.test.ts` / `analytics.e2e.test.ts`。
 
 **`gdpr_consent` 新增两个 props**：`mode`（`gate` 入口门 / `notice` CG 非选择区「通知即同意」/ `prompt` CG 大厅提示条）
 和 `dwell_ms`（门或提示条在屏上多久才点了同意；只在同意那条路上带，`notice` 没有界面所以不带）。
+`notice` 自 2026-10-07 起在统计说明**第一次上屏**时才记（毕业卡小字或大厅通知条），不再在启动时记（COMPLIANCE §3.3b）。
 
 **根因：审核员那条会话为什么没有 `load_time` 和 `gdpr_consent`**（CRAZYGAMES_LAUNCH §7「埋点缺口」）——
 不是 SSO 的问题，是 `init()` 的顺序：它先把 `queue` 赋好、**再** `await fetchAnalyticsConfig()`。`track()` 和
@@ -330,6 +335,38 @@ Art 7(1) 的举证留痕，不是遥测。
 修法：`queue` 等配置回来**之后**才赋值（`analytics/index.ts` `init()`），在那之前一切事件都留在 `pending`。
 回归：`client/test/analyticsConfigRace.test.ts`（改回旧顺序时只剩 `['session_start']`，正是那条会话的样子）。
 同一个洞对已同意的老玩家也成立：配置还在路上时追踪的任何事件都会被丢。
+
+### 3.6e 服务端留存表：不经客户端埋点的 D1–D30（2026-10-07）
+
+**为什么要有**：§3.6–3.6d 的客户端埋点只覆盖同意的人（EU 不点同意的那部分永远看不到），匿名漏斗（§3.6d）只到前三关、
+按启动不按人。「新玩家第几天走的」需要一张**不靠同意**的表。依据与边界见 [`COMPLIANCE_GLOBAL.md` §3.3b](COMPLIANCE_GLOBAL.md) 第 4 条。
+
+**记什么**（`server/metaserver/src/activityDays.ts` `ActivityRecorder`）：
+- 挂在 bearerAuth 上（`auth.ts` `makeSecurityHandlers` 的 `onAuthenticated`），即每个已鉴权的 metaserver 请求。
+- 只记「注册后第几个 24h 窗口来过」：`accounts.activeDays` 是日偏移 `0..30` 的无序集合（`$setUnion` 维护，读用 `$in`）。
+  不记做了什么、几点来、来几次。注册满 31 天后不再写。
+- 一次 `findOneAndUpdate`（pipeline 更新），filter 里带全部资格条件：注册不满 31 天、`flags.gdprConsent !== false`、
+  没软删 / 没清除、`deviceId` 不是 `bot-…`（botsvc）。不先读。
+- 进程内去重：每个账号每个偏移至多写一次，LRU 上限 5 万条；被挤掉只是多一次幂等写。不 await、不往请求里抛。
+- 已知缺口（接受）：同一个 24h 窗口里先关后开统计，本进程以为这个窗口记过了，要到下个窗口才补上。
+
+**清除**：关掉统计（`gdprConsent` 设成 false，`accountLifecycle.ts`）时 `$unset activeDays`；账号清除的墓碑
+`replaceOne` 本来就会丢掉它（`accountPurge.ts`）。
+
+**读**：`GET /internal/retention?days=N`（默认 30、1..90；`retentionRoutes.ts` → `retentionReport.ts`）
+→ admin `GET /admin/analytics/retention` → ops 分析页「Server retention」卡（`tools/ops/src/pages/serverRetention.ts`，
+放在 analyticsvc 门之前，analyticsvc 挂了也能看）。按注册 UTC 日分组，每行：注册数、教程完成（存档 `flags.tutorial_done`）、
+`ch1_lv1..3` 通过数、D1/D3/D7/D14/D30。一条聚合，靠新加的 `accounts.createdAt` 索引只扫最近 N 天的注册。
+- dK 在该日所有人的第 K 个窗口都结束之前显示为空（`retentionWindowClosed`：`日起点 + (K+2) 天 ≤ 现在`），不显示半截数。
+- 排除的人（拒绝 / 关掉统计、删号、bot）**连注册数里也不算**——所以这张表的分母比 analyticsvc 的新用户数小，是故意的。
+- **早期队列偏低**：上线前注册的账号没有 `activeDays`，上线日之前的队列（以及上线后头 30 天里较晚的 D 列）留存会偏低；
+  注册、教程、通关三列不受影响。
+- **记录早于告知**：CG 包非 EU 玩家的统计说明要到毕业卡 / 大厅条才上屏（§3.6d、COMPLIANCE §3.3b），而这张表从第一个已鉴权请求就开始记。
+  这些请求是游戏本来就要发的，记的只是日偏移，依据是正当利益而不是同意，隐私政策写明——可以接受；反对（关掉统计）后立即清掉。
+
+**覆盖**：`server/metaserver/test/activity-days-unit.test.ts`（偏移、去重、资格过滤、不匹配退避一天、不抛、LRU 上限、`onAuthenticated` 钩子）、
+`retention-report.e2e.test.ts`（真 Mongo 写入、分组、排除、未关窗口为空、`days` 夹取、401）、`auth-credential-unit.test.ts`（关掉统计即清 `activeDays`）、
+`account-purge.e2e.test.ts`（清除）、admin 路由与 client 测试、`tools/ops/test/serverRetention.test.ts`。
 
 ---
 

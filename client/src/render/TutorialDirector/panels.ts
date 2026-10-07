@@ -36,6 +36,7 @@ const C_BLUE = 0x4a7fc1;
 const C_RED = 0xc0392b;
 const C_PAPER = 0xf6efdd;
 const C_INK = 0x2b2b2b;
+const C_INK_SOFT = 0x5a5550;
 
 /**
  * Smallest design-px font that still renders at `cssPx` on screen (ONBOARDING_DESIGN §11.5: instruction
@@ -209,9 +210,12 @@ export function clearStrip(host: PanelHost): void {
 
 /**
  * Graduation card under the HUD's WIN banner (ONBOARDING_DESIGN §11.6): the one-line goal, an
- * optional reward line, and the single button that leaves the tutorial.
+ * optional reward line, the single button that leaves the tutorial, and optional small print under
+ * it (the analytics notice, COMPLIANCE_GLOBAL §3.3b).
  */
-export function drawGradCard(host: PanelHost, body: string, teaser: string | undefined, cta: string): void {
+export function drawGradCard(
+  host: PanelHost, body: string, teaser: string | undefined, cta: string, footnote?: string,
+): void {
   tearDownChildren(host.gradCard);
   const L = host.layout;
   const W = L.designWidth;
@@ -232,9 +236,17 @@ export function drawGradCard(host: PanelHost, body: string, teaser: string | und
   const btnLbl = makeText(cta, { fontFamily: 'monospace', fontSize: btnSize, fontWeight: 'bold', fill: hudButtonText('accent') });
   const bh = Math.ceil(btnLbl.height * 1.9);
   const bw = Math.min(pw - pad * 2, Math.ceil(btnLbl.width + bh * 1.2));
+  // Small print, but still ≥ 14 CSS px (§11.5): a notice nobody can read is not a notice.
+  const noteLbl = footnote
+    ? makeText(footnote, {
+      fontFamily: 'monospace', fontSize: legible(14, FS.small), fill: C_INK_SOFT,
+      wordWrap: true, wordWrapWidth: pw - pad * 2, align: 'center',
+    })
+    : null;
 
   const gap = Math.round(bodySize * 0.6);
-  const ph = Math.ceil(pad + bodyLbl.height + gap + (teaserLbl ? teaserLbl.height + gap : 0) + bh + pad);
+  const ph = Math.ceil(pad + bodyLbl.height + gap + (teaserLbl ? teaserLbl.height + gap : 0) + bh
+    + (noteLbl ? gap + noteLbl.height : 0) + pad);
   const px = Math.round((W - pw) / 2);
   // The HUD banner sits on the vertical centre (HUDView/overlays showGameOver: a 100-tall box);
   // the card hangs just below it.
@@ -264,6 +276,10 @@ export function drawGradCard(host: PanelHost, body: string, teaser: string | und
   btnLbl.x = W / 2; btnLbl.y = y + bh / 2;
   host.gradCard.addChild(btnLbl);
   host.ctaRect = { x: bx, y, w: bw, h: bh };
+  if (noteLbl) {
+    noteLbl.anchor.set(0.5, 0); noteLbl.x = W / 2; noteLbl.y = y + bh + gap;
+    host.gradCard.addChild(noteLbl);
+  }
 
   // Pop in around the card's own centre.
   host.gradCard.pivot.set(W / 2, py + ph / 2);

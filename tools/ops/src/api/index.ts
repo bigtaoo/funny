@@ -45,6 +45,7 @@ import type {
   SlgShopItemOverrideDoc,
   SlgShopItemRow,
   SlgWorldSummary,
+  ServerRetentionCohort,
   SuspiciousPveView,
   TradeAuditSnapshot,
   TradeAuditTicketView,
@@ -99,6 +100,10 @@ export class Api extends ApiTransport {
     if (newCohort) qs.set('newCohort', '1');
     if (dimension) qs.set('dimension', dimension);
     return this.req('GET', `/admin/analytics/events?${qs}`);
+  }
+  /** Consent-free server retention report (metaserver, server records only); newest cohort first. */
+  serverRetention(days: number): Promise<{ available: boolean; days: number; cohorts: ServerRetentionCohort[] }> {
+    return this.req('GET', `/admin/analytics/retention?days=${days}`);
   }
 
   // —— Players ——

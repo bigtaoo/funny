@@ -7,7 +7,7 @@
 // composition in ../service.ts.
 
 import { AnalyticsCollections } from '../db';
-import { AnonTutorialStep, isAnonTutorialStep, BootFunnelRow, EventCountRow, DauRow, LoginHourRow, RETENTION_OFFSETS, RetentionOffset, RetentionRow, ONBOARDING_STEPS, ACTION_NOISE, EMPTY_STEP_KEYS, OnboardingStepRow, FirstSessionActionRow, FirstSessionResult, dayStart, toDateStr } from './defs';
+import { AnonFunnelStep, isAnonFunnelStep, BootFunnelRow, EventCountRow, DauRow, LoginHourRow, RETENTION_OFFSETS, RetentionOffset, RetentionRow, ONBOARDING_STEPS, ACTION_NOISE, EMPTY_STEP_KEYS, OnboardingStepRow, FirstSessionActionRow, FirstSessionResult, dayStart, toDateStr } from './defs';
 
 export class TrafficService {
   constructor(
@@ -109,18 +109,18 @@ export class TrafficService {
   }
 
   /**
-   * Count one tutorial step reached by a launch WITHOUT analytics consent (COMPLIANCE_GLOBAL §3.3,
-   * `GET /analytics/config?t=<step>`). The CrazyGames build no longer puts a consent wall in front
-   * of the tutorial, so in the EU/US time zones the first minute is played with analytics still
-   * unanswered — and that minute is exactly where the portal reviewer left. This is the aggregate
-   * that still sees it: date, build target, allow-listed step key, a number. Nothing else.
+   * Count one first-session funnel step reached by a launch, whatever its analytics answer
+   * (COMPLIANCE_GLOBAL §3.3b, `GET /analytics/config?t=<step>`). EEA players who never say yes report
+   * nothing else, and the CrazyGames build plays its first minute before anyone has answered — which
+   * is exactly where the portal reviewer left. This is the aggregate that still sees it: date, build
+   * target, allow-listed step key, a number. Nothing else.
    *
-   * `step` must already be validated against `ANON_TUTORIAL_STEPS` by the caller (it becomes part
+   * `step` must already be validated against `ANON_FUNNEL_STEPS` by the caller (it becomes part
    * of the `_id`). Fire-and-forget by contract, like {@link countBoot}.
    */
-  async countAnonymousTutorialStep(platform: string, step: AnonTutorialStep): Promise<void> {
+  async countAnonymousFunnelStep(platform: string, step: AnonFunnelStep): Promise<void> {
     const date = toDateStr(this.now());
-    await this.cols.tutorial_anon_daily.updateOne(
+    await this.cols.funnel_anon_daily.updateOne(
       { _id: `${date}|${platform}|${step}` },
       { $inc: { count: 1 }, $set: { date, platform, step, updated_at: new Date(this.now()) } },
       { upsert: true },
@@ -210,11 +210,11 @@ export class TrafficService {
     }
     // The unconsented launches' tutorial ticks ride along on the same (date, platform) row: they
     // describe the `boots − sessions` gap from the inside, so this is where they are read.
-    const anonTutorial = await this.cols.tutorial_anon_daily.find({ date: { $gte: sinceDate } }).toArray();
-    for (const t of anonTutorial) {
-      if (!isAnonTutorialStep(t.step)) continue;
+    const anonFunnel = await this.cols.funnel_anon_daily.find({ date: { $gte: sinceDate } }).toArray();
+    for (const t of anonFunnel) {
+      if (!isAnonFunnelStep(t.step)) continue;
       const row = rowFor(t.date, t.platform);
-      row.anon_tutorial = { ...row.anon_tutorial, [t.step]: t.count };
+      row.anon_funnel = { ...row.anon_funnel, [t.step]: t.count };
     }
 
     return [...rows.values()]

@@ -122,6 +122,7 @@ export class HeadlessAppViews implements AppViews {
   lastConsumptionConsentAsk?: (consented: boolean) => void;
   /** The entry notice strip the core last put on the lobby (IPlatform.entryNoticeOnly), if any. */
   lastEntryNotice?: EntryNoticeSpec;
+  onTutorial?: (cfg: NonNullable<GameSceneOptions['tutorial']>) => void;
   /** Last events-available flag the core pushed into the lobby handle. */
   lastEventsAvailable?: boolean;
   replay?: ReplaySceneCallbacks;
@@ -297,7 +298,9 @@ export class HeadlessAppViews implements AppViews {
     // Headless: skip the FTUE tutorial level entirely, matching a player who dismisses it —
     // post-ADR-056 reconcile() no longer lets a harness-seeded local `tutorial_done` flag
     // survive the first cloud sync, so goTutorial() would otherwise fire on every fresh account.
-    if (opts.tutorial) { cb.onExitToLobby?.(); return; }
+    // `onTutorial` lets a test look at (or act on) the director config first — e.g. the graduation
+    // card's footnote, as if the card had been reached.
+    if (opts.tutorial) { this.onTutorial?.(opts.tutorial); cb.onExitToLobby?.(); return; }
     const { engine, buildReplay } = createLocalMatch({
       ...(opts.level ? { level: opts.level } : {}),
       ...(opts.cardInstances ? { cardInstances: opts.cardInstances } : {}),

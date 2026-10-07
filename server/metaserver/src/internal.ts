@@ -22,6 +22,7 @@ import { registerLadderRoutes } from './internal/ladderRoutes.js';
 import { registerEventAdminRoutes } from './internal/eventAdminRoutes.js';
 import { registerGachaPoolRoutes } from './internal/gachaPoolRoutes.js';
 import { registerPaddleEventRoutes } from './internal/paddleEventRoutes.js';
+import { registerRetentionRoutes } from './internal/retentionRoutes.js';
 import { registerTokenRevocationRoutes } from './tokenRevocations.js';
 
 export interface InternalDeps {
@@ -70,5 +71,6 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
   registerEventAdminRoutes(app, ctx);
   registerGachaPoolRoutes(app, ctx);
   registerPaddleEventRoutes(app, ctx);
+  registerRetentionRoutes(app, ctx);
   registerTokenRevocationRoutes(app, ctx);
 }

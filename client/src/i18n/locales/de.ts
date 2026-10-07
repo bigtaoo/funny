@@ -1533,7 +1533,7 @@ export const de: Record<TranslationKey, string> = {
 
   // ── DSGVO-Einwilligung beim ersten Start (C5-c, L1-1) ───────────────────────
   'consent.title': 'Nutzungsbedingungen & Datenschutz',
-  'consent.body': 'Bitte lies und akzeptiere vor dem Spielen unsere Nutzungsbedingungen (EULA) und Datenschutzerklärung. Wir tolerieren keinerlei anstößige Inhalte oder beleidigende Spieler — du kannst im Spiel jeden melden oder blockieren. Nur mit deiner Zustimmung erheben wir anonyme Spieldaten zur Verbesserung des Spiels, und du kannst dein Konto jederzeit in den Einstellungen löschen.',
+  'consent.body': 'Bitte lies und akzeptiere vor dem Spielen unsere Nutzungsbedingungen (EULA) und Datenschutzerklärung. Wir tolerieren keinerlei anstößige Inhalte oder beleidigende Spieler — du kannst im Spiel jeden melden oder blockieren. Wir erheben Spieldaten, um das Spiel zu verbessern — das kannst du jederzeit in den Einstellungen abschalten, und dort auch dein Konto löschen.',
   'consent.privacyPolicy': 'Datenschutzerklärung',
   'consent.terms': 'Nutzungsbedingungen (EULA)',
   'consent.accept': 'Zustimmen & Fortfahren',
@@ -1553,7 +1553,7 @@ export const de: Record<TranslationKey, string> = {
   // Merged age-gate + consent screen (RETENTION_LAUNCH_PLAN.md §3.1) — only used when both are
   // still unanswered; the standalone ageGate.*/consent.* copy above covers every other case.
   'entryGate.title': 'Bevor es losgeht',
-  'entryGate.body': 'Wähle dein Geburtsjahr und akzeptiere unsere Nutzungsbedingungen (EULA) und Datenschutzerklärung. Null Toleranz für beleidigende Spieler. Wir nutzen anonyme Spieldaten, um das Spiel zu verbessern.',
+  'entryGate.body': 'Wähle dein Geburtsjahr und akzeptiere unsere Nutzungsbedingungen (EULA) und Datenschutzerklärung. Null Toleranz für beleidigende Spieler. Wir erheben Spieldaten, um das Spiel zu verbessern — jederzeit in den Einstellungen abschaltbar.',
   'entryGate.bodyChoice': 'Wähle dein Geburtsjahr und akzeptiere unsere Nutzungsbedingungen (EULA) und Datenschutzerklärung. Null Toleranz für beleidigende Spieler. Anonyme Spieldaten sind deine Wahl — mit "Nur Nötiges" spielst du genauso.',
   'entryGate.yearPick': 'Geburtsjahr: {year}',
   'entryGate.pickDecade': 'Wann bist du geboren?',
@@ -1561,6 +1561,7 @@ export const de: Record<TranslationKey, string> = {
   'entryGate.decade': '{decade}er',
   'entryGate.pickBack': 'Zurück',
   'entryNotice.terms': 'Mit dem Spielen stimmst du unseren Nutzungsbedingungen (EULA) und der Datenschutzerklärung zu.',
+  'entryNotice.stats': 'Wir erheben Spieldaten, um das Spiel zu verbessern — du kannst das jederzeit in den Einstellungen abschalten.',
   'entryNotice.consent': 'Hilfst du mit anonymen Spieldaten, das Spiel zu verbessern? Jederzeit in den Einstellungen änderbar.',
   'entryNotice.allow': 'Erlauben',
   'entryNotice.decline': 'Nein danke',

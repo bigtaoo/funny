@@ -223,8 +223,10 @@ export async function purgeMetaLocal(cols: Collections, accountId: string): Prom
 }
 
 async function tombstone(cols: Collections, doc: AccountDoc, at: number): Promise<void> {
-  // replaceOne drops every credential (deviceId/openid/password/oauth), the profile, publicId and flags in
-  // one write; the unique sparse indexes on those fields free them up for a brand-new account.
+  // replaceOne drops every credential (deviceId/openid/password/oauth), the profile, publicId, flags and the
+  // retention report's activeDays (activityDays.ts) in one write; the unique sparse indexes on those fields
+  // free them up for a brand-new account. Keep this an explicit allowlist: anything added to AccountDoc
+  // later is erased by default.
   await cols.accounts.replaceOne(
     { _id: doc._id, purgedAt: { $exists: false } },
     { _id: doc._id, createdAt: doc.createdAt, deletedAt: doc.deletedAt, purgedAt: at } as AccountDoc,

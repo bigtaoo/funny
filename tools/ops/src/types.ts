@@ -458,3 +458,16 @@ export interface AdminGachaPool {
   createdAt: number;
   closedAt?: number;
 }
+
+/**
+ * One signup cohort of the consent-free server retention report (GET /admin/analytics/retention; mirror of
+ * admin's RetentionCohortRow / metaserver retentionReport.ts). `retained.dK` is null while the cohort is
+ * too young for window K to be final.
+ */
+export interface ServerRetentionCohort {
+  date: string;
+  signups: number;
+  tutorialDone: number;
+  cleared: { ch1_lv1: number; ch1_lv2: number; ch1_lv3: number };
+  retained: { d1: number | null; d3: number | null; d7: number | null; d14: number | null; d30: number | null };
+}

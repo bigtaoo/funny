@@ -39,6 +39,7 @@ import type {
   PlayerClient, PlayerProfile,
   PvpCardStatsClient,
   ReportsClient, ReportRow,
+  RetentionClient, RetentionCohortRow,
   StatsClient,
   SuspiciousPveClient,
   WorldClient, SlgWorldSummary, SlgAllocateResult,
@@ -123,6 +124,19 @@ class FakeSuspiciousPve implements SuspiciousPveClient {
   async listSuspiciousPve() { return this.rows.map((r) => ({ ...r, banned: this.banned.has(r._id) })); }
   async banAccount(accountId: string) { this.banned.add(accountId); return { ok: true }; }
   async unbanAccount(accountId: string) { this.banned.delete(accountId); return { ok: true }; }
+}
+class FakeRetention implements RetentionClient {
+  available = true;
+  /** Days each call asked for — proves the route clamps `?days=` before it reaches the client. */
+  asked: number[] = [];
+  async getRetention(days: number): Promise<RetentionCohortRow[] | null> {
+    this.asked.push(days);
+    return [{
+      date: '2026-10-01', signups: 10, tutorialDone: 8,
+      cleared: { ch1_lv1: 7, ch1_lv2: 5, ch1_lv3: 4 },
+      retained: { d1: 4, d3: 3, d7: null, d14: null, d30: null },
+    }];
+  }
 }
 class FakeMail implements MailDispatcher {
   available = true;
@@ -288,6 +302,7 @@ describe.skipIf(!mongo)('admin ops HTTP routes e2e', () => {
   let feedback: FakeFeedback;
   let world: FakeWorld;
   let analytics: FakeAnalytics;
+  let retention: FakeRetention;
 
   let rootToken: string;
   let opsToken: string;
@@ -321,12 +336,13 @@ describe.skipIf(!mongo)('admin ops HTTP routes e2e', () => {
     feedback = new FakeFeedback();
     world = new FakeWorld();
     analytics = new FakeAnalytics();
+    retention = new FakeRetention();
 
     const svc = new AdminService({
       cols: m.collections, now,
       stats: stubStats, players: stubPlayer, antiCheat, mismatches: stubMismatches, pvpCardStats: stubPvpCardStats,
       suspiciousPve, mail, analytics, world, auction: stubAuction, ladder: stubLadder, events, gachaPools,
-      paddleEvents: stubPaddleEvents, reports, appeals, enforcement: stubEnforcement, feedback,
+      paddleEvents: stubPaddleEvents, reports, appeals, enforcement: stubEnforcement, feedback, retention,
     });
 
     await seedSuperAdmin(m.collections, 'root', 'rootpass', now);
@@ -422,6 +438,21 @@ describe.skipIf(!mongo)('admin ops HTTP routes e2e', () => {
       const r = await call(rootToken, 'GET', '/admin/pvp-card-stats?mode=ranked&since=2026-01-01');
       expect(r.status).toBe(200);
       expect(r.json.cards).toHaveLength(1);
+    });
+    it('GET /admin/analytics/retention (consent-free server report): days default 30, clamped to 1..90', async () => {
+      retention.asked = [];
+      const r = await call(opsToken, 'GET', '/admin/analytics/retention');
+      expect(r.status).toBe(200);
+      expect(r.json).toMatchObject({ ok: true, days: 30, available: true });
+      expect((r.json.cohorts as RetentionCohortRow[])[0]).toMatchObject({ date: '2026-10-01', signups: 10, retained: { d7: null } });
+      expect((await call(opsToken, 'GET', '/admin/analytics/retention?days=500')).json.days).toBe(90);
+      expect((await call(opsToken, 'GET', '/admin/analytics/retention?days=7')).json.days).toBe(7);
+      expect((await call(opsToken, 'GET', '/admin/analytics/retention?days=abc')).json.days).toBe(30);
+      expect(retention.asked).toEqual([30, 90, 7, 30]);
+    });
+    it('GET /admin/analytics/retention needs analytics.view, which support lacks → 403', async () => {
+      const r = await call(csToken, 'GET', '/admin/analytics/retention');
+      expect(r.status).toBe(403);
     });
   });
 

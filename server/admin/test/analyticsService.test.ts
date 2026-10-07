@@ -457,3 +457,24 @@ describe('sampleOnce', () => {
     expect(h.inserted[0]).toContainEqual({ metric: 'gameLoad', ts: NOW, value: 0, at: new Date(NOW) });
   });
 });
+
+describe('serverRetention (consent-free metaserver report)', () => {
+  const svcWith = (retention?: unknown) => domain<AnalyticsService>(stubDeps(retention ? { retention } : {}).deps, 'analytics');
+
+  it('no retention client configured → available:false, no call', async () => {
+    expect(await svcWith().serverRetention(30)).toEqual({ available: false, cohorts: [] });
+  });
+
+  it('forwards days and returns the cohorts', async () => {
+    const asked: number[] = [];
+    const row = { date: '2026-10-01', signups: 1 };
+    const svc = svcWith({ available: true, getRetention: async (d: number) => { asked.push(d); return [row]; } });
+    expect(await svc.serverRetention(14)).toEqual({ available: true, cohorts: [row] });
+    expect(asked).toEqual([14]);
+  });
+
+  it('a failed backend call is a 502, not an empty report', async () => {
+    const svc = svcWith({ available: true, getRetention: async () => null });
+    await expect(svc.serverRetention(30)).rejects.toMatchObject({ status: 502, code: 'upstream_error' });
+  });
+});

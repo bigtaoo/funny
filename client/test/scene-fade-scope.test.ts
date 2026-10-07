@@ -52,7 +52,7 @@ function buildGameCtx(nav: Partial<Nav>): {
     api: undefined,
     baseUrl: null,
     saveManager: {
-      get: () => ({ equipped: {}, pvp: { elo: 1300 } }),
+      get: () => ({ equipped: {}, pvp: { elo: 1300 }, progress: { cleared: [], stars: {} } }),
       update: () => {},
       getFlag: () => true,
       setFlag: () => {},

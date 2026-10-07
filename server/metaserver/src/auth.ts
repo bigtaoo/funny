@@ -73,11 +73,16 @@ function accountDeleted(): AuthError {
  * renewed and the list's 31-day row TTL really outlasts every token it covers. Soft-deleted-but-not-yet-
  * purged accounts are NOT refused: the grace-period undo (POST /account/cancel-deletion) needs a working
  * token. Omitted in unit tests that build the handlers without a database.
+ *
+ * `onAuthenticated` runs once per accepted request with its accountId — the consent-free activity hook
+ * (activityDays.ts). It must be synchronous and non-throwing: it is called on the request path and its
+ * work (a deduped background write) is never awaited.
  */
 export function makeSecurityHandlers(
   jwt: JwtConfig,
   now: () => number = () => Date.now(),
   isRevoked?: (payload: TokenPayload) => Promise<boolean>,
+  onAuthenticated?: (accountId: string) => void,
 ) {
   return {
     // Synchronous unless an isRevoked check is wired in (glue awaits either form).
@@ -93,6 +98,7 @@ export function makeSecurityHandlers(
       const accept = () => {
         req.accountId = payload.sub;
         maybeRenewToken(payload, jwt, reply, now);
+        onAuthenticated?.(payload.sub);
       };
       if (!isRevoked) return accept();
       return isRevoked(payload).then((revoked) => {

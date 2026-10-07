@@ -155,6 +155,14 @@ export interface AppCtx {
    * test ctxs need not stub it.
    */
   offerEntryNotice?(host: EntryNoticeHost): void;
+  /**
+   * Notice-only build, outside the EEA, analytics never answered: analytics are on by default but
+   * wait until the player has seen the analytics notice (COMPLIANCE_GLOBAL §3.3b). A screen that can
+   * show the notice asks this, shows it, and calls {@link acknowledgeStatsNotice} once it is on
+   * screen. Optional for the same reason as offerEntryNotice.
+   */
+  statsNoticePending?(): boolean;
+  acknowledgeStatsNotice?(): void;
   resolvePvpDeck(): string[];
   keepReplay(replay: Replay | undefined): Replay | undefined;
   resolveWorldShard(worldApi: WorldApiClient, then: (worldId: string) => void): void;

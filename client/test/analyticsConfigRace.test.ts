@@ -35,7 +35,7 @@ vi.mock('../src/analytics/config', () => ({
   // The real shouldTrack() answers from DISABLED_FALLBACK (enabled:false) until the config lands.
   shouldTrack: vi.fn(() => state.configLoaded),
   pingDeclinedLaunch: vi.fn(),
-  pingAnonymousTutorialStep: vi.fn(),
+  pingAnonymousFunnelStep: vi.fn(),
 }));
 
 function fakeStorage(): IStorage {
