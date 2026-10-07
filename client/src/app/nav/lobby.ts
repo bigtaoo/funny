@@ -273,6 +273,11 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
       });
     }
 
+    // Terms/Privacy notice + analytics prompt on the notice-only build (CrazyGames, COMPLIANCE_GLOBAL
+    // §3.3): non-blocking, and here rather than at boot because the first lobby is the first screen
+    // a new player reaches that is not the tutorial battle. A no-op on every other build.
+    ctx.offerEntryNotice?.(lobby);
+
     // Paint the cached social total immediately so the dot survives a resize
     // rebuild without flicker; then refresh from the server (skip on resize).
     lobby.applySocialBadge(state.socialBadgeTotal, state.mailBadgeCount);

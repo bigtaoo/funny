@@ -183,6 +183,7 @@ export class PixiAppViews implements AppViews {
       showSeasonSettlement: (o, p, n) => scene.showSeasonSettlement(o, p, n),
       showFeatureGuide: (tk, bk, onDismiss) => scene.showFeatureGuide(tk, bk, onDismiss),
       showConsumptionConsent: (onAnswer) => scene.showConsumptionConsent(onAnswer),
+      showEntryNotice: (spec) => scene.showEntryNotice(spec),
     };
   }
 

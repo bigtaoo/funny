@@ -80,6 +80,9 @@ export class InputPanel {
       this.highlightRefreshAccum = 0;
       this.refreshPlacementHighlights();
     }
+    // Tutorial idle escalation (§11.4): a card in the player's hand (pressed, dragged or
+    // tap-selected) pauses the ghost-hand demo and its idle clock.
+    this.core.tutorial?.setHoldingCard(!!(this.pendingCardDown || this.drag || this.tapSelect));
   }
 
   // ── Input handling (design-space coords) ─────────────────────────────────
@@ -88,9 +91,8 @@ export class InputPanel {
     this.downX = x;
     this.downY = y;
 
-    // Tutorial director intercepts taps first: if it hits its own buttons (next/finish/skip)
-    // or is in tour/graduation phase → swallow the tap, don't pass to board/hand (§3.4).
-    // During phase B checkpoint it passes non-button taps through so the player can drag cards normally.
+    // Tutorial director intercepts taps first: its own buttons (skip / graduation) and, once the
+    // graduation card is up, every tap. Otherwise taps pass through so the player can drag cards.
     if (this.core.tutorial?.handleDown(x, y)) return;
 
     // Profile popup open → its own dim backdrop (PIXI interactive) handles the
@@ -334,6 +336,7 @@ export class InputPanel {
     this.tapSelect = null;
     this.core.handView.clearSelection();
     this.core.boardView.clearHighlights();
+    this.core.tutorial?.markHighlightDirty(); // the tutorial's lit target lives on the same layer
     this.core.unitView.setSpellTargetPreview(EMPTY_UNIT_IDS);
   }
 
@@ -363,8 +366,15 @@ export class InputPanel {
     handIndex: number, cardType: CardType, spellType: SpellType | undefined,
     col: number, row: number,
   ): void {
-    // Tutorial checkpoint: only the target card type is allowed this beat; wrong plays are rejected (avoids waste / going off-script, §3.4).
-    if (this.core.tutorial && !this.core.tutorial.allowCardPlay(cardType, spellType)) { this.rejectPlay(true); return; }
+    // Tutorial: only the guided card near its target is allowed, aim-assisted onto the target;
+    // anything else is rejected and the director replays the ghost demo (ONBOARDING_DESIGN §11.4).
+    if (this.core.tutorial) {
+      const cardId = this.core.localPlayer(this.core.engine.state).hand.slots[handIndex]?.card.id ?? '';
+      const target = this.core.tutorial.allowCardPlay(cardId, col, row);
+      if (!target) { this.rejectPlay(true); return; }
+      col = target.col;
+      row = target.row;
+    }
     switch (cardType) {
       case CardType.Unit: {
         if (!(ATTACK_LANES as readonly number[]).includes(col)) { this.rejectPlay(true); return; }
@@ -411,7 +421,14 @@ export class InputPanel {
     this.dragOnBoard = false;
     this.core.handView.clearSelection();
     this.core.boardView.clearHighlights();
+    this.core.tutorial?.markHighlightDirty(); // the tutorial's lit target lives on the same layer
     this.core.unitView.setSpellTargetPreview(EMPTY_UNIT_IDS);
+  }
+
+  /** The drag ghost of the card in hand slot `handIndex` — the tutorial's ghost-hand demo reuses it. */
+  buildCardGhost(handIndex: number): PIXI.Container | null {
+    const slot = this.core.localPlayer(this.core.engine.state).hand.slots[handIndex];
+    return slot ? this.buildDragGhost(t(slot.card.nameKey as TranslationKey), slot.card.cost) : null;
   }
 
   private buildDragGhost(label: string, cost: number, accentColor = 0x2244aa): PIXI.Container {

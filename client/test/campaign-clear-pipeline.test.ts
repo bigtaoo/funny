@@ -19,7 +19,6 @@ async function enterLevel(levelId: string): Promise<{ platform: HeadlessPlatform
   const views = new HeadlessAppViews();
   createAppCore(platform, views).start();
 
-  views.intro!.onFinish();
   views.declareAdultAge();
   views.consent!.onAccept();
   await settle();

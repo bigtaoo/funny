@@ -39,7 +39,7 @@ export interface AnalyticsEventsResult {
   webview_dist?: { webview: string; devices: number }[];
   geo_dist?: { country: string; devices: number }[];
   badge_dist?: { mode: string; result: string; badge: string; count: number }[];
-  boot_funnel?: { date: string; platform: string; boots: number; sessions: number; declined: number; consents: number; reach_rate?: number }[];
+  boot_funnel?: { date: string; platform: string; boots: number; sessions: number; declined: number; consents: number; reach_rate?: number; anon_tutorial?: Record<string, number> }[];
   load_time?: {
     platform: string;
     samples: number;

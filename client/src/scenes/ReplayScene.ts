@@ -254,7 +254,7 @@ export class ReplayScene implements Scene {
       // 2026-08-12 fix: previously always null,null here (even for a siege replay with real card
       // data available) — every siege replay silently drew zero equipment-gear glyphs on units. Now
       // mirrors the same attacker cardInstances/equipmentInv the engine config above resolves from.
-      {}, this.equippedSkins, this.cardInstances ?? null, this.equipmentInv ?? null, /* tutorial */ false, {},
+      {}, this.equippedSkins, this.cardInstances ?? null, this.equipmentInv ?? null, /* tutorial */ null, {},
       this.replayNames,
     );
     renderer.init();

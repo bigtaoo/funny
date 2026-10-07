@@ -1,5 +1,6 @@
 import { Scene } from './SceneManager';
 import { GameRenderer, type GameProfiles } from '../render/GameRenderer';
+import type { TutorialConfig } from '../render/TutorialDirector';
 import type { BattleLabelContext } from '../render/battleLabels';
 import { ILayout } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
@@ -38,8 +39,6 @@ export interface GameSceneCallbacks {
    * here — the server already decided. Only fired in netplay.
    */
   onNetMatchOver?(winner: OwnerId | null, stats: [PlayerStats, PlayerStats], reason: string): void;
-  /** Tutorial step-level analytics hook (A9-9, `opts.tutorial` only) — fired on every TutorialDirector step advance. */
-  onTutorialStep?(stepKey: string): void;
 }
 
 export interface GameSceneOptions {
@@ -95,11 +94,11 @@ export interface GameSceneOptions {
    */
   decks?: { top: string[]; bottom: string[] };
   /**
-   * Dedicated tutorial level `ch0_tutorial` (ONBOARDING_DESIGN §3). Enables the
-   * presentation-layer tutorial director: guided overview + three-beat gating +
-   * free play + never-fail mode. Only used together with `level=ch0_tutorial`.
+   * Dedicated tutorial level `ch0_tutorial` (ONBOARDING_DESIGN §11). Enables the
+   * presentation-layer tutorial director (three guided beats + graduation card, never-fail);
+   * carries its graduation copy and analytics hooks. Only used together with `level=ch0_tutorial`.
    */
-  tutorial?: boolean;
+  tutorial?: TutorialConfig;
   /**
    * Owner-indexed display names (bottom = owner 0 = human, top = owner 1 = AI/level) written into the
    * recorded replay's `meta.players` so the replay player can label the bases + viewpoint. Ignored
@@ -164,7 +163,7 @@ export class GameScene implements Scene {
       : { start: true, boss: opts.level?.objective.kind === 'boss' };
 
     void preloadL1CardArtTextures();
-    this.renderer = new GameRenderer(engine, layout, input, opts.net ?? false, false, opts.profiles ?? {}, opts.equippedSkins ?? [], opts.cardInstances ?? null, opts.equipmentInv ?? null, opts.tutorial ?? false, battleLabels, null, opts.opponentSkins ?? []);
+    this.renderer = new GameRenderer(engine, layout, input, opts.net ?? false, false, opts.profiles ?? {}, opts.equippedSkins ?? [], opts.cardInstances ?? null, opts.equipmentInv ?? null, opts.tutorial ?? null, battleLabels, null, opts.opponentSkins ?? []);
     // Campaign (PvE) levels reword the surrender button/dialog as "exit level" —
     // surrendering to a stage reads oddly. Mirror createLocalMatch's mode resolution.
     const isCampaign = !opts.net && (opts.mode ?? (opts.level ? 'campaign' : 'pvp')) === 'campaign';
@@ -174,7 +173,6 @@ export class GameScene implements Scene {
     this.renderer.onGameEnd = (winner, stats, summary) => this.cb.onGameEnd(winner, stats, buildReplay(winner), summary);
     this.renderer.onExitToLobby = cb.onExitToLobby;
     if (cb.onPauseChange) this.renderer.onPauseChange = (p) => cb.onPauseChange?.(p);
-    if (cb.onTutorialStep) this.renderer.onTutorialStep = cb.onTutorialStep;
 
     this.container = this.renderer.container;
   }

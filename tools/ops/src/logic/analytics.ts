@@ -100,16 +100,14 @@ export const ONBOARDING_LABELS: Record<string, string> = {
   tutorial_complete: 'Finished tutorial',
   first_battle: 'Started first battle',
   first_clear: 'Cleared first level',
+  intro_seen: 'Saw the story card',
 };
 
 /** Human-readable labels for tutorial step-funnel keys (must match TUTORIAL_ORDERED_KEYS in analyticsvc). */
 export const TUTORIAL_LABELS: Record<string, string> = {
   tutorial_start: 'Started tutorial',
-  orientation_1: 'Orientation O1', orientation_2: 'Orientation O2', orientation_3: 'Orientation O3',
-  orientation_4: 'Orientation O4', orientation_5: 'Orientation O5', orientation_6: 'Orientation O6',
-  orientation_7: 'Orientation O7',
   beat_unit: 'Beat: deploy unit', beat_building: 'Beat: deploy building', beat_spell: 'Beat: cast spell',
-  freeplay: 'Free play',
+  graduate: 'Graduation card',
   tutorial_complete: 'Finished tutorial',
 };
 
@@ -202,6 +200,25 @@ export interface BootFunnelRow {
   declined?: number;
   consents: number;
   reach_rate?: number;
+  /**
+   * Tutorial steps reached by launches WITHOUT analytics consent, per step key (anonymous counter,
+   * COMPLIANCE_GLOBAL §3.3 — the CrazyGames build plays its first minute before that question is
+   * answered). Absent when nothing ticked.
+   */
+  anon_tutorial?: Record<string, number>;
+}
+
+/**
+ * `anon_tutorial` as one table cell, in tutorial order: "Started tutorial 3 · Beat: deploy unit 1".
+ * Empty when the row has none — most platforms never send it.
+ */
+export function anonTutorialCell(row: BootFunnelRow): string {
+  const counts = row.anon_tutorial;
+  if (!counts) return '';
+  return Object.keys(TUTORIAL_LABELS)
+    .filter((k) => (counts[k] ?? 0) > 0)
+    .map((k) => `${TUTORIAL_LABELS[k]} ${counts[k]}`)
+    .join(' · ');
 }
 
 export interface BootFunnelDisplayRow extends BootFunnelRow {

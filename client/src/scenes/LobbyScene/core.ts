@@ -51,6 +51,7 @@ import { preloadIconArt } from '../../render/icons';
 import { makeText } from '../../render/pixiText';
 import { tearDownChildren, sketchPanel as sharedSketchPanel, buildPaperBackground } from '../../render/sketchUi';
 import { addPanelFrame } from '../../render/panelFrame';
+import type { Hit } from '../../ui/hits';
 
 export { fmtCoins } from './format';
 
@@ -355,6 +356,14 @@ export class LobbySceneCore {
   consentYesRect: Rect | null = null;
   consentNoRect: Rect | null = null;
   consentOnAnswer: ((consented: boolean) => void) | null = null;
+  /**
+   * Non-blocking Terms/Privacy notice + analytics prompt (IPlatform.entryNoticeOnly, ui/dialogs/
+   * EntryNoticeStrip.ts). Unlike the modals around it this swallows only taps inside `noticeRect`;
+   * the rest of the lobby stays live underneath.
+   */
+  noticeLayer: PIXI.Container | null = null;
+  noticeRect: Rect | null = null;
+  noticeHits: Hit[] = [];
   /** First-time feature guide overlay (ONBOARDING §4.1). After dismissal the callback continues navigation to the feature. */
   guideLayer: PIXI.Container | null = null;
   guideDismissRect: Rect | null = null;
@@ -412,7 +421,7 @@ export class LobbySceneCore {
     // unseen buttons — on iOS a first login rebuilds once or twice right after entry (tab-icon
     // art, the save adopted from the server), which is the "lobby dead for 80 s" report
     // (IOS_RELEASE.md §10.7).
-    const modals = [this.settlementLayer, this.guideLayer, this.consentLayer]
+    const modals = [this.settlementLayer, this.guideLayer, this.consentLayer, this.noticeLayer]
       .filter((l): l is PIXI.Container => !!l);
     for (const l of modals) this.container.removeChild(l);
     tearDownChildren(this.container);
@@ -439,6 +448,9 @@ export class LobbySceneCore {
     this.toastRect = null;
     this.settlementLayer = null;
     this.settlementDismissRect = null;
+    this.noticeLayer = null;
+    this.noticeRect = null;
+    this.noticeHits = [];
     // Tear the page tree down too. titleBoil / heroFigure (the Ticker.shared-driven
     // children) were destroyed explicitly above; this frees the remaining static
     // children so nothing outlives the scene. All async repaint paths (badges /

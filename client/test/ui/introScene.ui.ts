@@ -1,13 +1,12 @@
-// Dedicated behavior coverage for IntroScene — the first-launch background story (shown once,
-// gated by the `nw_seen_intro` flag in app.ts). Until now this scene only had the startup smoke in
+// Dedicated behavior coverage for IntroScene — the full opening story (settings → "Replay story";
+// it left first launch in ONBOARDING_DESIGN §11.7). Until now this scene only had the startup smoke in
 // scenes.ui.ts plus the destroy-safety test in storySceneLateTextureLoad.ui.ts, and
 // illustratedInterludeScene.ui.ts explicitly scoped itself to "what's NEW relative to IntroScene"
 // on the assumption IntroScene was covered elsewhere. It wasn't — this file closes that gap.
 //
 // What is actually IntroScene-specific (i.e. not already covered by the interlude tests):
-//  1. The LAST line does not auto-advance. Every other line does. This one is load-bearing: the
-//     scene feeds into the consent/privacy gate (gateConsent in auth.ts), and auto-finishing into
-//     that would fly the ending past the reader.
+//  1. The LAST line does not auto-advance. Every other line does. Auto-finishing would fly the
+//     ending past a reader who asked to see this story.
 //  2. The illustration's alpha is slaved to story.line.3's own fade and then holds at 0.6 — the
 //     interlude instead fades its illustration independently to full opacity.
 //  3. onFinish's `skipped` flag distinguishes the skip button from reading through to the end.
@@ -117,7 +116,7 @@ describe('IntroScene — line reveal', () => {
   });
 });
 
-describe('IntroScene — the last line waits for an explicit tap (consent gate feeds off it)', () => {
+describe('IntroScene — the last line waits for an explicit tap', () => {
   it('does not auto-finish once the final line has settled, however long it is left alone', () => {
     let finished = 0;
     const { scene, internals } = build(() => { finished++; });

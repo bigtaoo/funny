@@ -25,7 +25,9 @@
 - **故事关**（Lv1 / Lv5 / Lv10）：完整叙事段，100-250 字
 - **氛围关**（Lv2 / Lv3 / Lv4 / Lv6 / Lv7 / Lv8 / Lv9）：1-3 句，30-80 字
 
-每关开战前都有一段开场文案（`briefKey`），无一例外；结局文案（`outroKey`/`realLayerKey`）只保留在每章 Lv10（章末决赛，即「特殊关卡」）。
+每关开战前都有一段开场文案（`briefKey`）；结局文案（`outroKey`/`realLayerKey`）只保留在每章 Lv10（章末决赛，即「特殊关卡」）。
+
+**唯一例外：Ch1 Lv1**（2026-10-07，[`ONBOARDING_DESIGN.md` §11.7](ONBOARDING_DESIGN.md)）。它是新手教学关毕业后直接进入的第一场正式关卡，第一分钟只玩不读：不设 `briefKey`（原简报 `campaign.ch1.lv1.brief` 已删，旧文见 git 历史），章开场 `campaign.ch1.intro` 从开战前的 `story.introKey` 挪到 `story.outroKey`，赢了之后再放。`client/test/levelSchema.test.ts` 把这两条例外钉住。开场故事（涛与笔记本）也不再在首启播放，改为第一次打开战役地图时的一张插画 + 一行字（`story.card`），完整 7 行版在设置「重看开场故事」里。
 
 ### 想象层文案修订（2026-08-04）
 
@@ -367,7 +369,7 @@ campaign.epilogue            真实层「尾声」（仅 Ch6 Lv10 通关后，�
 示例：
 ```
 campaign.ch1.lv1.name   = "三人"
-campaign.ch1.lv1.brief  = "方家北边的演武场，初冬……"
+campaign.ch1.lv2.brief  = "对手是同龄里出了名的一支好胜队……"
 campaign.ch1.lv10.name  = "包子铺还没开"
 campaign.ch2.lv1.name   = "三强"
 ```
@@ -376,12 +378,12 @@ campaign.ch2.lv1.name   = "三强"
 
 ```json
 {
-  "nameKey": "campaign.ch1.lv1.name",
-  "briefKey": "campaign.ch1.lv1.brief"
+  "nameKey": "campaign.ch1.lv2.name",
+  "briefKey": "campaign.ch1.lv2.brief"
 }
 ```
 
-`briefKey` 为可选字段；2026-08-08 起 60 关全部设有此键（见「全关卡开场文案补全」一节）。LevelPrepScene 在开战前展示 `briefKey` 内容，CampaignMapScene 在关卡节点 hover/选中时展示 `nameKey`。
+`briefKey` 为可选字段；2026-08-08 起 60 关全部设有此键（见「全关卡开场文案补全」一节），2026-10-07 起 Ch1 Lv1 除外（见上文「唯一例外」）。LevelPrepScene 在开战前展示 `briefKey` 内容，CampaignMapScene 在关卡节点 hover/选中时展示 `nameKey`。
 
 ### 落地状态（2026-06-19 核对）
 

@@ -22,6 +22,7 @@ import type { ILayout } from '../layout/ILayout';
 import type { InputManager } from '../inputSystem/InputManager';
 import type { EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import type { BattleLabelContext } from './battleLabels';
+import type { TutorialConfig } from './TutorialDirector';
 import { GameRendererCore } from './GameRenderer/core';
 import type { GameProfiles } from './GameRenderer/core';
 import { EventsPanel } from './GameRenderer/events';
@@ -50,7 +51,7 @@ export class GameRenderer {
     equippedSkins: readonly string[] = [],
     cardInstances: EngineCardInstance[] | null = null,
     equipmentInv: EngineEquipInv | null = null,
-    tutorial = false,
+    tutorial: TutorialConfig | null = null,
     battleLabels: BattleLabelContext = {},
     replayNames: readonly [string, string] | null = null,
     opponentSkins: readonly string[] = [],
@@ -78,8 +79,6 @@ export class GameRenderer {
   set onExitToLobby(fn: (() => void) | null) { this.core.onExitToLobby = fn; }
   get onPauseChange(): ((paused: boolean) => void) | null { return this.core.onPauseChange; }
   set onPauseChange(fn: ((paused: boolean) => void) | null) { this.core.onPauseChange = fn; }
-  get onTutorialStep(): ((stepKey: string) => void) | null { return this.core.onTutorialStep; }
-  set onTutorialStep(fn: ((stepKey: string) => void) | null) { this.core.onTutorialStep = fn; }
 
   /** Screen-edge base-damage flash alpha — read/reset directly by ReplayScene when playback stops. */
   get vignetteAlpha(): number { return this.events.vignetteAlpha; }

@@ -30,7 +30,7 @@ export class UniformCardDrawPolicy implements ICardDrawPolicy {
  * Scripted draw policy for the dedicated tutorial level `ch0_tutorial` (ONBOARDING_DESIGN §3.3).
  *
  * The first draws deterministically return the teaching cards in beat order
- * (infantry → tower → meteor) so the orientation/cap-point director always finds
+ * (infantry → tower → meteor) so the tutorial director always finds
  * them in a known hand slot; every later draw pulls deterministically from a
  * filler pool that *excludes* the teaching cards, so refilling a played teaching
  * card never wastes another and never duplicates one. This is a pure-engine,
@@ -43,31 +43,14 @@ export class UniformCardDrawPolicy implements ICardDrawPolicy {
  */
 export class TutorialDrawPolicy implements ICardDrawPolicy {
   private idx = 0;
-  /** Stage C: uniform draw over the whole loadout (teaching cards re-included). */
-  private freePlay = false;
-  private readonly fullPool: readonly CardDefinition[];
 
   constructor(
     private readonly script: readonly CardDefinition[],
     private readonly filler: readonly CardDefinition[],
     private readonly prng: Prng,
-  ) {
-    this.fullPool = [...script, ...filler];
-  }
-
-  /**
-   * Enter stage C "free play": switch from scripted dealing back to a random cycle over the full loadout (including the three teaching cards).
-   * Still seed-deterministic; does not call Math.random — triggered by the render-layer director at the graduation window (ONBOARDING_DESIGN §3.2.1).
-   */
-  enterFreePlay(): void {
-    this.freePlay = true;
-  }
+  ) {}
 
   draw(): CardDefinition {
-    if (this.freePlay) {
-      const pool = this.fullPool.length > 0 ? this.fullPool : CARD_DEFINITIONS;
-      return pool[this.prng.nextInt(pool.length)]!;
-    }
     if (this.idx < this.script.length) return this.script[this.idx++]!;
     const pool = this.filler.length > 0 ? this.filler : this.script;
     return pool[this.prng.nextInt(pool.length)]!;

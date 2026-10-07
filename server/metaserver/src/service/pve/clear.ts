@@ -9,7 +9,7 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { SaveData, EquipmentInstance } from '@nw/shared';
-import { ErrorCode, err, ok, findPveLevel, shouldSpotCheck, sanitizePvpReportedStats, accrueStats, levelCardReward, accrueRetentionTask } from '@nw/shared';
+import { ErrorCode, err, ok, findPveLevel, shouldSpotCheck, sanitizePvpReportedStats, accrueStats, levelCardReward, accrueRetentionTask, WELCOME_MAIL_COINS } from '@nw/shared';
 import { getOrCreateSave } from '../../save.js';
 import { grantCards, assembleCardInv } from '../../cards.js';
 import { toInstanceDoc, assembleEquipmentInv } from '../../equipment.js';
@@ -198,7 +198,7 @@ export async function pveClearHandler(core: MetaCore, req: FastifyRequest, reply
     const mailResult = await insertSystemMail(core.deps.socialsvc ?? nullMetaSocialsvcClient, WELCOME_MAIL_DISPATCH_KEY, accountId, {
       subject: 'mail.welcome.author.subject',
       body: 'mail.welcome.author.body',
-      attachments: [{ kind: 'coins', count: 1000 }],
+      attachments: [{ kind: 'coins', count: WELCOME_MAIL_COINS }],
       expireDays: 30,
     }).catch((e) => {
       req.log.warn({ err: e }, 'welcome-author mail failed');

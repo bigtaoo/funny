@@ -96,7 +96,9 @@ export class CrazyGamesPlatform implements IPlatform {
   // fallback for any language we do not ship.
   readonly supportedLocales: readonly Locale[] = ['en', 'de', 'zh'];
   readonly silentAccountOnly = true;
-  readonly skipStoryIntro = true;
+  /** No blocking entry screen: terms/privacy as a notice, analytics as a non-blocking prompt
+   *  (IPlatform.entryNoticeOnly, COMPLIANCE_GLOBAL §3.3 "CrazyGames"). */
+  readonly entryNoticeOnly = true;
   readonly remoteAvatars = true;
   readonly staminaRewardedAd = true;
   readonly rooms: CrazyGamesRooms;

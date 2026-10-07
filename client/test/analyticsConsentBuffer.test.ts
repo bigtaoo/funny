@@ -2,8 +2,9 @@
  * analyticsConsentBuffer.test.ts — what a brand-new player does before accepting the consent
  * dialog still has to reach the funnel once they accept.
  *
- * The boot order for a first-time player is `goIntro() → age gate → consent dialog`
- * (app/createAppCore.ts `start()`), so every pre-lobby event is tracked while consent is still
+ * The boot order for a first-time player was `goIntro() → age gate → consent dialog`
+ * (app/createAppCore.ts `start()`; the intro has since left the boot path, ONBOARDING_DESIGN §11.7),
+ * so every pre-lobby event is tracked while consent is still
  * false. Until 2026-09-20 `track()` returned early in that state and only `session_start` was
  * re-emitted on accept, which meant `intro_complete`/`intro_skip` and the IntroScene
  * `nav_checkpoint` were discarded for 100% of new users — the exact cohort the onboarding funnel

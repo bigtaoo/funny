@@ -1,7 +1,7 @@
 // Smoke test for the headless harness + createAppCore extraction. Proves:
 //   1. createAppCore imports cleanly in a Node (no-DOM) runtime — i.e. no PIXI
 //      leaked into the orchestration core's import graph.
-//   2. The offline navigation wiring is intact after the refactor: intro →
+//   2. The offline navigation wiring is intact after the refactor: entry gates →
 //      lobby → settings → back, and lobby → campaign map.
 // The networked flow (register / shop / gacha / ranked match) is covered by the
 // full-link E2E against real servers (test/e2e/full-link.e2e.ts).
@@ -15,17 +15,15 @@ import { HeadlessAppViews } from './harness/HeadlessAppViews';
 const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
 describe('headless app core — offline navigation', () => {
-  it('first launch shows the intro, then the GDPR consent gate, then the offline lobby', async () => {
+  it('first launch goes straight to the gates (no story intro, ONBOARDING_DESIGN §11.7), then the offline lobby', async () => {
     const platform = new HeadlessPlatform(); // no nw_api_base → offline single-player
     const views = new HeadlessAppViews();
     const core = createAppCore(platform, views);
 
     core.start();
-    expect(views.screen).toBe('intro');
 
-    // After intro come the two gates, in order: the age gate (COMPLIANCE_GLOBAL §3.4) and then
+    // No story first — the very first screen is the two gates, in order: the age gate (COMPLIANCE_GLOBAL §3.4) and then
     // the GDPR consent gate (L1-1). Neither lets the lobby through until it is answered.
-    views.intro!.onFinish();
     expect(views.screen).toBe('ageGate');
     views.declareAdultAge();
     expect(views.screen).toBe('consent');
@@ -39,16 +37,15 @@ describe('headless app core — offline navigation', () => {
 
   it('a second launch (consent already given) skips the consent gate', async () => {
     const platform = new HeadlessPlatform();
-    // First run: see intro, accept consent → flag persists in the shared storage.
+    // First run: accept consent → flag persists in the shared storage.
     const first = new HeadlessAppViews();
     const coreA = createAppCore(platform, first);
     coreA.start();
-    first.intro!.onFinish();
     first.declareAdultAge();
     first.consent!.onAccept();
     await settle();
 
-    // Relaunch on the same platform/storage: no intro, no age gate, no consent — straight to lobby.
+    // Relaunch on the same platform/storage: no age gate, no consent — straight to lobby.
     const second = new HeadlessAppViews();
     const coreB = createAppCore(platform, second);
     coreB.start();
@@ -62,7 +59,6 @@ describe('headless app core — offline navigation', () => {
     const core = createAppCore(platform, views);
 
     core.start();
-    views.intro!.onFinish();
     views.declareAdultAge();
     views.consent!.onAccept();
     await settle();
@@ -84,7 +80,6 @@ describe('headless app core — offline navigation', () => {
     const core = createAppCore(platform, views);
 
     core.start();
-    views.intro!.onFinish();
     views.declareAdultAge();
     views.consent!.onAccept();
     await settle();
@@ -108,7 +103,6 @@ describe('headless app core — offline navigation', () => {
     const core = createAppCore(platform, views);
 
     core.start();
-    views.intro!.onFinish();
     views.declareAdultAge();
     views.consent!.onAccept();
     await settle();
