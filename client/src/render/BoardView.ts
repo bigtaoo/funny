@@ -244,6 +244,11 @@ export class BoardView {
 
   // ── Coordinate helpers (delegate to ILayout) ──────────────────────────────
 
+  /** Board cell size in design px (UnitView sizes units against it — see unitSize.ts#boardUnitHeight). */
+  get cellSize(): number {
+    return this.layout.cellSize;
+  }
+
   gridToScreen(col: number, rowExact: number): { x: number; y: number } {
     return this.layout.gridToScreen(col, rowExact);
   }

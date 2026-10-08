@@ -85,9 +85,46 @@ export const UNIT_SIZE_TIER: Record<UnitType, SizeTier> = {
   [UnitType.Harpy]:        SizeTier.Small,
 };
 
-/** Target on-screen height (px) for a unit type. */
+/**
+ * Target on-screen height (px) for a unit type, before any board constraint. Battle
+ * board units use {@link boardUnitHeight} instead (it shrinks on small cells).
+ */
 export function targetScreenHeight(type: UnitType): number {
   return TARGET_SCREEN_PX[UNIT_SIZE_TIER[type]];
+}
+
+/**
+ * Board cell size (design px) at and above which units render at the full
+ * {@link TARGET_SCREEN_PX} height. The tier heights are literal design px while
+ * the cell is `floor(70·k)` (landscape) / `floor(84·k)` (portrait), so on a short
+ * landscape canvas the cell shrinks under a fixed-height unit and the figure spills
+ * into the neighbouring lane (722×406: cell 42, Medium = 1.29 cells). 54 is the
+ * Medium height itself, i.e. below this cell size Medium is held at exactly one
+ * cell. The CrazyGames reviewer canvas (1100×574 → cell 60), every 1080-tall
+ * landscape (cell 70) and every portrait screen (cell ≥ 56) sit above it and are
+ * unchanged. ADR-105 amendment 2026-10-08.
+ */
+export const UNIT_SIZE_FULL_CELL = 54;
+
+/**
+ * Board-unit size factor for a board with `cellSize` design px cells:
+ * `min(1, cellSize / UNIT_SIZE_FULL_CELL)`. Applies uniformly to every tier, so the
+ * S/M/L/XL proportions never change. A missing / non-positive cell size (headless
+ * stubs) means "no board constraint" → 1.
+ */
+export function unitSizeScale(cellSize: number | undefined): number {
+  if (cellSize === undefined || !Number.isFinite(cellSize) || cellSize <= 0) return 1;
+  return Math.min(1, cellSize / UNIT_SIZE_FULL_CELL);
+}
+
+/**
+ * On-board height (design px) of a unit type on a board with `cellSize` cells —
+ * {@link targetScreenHeight} × {@link unitSizeScale}. The ONE value every battle-board
+ * consumer sizes from (unit rig/frame-sheet scale, draft placeholder, HP-bar anchor,
+ * drag landing preview); don't re-apply the factor anywhere else.
+ */
+export function boardUnitHeight(type: UnitType, cellSize: number | undefined): number {
+  return targetScreenHeight(type) * unitSizeScale(cellSize);
 }
 
 /** Target authoring-space texture height (px) for a unit type. */
