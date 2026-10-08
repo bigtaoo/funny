@@ -175,6 +175,10 @@ CI（`.github/workflows/ci.yml`）的 `client unit tests` 步已切到 `npm run 
 - **以后写这一层的测试**：只要用例依赖「加载完 / 没加载完」，就 `beforeEach(resetSharedStubTexture)`，别假设「桩 Image 永不 fire loaded，所以整个文件里它一直 invalid」——那句话对单条用例成立，对文件不成立。
 - **⚠️ 别把另一种红当成这条**：`test/ui/cityBldIcon.ui.ts` 与 `composition-hooks.ui.ts` 在**机器负载高时**会报 `Test timed out in 5000ms`。那是**负载假阳性**，不是顺序依赖——机器空闲时这两个文件单跑 13/13 绿、最慢用例仅 ~740ms（离 5000ms 很远），而复现时本机同时在跑 Chrome + 多个套件。症状也不同：超时 vs 断言值错。判别法：单文件安静复跑一次，绿就是负载。
 
+## ⚠️ 往 `os.tmpdir()` 里产出、再 `require` 回来的测试：产物用 `.cjs`（2026-10-08）
+
+`targetGlobalCompile.test.ts` 把 webpack 产物写进 `%TEMP%` 再 `require` 它。Node 判定 `.js` 是 CJS 还是 ESM 靠**向上找最近的 `package.json`**——本机 `%TEMP%\package.json`（别的项目留下的，`"type":"module"`，不是我们的、别删）让 8 个用例全红在 `module is not defined in ES module scope`，CI 却绿。修法：产物文件名改成 `probe.cjs`，扩展名是 Node 唯一不看外层目录的信号。以后新增「产出 → 在 Node 里执行」的临时文件一律用 `.cjs`/`.mjs`；只当文本读的产物（各 `check*.mjs` 门禁的 fixture）不受影响。
+
 ## 静态类型检查（`npm run typecheck` / CI）
 
 vitest 走 esbuild、webpack 也不做类型检查，且 `client/tsconfig.json` 的 `include` 只有 `src/**`——**`test/**` 从不被类型检查**。历史上这让 test 里对 `GameConfig` / DTO / proto 形状的引用可以运行期侥幸通过（esbuild 擦掉类型），却是潜伏 bug（典型：CC-1 把 `GameConfig.unitLevels` 换成 `cardInstances`、`JudgeRequest` 新增必填 `unitLevels` 后，多个 test 仍用旧形状）。
