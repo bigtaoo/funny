@@ -158,7 +158,7 @@ hudView.container        ← HUD（最顶层）
 | 放置 | scale 0→1，duration 0.3s，ease-out cubic（`BuildingView.acquireSprite`） |
 | 受击 | `BuildingView.playDestroyEffect` 旋转+淡出 |
 | 摧毁 | `death_building` VFX |
-| **开火（箭塔）** | `BuildingView.playFireEffect`，由 `projectile_fired` 事件驱动（`GameRenderer/events.ts`）：整塔沿射击方向反向位移 2.8px（二次衰减，猛出猛收）+ 塔后两道手绘后坐纹（线性淡出，`flagGfx` 节点），共 0.26s。射击方向按「己方格 → 敌方建筑行」用 `gridToScreen` 现算，故横竖屏都对。**匹配靠格子而非 id**：`projectile_fired.attackerId` 在塔射箭时是建筑 id、弓兵射箭时是单位 id，两者分属不同计数器（`allocBuildingId`/`allocUnitId`）会数值撞车，而建筑的箭必从自己格子发出（`performBuildingAttack`），格子即天然判别式。回归测试 `client/test/render/buildingFireEffect.test.ts`。 |
+| **开火（箭塔）** | `BuildingView.playFireEffect`，由 `projectile_fired` 事件驱动（`GameRenderer/events.ts`）：整塔沿射击方向反向位移 2.8px（二次衰减，猛出猛收）+ 塔后两道手绘后坐纹（线性淡出，`flagGfx` 节点），共 0.26s；后坐纹用**塔主的阵营色**（我蓝敌红，见下「阵营标识」）。射击方向按「己方格 → 敌方建筑行」用 `gridToScreen` 现算，故横竖屏都对。**匹配靠格子而非 id**：`projectile_fired.attackerId` 在塔射箭时是建筑 id、弓兵射箭时是单位 id，两者分属不同计数器（`allocBuildingId`/`allocUnitId`）会数值撞车，而建筑的箭必从自己格子发出（`performBuildingAttack`），格子即天然判别式。回归测试 `client/test/render/buildingFireEffect.test.ts`。 |
 
 ### Idle 动画
 
@@ -166,9 +166,24 @@ hudView.container        ← HUD（最顶层）
 
 | 类型 | 效果 | 参数 |
 |---|---|---|
-| 全部建筑 | 精灵垂直 bob（`sprite.y`） | ±1.5px，周期 0.9s，各建筑随机相位偏移 |
-| 兵营 | 旗帜波动（`flagGfx` Graphics） | 旗杆 + 3 条 quadratic bezier 波浪线，频率 ~1.4Hz |
+| 全部建筑 | 精灵尺寸呼吸（`sprite.scale`，2026-08-25 起替代原 `sprite.y` 垂直 bob） | ±1.2%，周期 0.9s，各建筑随机相位偏移 |
+| 兵营 | 旗帜波动（`flagGfx` Graphics） | 墨色旗杆 + 3 条 quadratic bezier 波浪线（**旗面为兵营主人的阵营色**，线宽 1.6），频率 ~1.4Hz |
 | 箭塔 | 精灵微旋转（`sprite.angle`） | ±1.6°，周期 ~2s。**原为 ±0.5°/1.3s**——在 56px 贴图上塔尖位移不到 0.3px，等于没有 idle，而旁边兵营的旗看得见地飘（2026-08-19 用户反馈）。改成更慢更宽的「懒洋洋倾斜」而非抖动 |
+
+### 阵营标识（2026-10-08）
+
+两边的兵营/箭塔是同一张蓝黑墨位图，此前敌方建筑没有任何阵营标记（兵营旗固定灰色、箭塔后坐纹固定我方蓝）。现在每座建筑：
+
+- **脚下静态阵营色斑**：与基地脚下色斑同一套三层同心椭圆（`render/factionCue.ts` 的 `drawFactionWash`，基地用的 `drawFactionGroundPatch` 也搬到这里），挂在精灵下层的 `patchGfx`；横半径 `56×0.34`、纵半径 `56×0.1`（最外圈约 49×15 px），圆心在贴图半高的 0.9 处（箭塔约 y=+25.6，兵营约 y=+16.8，贴近画底）。只在获取精灵/贴图解码完成时画一次，不逐帧重绘、不用 filter。
+- **兵营旗面、箭塔后坐纹**用主人的阵营色。
+- 颜色映射是「本地玩家 = 蓝、对方 = 红」（`factionInkFor(side, localSide)`，与 UnitView 的 `renderSide` 同一口径）——**不是**「Side.Bottom = 蓝」，否则 PvP 加入方（Side.Top）会看到自己的建筑是红的。`BuildingView` 构造时传入 `localSide`（对局用 `layout.localSide`，状态回放播放器固定 owner 0 为本地，与它的 UnitView 一致）。
+- 单位贴图本身不换色（不在本次范围）。测试：`client/test/render/buildingFitAndFaction.test.ts`。
+
+### 贴图未解码时不显示（2026-10-08 修）
+
+`BuildingView` 原先在获取精灵时就 `sp.width = 56`，并把得到的 `scale.x` 存作呼吸动画基准。贴图若尚未解码，`orig` 是 1×1 占位，缩放就成了 56；
+贴图到达后 PIXI 自己会按设过的 width 重算缩放，但呼吸动画每帧又把 56 写回去——箭塔被画成 252×56 = **14112 px** 宽。启动预载的建筑图步骤失败/慢只报 warning 不阻塞，生产环境慢网下能撞上。
+现在照 `dragGhost` 的 `LandingPreview`：贴图 `baseTexture.valid` 之前精灵隐藏、不记基准缩放，`sync()` 每帧重试；解码后按 `56 / 贴图宽` 等比缩放（箭塔 56×56.9，兵营 56×37.4），同时画脚下色斑。
 
 ### 基地动画
 
@@ -193,7 +208,7 @@ hudView.container        ← HUD（最顶层）
 | 建筑类型 | 文件 |
 |---|---|
 | `Barracks`（兵营） | `game_infantry_barracks.png` |
-| `ArrowTower`（箭塔） | `game_arrow_tower.png`（2026-08-19 重画。此前一直借用画给「弓箭手兵营」的茅草屋 `game_archer_barracks.png`，已移入 `art/leftover/`；设计/prompt/验收阈值见 [`design/product/battle-arrow-tower-art.md`](../product/battle-arrow-tower-art.md)，源图+打包脚本在 `art/ui/game/pack_arrow_tower.cjs`）。**契约测试** `client/test/render/towerArtContract.test.ts`：贴图比例必须 ~1:1（`BuildingView` 强拉正方形，重裁成 3:2 不会报错、只会悄悄变形），且场上贴图与卡面必须是同一个文件 |
+| `ArrowTower`（箭塔） | `game_arrow_tower.png`（2026-08-19 重画。此前一直借用画给「弓箭手兵营」的茅草屋 `game_archer_barracks.png`，已移入 `art/leftover/`；设计/prompt/验收阈值见 [`design/product/battle-arrow-tower-art.md`](../product/battle-arrow-tower-art.md)，源图+打包脚本在 `art/ui/game/pack_arrow_tower.cjs`）。**契约测试** `client/test/render/towerArtContract.test.ts`：贴图比例必须 ~1:1（`BuildingView` 按宽 56px 等比缩放，重裁成 3:2 不会报错、只会悄悄变矮成 56×37；2026-08-25 呼吸动画改成统一缩放之前是强拉正方形），且场上贴图与卡面必须是同一个文件 |
 | 基地（双方） | `game_base.png`（0 级，L0 预载），敌方按朝向镜像（横屏左右翻、竖屏上下翻）。1/2 级升级贴图打包在 `assets/base_upgrade_atlas.{png,json}`（`base_lv1`=城池 → upgradeLevel 1，`base_lv2`=宫殿 → upgradeLevel 2/最高级），懒加载见 `render/atlas/baseUpgradeAtlasLoader.ts`，源图+打包脚本在 `art/ui/game/pack_base_atlas.js` |
 
 ### 箭塔攻击范围

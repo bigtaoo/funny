@@ -74,6 +74,8 @@ interface UnitLike {
 interface BuildingLike {
   id: number;
   buildingType: BuildingType;
+  /** Owner, as a render side — BuildingView picks the faction ink from it. */
+  side: Side;
   col: number;
   row: number;
   hp: number;
@@ -143,7 +145,8 @@ export class StatePlayerScene implements Scene {
     this.unitView = new UnitView(
       this.boardView, Side.Bottom, skinsForOwner(replay, 0), null, null, skinsForOwner(replay, 1),
     );
-    this.buildingView = new BuildingView(this.boardView);
+    // Same owner-0-is-local convention as the UnitView above, so buildings and units agree on colour.
+    this.buildingView = new BuildingView(this.boardView, Side.Bottom);
     this.vfx = new VFXSystem();
     this.hud = new StatePlayerHud(layout, replay.header.players);
 
@@ -271,6 +274,7 @@ export class StatePlayerScene implements Scene {
       m.set(b.id, {
         id: b.id,
         buildingType: b.type as BuildingType,
+        side: ownerToSide(b.side as OwnerId),
         col: b.col,
         row: b.row,
         hp: b.hp,
