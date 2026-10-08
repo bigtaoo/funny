@@ -58,6 +58,10 @@ class FakeDeck implements MusicDeck {
     return this.playing ? this.pos : null;
   }
 
+  isIdle(): boolean {
+    return !this.playing;
+  }
+
   setPaused(paused: boolean): void {
     this.calls.push({ fn: 'setPaused', arg: paused });
     this.maybeThrow('setPaused');
@@ -393,5 +397,65 @@ describe('MusicPlayer — a broken deck must not take the frame with it', () => 
     const player = new MusicPlayer({ decks });
     decks[0].throwOn = 'play';
     expect(() => player.update(LOBBY, 16)).not.toThrow();
+  });
+});
+
+// A host may refuse a deck's `play()` (autoplay: on a touch screen a finger landing is not yet a user
+// activation). Nothing else ever looks back at the deck, so before `recover()` the bed stayed silent
+// until the next track change — a whole tutorial, 2026-10-08.
+describe('MusicPlayer — recovering a refused start on the next gesture', () => {
+  it('restarts the live track on its own deck, fading in from silence', () => {
+    const { player, decks } = makePlayer();
+    run(player, BATTLE, XFADE_MS + 64);
+    decks[0].playing = false;              // the host rejected play(): the deck went idle
+    player.recover();
+    expect(plays(decks[0])).toEqual([MUSIC_CATALOGUE[BATTLE].path, MUSIC_CATALOGUE[BATTLE].path]);
+    expect(decks[1].calls).toEqual([]);
+    // From silence, not a hard start at full level.
+    player.update(BATTLE, 16);
+    expect(decks[0].gain).toBeLessThan(MUSIC_CATALOGUE[BATTLE].gain / 2);
+    run(player, BATTLE, XFADE_MS + 64);
+    expect(decks[0].gain).toBeCloseTo(MUSIC_CATALOGUE[BATTLE].gain, 5);
+    expect(player.current).toBe(BATTLE);
+  });
+
+  it('works mid fade-in too (the refusal lands on the very first frame of the bed)', () => {
+    const { player, decks } = makePlayer();
+    player.update(BATTLE, 16);
+    decks[0].playing = false;
+    player.recover();
+    expect(plays(decks[0])).toHaveLength(2);
+  });
+
+  it('leaves a deck that is playing — or merely still buffering — alone', () => {
+    const { player, decks } = makePlayer();
+    run(player, BATTLE, XFADE_MS + 64);
+    player.recover();
+    // Buffering: no position yet, but not idle. Restarting it on every tap would keep a slow stream
+    // from ever starting.
+    decks[0].pos = null;
+    player.recover();
+    expect(plays(decks[0])).toHaveLength(1);
+  });
+
+  it('does nothing while held, or with no track wanted', () => {
+    const { player, decks } = makePlayer();
+    player.recover();                      // nothing ever asked for
+    expect(decks[0].calls).toEqual([]);
+
+    run(player, BATTLE, XFADE_MS + 64);
+    player.setPaused(true);
+    decks[0].playing = false;
+    player.recover();                      // backgrounded: no reason to start the bed
+    expect(plays(decks[0])).toHaveLength(1);
+  });
+
+  it('a deck that throws on the restart is contained and reported', () => {
+    const { player, decks, warns } = makePlayer();
+    run(player, BATTLE, XFADE_MS + 64);
+    decks[0].playing = false;
+    decks[0].throwOn = 'play';
+    expect(() => player.recover()).not.toThrow();
+    expect(warns.some((w) => w.includes('failed to start'))).toBe(true);
   });
 });

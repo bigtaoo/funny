@@ -74,6 +74,14 @@ export interface MusicDeck {
   /** 保持位置地暂停/恢复——web 的失焦、微信的 `onHide` 与音频中断。与 `stop` 不同：被 hold 住的
    *  deck 恢复时接着刚才那一拍。 */
   setPaused(paused: boolean): void;
+  /**
+   * 这个 deck 此刻**没有**在放东西：从没放过、被停了、或者 `play()` 被宿主拒绝 / 流出错了。
+   *
+   * 与 `position() === null` **不是**一回事：一条刚 `play()`、还在缓冲的流也没有位置，但它没坏，
+   * 只是还没到。{@link MusicPlayer.recover} 只重启前者——每次点屏都重启一条缓冲中的流，在慢网上
+   * 就是一条永远起不来的床。
+   */
+  isIdle(): boolean;
 }
 
 export interface MusicPlayerDeps {
@@ -206,6 +214,25 @@ export class MusicPlayer {
         this.warn(`music: deck failed to ${paused ? 'pause' : 'resume'}`, err);
       }
     }
+  }
+
+  /**
+   * 刚来了一次用户手势：如果此刻**应该**在响的那条轨的 deck 其实没在放，就让它从静默重新淡入。
+   *
+   * 为什么需要：`play()` 可能被宿主拒绝（autoplay 闸门），而播放器在别处从不回头看——它照样认为
+   * 那条轨在放，于是直到**换轨**之前都是哑的。2026-10-08 实测的路径：触屏上手指按下（`pointerdown`
+   * 不算激活）解锁了闸门，下一帧床就 `play()`，被浏览器以 `NotAllowedError` 拒掉；新手引导全程
+   * 一条轨，于是整段引导没有音乐，回大厅换轨才恢复。手势是这里唯一合适的时机：拒绝的成因正是
+   * 「还没有激活」，而手势回调就在激活之内。
+   *
+   * hold 期间不动（切后台时没有理由起床）；正在等换轨空白（`liveIdx === null`）时也没有东西可救。
+   */
+  recover(): void {
+    if (this.paused || this.track === null || this.liveIdx === null) return;
+    const idx = this.liveIdx;
+    if (!this.deps.decks[idx].isIdle()) return;
+    const def = MUSIC_CATALOGUE[this.track];
+    this.begin({ inIdx: idx, outIdx: null, inGain: def.gain, outGain: 0, t: 0 }, def.path);
   }
 
   /** 立刻停掉两个 deck，不淡出。今天游戏不走这条路；它在这里是为了一个被拆掉的后端不会留下
