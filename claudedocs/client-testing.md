@@ -319,6 +319,14 @@ UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴
 
 ci.yml 那一步去掉 `continue-on-error` 后，上传 report 的条件改成 `failure() && steps.browser_smoke.outcome == 'failure'`（只在冒烟自己挂了时传；前面步骤挂了冒烟会被跳过，没有 report 可传），失败时的 server 日志 dump 现在也覆盖冒烟失败。注意 `client-deploy.yml` 等 `workflow_run` 部署等的是整个 CI 绿——**冒烟红现在会挡部署**。另外 `playwright.config.ts` 在 `CI` 下把 `workers` 钉成 2（= 4 vCPU runner 的默认值），否则 `scripts/e2e-local.sh` 在 22 核开发机上开 11 个 worker，首轮集体冷启动把 dev server 饿死、3 个用例超时后靠重试才过；本机修复后连跑三轮的结果见 [`server-testing-tooling.md`](server-testing-tooling.md) 末节。
 
+**2026-10-08 续：CI 下改服 production 包。** `playwright.config.ts` 在 `CI` 下的 `webServer` 改用 `npm run start:e2e:prod`，也就是同一个 `web-e2e` 入口，`--mode production`：压缩过、没有 source map，形状和玩家实际加载的包一样。本地非 CI 运行仍用开发包，改 spec 时重编译快。
+
+- **为什么改**：CI 上每个 spec 要 17–32 s，本机只要 2–7 s。开发包大好几倍，每个 spec 都在 runner 的软件 WebGL 上开新页面冷加载一次。双账号那条要开两页，超时一次后靠重试才过。
+- **改后实测**：CI 的冒烟步骤 192 s → 81 s。生产编译 26 s，和开发编译持平；9 条测试 53 s 跑完，零重试。
+- **⚠️ 第一次切换踩的坑**：生产模式会发 webpack 的资源体积警告，dev server 的 overlay（一个 iframe）就盖在画布上。两条音频 spec（`audioDucking`、`bgmTouchFirstTap`）的「第一次点击」点在 overlay 上，音频解锁不了，等 BGM 一路超时。截图里能看到 overlay 上的「Compiled with problems」。
+  - 修法：`start:e2e:prod` 带 `--no-client-overlay-warnings`，只关警告的 overlay，编译错误照样显示。
+  - 这不是产品 bug，`build:web` 出的包里没有 dev server。
+
 **2026-08-05 修复：`registerAndEnterLobby` 补上 FTUE 跳过步骤**——这条 flag 一直没摘掉的真实原因大概率就是这个：2026-07-29 那次 `HeadlessAppViews.showGame` 修复（commit `e5093451`，ADR-056 的 `reconcile()` 重写后，本地种的 `tutorial_done` flag 撑不过首次云同步，全新账号一律先进新手引导关）只动了 `test/harness/HeadlessAppViews.ts`——`test/e2e/full-link.e2e.ts` 的 `registerAndEnterLobby` 因为走的正是这层 headless views，`showGame()` 自动 `onExitToLobby()` 跳关，测试代码完全不用感知这件事。但 `smoke.spec.ts` 走真实浏览器 + 真实 `entries/web-e2e.ts`（没有这层 mock 拦截），它自己那份 `registerAndEnterLobby` 从写下来那天起就没处理过这个重定向——注册成功后 `goLobby()` 内部一查 `tutorial_done` 没设直接转 `goTutorial()`，`state.screen` 落地在 `'game'`（新手关卡），永远等不到 `'lobby'`，`screenIs(page,'lobby')` 20s 超时——这份预测比 `2026-07-29` 那次修复晚了一周，从来没同步过。修复：`registerAndEnterLobby` 注册后先等 `'lobby'` 或 `'game'` 二者之一，落在 `'game'` 就调 `window.__nwE2E.state.gameCb.onExitToLobby()`（跟玩家点"跳过新手引导"完全同一路径，`app/nav/game.ts`'s `goTutorial()` 里定义），再继续等 `'lobby'`。
 
 > 本次修复仅做了源码级追踪验证（`goLobby`→`goTutorial`→`showGame`→`onExitToLobby` 全链路读过一遍，`entries/web-e2e.ts` 的通用 `instrumentViews` 包装确认会把 `GameSceneCallbacks` 存到 `state.gameCb`）+ `tsc --noEmit`，**没有跑一次真实 Playwright**——`test:browser` 需要拉起全套后端（mongo/redis + 11 个服务进程）+ web-e2e dev server，这次会话时间/篇幅上不划算再起一整套。摘掉 CI 里的 `continue-on-error: true` 之前，应该先让下一轮真实 CI 跑一次确认这条修复本身生效。

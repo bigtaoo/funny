@@ -183,7 +183,8 @@ jobs:
   # getting a runner of their own — CI job startup (checkout+node+npm ci, ~20-30s) would dominate
   # actual test time at that granularity. Net effect: server test wall-clock ~11-12min -> ~6.3min
   # (bounded by the metaserver shard), running concurrently with client-test/tools-test below
-  # instead of after them.
+  # instead of after them. 2026-10-08: the suites grew back (metaserver 685 s, worldsvc 553 s of
+  # tests), so each now runs as two `--shard` runners — same reasoning, one level further down.
   server-test:
     name: server test (${{ matrix.shard.name }})
     runs-on: ubuntu-latest
@@ -191,14 +192,29 @@ jobs:
       fail-fast: false
       matrix:
         shard:
-          - name: metaserver
+          # metaserver and worldsvc each run `fileParallelism: false` (one shared mongod), so each was
+          # CI's long pole on its own (685 s / 553 s of tests on 2026-10-08). Each is now split in two
+          # with `vitest --shard`; `split` is that flag's value. A shard's coverage/ holds only half the
+          # suite's hits, so coverage-report merges the pair (scripts/mergeCoverageShards.mjs, from
+          # each shard's coverage-final.json) before any gate reads the package.
+          - name: metaserver-1
             workspaces: metaserver
+            split: 1/2
             # upload-artifact roots the artifact at the least-common-ancestor of these paths; a
             # single directory here means that directory's CONTENTS become the artifact root
             # (coverage-report's download step below accounts for that per shard).
             coverage_paths: server/metaserver/coverage
-          - name: worldsvc
+          - name: metaserver-2
+            workspaces: metaserver
+            split: 2/2
+            coverage_paths: server/metaserver/coverage
+          - name: worldsvc-1
             workspaces: worldsvc
+            split: 1/2
+            coverage_paths: server/worldsvc/coverage
+          - name: worldsvc-2
+            workspaces: worldsvc
+            split: 2/2
             coverage_paths: server/worldsvc/coverage
           - name: rest
             workspaces: shared engine gateway matchsvc gameserver commercial admin analyticsvc socialsvc auctionsvc botsvc
@@ -288,7 +304,9 @@ jobs:
         run: |
           args=()
           for w in ${{ matrix.shard.workspaces }}; do args+=(-w "$w"); done
-          npm run test:coverage "${args[@]}" --if-present
+          split='${{ matrix.shard.split }}'
+          if [ -n "$split" ]; then args+=(-- "--shard=$split"); fi
+          npm run test:coverage --if-present "${args[@]}"
 
       # 2026-08-21, same gap as server-checks' econ-sim typecheck step: not a workspace, so no
       # `--workspaces` fan-out ever reached its 18 tests (~5s). Rides the `rest` shard rather than
@@ -328,9 +346,46 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  # The main-branch ruleset requires checks named `server test (metaserver)` and
+  # `server test (worldsvc)` — the job names from before 2026-10-08's split into `-1`/`-2` shards.
+  # Renamed, those two would never report and every PR would wait on them forever; this job keeps
+  # the names and turns each pair of shard results into one. It reads the shards' own conclusions
+  # from the run's job list rather than `needs.server-test.result`, which is the whole matrix and
+  # would also go red for a failure in `rest`. `filter=latest` is each job's most recent attempt, so
+  # "re-run failed jobs" on one shard is judged by the re-run, not by the failure it replaced.
+  server-test-gate:
+    name: server test (${{ matrix.pkg }})
+    needs: server-test
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        pkg: [metaserver, worldsvc]
+    steps:
+      - name: both ${{ matrix.pkg }} shards passed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PKG: ${{ matrix.pkg }}
+        run: |
+          gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?filter=latest" \
+            --jq ".jobs[] | select(.name | startswith(\"server test ($PKG-\")) | \"\(.name) \(.conclusion)\"" \
+            | tee shards.txt
+          test "$(wc -l < shards.txt)" -eq 2 || { echo "::error::expected 2 $PKG shard jobs"; exit 1; }
+          if grep -qv ' success$' shards.txt; then echo "::error::a $PKG shard did not pass"; exit 1; fi
+
   # —— Client: type-check + unit tests + web build —— (own runner, parallel with server-test/tools-test)
+  # Client checks run on two runners side by side (2026-10-08): this one carries the unit suite and
+  # its coverage (238 s), the lint/type/codegen gates and the coverage artifact; client-ui-build
+  # below carries the headless UI smoke (189 s) and the web build with its size/cache gates. In one
+  # job they ran back to back for 570 s, which became the workflow's long pole once the metaserver
+  # and worldsvc tests were sharded. The ruleset's required check "client test + build" is the
+  # client-test-gate job below — see the note there before renaming either job.
   client-test:
-    name: client test + build
+    name: client unit tests + checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -419,6 +474,51 @@ jobs:
       - name: client unit tests (with coverage)
         working-directory: client
         run: npm run test:coverage
+
+      # Same flake ledger as the server shards — written only when client's e2e/load configs had to
+      # retry a test (the plain unit suite deliberately has no retry; see claudedocs/server.md).
+      - name: upload flaky-test report (client)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flaky-report-client
+          path: client/flaky-report.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: upload coverage artifact (client)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-coverage
+          path: client/coverage/**
+          if-no-files-found: ignore
+          retention-days: 1
+
+  client-ui-build:
+    name: client UI smoke + web build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            client/package-lock.json
+            server/package-lock.json
+
+      # Both steps below resolve @nw/engine + @nw/shared to server/ TS source, exactly as the unit
+      # suite does (see the matching step in client-test) — the UI smoke is the one that first failed
+      # without it, on "Failed to load url jsonwebtoken".
+      - name: server install (client's @nw/engine + @nw/shared aliases resolve to server/ TS source)
+        working-directory: server
+        run: npm ci
+      - name: client install
+        working-directory: client
+        run: npm ci
+
       # UI smoke: headless PIXI adapter constructs real scenes in pure Node to prove each scene starts correctly.
       # No Docker / browser / live stack needed, so this lives in the fast path.
       - name: client UI smoke tests
@@ -447,25 +547,24 @@ jobs:
         working-directory: client
         run: npm run check:cachepolicy
 
-      # Same flake ledger as the server shards — written only when client's e2e/load configs had to
-      # retry a test (the plain unit suite deliberately has no retry; see claudedocs/server.md).
-      - name: upload flaky-test report (client)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: flaky-report-client
-          path: client/flaky-report.json
-          if-no-files-found: ignore
-          retention-days: 7
-
-      - name: upload coverage artifact (client)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: client-coverage
-          path: client/coverage/**
-          if-no-files-found: ignore
-          retention-days: 1
+  # The main ruleset ("Only PR") requires a check named "client test + build" — the old single job's
+  # name. Same trap and same fix as server-test-gate above: the two jobs that replaced it have new
+  # names, so this job carries the old one and passes only if both of them did. `always()` so a
+  # failed or cancelled dependency yields a red check here, not a skipped one (a skipped required
+  # check would not block the merge).
+  client-test-gate:
+    name: client test + build
+    needs: [client-test, client-ui-build]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: both client jobs passed
+        env:
+          UNIT: ${{ needs.client-test.result }}
+          UI_BUILD: ${{ needs.client-ui-build.result }}
+        run: |
+          echo "client-test: $UNIT, client-ui-build: $UI_BUILD"
+          test "$UNIT" = success && test "$UI_BUILD" = success
 
   # —— tools: type-check + build + file-length gate —— (own runner, parallel with server-test/client-test)
   tools-test:
@@ -602,16 +701,13 @@ jobs:
       # `<pkg>/coverage/` subpath). `if-no-files-found: ignore` on upload plus continue-on-error
       # here means a shard that produced no coverage (e.g. it failed before running) just leaves
       # that package's row as "—" in the report instead of failing this job.
+      # metaserver / worldsvc arrive as two shard artifacts each; they land in coverage-shards/ and
+      # the merge step below writes the package's real coverage/coverage-summary.json from them.
       - uses: actions/download-artifact@v4
         continue-on-error: true
         with:
-          name: server-coverage-metaserver
-          path: server/metaserver/coverage
-      - uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          name: server-coverage-worldsvc
-          path: server/worldsvc/coverage
+          pattern: server-coverage-{metaserver,worldsvc}-*
+          path: coverage-shards
       - uses: actions/download-artifact@v4
         continue-on-error: true
         with:
@@ -631,6 +727,18 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      # Only for the istanbul libraries mergeCoverageShards.mjs loads (vitest's own, via server/'s
+      # lockfile) — ~10 s with the npm cache.
+      - name: server install (istanbul libs for the shard merge)
+        working-directory: server
+        run: npm ci --ignore-scripts
+      - name: merge sharded coverage (metaserver, worldsvc)
+        run: |
+          for pkg in metaserver worldsvc; do
+            node scripts/mergeCoverageShards.mjs "server/$pkg/coverage" "coverage-shards/server-coverage-$pkg-1" "coverage-shards/server-coverage-$pkg-2"
+          done
       # Δ column (2026-09-02): the last green `main` run's per-package numbers, carried between
       # runs by actions/cache. Restore-only here — the save step at the bottom of this job is what
       # publishes a new baseline, and only on a green push to main, so a red run can never poison
@@ -749,19 +857,42 @@ jobs:
           cache: npm
           cache-dependency-path: client/package-lock.json
 
+      # Bring up the full stack and wait for all services to be healthy (--wait works with healthchecks in compose).
+      # caddy (host 18088) fronts it on one origin for the browser smoke, exactly as in production; the
+      # Node-process suites keep using the services' direct ports (see server/docker-compose.ci.yml).
+      #
+      # Started in the background (2026-10-08) so the image build + health wait (68 s) overlaps the
+      # two installs below (client npm ci 36 s, Playwright chromium 25 s), which need nothing from
+      # the stack; "wait for server stack" then joins it before the first test. A background process
+      # outlives its step on a GitHub runner, so the join reads the exit code the subshell leaves in
+      # a file, and replays compose's output either way. `set +e` because the step shell runs with
+      # -e, which would end the subshell on a failed `up` before it wrote the code (the join would
+      # then wait out its timeout); the redirect covers the whole subshell so it does not hold the
+      # step's own stdout open.
+      - name: start server stack (background)
+        working-directory: server
+        run: |
+          ( set +e
+            docker compose -f docker-compose.prod.yml -f docker-compose.ci.yml \
+              up -d --build --wait \
+              redis mongo metaserver commercial gateway matchsvc gameserver worldsvc analyticsvc auctionsvc caddy
+            echo $? > "$RUNNER_TEMP/compose-up.rc"
+          ) > "$RUNNER_TEMP/compose-up.log" 2>&1 &
+
       - name: client install
         working-directory: client
         run: npm ci
 
-      # Bring up the full stack and wait for all services to be healthy (--wait works with healthchecks in compose).
-      # caddy (host 18088) fronts it on one origin for the browser smoke, exactly as in production; the
-      # Node-process suites keep using the services' direct ports (see server/docker-compose.ci.yml).
-      - name: bring up server stack
-        working-directory: server
+      - name: install Playwright chromium
+        working-directory: client
+        run: npx playwright install --with-deps chromium
+
+      - name: wait for server stack
+        timeout-minutes: 10
         run: |
-          docker compose -f docker-compose.prod.yml -f docker-compose.ci.yml \
-            up -d --build --wait \
-            redis mongo metaserver commercial gateway matchsvc gameserver worldsvc analyticsvc auctionsvc caddy
+          while [ ! -s "$RUNNER_TEMP/compose-up.rc" ]; do sleep 2; done
+          cat "$RUNNER_TEMP/compose-up.log"
+          exit "$(cat "$RUNNER_TEMP/compose-up.rc")"
 
       # SLG worldsvc deployment smoke (S8-0): proves the 7th process starts in the prod image and the public REST 4th face is reachable.
       - name: worldsvc health smoke
@@ -794,11 +925,8 @@ jobs:
       # A hard gate since 2026-10-08: it ran as continue-on-error from 2026-07-22, and in that time
       # went red without anyone seeing it (18 failures, none of them product bugs — see
       # claudedocs/client-testing.md). This job is the day-branch → main PR gate, chosen precisely
-      # because its stack cost is too high to pay on every feature-branch merge.
-      - name: install Playwright chromium
-        working-directory: client
-        run: npx playwright install --with-deps chromium
-
+      # because its stack cost is too high to pay on every feature-branch merge. In CI it serves a
+      # production build of the e2e entry (client/playwright.config.ts says why).
       - name: run browser smoke (two-account, real WebGL)
         id: browser_smoke
         working-directory: client

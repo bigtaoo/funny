@@ -862,6 +862,32 @@ lena（1394）、medic（1283）、runner（904）及 archer/infantry/shieldbear
 
 ### 23.5 没做的
 
-- BGM 码率（所有者否决）、`world_atlas` 编码（§13.5 禁止）、全量无损 PNG 重压（实测无收益）——按约定未碰。
+- BGM 码率（所有者否决）、`world_atlas` 编码（§13.5 禁止）、全量无损 PNG 重压（实测无收益；同日补做了仅有的 9 张例外，见 §24）——按约定未碰。
 - 三个 favicon（16/32/48）：调色板版反而更大或几乎不变，不动。
 - 预算数字不降：本次只订正了 `dist.total` 的 reason——它曾把「退役 rig PNG/`.tao`」写成下一刀，但 `units/<name>.png` 是卡面插画不是 rig 贴图（rig 贴图在 `.tao` 里面），18 个 `.tao` 加起来才 ~340 KiB。
+
+## 24. 九张 PNG 无损重编码 + 一次被推翻的「无损」测量（2026-10-08）
+
+### 24.1 做了什么
+
+用 sharp 对 `client/src/assets/**/*.png` 逐个试 `png({ compressionLevel: 9 })` 与 `png({ compressionLevel: 9, adaptiveFiltering: true })`，取更小者；**只在输出仍是同一 colorType（字节 25）且解码后 RGBA 逐字节相同**时才写回。命中 9 张：
+
+| 文件 | 前 | 后 |
+|---|---|---|
+| `logo.hires.png`（只进原生包） | 1937640 | 1488375 |
+| `logo.png`（L0） | 129399 | 115033 |
+| `buildings/game_base.png`（L0） | 86775 | 75152 |
+| `buildings/game_infantry_barracks.png`（L0） | 47843 | 47653 |
+| `shop/coin*.png` ×5 | 110664 | 107817 |
+
+门禁：`boot.gate` 822.4 → **796.9 KiB（93.7%）**，`dist.total` 23623.8 → 23595.5 KiB，`entry.brotli` 不变。像素零变化，所以不需要看图。
+
+### 24.2 被推翻的测量（别再犯）
+
+同日先跑过一次「全量无损重压」扫描，报出 `icons_atlas` 301→108 KB、`world_atlas` 2007→1320 KB、合计 −2.5 MB。**那不是无损**：扫描参数里带了 `effort: 10`，而 sharp 0.32 只要出现 `palette`/`quality`/`colours`/`dither`/`effort` 中任何一个，pngsave 就**静默切到 8 位调色板量化**——输出 colorType 3，`icons_atlas` 71% 的字节变了、最大偏差 253/255。这正是 `art/scripts/mergeAtlasPages.js` 注释与 `ASSET_PACKAGING.md` §16 记过的同一个坑，也是同文 §13.5 禁止的同一件事。
+
+**判定「无损」的唯一办法**：看输出字节 25（colorType 6 = RGBA 真彩色，3 = 调色板）**并且**比对解码后的原始像素；只看文件变小、只看 `metadata().channels`（调色板 PNG 也报 4 通道）都会被骗。用真正无损的参数重扫，H5 侧可省的总共只有 29 KB，即上表——本文 §23.5「全量无损重压无收益」的结论基本成立，只差这 9 张。
+
+### 24.3 为什么没改生成脚本
+
+`logo.png` 来自 `deriveH5ArtVariants.mjs`（已是 `palette:false, compressionLevel:9`）；建筑与金币图来自各自的打包脚本。这 9 张的差距只是 libpng 过滤器选择，重新生成最多退回 26 KB、不会破坏任何东西，不值得给每个脚本加一套「两种参数取小」的逻辑。
