@@ -198,6 +198,8 @@ export class UnitView {
 
   private loadAssetsInto(urls: Partial<Record<UnitType, string>>, into: Map<UnitType, TaoAsset>): void {
     for (const [type, url] of Object.entries(urls) as [UnitType, string][]) {
+      // The unscaled tier height: it only calibrates the URL-cached hit-flash outline, shared by
+      // every board size. The on-board size itself comes from boardUnitHeight (UnitView/build.ts).
       StickmanRuntime.loadAsset(url, targetScreenHeight(type))
         .then(asset => { into.set(type, asset); this.artArrived = true; })
         .catch(err  => { console.warn(`[UnitView] ${type} .tao failed to load:`, err); });
@@ -314,6 +316,7 @@ export class UnitView {
       stickmanRuntimes: this.stickmanRuntimes, frameSheets: this.frameSheets, localSkinAssets: this.localSkinAssets,
       opponentSkinAssets: this.opponentSkinAssets,
       localSkinSheets: this.localSkinSheets, opponentSkinSheets: this.opponentSkinSheets, assets: this.assets, localSide: this.localSide,
+      cellSize: this.boardView.cellSize,
       applyGear: (runtime: UnitRuntime, unit: Unit) => this.applyGear(runtime, unit),
     };
   }

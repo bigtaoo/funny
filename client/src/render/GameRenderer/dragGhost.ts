@@ -8,7 +8,7 @@ import { ATTACK_LANES } from '@nw/engine/config';
 import type { BuildingType, CardDefinition, UnitType } from '@nw/engine/types';
 import { CardType } from '../../game';
 import type { GameRendererCore } from './core';
-import { targetScreenHeight } from '../unitSize';
+import { boardUnitHeight } from '../unitSize';
 import { BUILDING_SPRITE_SIZE, buildingTextureUrl } from '../BuildingView';
 import { palette } from '../theme';
 import { FS, fitFont } from '../fontScale';
@@ -112,8 +112,9 @@ export function buildDragGhost(
 /**
  * Where (and as what) a drop of `card` at (col, row) would land, or null when the drop would be
  * rejected — the same checks InputPanel.commitCardPlay makes and, in the tutorial, the same aim
- * assist (snapped onto the guided lane). Units preview as their card art at their size tier's real
- * on-screen height (unitSize.ts); buildings as their board sprite at its board size.
+ * assist (snapped onto the guided lane). Units preview as their card art at the same on-board
+ * height the spawned unit will have (unitSize.ts#boardUnitHeight); buildings as their board sprite
+ * at its board size.
  */
 export function landingSpot(
   core: GameRendererCore, card: CardDefinition, art: PIXI.Texture | null, col: number, row: number,
@@ -128,7 +129,7 @@ export function landingSpot(
   if (card.cardType === CardType.Unit && card.unitType !== undefined && art) {
     if (board.isCellOccupiedByUnit(col, core.localSpawnRow)) return null;
     const pos = core.layout.gridToScreen(col, core.localSpawnRow);
-    const h = targetScreenHeight(card.unitType as UnitType);
+    const h = boardUnitHeight(card.unitType as UnitType, core.layout.cellSize);
     return { tex: art, x: pos.x, y: pos.y, w: h, h };
   }
   if (card.cardType === CardType.Building && card.buildingType !== undefined) {
