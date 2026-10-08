@@ -15,8 +15,6 @@ import {
 import { showUnitLaneHighlights, showBuildingHighlights, showMeteorTargetHighlight, showColumnTargetHighlight, laneRect } from './BoardView/highlights';
 import { playMeteorEffect, playRockslideEffect } from './BoardView/effects';
 
-export { drawFactionGroundPatch } from './BoardView/bases';
-
 // 断路 (BridgeCollapse) persistent lane overlay. The 0.6s cast VFX alone was easy to
 // miss while the lane stays blocked for 8s; this overlay marks the lane for its full
 // duration and blinks in the final seconds to telegraph the lane reopening.

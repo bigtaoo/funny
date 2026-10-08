@@ -3,7 +3,7 @@
  *
  * Background: the two bases had no persistent team-color cue — only the critical-HP
  * ring used factionInk, so the two identical castle sprites were indistinguishable at
- * a glance. `BoardView.drawFactionGroundPatch` adds a static, layered color wash at
+ * a glance. `drawFactionGroundPatch` (render/factionCue.ts) adds a static, layered color wash at
  * each base's foot (same "colored ground patch under a full-color AI asset" language
  * as `UnitView.drawFactionMarker`), deliberately NOT a persistent outline —
  * art-direction.md §3.4 already rules that out (moirés against the hand-drawn ink
@@ -32,7 +32,7 @@ class FakeGraphics {
   clear(): this { this.fills = []; return this; }
 }
 
-import { drawFactionGroundPatch } from '../../src/render/BoardView';
+import { drawFactionGroundPatch } from '../../src/render/factionCue';
 import { factionInk } from '../../src/render/theme';
 import type { Rect } from '../../src/layout/ILayout';
 

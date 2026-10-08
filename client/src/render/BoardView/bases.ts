@@ -14,6 +14,7 @@ import { sideToOwner } from '../../game';
 import { ILayout, Rect } from '../../layout/ILayout';
 import { SketchPen } from '../sketch';
 import { palette, fx, factionInk } from '../theme';
+import { drawFactionGroundPatch } from '../factionCue';
 import baseTexUrl from '../../assets/buildings/game_base.png';
 import { loadBaseUpgradeAtlas, getBaseUpgradeTexture } from '../atlas/baseUpgradeAtlasLoader';
 
@@ -40,22 +41,6 @@ export const CRIT_RING_PAD_MAX = 15;  // px outset at its widest — also what r
 
 // Castle art fill ratio within its 2×2 base rect — see buildBaseRef() for why this isn't 1.0.
 const BASE_ART_INSET = 0.86;
-
-/**
- * Idle faction ground patch under each base (敌红我蓝, art-direction §3.2): a soft
- * layered color wash at the castle's foot, drawn once and left static — same
- * "colored ground patch under a full-color AI asset" language as UnitView's
- * drawFactionMarker, not a persistent outline (§3.4 explicitly bans standing
- * outline glow: it beats against the hand-drawn ink linework and moirés).
- */
-export function drawFactionGroundPatch(g: PIXI.Graphics, color: number, rect: Rect): void {
-  const cx = 0, cy = rect.h * 0.32; // castle art sits high in its frame; patch anchors near its foot
-  const rx = rect.w * 0.34, ry = rect.h * 0.1;
-  g.clear();
-  g.beginFill(color, 0.16); g.drawEllipse(cx,        cy,        rx * 1.3, ry * 1.3); g.endFill();
-  g.beginFill(color, 0.24); g.drawEllipse(cx,        cy,        rx,       ry);       g.endFill();
-  g.beginFill(color, 0.34); g.drawEllipse(cx,        cy,        rx * 0.6, ry * 0.6); g.endFill();
-}
 
 /**
  * Faction pennant planted on the castle's top: both bases share one black-ink castle, and the

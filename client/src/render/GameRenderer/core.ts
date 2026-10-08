@@ -450,7 +450,7 @@ export class GameRendererCore {
     this.boardView.markInactiveLanes(this.engine.state.board.getActiveLanes());
     this.boardView.markBlockedCells(this.engine.state.board.getBlockedCells());
     this.unitView     = new UnitView(this.boardView, this.layout.localSide, this.equippedSkins, this.cardInstances, this.equipmentInv, this.opponentSkins);
-    this.buildingView = new BuildingView(this.boardView);
+    this.buildingView = new BuildingView(this.boardView, this.layout.localSide);
     this.handView     = new HandView(this.layout, this.equippedSkins);
     // The tutorial has its own Skip button in the same corner; a second exit would sit under it.
     this.hudView      = new HUDView(this.layout, this.campaignMode, /* hideSurrender */ this.spectator || this.tutorialConfig !== null);
