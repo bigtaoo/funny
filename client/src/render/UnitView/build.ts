@@ -13,7 +13,7 @@ import type { FrameSheet } from '../frames/frameSheet';
 import type { UnitRuntime, UnitRuntimeOptions } from '../unitRuntime';
 import { fx } from '../theme';
 import { drawStickmanDraft, draftTexture } from '../stickmanDraft';
-import { targetScreenHeight } from '../unitSize';
+import { boardUnitHeight } from '../unitSize';
 import { barSprite } from '../barSprite';
 import {
   DRAFT_SEED, drawFactionMarker, factionMarkerTexture, stickmanHpBarY,
@@ -34,6 +34,11 @@ export interface BuildHost {
   readonly opponentSkinSheets: Map<UnitType, FrameSheet>;
   readonly assets: Map<UnitType, TaoAsset>;
   readonly localSide: Side;
+  /**
+   * The board's cell size (design px) — sizes every unit through `boardUnitHeight`, which shrinks
+   * units on small cells so they stay inside their lane. Undefined (headless stubs) = full size.
+   */
+  readonly cellSize: number | undefined;
   applyGear(runtime: UnitRuntime, unit: Unit): void;
 }
 
@@ -107,7 +112,7 @@ function buildStickmanContainer(
 ): PIXI.Container {
   const side    = renderSide(host, unit);
   const mirrorX = side === Side.Top;
-  const targetHeight = targetScreenHeight(unit.unitType);
+  const targetHeight = boardUnitHeight(unit.unitType, host.cellSize);
   host.stickmanPoolKeys.set(unit.id, key);
 
   // Reuse a pooled (wrapper + runtime) pair of the same bucket when available.
@@ -144,7 +149,7 @@ function buildStickmanContainer(
 
   // ── HP bar (positioned above the character's head) ────────────────────
   // Tier-aware: clears the crown at the unit's rendered height (see stickmanHpBarY).
-  const HP_BAR_Y_STICKMAN = stickmanHpBarY(unit.unitType);
+  const HP_BAR_Y_STICKMAN = stickmanHpBarY(targetHeight);
 
   const hpBg = barSprite(-HP_BAR_WIDTH / 2, HP_BAR_Y_STICKMAN, HP_BAR_WIDTH, HP_BAR_HEIGHT, 0xcccccc, 0.7);
   hpBg.name    = 'hpBg';
@@ -169,7 +174,7 @@ function buildCircleContainer(host: BuildHost, unit: Unit): PIXI.Container {
   // Keyed off render side so the joiner's own units stay "us"-colored.
   paintDraftBody(
     c.getChildByName('bodySprite') as PIXI.Sprite, c.getChildByName('body') as PIXI.Graphics,
-    side, targetScreenHeight(unit.unitType), DRAFT_SEED[unit.unitType],
+    side, boardUnitHeight(unit.unitType, host.cellSize), DRAFT_SEED[unit.unitType],
   );
 
   // Faction ground marker (also grounds the figure on the board).

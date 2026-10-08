@@ -3,6 +3,7 @@
 //
 // What is pinned here is the "non-blocking" half of the contract, which no screenshot shows:
 //   * it fits above the bottom nav in every locale and on the portal's short landscape canvas;
+//   * it stays right of the notebook's red margin rule (the portal tile and the reviewer's canvas);
 //   * a tap anywhere OUTSIDE the strip still reaches the lobby — that is the whole difference from
 //     the consent wall it replaces on that build;
 //   * a tap INSIDE it never falls through to a lobby button drawn underneath;
@@ -17,7 +18,9 @@ import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n, setLocale, type Locale } from '../../src/i18n';
 import { LobbyScene } from '../../src/scenes/LobbyScene';
-import type { EntryNoticeSpec } from '../../src/ui/dialogs/EntryNoticeStrip';
+import { buildEntryNoticeStrip, type EntryNoticeSpec } from '../../src/ui/dialogs/EntryNoticeStrip';
+import { marginLineX } from '../../src/render/sketchUi';
+import { landscapeDesignHeight, landscapeDesignWidth } from '../../src/layout/designSize';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -79,7 +82,7 @@ function stripTexts(scene: LobbyScene): PIXI.Rectangle[] {
 }
 
 describe('the entry notice strip fits', () => {
-  const sizes: [number, number][] = [[800, 1280], [1170, 2532], [1568, 744], [375, 812], [722, 406]];
+  const sizes: [number, number][] = [[800, 1280], [1170, 2532], [1568, 744], [375, 812], [722, 406], [1100, 574]];
   // The EEA ask (two answers) and the opt-out notice (terms + analytics sentence, a single OK —
   // COMPLIANCE_GLOBAL §3.3b): the longest copy each shape carries.
   const shapes: Array<{ name: string; spec: Partial<EntryNoticeSpec>; hits: number }> = [
@@ -111,6 +114,63 @@ describe('the entry notice strip fits', () => {
       });
     }
   }
+});
+
+describe('the entry notice strip clears the red margin rule', () => {
+  // The two CrazyGames canvases the strip was measured crossing the rule on: the portal's 722x406
+  // preview tile (by 46 design px) and the reviewer's real 1100x574 canvas (by 13 — ~8 CSS px).
+  // Design sizes from layout/designSize.ts: height clamp(even(availH / 0.62), 640, 1080), width
+  // following the aspect between the scaled 1920 and 2592.
+  const canvases: Array<{ css: [number, number]; design: [number, number] }> = [
+    { css: [1100, 574], design: [1775, 926] },
+    { css: [722, 406], design: [1163, 654] },
+  ];
+  const specs: Array<Partial<EntryNoticeSpec>> = [{ terms: true, consent: true }, { terms: true, stats: true }];
+
+  for (const { css: [cw, ch], design: [dw, dh] } of canvases) {
+    it(`${cw}x${ch} CSS px is a ${dw}x${dh} design page`, () => {
+      expect(landscapeDesignHeight(ch)).toBe(dh);
+      expect(landscapeDesignWidth(cw, ch)).toBe(dw);
+      const { core } = build({ terms: true, consent: true }, cw, ch);
+      expect([core.w, core.h]).toEqual([dw, dh]);
+    });
+
+    for (const spec of specs) {
+      it(`${dw}x${dh} ${spec.consent ? 'ask' : 'notice'}: left edge right of the rule, right edge inside the page`, () => {
+        const built = buildEntryNoticeStrip(dw, dh, Math.round(dh * 0.105), { consent: false, ...spec, terms: true }, () => {});
+        try {
+          const r = built.rect;
+          const gap = Math.round(Math.min(dw, dh) * 0.015);
+          expect(r.x, 'strip left vs the margin rule').toBeGreaterThan(marginLineX(dw));
+          expect(r.x).toBeGreaterThanOrEqual(marginLineX(dw) + gap);
+          expect(r.x + r.w, 'strip right vs the page edge').toBeLessThanOrEqual(dw - gap);
+          // What is actually drawn — the hand-drawn border's ink overhangs the panel rect by under a
+          // pixel — still clears the rule by most of the gap and stays on the page.
+          const b = built.container.getBounds();
+          expect(b.x, 'drawn left edge vs the margin rule').toBeGreaterThan(marginLineX(dw) + gap / 2);
+          expect(b.x + b.width, 'drawn right edge vs the page edge').toBeLessThan(dw - gap / 2);
+        } finally {
+          built.container.destroy({ children: true });
+        }
+      });
+    }
+  }
+
+  it('through the lobby too, in every locale', () => {
+    for (const loc of ['zh', 'en', 'de'] as Locale[]) {
+      setLocale(loc);
+      try {
+        for (const [cw, ch] of canvases.map((c) => c.css)) {
+          const { core } = build({ terms: true, consent: true }, cw, ch);
+          const r = core.noticeRect!;
+          expect(r.x, `${loc} ${cw}x${ch}`).toBeGreaterThan(marginLineX(core.w));
+          expect(r.x + r.w, `${loc} ${cw}x${ch}`).toBeLessThan(core.w);
+        }
+      } finally {
+        setLocale('en');
+      }
+    }
+  });
 });
 
 describe('the entry notice strip does not block the lobby', () => {

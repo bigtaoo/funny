@@ -17,7 +17,7 @@ import { createLocalMatch } from '../../src/app/matchEngine';
 import { getLevel } from '../../src/game';
 import { BASE_COLS } from '@nw/engine/config';
 import { UnitType } from '@nw/engine/types';
-import { targetScreenHeight } from '../../src/render/unitSize';
+import { boardUnitHeight, targetScreenHeight } from '../../src/render/unitSize';
 import { BUILDING_SPRITE_SIZE } from '../../src/render/BuildingView';
 import {
   landingSpot, GHOST_ALPHA, GHOST_ALPHA_OVER_LANDING, LANDING_ALPHA,
@@ -37,9 +37,9 @@ initI18n('en', memStore, ['zh', 'en', 'de']);
 const SLOT_UNIT_SHIELDBEARER = 2;
 const SLOT_BUILDING_TOWER_A  = 0;
 
-function buildRenderer() {
+function buildRenderer(screenW = 800, screenH = 1280) {
   const { engine } = createLocalMatch({ level: getLevel('ch1_lv1')! });
-  const layout = createLayout(800, 1280);
+  const layout = createLayout(screenW, screenH);
   const input = new InputManager();
   const renderer = new GameRenderer(engine, layout, input);
   renderer.init();
@@ -90,6 +90,8 @@ describe('landing preview', () => {
     expect(sprite.alpha).toBe(LANDING_ALPHA);
     expect(sprite.x).toBeCloseTo(spawn.x);
     expect(sprite.y).toBeCloseTo(spawn.y);
+    expect(sprite.height).toBeCloseTo(boardUnitHeight(UnitType.ShieldBearer, layout.cellSize));
+    // 800×1280 portrait: cell 84, well above the shrink threshold — the full tier height.
     expect(sprite.height).toBeCloseTo(targetScreenHeight(UnitType.ShieldBearer));
     expect(panel.drag.ghost.alpha).toBe(GHOST_ALPHA_OVER_LANDING);
 
@@ -104,6 +106,17 @@ describe('landing preview', () => {
     input._emitUp(to.x, to.y);
     expect(panel.drag).toBeNull();
     expect(sprite.destroyed).toBe(true);
+    renderer.destroy();
+  });
+
+  it('on a small landscape board the unit preview shrinks with the unit (722×406, cell 42)', () => {
+    const { engine, layout, renderer, core } = buildRenderer(722, 406);
+    expect(layout.cellSize).toBe(42);
+    const card = core.localPlayer(engine.state).hand.slots[SLOT_UNIT_SHIELDBEARER].card;
+    const spot = landingSpot(core, card, PIXI.Texture.WHITE, 1, 5)!;
+    expect(spot).not.toBeNull();
+    expect(spot.h).toBeCloseTo(boardUnitHeight(UnitType.ShieldBearer, 42));
+    expect(spot.h).toBeLessThan(targetScreenHeight(UnitType.ShieldBearer));
     renderer.destroy();
   });
 

@@ -1,13 +1,14 @@
 /**
  * towerArtContract.test.ts — the two things about the battle arrow tower's art that break silently.
  *
- * 1. ITS ASPECT. `BuildingView` sizes building sprites with `sp.width = sp.height = SPRITE_SIZE`,
- *    i.e. it *stretches* the texture into a square (the same convention BoardView/bases.ts uses).
- *    The art is drawn to survive that — a slim tower whose bottom corners are filled with rubble
- *    and an arrow barrel so the ink bounding box comes out ~1:1 — and that constraint is the whole
- *    reason the prompt in design/product/battle-arrow-tower-art.md reads the way it does. Redraw or
- *    re-crop the art at 3:2 and nothing throws: the tower just quietly renders squashed, which is
- *    exactly the defect the redraw was meant to fix (the hut it replaced was 1.57:1).
+ * 1. ITS ASPECT. `BuildingView` draws every building SPRITE_SIZE wide with its aspect kept (it used
+ *    to *stretch* the texture into a square, the same convention BoardView/bases.ts uses), so the
+ *    square board cell only reads right if the art is square too. The art is drawn for that — a
+ *    slim tower whose bottom corners are filled with rubble and an arrow barrel so the ink bounding
+ *    box comes out ~1:1 — and that constraint is the whole reason the prompt in
+ *    design/product/battle-arrow-tower-art.md reads the way it does. Redraw or re-crop the art at
+ *    3:2 and nothing throws: the tower just quietly renders 56x37, a squat hut again, which is
+ *    exactly what the redraw was meant to fix (the hut it replaced was 1.57:1).
  *
  * 2. THE HAND AND THE BOARD SHOWING THE SAME BUILDING. cardArt.ts's own contract is that the battle
  *    hand and the codex draw the same picture as the board; the tower asset is wired at four sites

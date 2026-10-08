@@ -48,12 +48,13 @@ export class WebMusicDeck implements MusicDeck {
     // seek 才是那件在两个平台上都不可靠的事。
     else if (this.el.currentTime !== 0) this.el.currentTime = 0;
     this.playing = true;
-    // `play()` 在 autoplay 闸门之前返回一个 rejected promise。`ContextAudioBus` 已经把音乐挡在
-    // 第一次手势之后（见那里的 `gestured`），所以走到这里通常是 CDN 的问题——但仍然要接住它，
-    // 一个未处理的 rejection 会把控制台刷成红色而于事无补。
+    // `play()` 在 autoplay 闸门之前返回一个 rejected promise。`ContextAudioBus` 把音乐挡在第一次
+    // 手势之后（见那里的 `gestured`），但「手势」不等于「激活」：2026-10-08 实测触屏按下就被拒过
+    // （见 `WebAudioBus` 的 `onGesture`）。被拒之后本 deck 回到 idle，`MusicPlayer.recover` 在下一次
+    // 手势里把它重新起起来——所以这里只记一笔，不重试。
     void this.el.play().catch((err: unknown) => {
       this.playing = false;
-      this.deps.warn?.(`music: <audio> refused to start ${path}`, err);
+      this.deps.warn?.(`music: <audio> refused to start ${path} (retried on the next gesture)`, err);
     });
   }
 
@@ -74,6 +75,10 @@ export class WebMusicDeck implements MusicDeck {
 
   position(): number | null {
     return this.playing ? this.el.currentTime : null;
+  }
+
+  isIdle(): boolean {
+    return !this.playing;
   }
 
   setPaused(paused: boolean): void {

@@ -70,6 +70,10 @@ export class WechatMusicDeck implements MusicDeck {
     this.inner.stop();
   }
 
+  isIdle(): boolean {
+    return !this.playing;
+  }
+
   position(): number | null {
     if (!this.playing) return null;
     const t = this.inner.currentTime;

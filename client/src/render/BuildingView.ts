@@ -3,7 +3,7 @@ import { Board } from '@nw/engine/Board';
 import { Building } from '@nw/engine/Building';
 import { BuildingType, Side } from '@nw/engine/types';
 import { BOTTOM_BUILDING_ROW, TOP_BUILDING_ROW } from '@nw/engine/config';
-import { palette } from './theme';
+import { factionInkFor, drawFactionWash } from './factionCue';
 import { BoardView } from './BoardView';
 import { ObjectPool } from '../cache/ObjectPool';
 import barracksTexUrl from '../assets/buildings/game_infantry_barracks.png';
@@ -20,6 +20,25 @@ export function buildingTextureUrl(type: BuildingType): string {
 }
 const HP_BAR_Y    = 32;
 const HP_BAR_W    = 40;
+
+/**
+ * The scale that draws `tex` SPRITE_SIZE wide (aspect kept — the barracks art is 3:2, so it shows
+ * 56x37), or null while the texture is still decoding. Not decoded, a texture's `orig` is the 1x1
+ * placeholder frame, and a scale taken from it (56) is ~250x too big once the real 252px art lands:
+ * PIXI's own Sprite re-fits an explicit `width` on texture load, but this view snapshots the scale
+ * for the breathing pulse, and that snapshot would keep overwriting PIXI's fix every frame.
+ */
+export function buildingBaseScale(tex: PIXI.Texture): number | null {
+  if (!tex.baseTexture.valid || tex.orig.width <= 0) return null;
+  return SPRITE_SIZE / tex.orig.width;
+}
+
+// Faction ground patch (art-direction §3.2, same wash as the bases' — see factionCue.ts). Sized off
+// SPRITE_SIZE exactly like a base's patch is sized off its rect, and centred a little above the
+// art's bottom edge so it sits at the building's foot rather than under its roof.
+const PATCH_RX       = SPRITE_SIZE * 0.34;
+const PATCH_RY       = SPRITE_SIZE * 0.1;
+const PATCH_FOOT     = 0.9;   // patch centre, as a fraction of the drawn half-height below the anchor
 
 // Idle animation constants
 //
@@ -71,8 +90,9 @@ function createBuildingContainer(): PIXI.Container {
   hpFill.name = 'hpFill';
 
   const flagGfx = new PIXI.Graphics(); flagGfx.name = 'flagGfx';
+  const patchGfx = new PIXI.Graphics(); patchGfx.name = 'patchGfx';
 
-  c.addChild(sprite, hpBg, hpFill, flagGfx);
+  c.addChild(patchGfx, sprite, hpBg, hpFill, flagGfx);
   return c;
 }
 
@@ -83,6 +103,7 @@ function resetBuildingContainer(c: PIXI.Container): void {
   c.scale.set(1);
   c.visible = false;
   (c.getChildByName('flagGfx') as PIXI.Graphics).clear();
+  (c.getChildByName('patchGfx') as PIXI.Graphics).clear();   // a pooled container may change owner
   const sp = c.getChildByName('sprite') as PIXI.Sprite;
   sp.x     = 0;   // the fire kick writes sp.x — a pooled container must not inherit a stale offset
   sp.y     = 0;
@@ -97,7 +118,11 @@ export class BuildingView {
   private readonly boardView: BoardView;
   private sprites: Map<number, PIXI.Container> = new Map();
   private phases:  Map<number, number>          = new Map();
-  /** Each sprite's non-idle scale (from SPRITE_SIZE / texture size) — the breathing pulse multiplies this. */
+  /**
+   * Each sprite's non-idle scale (from SPRITE_SIZE / texture size) — the breathing pulse multiplies
+   * this. Absent while the building's texture is still decoding: the sprite stays hidden and sync()
+   * retries the fit every frame until it lands (see buildingBaseScale).
+   */
   private baseScales: Map<number, number>       = new Map();
   /** Cell + side per live building, so a fire event can be matched to the right sprite. */
   private cells:   Map<number, { col: number; row: number; side: Side }> = new Map();
@@ -118,7 +143,12 @@ export class BuildingView {
   /** In-flight effect ticks (spawn/destroy anims), tracked so teardown can unregister them. */
   private readonly fxTicks = new Set<(dt: number) => void>();
 
-  constructor(boardView: BoardView) {
+  /**
+   * @param localSide the side the local player owns — their buildings draw in blue ink, the other
+   *   side's in red. Same mapping as UnitView's renderSide: never "Side.Bottom is blue", or the PvP
+   *   joiner (who plays Side.Top) would see their own towers in the enemy's colour.
+   */
+  constructor(boardView: BoardView, private readonly localSide: Side) {
     this.boardView = boardView;
     this.container = new PIXI.Container();
   }
@@ -149,6 +179,7 @@ export class BuildingView {
       }
 
       this.cells.set(building.id, { col: building.col, row: building.row, side: building.side });
+      if (!this.baseScales.has(building.id)) this.fitSprite(sprite, building);
       this.updateSprite(sprite, building);
       this.updateIdleAnim(sprite, building);
     }
@@ -226,9 +257,7 @@ export class BuildingView {
       if (!this.texArcher) this.texArcher = PIXI.Texture.from(archerTexUrl as string);
       sp.texture = this.texArcher;
     }
-    sp.width  = SPRITE_SIZE;
-    sp.height = SPRITE_SIZE;
-    this.baseScales.set(building.id, sp.scale.x);
+    this.fitSprite(c, building);
 
     // Spawn animation: scale 0→1, ease-out cubic, ~0.3s at 60fps
     c.scale.set(0);
@@ -250,6 +279,32 @@ export class BuildingView {
     return c;
   }
 
+  /**
+   * Size the sprite from its texture and lay the faction patch at its foot — or, while the texture
+   * is still decoding, hide the sprite and leave it unfitted so the next sync() tries again (the
+   * dragGhost LandingPreview pattern). The boot preload only warns on a failed/slow art step and
+   * lets the game continue, so a battle can start before this texture has decoded.
+   */
+  private fitSprite(c: PIXI.Container, building: Building): void {
+    const sp    = c.getChildByName('sprite') as PIXI.Sprite;
+    const patch = c.getChildByName('patchGfx') as PIXI.Graphics;
+    const scale = buildingBaseScale(sp.texture);
+    if (scale === null) {
+      sp.visible = false;
+      return;
+    }
+    sp.scale.set(scale);
+    sp.visible = true;
+    this.baseScales.set(building.id, scale);
+    const footY = (sp.texture.orig.height * scale / 2) * PATCH_FOOT;
+    drawFactionWash(patch, this.factionColor(building), 0, footY, PATCH_RX, PATCH_RY);
+  }
+
+  /** This building's owner ink, from the local player's point of view. */
+  private factionColor(building: Building): number {
+    return factionInkFor(building.side, this.localSide);
+  }
+
   private updateSprite(c: PIXI.Container, building: Building): void {
     const { x, y } = this.boardView.gridToScreen(building.col, building.row);
     c.x = x;
@@ -262,9 +317,10 @@ export class BuildingView {
 
   private updateIdleAnim(c: PIXI.Container, building: Building): void {
     const phase = this.phases.get(building.id) ?? 0;
-    const base  = this.baseScales.get(building.id) ?? 1;
+    const base  = this.baseScales.get(building.id);
     const t     = this.time;
     const sp    = c.getChildByName('sprite') as PIXI.Sprite;
+    if (base === undefined) return;   // texture still decoding — sprite hidden, nothing to animate
 
     // All buildings: gentle size-pulse breathing (see BOB_SCALE_AMP comment for why this
     // replaced a positional bob). Scale only — sp.y stays at 0 so the sprite never drifts
@@ -274,7 +330,7 @@ export class BuildingView {
     const flagGfx = c.getChildByName('flagGfx') as PIXI.Graphics;
 
     if (building.buildingType === BuildingType.Barracks) {
-      this.drawFlagWave(flagGfx, t, phase);
+      this.drawFlagWave(flagGfx, t, phase, this.factionColor(building));
       return;
     }
 
@@ -296,20 +352,21 @@ export class BuildingView {
     const left = fire.left / FIRE_SECONDS;
     sp.x  = -fire.dx * FIRE_KICK_PX * left * left;
     sp.y  = -fire.dy * FIRE_KICK_PX * left * left;
-    this.drawFireTicks(flagGfx, left, fire.dx, fire.dy);
+    this.drawFireTicks(flagGfx, left, fire.dx, fire.dy, this.factionColor(building));
   }
 
   /**
    * Two short strokes trailing off the back of the tower as it kicks — the doodle-book way of
    * saying "this thing just went off". Drawn on the `flagGfx` node, which the tower branch used to
-   * leave permanently empty, and in the same ink as the tower art.
+   * leave permanently empty, in the owner's faction ink (blue = ours, red = theirs) — the tower art
+   * is the same picture for both sides, so the shot is one of its two faction cues.
    */
-  private drawFireTicks(gfx: PIXI.Graphics, strength: number, dx: number, dy: number): void {
+  private drawFireTicks(gfx: PIXI.Graphics, strength: number, dx: number, dy: number, color: number): void {
     gfx.clear();
     const bx = -dx * TICK_BACK, by = -dy * TICK_BACK;   // behind the tower, along the shot axis
     const px = -dy,             py = dx;                // perpendicular to it
     const len = TICK_LEN * (0.45 + 0.55 * strength);    // shrinks as it fades, never to nothing
-    gfx.lineStyle(1.8, palette.inkBlue, 0.25 + 0.7 * strength);
+    gfx.lineStyle(1.8, color, 0.25 + 0.7 * strength);
     for (const sign of [1, -1]) {
       const ox = bx + px * TICK_SPREAD * sign;
       const oy = by + py * TICK_SPREAD * sign;
@@ -334,8 +391,11 @@ export class BuildingView {
     return { x: dx / len, y: dy / len };
   }
 
-  /** Draw an animated hand-drawn flag at the top of a barracks. */
-  private drawFlagWave(gfx: PIXI.Graphics, t: number, phase: number): void {
+  /**
+   * Draw an animated hand-drawn flag at the top of a barracks: an ink pole, and the cloth in the
+   * owner's faction colour (it used to be a fixed grey, so an enemy barracks read as ours).
+   */
+  private drawFlagWave(gfx: PIXI.Graphics, t: number, phase: number, color: number): void {
     gfx.clear();
     const amp = Math.sin(t * FLAG_SPEED + phase) * FLAG_AMP;
 
@@ -345,7 +405,9 @@ export class BuildingView {
     gfx.moveTo(px, poleTop + 10);
     gfx.lineTo(px, poleTop);
 
-    // Three wavy flag strokes emanating from the pole
+    // Three wavy flag strokes emanating from the pole — slightly heavier than the pole, since a
+    // 1px coloured hairline at board scale reads as grey again.
+    gfx.lineStyle(1.6, color, 0.95);
     for (let i = 0; i < 3; i++) {
       const fy       = poleTop + i * 3;
       const waveAmp  = amp * (0.6 + i * 0.2);

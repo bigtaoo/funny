@@ -19,6 +19,7 @@ class StubDeck implements MusicDeck {
   setGain(level: number): void { this.gain = level; }
   stop(): void { this.pos = null; }
   position(): number | null { return this.pos; }
+  isIdle(): boolean { return this.pos === null; }
   setPaused(paused: boolean): void { this.paused = paused; }
 }
 
@@ -73,6 +74,23 @@ describe('ContextAudioBus — the BGM autoplay gate', () => {
     h.gesture();
     h.bus.updateMusic('bgm.lobby', 16);
     expect(h.decks[0].played).toEqual([MUSIC_CATALOGUE['bgm.lobby'].path]);
+  });
+
+  it('a start the host refused is retried on the next gesture, not left silent until a track change', () => {
+    // 2026-10-08: touch press → gate open → next frame play() → NotAllowedError → deck idle. The bed
+    // still "was" the battle track, so nothing called play() again for the whole tutorial.
+    const h = harness();
+    h.gesture();
+    h.bus.updateMusic('bgm.battle.early', 16);
+    expect(h.decks[0].played).toHaveLength(1);
+    h.decks[0].pos = null;                 // refused: the deck reports idle
+    for (let i = 0; i < 30; i++) h.bus.updateMusic('bgm.battle.early', 16);
+    expect(h.decks[0].played).toHaveLength(1); // frames alone never retry
+
+    h.gesture();                           // the touch ENDS: a real activation
+    expect(h.decks[0].played).toEqual([
+      MUSIC_CATALOGUE['bgm.battle.early'].path, MUSIC_CATALOGUE['bgm.battle.early'].path,
+    ]);
   });
 
   it('treats a host with no gesture source as already unlocked', () => {

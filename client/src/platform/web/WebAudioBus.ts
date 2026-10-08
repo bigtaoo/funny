@@ -66,9 +66,22 @@ export class WebAudioBus extends ContextAudioBus {
       // 的手势集合，而且完全不必往输入管线里塞一个与它无关的关注点。
       onGesture: (cb) => {
         if (typeof window === 'undefined') return;
-        // iOS Safari only counts the *end* of a touch (touchend / click) as a user activation, so
-        // a first tap heard only through touchstart / pointerdown never unlocks the context.
-        for (const ev of ['pointerdown', 'keydown', 'touchstart', 'pointerup', 'touchend', 'click'] as const) {
+        // Only events the browser itself treats as USER ACTIVATION (HTML "activation-triggering
+        // input event"): keydown, a MOUSE pointerdown, and the END of a touch (pointerup /
+        // touchend / click). The start of a touch is not one — iOS Safari never counted it, and
+        // Chrome refuses `<audio>.play()` from it too. Listening to it anyway (as this did until
+        // 2026-10-08) opened the music gate ~1 ms after a finger landed, so the bed's first `play()`
+        // was rejected with NotAllowedError and — with nothing retrying it — a new player's whole
+        // tutorial on a touch screen had no music (AUDIO_DESIGN.md §5, the autoplay rows).
+        // `MusicPlayer.recover` is the second half of that fix: whatever else refuses a start, the
+        // next gesture restarts it.
+        // A pen press is not an activation either; an unknown/missing pointerType is let through.
+        const onPointerDown = (e?: Event): void => {
+          const type = (e as PointerEvent | undefined)?.pointerType;
+          if (type === undefined || type === '' || type === 'mouse') cb();
+        };
+        window.addEventListener('pointerdown', onPointerDown, { passive: true });
+        for (const ev of ['keydown', 'pointerup', 'touchend', 'click'] as const) {
           window.addEventListener(ev, cb, { passive: true });
         }
       },
@@ -78,7 +91,10 @@ export class WebAudioBus extends ContextAudioBus {
       // 没有 BGM——与 SFX 同一条降级，不是新增的一条。
       createMusicDecks: (ctx) => {
         if (!ctx || typeof Audio === 'undefined') return null;
-        return [new WebMusicDeck({ ctx }), new WebMusicDeck({ ctx })] as const;
+        // `warn` so a refused or failed stream says so in the console — without it both deck
+        // diagnostics went nowhere, which is how the touch-screen refusal above stayed invisible.
+        const warn = (message: string, err: unknown): void => console.warn(message, err);
+        return [new WebMusicDeck({ ctx, warn }), new WebMusicDeck({ ctx, warn })] as const;
       },
       // 失焦暂停（AUDIO_DESIGN.md §4）。`visibilitychange` 而不是 `blur`：切标签页、锁屏、
       // 切到别的 app 都会发它，而 `blur` 还会在点开控制台或另一个窗口时发——那时游戏仍然可见，

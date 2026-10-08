@@ -40,6 +40,7 @@ vi.mock('pixi.js-legacy', () => {
     moveTo(): this { this.strokes++; return this; }
     lineTo(): this { return this; }
     quadraticCurveTo(): this { return this; }
+    drawEllipse(): this { return this; }
   }
   class FakeSprite extends FakeContainer {
     anchor = { set: (): void => {} };
@@ -50,7 +51,9 @@ vi.mock('pixi.js-legacy', () => {
     Container: FakeContainer,
     Graphics: FakeGraphics,
     Sprite: FakeSprite,
-    Texture: { from: (u: string): unknown => ({ url: u }) },
+    // Already decoded and 56px wide, so the fitted base scale is exactly 1 and the breathing
+    // assertions below read in plain units (the not-yet-decoded path has its own test file).
+    Texture: { from: (u: string): unknown => ({ url: u, baseTexture: { valid: true }, orig: { width: 56, height: 56 } }) },
     Ticker: { shared: { add: (): void => {}, remove: (): void => {} } },
   };
 });
@@ -102,7 +105,7 @@ describe('BuildingView.playFireEffect', () => {
   let board: Board;
 
   beforeEach(() => {
-    view = new BuildingView(boardView);
+    view = new BuildingView(boardView, Side.Bottom);
     board = boardWith(towerAt());
     view.sync(board);
     // acquireSprite() seeds each building's idle phase with Math.random(), so the breathing pulse
@@ -186,7 +189,7 @@ describe('BuildingView.playFireEffect', () => {
     // BARRACKS: the tower branch rewrites sprite.x every frame and would mask the bug, while the
     // barracks branch returns before touching it. Verified by deleting the reset line — a tower
     // here still passed.
-    const lView = new BuildingView(rotatedBoardView);
+    const lView = new BuildingView(rotatedBoardView, Side.Bottom);
     const lBoard = boardWith(towerAt());
     lView.sync(lBoard);
     pinPhase(lView, TOWER_ID);
@@ -204,7 +207,7 @@ describe('BuildingView.playFireEffect', () => {
     // Landscape lays the board's rows out along x instead of y (verified in a real capture: the
     // recoil landed on x). shotDirection() recomputes per shot from gridToScreen, so the same cell
     // must produce a horizontal kick under a rotated layout.
-    const rotatedView = new BuildingView(rotatedBoardView);
+    const rotatedView = new BuildingView(rotatedBoardView, Side.Bottom);
     const rotatedBoard = boardWith(towerAt());
     rotatedView.sync(rotatedBoard);
     pinPhase(rotatedView, TOWER_ID);
@@ -224,7 +227,7 @@ describe('BuildingView.playFireEffect', () => {
     // siblings drawn in the same local space.
     const id = TOWER_ID + 10;
     const bBoard = boardWith(new Building(BuildingType.Barracks, Side.Bottom, COL, ROW, undefined, id));
-    const bView = new BuildingView(boardView);
+    const bView = new BuildingView(boardView, Side.Bottom);
     bView.sync(bBoard);
     pinPhase(bView, id);
     bView.sync(bBoard);

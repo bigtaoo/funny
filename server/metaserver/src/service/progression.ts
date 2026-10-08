@@ -15,14 +15,11 @@ import {
   computeEloDelta,
   eloToRank,
   accrueRetentionTask,
-  applyLossProtection,
-  nextProtectSlot,
 } from '@nw/shared';
 import { getOrCreateSave } from '../save.js';
 import { getCurrentSeason } from '../ladderSeason.js';
 import { mirrorCoins } from '../economy.js';
 import { recordMaterialGrants } from '../material.js';
-import { eloProtectEligible, protectDayKey, settledRankedGames } from '../eloProtect.js';
 import type { MetaHandlers } from '../generated/routes.gen.js';
 import { accountIdOf, clientPlatformOf, type MetaCore } from './base.js';
 
@@ -243,19 +240,16 @@ export class ProgressionService implements ProgressionHandlers {
      * through /internal/match/report). Always credits the 'pvp.match' daily task; ELO only moves while
      * the caller is below BOT_ELO_THRESHOLD, at a quarter of ranked K (BOT_ELO_K), throttled to one
      * accepted result per BOT_RESULT_MIN_GAP_MS so scripted spam can't out-pace the real 30s queue timeout.
-     * ELO-loss protection (SEASON_DESIGN_IMPL_SPEC.md §15.5, 2026-10-07) applies here too: while the
-     * account still has an unused protected slot today (new-player: first NEWBIE_PROTECT_GAMES settled
-     * *real* ranked games; daily: first DAILY_PROTECT_GAMES real ranked games of the server-UTC day) a
-     * bot-match loss costs no ELO. A bot match never USES a slot — this path writes neither
-     * pvp.wins/losses/streak nor pvp.dailyProtect; slots are only consumed by real ranked settlement.
+     * ELO-loss protection (SEASON_DESIGN_IMPL_SPEC.md §15.5) does NOT apply here (2026-10-08): protected
+     * slots belong to real ranked games only, so a bot-match loss always costs the plain -BOT_ELO_K/2 and
+     * never reads or consumes a slot (this path writes neither pvp.wins/losses/streak nor pvp.dailyProtect).
+     * Protecting bot losses without consuming a slot let an account that only ever hit the AI fallback
+     * farm "lose 0 / win +4" up to BOT_ELO_THRESHOLD, which the season soft reset never compresses.
      */
     async submitBotResult(req: FastifyRequest, reply: FastifyReply) {
       const accountId = accountIdOf(req);
       const { won } = req.body as { won: boolean };
-      const { now, cols } = this.core.deps;
-      // Only a loss can be protected, so wins skip the (botsvc-account) eligibility read entirely.
-      const dayKey = protectDayKey(now());
-      const protectEligible = !won && (await eloProtectEligible(cols, accountId, undefined, dayKey));
+      const { now } = this.core.deps;
 
       let appliedDelta = 0;
       let resultElo = 0;
@@ -270,9 +264,7 @@ export class ProgressionService implements ProgressionHandlers {
         let lastBotResultAt = pvp.lastBotResultAt;
         if (!onCooldown && pvp.elo < BOT_ELO_THRESHOLD) {
           const { winner, loser } = computeEloDelta(pvp.elo, pvp.elo, { winnerK: BOT_ELO_K, loserK: BOT_ELO_K });
-          const slot = protectEligible ? nextProtectSlot(settledRankedGames(pvp), pvp.dailyProtect, dayKey) : null;
-          const { delta } = applyLossProtection(won ? winner : loser, pvp.streak, won, slot !== null);
-          const after = Math.max(ELO_FLOOR, pvp.elo + delta);
+          const after = Math.max(ELO_FLOOR, pvp.elo + (won ? winner : loser));
           appliedDelta = after - pvp.elo;
           elo = after;
           rank = eloToRank(after);

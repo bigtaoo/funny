@@ -54,6 +54,7 @@ class StubDeck implements MusicDeck {
   setGain(): void { /* the envelope has its own suite */ }
   stop(): void { this.stops++; this.pos = null; }
   position(): number | null { return this.pos; }
+  isIdle(): boolean { return this.pos === null; }
   setPaused(): void { /* focus has its own cases */ }
 }
 

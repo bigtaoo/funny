@@ -178,6 +178,17 @@ describe('WebMusicDeck', () => {
     await Promise.resolve();
     expect(warns.some((w) => w.includes('refused to start'))).toBe(true);
     expect(deck.position()).toBeNull();
+    // Idle is what tells MusicPlayer.recover to restart it on the next gesture.
+    expect(deck.isIdle()).toBe(true);
+  });
+
+  it('is idle before play, busy while playing, idle again after stop', () => {
+    const { deck } = makeWebDeck();
+    expect(deck.isIdle()).toBe(true);
+    deck.play('/a.mp3');
+    expect(deck.isIdle()).toBe(false);
+    deck.stop();
+    expect(deck.isIdle()).toBe(true);
   });
 });
 
@@ -251,6 +262,8 @@ describe('WechatMusicDeck', () => {
     deck.play('/a.mp3');
     expect(inner.currentTime).toBeNaN();
     expect(deck.position()).toBeNull();
+    // Buffering is NOT idle: no position yet, but nothing for a gesture to restart.
+    expect(deck.isIdle()).toBe(false);
     inner.currentTime = 7;
     expect(deck.position()).toBe(7);
   });
@@ -278,6 +291,7 @@ describe('WechatMusicDeck', () => {
     deck.play('/packs/music/a.mp3');
     inner.fail('errMsg: file not found');
     expect(deck.position()).toBeNull();
+    expect(deck.isIdle()).toBe(true);
     expect(warns.some((w) => w.includes('/packs/music/a.mp3'))).toBe(true);
   });
 });

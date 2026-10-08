@@ -5,7 +5,6 @@
 // of their own either way.
 import * as PIXI from 'pixi.js-legacy';
 import { Side, UnitType } from '@nw/engine/types';
-import { targetScreenHeight } from '../unitSize';
 import { factionInk, fx } from '../theme';
 import { barSprite } from '../barSprite';
 import { bakeLazy } from '../bake';
@@ -192,7 +191,7 @@ export function resolveSkinFrameOverrides(equippedSkins: readonly string[]): Par
  * Placeholder units (PvE-only Ironclad/Runner, or any stickman type before its
  * .tao bundle loads) draw the procedural skeleton draft (stickmanDraft.ts) in
  * faction ink. The figure height now comes from the unit's size tier
- * (targetScreenHeight → unitSize.ts), the SAME source the .tao runtime path uses,
+ * (boardUnitHeight → unitSize.ts), the SAME source the .tao runtime path uses,
  * so a draft and its eventual .tao render at consistent tiered heights instead of
  * the old hand-tuned per-type px (art-direction §4.5.3 A). Tier still gives the
  * silhouette cue (§3.2: types by silhouette, not color — color is the faction).
@@ -242,12 +241,13 @@ export const HP_BAR_Y      = -(RADIUS + 8);
 /**
  * HP bar Y for a stickman unit — sits just above the crown. Now that each tier
  * renders at its own height (art-direction §4.5.3 A), this scales with the unit's
- * target height instead of the old flat -32 (which would let an L/XL figure's head
- * poke through the bar). ~0.6× target clears the crown for the shared rig
- * proportions (head tip ≈ 0.54·H_nat above root → 0.54·target on screen).
+ * rendered on-board height (`boardUnitHeight` → unitSize.ts, passed in as
+ * `unitHeight`) instead of the old flat -32 (which would let an L/XL figure's head
+ * poke through the bar). ~0.6× height clears the crown for the shared rig
+ * proportions (head tip ≈ 0.54·H_nat above root → 0.54·height on screen).
  */
-export function stickmanHpBarY(type: UnitType): number {
-  return -Math.round(targetScreenHeight(type) * 0.6);
+export function stickmanHpBarY(unitHeight: number): number {
+  return -Math.round(unitHeight * 0.6);
 }
 /** Render frames the HP bar stays fully visible after a hit (~2 s at 60 fps). */
 export const HP_SHOW_FRAMES  = 120;

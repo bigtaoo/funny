@@ -124,6 +124,9 @@ export class ContextAudioBus implements AudioBus {
     deps.onGesture?.(() => {
       this.gestured = true;
       this.resume();
+      // A deck whose `play()` the host refused stays idle until something calls `play()` again,
+      // and nothing else would before the next track change — see `MusicPlayer.recover`.
+      this.music?.recover();
     });
     deps.onFocusChange?.((hidden) => {
       this.hidden = hidden;
