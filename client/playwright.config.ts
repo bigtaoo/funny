@@ -48,7 +48,18 @@ export default defineConfig({
   webServer: {
     // --no-open: `devServer.open: true` (webpack.config.js) would pop the machine's default
     // browser on every run; the spec drives its own Playwright browser.
-    command: 'npm run start:e2e -- --no-open',
+    //
+    // CI serves a PRODUCTION build of the same web-e2e entry (minified, no source maps) — the
+    // shape players actually load. The development bundle is several times larger, and every spec
+    // cold-loads it in a fresh page on the runner's software WebGL: on CI each spec took 17–32 s
+    // against 2–7 s on a dev machine, and the two-account spec (two such pages) timed out once and
+    // passed on retry. Local non-CI runs keep the development server, for its rebuild speed while
+    // iterating on a spec. The production compile is slower to start, hence the longer timeout.
+    // `start:e2e:prod` passes --no-client-overlay-warnings: production mode emits webpack's
+    // asset-size warnings, and the dev server's overlay iframe would cover the canvas — the
+    // audio specs' first tap then lands on the overlay, audio never unlocks, and they time out
+    // (first try of this switch, 2026-10-08). Compile ERRORS still get the overlay.
+    command: process.env.CI ? 'npm run start:e2e:prod -- --no-open' : 'npm run start:e2e -- --no-open',
     url: 'http://localhost:9096',
     // Every base on the one origin, as a production web build resolves them (Caddyfile paths).
     env: {
@@ -59,6 +70,6 @@ export default defineConfig({
       NW_AUCTION_BASE: STACK,
     },
     reuseExistingServer: !process.env.CI,
-    timeout: 60_000,
+    timeout: process.env.CI ? 180_000 : 60_000,
   },
 });

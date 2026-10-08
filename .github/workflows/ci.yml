@@ -378,8 +378,14 @@ jobs:
           if grep -qv ' success$' shards.txt; then echo "::error::a $PKG shard did not pass"; exit 1; fi
 
   # —— Client: type-check + unit tests + web build —— (own runner, parallel with server-test/tools-test)
+  # Client checks run on two runners side by side (2026-10-08): this one carries the unit suite and
+  # its coverage (238 s), the lint/type/codegen gates and the coverage artifact; client-ui-build
+  # below carries the headless UI smoke (189 s) and the web build with its size/cache gates. In one
+  # job they ran back to back for 570 s, which became the workflow's long pole once the metaserver
+  # and worldsvc tests were sharded. The ruleset's required check "client test + build" is the
+  # client-test-gate job below — see the note there before renaming either job.
   client-test:
-    name: client test + build
+    name: client unit tests + checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -468,6 +474,51 @@ jobs:
       - name: client unit tests (with coverage)
         working-directory: client
         run: npm run test:coverage
+
+      # Same flake ledger as the server shards — written only when client's e2e/load configs had to
+      # retry a test (the plain unit suite deliberately has no retry; see claudedocs/server.md).
+      - name: upload flaky-test report (client)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flaky-report-client
+          path: client/flaky-report.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: upload coverage artifact (client)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-coverage
+          path: client/coverage/**
+          if-no-files-found: ignore
+          retention-days: 1
+
+  client-ui-build:
+    name: client UI smoke + web build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            client/package-lock.json
+            server/package-lock.json
+
+      # Both steps below resolve @nw/engine + @nw/shared to server/ TS source, exactly as the unit
+      # suite does (see the matching step in client-test) — the UI smoke is the one that first failed
+      # without it, on "Failed to load url jsonwebtoken".
+      - name: server install (client's @nw/engine + @nw/shared aliases resolve to server/ TS source)
+        working-directory: server
+        run: npm ci
+      - name: client install
+        working-directory: client
+        run: npm ci
+
       # UI smoke: headless PIXI adapter constructs real scenes in pure Node to prove each scene starts correctly.
       # No Docker / browser / live stack needed, so this lives in the fast path.
       - name: client UI smoke tests
@@ -496,25 +547,24 @@ jobs:
         working-directory: client
         run: npm run check:cachepolicy
 
-      # Same flake ledger as the server shards — written only when client's e2e/load configs had to
-      # retry a test (the plain unit suite deliberately has no retry; see claudedocs/server.md).
-      - name: upload flaky-test report (client)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: flaky-report-client
-          path: client/flaky-report.json
-          if-no-files-found: ignore
-          retention-days: 7
-
-      - name: upload coverage artifact (client)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: client-coverage
-          path: client/coverage/**
-          if-no-files-found: ignore
-          retention-days: 1
+  # The main ruleset ("Only PR") requires a check named "client test + build" — the old single job's
+  # name. Same trap and same fix as server-test-gate above: the two jobs that replaced it have new
+  # names, so this job carries the old one and passes only if both of them did. `always()` so a
+  # failed or cancelled dependency yields a red check here, not a skipped one (a skipped required
+  # check would not block the merge).
+  client-test-gate:
+    name: client test + build
+    needs: [client-test, client-ui-build]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: both client jobs passed
+        env:
+          UNIT: ${{ needs.client-test.result }}
+          UI_BUILD: ${{ needs.client-ui-build.result }}
+        run: |
+          echo "client-test: $UNIT, client-ui-build: $UI_BUILD"
+          test "$UNIT" = success && test "$UI_BUILD" = success
 
   # —— tools: type-check + build + file-length gate —— (own runner, parallel with server-test/client-test)
   tools-test:
@@ -807,19 +857,42 @@ jobs:
           cache: npm
           cache-dependency-path: client/package-lock.json
 
+      # Bring up the full stack and wait for all services to be healthy (--wait works with healthchecks in compose).
+      # caddy (host 18088) fronts it on one origin for the browser smoke, exactly as in production; the
+      # Node-process suites keep using the services' direct ports (see server/docker-compose.ci.yml).
+      #
+      # Started in the background (2026-10-08) so the image build + health wait (68 s) overlaps the
+      # two installs below (client npm ci 36 s, Playwright chromium 25 s), which need nothing from
+      # the stack; "wait for server stack" then joins it before the first test. A background process
+      # outlives its step on a GitHub runner, so the join reads the exit code the subshell leaves in
+      # a file, and replays compose's output either way. `set +e` because the step shell runs with
+      # -e, which would end the subshell on a failed `up` before it wrote the code (the join would
+      # then wait out its timeout); the redirect covers the whole subshell so it does not hold the
+      # step's own stdout open.
+      - name: start server stack (background)
+        working-directory: server
+        run: |
+          ( set +e
+            docker compose -f docker-compose.prod.yml -f docker-compose.ci.yml \
+              up -d --build --wait \
+              redis mongo metaserver commercial gateway matchsvc gameserver worldsvc analyticsvc auctionsvc caddy
+            echo $? > "$RUNNER_TEMP/compose-up.rc"
+          ) > "$RUNNER_TEMP/compose-up.log" 2>&1 &
+
       - name: client install
         working-directory: client
         run: npm ci
 
-      # Bring up the full stack and wait for all services to be healthy (--wait works with healthchecks in compose).
-      # caddy (host 18088) fronts it on one origin for the browser smoke, exactly as in production; the
-      # Node-process suites keep using the services' direct ports (see server/docker-compose.ci.yml).
-      - name: bring up server stack
-        working-directory: server
+      - name: install Playwright chromium
+        working-directory: client
+        run: npx playwright install --with-deps chromium
+
+      - name: wait for server stack
+        timeout-minutes: 10
         run: |
-          docker compose -f docker-compose.prod.yml -f docker-compose.ci.yml \
-            up -d --build --wait \
-            redis mongo metaserver commercial gateway matchsvc gameserver worldsvc analyticsvc auctionsvc caddy
+          while [ ! -s "$RUNNER_TEMP/compose-up.rc" ]; do sleep 2; done
+          cat "$RUNNER_TEMP/compose-up.log"
+          exit "$(cat "$RUNNER_TEMP/compose-up.rc")"
 
       # SLG worldsvc deployment smoke (S8-0): proves the 7th process starts in the prod image and the public REST 4th face is reachable.
       - name: worldsvc health smoke
@@ -852,11 +925,8 @@ jobs:
       # A hard gate since 2026-10-08: it ran as continue-on-error from 2026-07-22, and in that time
       # went red without anyone seeing it (18 failures, none of them product bugs — see
       # claudedocs/client-testing.md). This job is the day-branch → main PR gate, chosen precisely
-      # because its stack cost is too high to pay on every feature-branch merge.
-      - name: install Playwright chromium
-        working-directory: client
-        run: npx playwright install --with-deps chromium
-
+      # because its stack cost is too high to pay on every feature-branch merge. In CI it serves a
+      # production build of the e2e entry (client/playwright.config.ts says why).
       - name: run browser smoke (two-account, real WebGL)
         id: browser_smoke
         working-directory: client
