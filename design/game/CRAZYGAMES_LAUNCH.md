@@ -120,7 +120,18 @@
     **2026-10-05 已修**（`render/TutorialDirector/panels.ts::drawSkipButton`：先排字、底板宽度跟字走、从右缘向左长，
     封顶 `W*0.34`，超了用 `fitFont` 缩字号、不低于可读下限）；英/德 × 横/竖四种组合实测字都在底板内。
     **随下一次「Submit new version」上线**，已审核中的 `64c620eb` 不含此修复。
-- **`NW_CRAZYGAMES_GAME_ID` 的值是 `133101`**（2026-10-05 核）：取自预览页 `__NEXT_DATA__` 的 `props.pageProps.game.id`。
+- **2026-10-08 重投 = 新建一条游戏**（10-07 被拒的那条在门户里打不开了，被拒的提交不能「Submit new version」）：
+  - 用的是另一个开发者账号（列表里另有一个 Holy Kicker），旧 submission `8f3d95b1…` 打开报「An error occurred.」。
+    新条目：`submission.id` = `9cbe0a77-1129-4a27-9563-ad810c0f708d`，slug `nivara-notebook-wars-wfc`，**`gameId` = `136102`**，
+    首个构建 `2de7e81f`（main `e994f5e5b`，总 23 MB / 首包 1.6 MB / 加载 3 s），当天提交，状态 Awaiting review。
+  - 表单照 10-05 那份填；Description 那句「Gold refills on its own」更正为 **「Ink refills on its own」**（对局资源是墨水，见 `hint.ink`）。
+  - 新坑：④**门户不收 zip**（「Archive files are not supported」），要把 `client/dist/` 里的文件本身拖进 Upload files；
+    文件上传工具单次 ≤ 10 MB，包得用户手拖；⑤**Billing 按账号走**，换了账号要重填；
+    ⑥驱动用户本机 Chrome 时，Chrome 被别的窗口**整个盖住**就是 `document.hidden`，rAF 停、游戏只在截图那一刻走一帧——让用户留一角 Chrome 露在外面。
+  - 换了 `gameId` 就要同步生产 `NW_CRAZYGAMES_GAME_ID`（流程同下一条）：没改之前预览里两次 `POST /auth/crazygames -> 400`（回落设备访客）。
+    10-08 已改为 `136102`（备份 `.env.bak-20261008221515`，secrets `9435f67`），假 token 回 `invalid or expired CrazyGames token`；
+    真 token 的 200 这次没测到（预览标签页在后台，`visibleBoot` 一直等前台）。
+- **`NW_CRAZYGAMES_GAME_ID` 的值曾是 `133101`**（2026-10-05 核，旧条目；现为 `136102`，见上）：取自预览页 `__NEXT_DATA__` 的 `props.pageProps.game.id`。
   门户 URL 里的 `8f3d95b1-c884-4175-bb28-08728dae174d` 是 **`submission.id`**，不是 token 里的 `gameId`——
   官方 User 文档的 token 示例就是数字（`"gameId": "20267"`）。配错不会卡人（服务端拒 token → §2 回退设备访客），但等于没配。
 - 生产环境 `NW_CRAZYGAMES_GAME_ID`：**2026-10-05 已配 `133101` 并实测通过**。流程：`sops set secrets/funny/prod.yaml` → `push-env.py funny prod funny-vps '~/funny/server/.env' --yes`（diff 只有这一个 key；备份 `.env.bak-20261005140500`）→ `docker compose -f docker-compose.cloud.yml --env-file .env up -d --no-build metaserver`。验证：容器 `printenv` 得 `133101`；假 token 从 `SSO not configured` 变成 `invalid or expired CrazyGames token`；门户预览（build `64c620eb`）里真 token 的 `POST /auth/crazygames -> 200`（签名 + `gameId` 都对上）。它只被 `/auth/crazygames` 读，对其他平台零影响。
