@@ -929,6 +929,9 @@ no-op / `peak_regions` 的两个已知答案），共 112 例全过；`musicAsse
   getter）→ **真的变成 `suspended`** → 回前台 → 回到 `running`。把 `ContextAudioBus.ts` 还原成改
   之前，这条当场红。单元测试只能证明「我们调了 `suspend()`」，证明不了浏览器真的松手，而这次改动
   的全部意义就是那个状态。
+  （2026-10-08 补：它原先把「5s 内没离开自动播放锁」当前置条件 `test.skip`，在 CI 门禁里等于「机器
+  一忙就算过」——整套并发跑时确实被 skip 过。现在整个文件带 `--autoplay-policy=no-user-gesture-required`
+  启动，`running` 改成断言。自动播放锁不是这条的考点，见 `client-testing.md` 缺口 B。）
 - **单元**：`ContextAudioBus.test.ts` +10、`WebAudioBus.test.ts` +4、`WechatAudioBus.test.ts` +3，另加
   新套件 `audioSessionWiring.test.ts`（6 例）——**真 `audioSettings` + 真 `ContextAudioBus` 合在一起**：
   静音 / 主音量拖到底 / 广告静音这三条玩家真会走的路，此前两端各自被测、**中间那条链没有任何用例走过**
