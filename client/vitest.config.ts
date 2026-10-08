@@ -231,6 +231,11 @@ export default defineConfig({
         // from a dead network), and listeners that are contained and fire once (they cancel a live
         // `wx` RequestTask, from inside a timeout callback where an escaping throw has no stack).
         'src/platform/wechat/abortShim.ts',
+        // The npm `url` stand-in webpack aliases on every target (2026-10-08). Its whole job is to
+        // throw with a pointer if PIXI.utils.url is ever called; test/nodeUrlStub.test.ts calls all
+        // three exports. (Its sibling of that day, src/render/viewInput.ts, is types only — nothing
+        // to cover, so it is not listed.)
+        'src/platform/stubs/nodeUrl.ts',
         // inputSystem: the WeChat touch adapter (2026-09-02). WeChat mini-games have no DOM, so
         // PIXI's EventSystem never fires and EVERY tap in that build arrives through this one file
         // — and it had never been instantiated by any suite. It is not a leaf, it is the first
@@ -266,6 +271,10 @@ export default defineConfig({
         'src/render/rewardIcon.ts',
         'src/render/skinAvatarArt.ts',
         'src/render/stickman/constants.ts',
+        // The .tao unzip (2026-10-08, JSZip -> fflate). PIXI-free, and the one place a rig's bytes are
+        // decoded: a wrong entry name or text decoding fails every unit at once, as a placeholder.
+        // test/taoZip.test.ts reads every shipped .tao through it.
+        'src/render/stickman/taoZip.ts',
         'src/render/theme.ts',
         'src/render/vfx/parseEffectDef.ts',
         'src/render/vfx/registry.ts',

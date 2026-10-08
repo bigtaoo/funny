@@ -15,7 +15,10 @@ export default defineConfig({
     include: ['test/**/*.test.ts'],
     coverage: {
       provider: 'v8',
-      reporter: ['text', 'lcov', 'html', 'json-summary'],
+      // 'json' (coverage-final.json, raw per-statement hit counts) exists for CI's test sharding: this
+      // package's suite runs as two shards, and a shard's json-summary only covers half the tests.
+      // scripts/mergeCoverageShards.mjs sums the shards' hit counts and rebuilds the summary.
+      reporter: ['text', 'lcov', 'html', 'json-summary', 'json'],
       reportsDirectory: './coverage',
       // scripts/** are one-off migration/codegen tools, not app code (same precedent as
       // gameserver/metaserver's coverage.exclude for their scripts/**).
