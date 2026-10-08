@@ -12,6 +12,9 @@ import { ui, sketchPanel, seedFor, fitOrWrap } from '../render/sketchUi';
 import { buildIcon } from '../render/icons';
 import { FS, snapFont } from '../render/fontScale';
 import { stateRecorder } from '../game/replay/StateRecorder';
+import type { Unit } from '@nw/engine/Unit';
+import type { Building } from '@nw/engine/Building';
+import { toFp } from '@nw/engine/math/fixed';
 import { StatePlayerHud } from './StatePlayerScene/hud';
 import { tapHandler } from '../ui/hits';
 import { battleTrack } from '../audio/battleMusic';
@@ -53,34 +56,20 @@ export function skinsForOwner(replay: StateReplay, owner: 0 | 1): readonly strin
   return replay.header.players.find((p) => p.side === owner)?.skins ?? [];
 }
 
-/** Minimal unit structure actually read by UnitView.sync (feed data structurally; no real engine Unit needed). */
-interface UnitLike {
-  id: number;
-  unitType: UnitType;
-  side: Side;
-  colExact: number;
-  rowExact: number;
-  hp: number;
-  maxHp: number;
-  state: UnitState;
-  /**
-   * UnitView time-scales the attack clip to the unit's real attack cadence. The state stream doesn't
-   * record combat stats, so 0 = "play the clip at its authored duration" (StickmanRuntime.setAttackInterval).
-   * Must still be present: reading it off an object that lacks it yields NaN, not a skipped scale.
-   */
-  effectiveAttackIntervalTicks: number;
-}
-/** Minimal building structure actually read by BuildingView.sync. */
-interface BuildingLike {
-  id: number;
-  buildingType: BuildingType;
-  /** Owner, as a render side — BuildingView picks the faction ink from it. */
-  side: Side;
-  col: number;
-  row: number;
-  hp: number;
-  maxHp: number;
-}
+/**
+ * Minimal unit structure actually read by UnitView.sync (feed data structurally; no real engine Unit needed).
+ * Picked from the engine class rather than restated: the views read `hp_fp` / `maxHp_fp`, and a hand-written
+ * copy once said `hp` / `maxHp` — every HP bar fraction came out NaN and nothing failed to compile.
+ *
+ * `effectiveAttackIntervalTicks`: UnitView time-scales the attack clip to the unit's real attack cadence. The
+ * state stream doesn't record combat stats, so 0 = "play the clip at its authored duration"
+ * (StickmanRuntime.setAttackInterval). Must still be present: reading it off an object that lacks it yields
+ * NaN, not a skipped scale.
+ */
+type UnitLike = Pick<Unit,
+  'id' | 'unitType' | 'side' | 'colExact' | 'rowExact' | 'hp_fp' | 'maxHp_fp' | 'state' | 'effectiveAttackIntervalTicks'>;
+/** Minimal building structure actually read by BuildingView.sync (`side` picks the faction ink). */
+type BuildingLike = Pick<Building, 'id' | 'buildingType' | 'side' | 'col' | 'row' | 'hp_fp' | 'maxHp_fp'>;
 /** UnitView/BuildingView.sync only reads the two Maps: board.units / board.buildings. */
 interface BoardLike {
   units: Map<number, UnitLike>;
@@ -259,8 +248,8 @@ export class StatePlayerScene implements Scene {
         side: ownerToSide(u.side as OwnerId),
         colExact: col,
         rowExact: row,
-        hp: u.hp,
-        maxHp: u.maxHp,
+        hp_fp: toFp(u.hp),
+        maxHp_fp: toFp(u.maxHp),
         state: u.state as UnitState,
         effectiveAttackIntervalTicks: 0,
       });
@@ -277,8 +266,8 @@ export class StatePlayerScene implements Scene {
         side: ownerToSide(b.side as OwnerId),
         col: b.col,
         row: b.row,
-        hp: b.hp,
-        maxHp: b.maxHp,
+        hp_fp: toFp(b.hp),
+        maxHp_fp: toFp(b.maxHp),
       });
     }
     return m;
