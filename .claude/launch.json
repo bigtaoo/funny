@@ -115,6 +115,19 @@
         "D:\\funny\\tools\\ops"
       ],
       "port": 9093
+    },
+    {
+      "name": "game-crazygames",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "npm",
+        "--prefix",
+        "D:\\funny\\client",
+        "run",
+        "start:crazygames"
+      ],
+      "port": 9090
     }
   ]
 }
