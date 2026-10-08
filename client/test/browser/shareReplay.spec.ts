@@ -4,9 +4,11 @@
 // suites stub out. Pins the 2026-08-26 fix set: a shared replay used to show unskinned, frozen units
 // and no HUD at all (REPLAY_SHARE_DESIGN §4.2).
 //
-// Unlike smoke.spec.ts this needs NO backend: the share fetch (`GET {api}/r/<code>`) is intercepted and
-// answered with a hand-built state stream. `unpackReplayBlob` accepts a plain object as well as the
-// base64(gzip) production form, so the fixture can be inlined as JSON.
+// The share fetch (`GET {api}/r/<code>`) is intercepted and answered with a hand-built state stream,
+// so no replay has to exist server-side. `unpackReplayBlob` accepts a plain object as well as the
+// base64(gzip) production form, so the fixture can be inlined as JSON. It still boots the real app
+// against the stack, though (analytics config, session), and the "plays the stream" case asserts no
+// console errors — so it needs the same stack as smoke.spec.ts (see playwright.config.ts).
 //
 // Run: npm run test:browser   (opt-in, real browser).
 

@@ -91,8 +91,8 @@ vi.mock('pixi.js-legacy', () => {
   };
 });
 
-// ── jszip stub (StickmanRuntime, imported transitively via core.ts) ────────────
-vi.mock('jszip', () => ({ default: { loadAsync: () => Promise.reject(new Error('unused in this test')) } }));
+// ── .tao unzip stub (StickmanRuntime, imported transitively via core.ts) ───────
+vi.mock('../../src/render/stickman/taoZip', () => ({ readTaoBundle: () => Promise.reject(new Error('unused in this test')) }));
 
 // ── Imports (after all vi.mock declarations) ───────────────────────────────────
 import { LobbySceneCore } from '../../src/scenes/LobbyScene/core';

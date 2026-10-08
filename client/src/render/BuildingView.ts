@@ -1,6 +1,5 @@
 import * as PIXI from 'pixi.js-legacy';
-import { Board } from '@nw/engine/Board';
-import { Building } from '@nw/engine/Building';
+import type { BuildingViewBoard, BuildingViewBuilding } from './viewInput';
 import { BuildingType, Side } from '@nw/engine/types';
 import { BOTTOM_BUILDING_ROW, TOP_BUILDING_ROW } from '@nw/engine/config';
 import { factionInkFor, drawFactionWash } from './factionCue';
@@ -165,7 +164,7 @@ export class BuildingView {
 
   // ─── Per-frame sync ───────────────────────────────────────────────────────
 
-  sync(board: Board): void {
+  sync(board: BuildingViewBoard): void {
     const seen = new Set<number>();
 
     for (const building of board.buildings.values()) {
@@ -243,7 +242,7 @@ export class BuildingView {
 
   // ─── Private helpers ──────────────────────────────────────────────────────
 
-  private acquireSprite(building: Building): PIXI.Container {
+  private acquireSprite(building: BuildingViewBuilding): PIXI.Container {
     const c = this.pool.acquire();
     c.visible = true;
 
@@ -285,7 +284,7 @@ export class BuildingView {
    * dragGhost LandingPreview pattern). The boot preload only warns on a failed/slow art step and
    * lets the game continue, so a battle can start before this texture has decoded.
    */
-  private fitSprite(c: PIXI.Container, building: Building): void {
+  private fitSprite(c: PIXI.Container, building: BuildingViewBuilding): void {
     const sp    = c.getChildByName('sprite') as PIXI.Sprite;
     const patch = c.getChildByName('patchGfx') as PIXI.Graphics;
     const scale = buildingBaseScale(sp.texture);
@@ -301,11 +300,11 @@ export class BuildingView {
   }
 
   /** This building's owner ink, from the local player's point of view. */
-  private factionColor(building: Building): number {
+  private factionColor(building: BuildingViewBuilding): number {
     return factionInkFor(building.side, this.localSide);
   }
 
-  private updateSprite(c: PIXI.Container, building: Building): void {
+  private updateSprite(c: PIXI.Container, building: BuildingViewBuilding): void {
     const { x, y } = this.boardView.gridToScreen(building.col, building.row);
     c.x = x;
     c.y = y;
@@ -315,7 +314,7 @@ export class BuildingView {
     setBarRatio(hpFill, ratio, HP_BAR_W, ratio > 0.4 ? 0x44cc44 : 0xcc4444);
   }
 
-  private updateIdleAnim(c: PIXI.Container, building: Building): void {
+  private updateIdleAnim(c: PIXI.Container, building: BuildingViewBuilding): void {
     const phase = this.phases.get(building.id) ?? 0;
     const base  = this.baseScales.get(building.id);
     const t     = this.time;

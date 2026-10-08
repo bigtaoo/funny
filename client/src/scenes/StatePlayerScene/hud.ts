@@ -63,7 +63,7 @@ export class StatePlayerHud {
       players.find((p) => p.side === side)?.name || t(side === 0 ? 'stateplayer.you' : 'stateplayer.opponent');
 
     // Owner 1 (top of the board) reads on the top strip, owner 0 (bottom) on the bottom strip — the dumb
-    // player never mirrors the viewpoint, so this mapping is fixed (see StatePlayerScene's buildBoard).
+    // player never mirrors the viewpoint, so this mapping is fixed (see StatePlayerScene's buildUnits).
     // The top strip's ink group leaves room for the match clock at the far right.
     this.sides = {
       1: this.buildSide(top, 1, nameOf(1), CLOCK_W),

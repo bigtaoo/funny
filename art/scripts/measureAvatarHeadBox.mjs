@@ -11,6 +11,7 @@
 // Run (needs the client's sharp):  cd client && node ../art/scripts/measureAvatarHeadBox.mjs
 // Re-run and paste the output whenever a portrait is added or repainted.
 import sharp from 'sharp';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -56,7 +57,12 @@ const lines = [];
 for (const [group, keys, dir, prefix] of [['PRESET', PRESETS, 'preset', 'preset_'], ['HERO', HEROES, 'hero', 'hero_'], ['SKIN', SKINS, 'skin', 'avatar_']]) {
   lines.push(`${group}:`);
   for (const key of keys) {
-    const b = await headBox(path.join(ROOT, dir, `${prefix}${key}.png`));
+    // Measure the full-resolution original: since 2026-10-08 the base file is a downscaled H5 copy
+    // and the original lives next to it as `.hires.png` (ASSET_PACKAGING §23). The box is stored as
+    // fractions, so it applies to both.
+    const base = path.join(ROOT, dir, `${prefix}${key}.png`);
+    const hires = base.replace(/\.png$/, '.hires.png');
+    const b = await headBox(fs.existsSync(hires) ? hires : base);
     lines.push(`  ${key}: { top: ${f(b.top)}, bottom: ${f(b.bottom)}, width: ${f(b.width)} },`);
   }
 }

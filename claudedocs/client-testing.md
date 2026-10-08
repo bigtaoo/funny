@@ -9,7 +9,7 @@
 | 单元 | `npm test` | `test/**/*.test.ts`（**含 `test/render/**`**） | node | 纯游戏逻辑；外加 `test/render/**` 那批渲染层窄回归（BaseTexture 监听器 / blob URL 泄漏、HUD 几何、图标 dispatch 表…） | 多数文件 `vi.mock` 掉 PIXI；`icons`/`rewardIcon` 真 import `pixi.js-legacy` |
 | UI 冒烟 | `npm run test:ui` | `test/ui/**/*.ui.ts` | node + `pixiHeadless` | **真实场景构造 / update / destroy + 命中矩形回归** | 真对象树，**无渲染器** |
 | 全链路 E2E | `npm run test:e2e`（opt-in） | `test/e2e/**/*.e2e.ts` | node | `createAppCore` 全链路对接活服务器（meta+gateway+matchsvc+game+commercial+mongo） | headless orchestration |
-| 浏览器冒烟 / 几何巡检 | `npm run test:browser`、`npm run test:portrait`（均 opt-in） | `test/browser/**/*.spec.ts` | 真 Chromium（Playwright） | 白屏类硬故障（shader/atlas/WebGL）、两账号真实对战；以及**真字形量出来的版面几何**（见下方「几何巡检」）与**转屏后的重排**（`rotateLayout.spec.ts`，同一张站点表） | **真渲染器 + 真 WebGL** |
+| 浏览器冒烟 / 几何巡检 | `npm run test:browser`（CI `e2e` job 硬门禁）、`npm run test:portrait`（本地 Docker 栈，opt-in）；两份配置按 `LOCAL_STACK_SPECS` 互斥分 spec | `test/browser/**/*.spec.ts` | 真 Chromium（Playwright） | 白屏类硬故障（shader/atlas/WebGL）、两账号真实对战；以及**真字形量出来的版面几何**（见下方「几何巡检」）与**转屏后的重排**（`rotateLayout.spec.ts`，同一张站点表） | **真渲染器 + 真 WebGL** |
 | 手动调参脚本 | `npm run test:manual`（opt-in，非回归） | `test/**/*.manual.ts` | node | console.log 输出的难度曲线/A-B 对比表，**零 `expect()`**，人工读表用 | 否 |
 
 `npm test` 只跑 `*.test.ts`；`*.ui.ts` / `*.e2e.ts` / `*.manual.ts` 用各自命名后缀隔离，默认套件不会误收。
@@ -175,6 +175,10 @@ CI（`.github/workflows/ci.yml`）的 `client unit tests` 步已切到 `npm run 
 - **以后写这一层的测试**：只要用例依赖「加载完 / 没加载完」，就 `beforeEach(resetSharedStubTexture)`，别假设「桩 Image 永不 fire loaded，所以整个文件里它一直 invalid」——那句话对单条用例成立，对文件不成立。
 - **⚠️ 别把另一种红当成这条**：`test/ui/cityBldIcon.ui.ts` 与 `composition-hooks.ui.ts` 在**机器负载高时**会报 `Test timed out in 5000ms`。那是**负载假阳性**，不是顺序依赖——机器空闲时这两个文件单跑 13/13 绿、最慢用例仅 ~740ms（离 5000ms 很远），而复现时本机同时在跑 Chrome + 多个套件。症状也不同：超时 vs 断言值错。判别法：单文件安静复跑一次，绿就是负载。
 
+## ⚠️ 往 `os.tmpdir()` 里产出、再 `require` 回来的测试：产物用 `.cjs`（2026-10-08）
+
+`targetGlobalCompile.test.ts` 把 webpack 产物写进 `%TEMP%` 再 `require` 它。Node 判定 `.js` 是 CJS 还是 ESM 靠**向上找最近的 `package.json`**——本机 `%TEMP%\package.json`（别的项目留下的，`"type":"module"`，不是我们的、别删）让 8 个用例全红在 `module is not defined in ES module scope`，CI 却绿。修法：产物文件名改成 `probe.cjs`，扩展名是 Node 唯一不看外层目录的信号。以后新增「产出 → 在 Node 里执行」的临时文件一律用 `.cjs`/`.mjs`；只当文本读的产物（各 `check*.mjs` 门禁的 fixture）不受影响。
+
 ## 静态类型检查（`npm run typecheck` / CI）
 
 vitest 走 esbuild、webpack 也不做类型检查，且 `client/tsconfig.json` 的 `include` 只有 `src/**`——**`test/**` 从不被类型检查**。历史上这让 test 里对 `GameConfig` / DTO / proto 形状的引用可以运行期侥幸通过（esbuild 擦掉类型），却是潜伏 bug（典型：CC-1 把 `GameConfig.unitLevels` 换成 `cardInstances`、`JudgeRequest` 新增必填 `unitLevels` 后，多个 test 仍用旧形状）。
@@ -247,7 +251,7 @@ vitest 走 esbuild、webpack 也不做类型检查，且 `client/tsconfig.json` 
 
 > 运行时会看到 `[UnitView] xxx .tao failed to load` 的 warn：这是 `StickmanRuntime.loadAsset` fire-and-forget fetch 那个 data URI（非真 zip）失败被 `.catch` 吞掉的**预期噪声**，不影响断言。骨骼动画美术在 headless 下本就不加载。
 
-## 缺口 B（实施中，2026-07-22）：浏览器冒烟（Playwright，两账号）
+## 缺口 B（2026-07-22 落地，2026-10-08 起 CI 硬门禁）：浏览器冒烟（Playwright，两账号）
 
 UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴露：
 
@@ -283,10 +287,11 @@ UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴
 
 ### 落地
 
-- `client/playwright.config.ts`：`webServer` 拉起 `npm run start:e2e`（`webpack serve --env TARGET=web-e2e`，独立端口 9096，避免和 `npm start` 的 9090 撞车）。
+- `client/playwright.config.ts`：`webServer` 拉起 `npm run start:e2e`（`webpack serve --env TARGET=web-e2e`，独立端口 9096，避免和 `npm start` 的 9090 撞车），并在 `webServer.env` 里把五个 `NW_*` 基址烘焙成 CI 栈 caddy 的**单一入口** `http://localhost:${NW_E2E_PROXY_PORT:-18088}`（`/api`、`/gw`、world/social/auction 同源）——与线上 web 包的解析方式一致。**为什么必须过反代**：客户端好几个地址是从 API base 按路径推出来的（`analytics/index.ts` 的 `analyticsBaseUrl()` = API base 去掉 `/api`），只有真 `Caddyfile` 会把 `/analytics*` 路由给 analyticsvc；直连 metaserver 时 `GET /analytics/config` 落到它那个恒返 501 的占位路由（`metaserver/src/service/telemetry.ts`），所有「控制台 0 error」断言都红。所以裸机 `npm run dev:all`（无反代）跑这层同样会红；本地 Docker 栈（nginx 8088 路由同一套路径）可用 `NW_E2E_PROXY_PORT=8088`。
+- **两份配置分 spec，一张表**：`playwright.portrait.config.ts` 导出 `LOCAL_STACK_SPECS`（`portraitLayout` / `rotateLayout` / `captureEndStats` / `bakeBudget` / `frameCost`），它自己 `testMatch` 这张表，`playwright.config.ts` 用同一张表 `testIgnore`——一个 spec 不可能两边都跑或两边都不跑。这五个都钉在本地 Docker 栈上（`lib/seed.ts` 走 `docker exec nw-local-mongo` + 本地栈的 root 账号种数；巡检一轮约 30 分钟，而 CI 整个 job 才 25 分钟超时），2026-10-08 之前 `playwright.config.ts` 的 `testMatch: '**/*.spec.ts'` 把它们也收进了 CI 冒烟，于是 CI 里 15 个必挂 + 4 个永远 skip。
 - 测试文件：`client/test/browser/*.spec.ts`。
   - `smoke.spec.ts`：上面那两条 happy-path，**需要全套后端**。
-  - `shareReplay.spec.ts`（2026-08-26 加）：分享录像落地页（`?r=<code>`）。**不需要后端** —— 只把 `GET {api}/r/<code>` 用 `page.route` 拦下来喂一份手写状态流（`unpackReplayBlob` 接受未压缩的普通对象，fixture 可以直接内联 JSON），其余照真渲染器跑。所以它是这层里唯一能本地随手跑、也是唯一能验「皮肤/动作/HUD 真的画出来了」的：皮肤靠**差分**断言（webpack 用内容哈希命名资源，URL 里看不出是哪份 rig，但「带皮肤的流比同一条不带皮肤的流多请求 2 个 `.tao`」看得出，且不写死默认 rig 的数量），动作靠**同一 canvas 相隔 0.4s 两帧像素不同**，HUD 靠遍历真 `app.stage` 找可见的纯数字文本（= 两侧墨水读数）。通过时也把那一帧作为 Playwright attachment 附在报告里，供人眼看一遍。
+  - `shareReplay.spec.ts`（2026-08-26 加）：分享录像落地页（`?r=<code>`）。**录像本身不需要后端** —— 只把 `GET {api}/r/<code>` 用 `page.route` 拦下来喂一份手写状态流（但 app 照常启动、照常拉 analytics config，「控制台 0 error」那条断言因此仍需要和 `smoke.spec.ts` 同一个栈——2026-10-08 那批 501 里就有它一条）（`unpackReplayBlob` 接受未压缩的普通对象，fixture 可以直接内联 JSON），其余照真渲染器跑。所以它是这层里唯一能本地随手跑、也是唯一能验「皮肤/动作/HUD 真的画出来了」的：皮肤靠**差分**断言（webpack 用内容哈希命名资源，URL 里看不出是哪份 rig，但「带皮肤的流比同一条不带皮肤的流多请求 2 个 `.tao`」看得出，且不写死默认 rig 的数量），动作靠**同一 canvas 相隔 0.4s 两帧像素不同**，HUD 靠遍历真 `app.stage` 找可见的纯数字文本（= 两侧墨水读数）。通过时也把那一帧作为 Playwright attachment 附在报告里，供人眼看一遍。
   - `audioDucking.spec.ts`（2026-09-01 加，AUDIO_DESIGN §4）：`sfx.result.victory` → `DUCK_CUES` → 真 `ContextAudioBus.play()` → 真 `MusicPlayer` → 真 `GainNode` 的接线。**也不需要后端**——只到 intro 屏（默认拿 `bgm.lobby`），从不登录/进战斗，靠 `window.__nwAudio`（`entries/web-e2e.ts`）读 `music().duck`/`decks[].gain`。真墙钟等待攻击/保持/释放三段，本地连跑四次无 flaky。`MusicPlayer.test.ts` 原有的包络单测直接调 `player.requestDuck()`，从不经过 `ContextAudioBus.play()`，所以看不见"cue 掉出 `DUCK_CUES`"或"`play()` 里那行 `requestDuck()` 被删"这类接线断裂——这条补的就是那一段。**不做全局 `declare global`**（见上一条的教训）：局部 `interface` + 每个 `page.evaluate`/`waitForFunction` 闭包内就地 `as unknown as {...}`。
     > **2026-09-02 修 flaky**：本机 3 跑 2 挂。原写法是三个 `waitForTimeout` 断言「某时刻 duck 必须是某值」，注释还写着「wide margin either side for CI scheduling jitter」——那句话是这里唯一不成立的。两个成因：①**包络不走墙钟**，`advanceDuck` 吃的是渲染 ticker 累积的 `dtMs`，掉帧就与 `waitForTimeout` 分岔；②**余量只有 100ms 不是"wide"**——`DUCK_HOLD_MS` 是 500 而第二次读瞄准 400，中间还要花掉两次 `page.evaluate` 的 CDP 往返。实测第二次读落在 ticker 时间约 583ms，hold 早过期、release 已开始，duck 读到 0.515（= 0.45 + 0.55×83/700）撞上 `< 0.5`。**这个形状放宽边界修不好**：边界钉死在 500ms，而它前面的开销没有上界。
     >
@@ -304,9 +309,15 @@ UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴
 
 需要拉起全套后端（mongo/redis + prod compose 全部 11 个服务进程），每个小 PR 都跑一次太重；两账号真联机路径本身偶发性 flaky（网络时序），跑太频繁容易拖慢日常合并。选在**日分支合并进 main 的 PR**这一档——`.github/workflows/ci.yml` 的 `pull_request`/`push: main` 触发本来就精确对应这个节点（feature→日分支是本地 `git merge`，只有日分支→main 才开 GitHub PR，见 `claudedocs/worktrees.md`）。
 
-`.github/workflows/ci.yml` 已有的 `e2e` job 本来就用 `docker compose -f docker-compose.prod.yml -f docker-compose.ci.yml up -d --wait` 拉起过一次全栈（供 headless `test:e2e`/`test:load` 用），浏览器冒烟**复用同一次拉起**，不再单独起一次 docker（省 CI 分钟数），只加两步：`npx playwright install --with-deps chromium` + `npm run test:browser`。
+`.github/workflows/ci.yml` 已有的 `e2e` job 本来就用 `docker compose -f docker-compose.prod.yml -f docker-compose.ci.yml up -d --wait` 拉起过一次全栈（供 headless `test:e2e`/`test:load` 用），浏览器冒烟**复用同一次拉起**，不再单独起一次 docker（省 CI 分钟数），只加两步：`npx playwright install --with-deps chromium` + `npm run test:browser`。本机想原样复现整个 job（端口被占时换端口）：`scripts/e2e-local.sh`，见 [`server-testing-tooling.md`](server-testing-tooling.md) 末节。
 
-**2026-07-22 新加，`continue-on-error: true`**：CI 环境（ubuntu-latest）尚未跑过，先观察几轮 PR 确认稳定后再去掉这个 flag、转成真正卡合并的硬门槛（`steps.browser_smoke.outcome` 用来在失败时上传 Playwright HTML report，`continue-on-error` 会让 `if: failure()` 失效，故直接判 `outcome`）。
+**2026-07-22 新加时是 `continue-on-error: true`**（观察期）。**2026-10-08 摘掉，转成硬门禁**：观察期里它一直是红的、没人看见——CI（run 37750227427）与本机同一批 18 failed / 5 passed / 6 skipped，没有一条是产品 bug：
+1. 3 条（`smoke` ×2、`shareReplay` ×1）是 analytics 501：CI 栈没起 caddy、包直连 metaserver，见上面「落地」第一条。修法是让 CI 栈**长得像线上**：`server/docker-compose.ci.yml` 给 prod 的 caddy 只改宿主端口（`ports: !override`，`NW_E2E_PROXY_PORT`，默认 18088）和容器名，`Caddyfile` 原样用；caddy 的 prod `depends_on` 顺带把 auctionsvc 拉进栈（socialsvc 本来就因 worldsvc 依赖在栈里）。`test:e2e`/`test:load` 照旧走各服务直连端口。顺带发现 prod.yml 的 caddy 没传 `NW_OPS_PROXY_SECRET`，变量为空时 `/ops/*` 的 header matcher 不合法、caddy 起不来反复重启（cloud.yml 传了，线上没事），CI overlay 给了个固定弱值。
+2. 15 条（`portraitLayout` ×14、`rotateLayout` ×1）是本地栈专用 spec 被误收进 CI：`docker exec nw-local-mongo` 在 CI 栈里不存在。不改种数方式、不删 spec——它们本来就属于 `test:portrait`，改成用 `LOCAL_STACK_SPECS` 从冒烟配置里排除。
+3. 6 条 skipped：`frameCost` ×2 / `bakeBudget` ×2 / `captureEndStats` ×1 是**有意的 opt-in 测量/取样工具**（`NW_FRAMECOST` / `NW_BAKE` / `NW_CAPTURE`），都需要本地栈——保留，挪到 `LOCAL_STACK_SPECS`（`frameCost` 原先只在冒烟配置里，但它头注释本就写着 dev server 要建在 8088 上）。`audioSession` ×1 是**负载下才 skip 的前置条件**（单跑 2s 绿；整套 11 个 worker 一起跑时它被 skip——前置条件是「5s 内 `AudioContext` 离开自动播放锁」，没离开就 `test.skip`）——门禁里「忙了就算过」等于没测，改成整个文件 `--autoplay-policy=no-user-gesture-required`、前置条件从 skip 改成 `expect.poll(...).toBe('running')`。它测的是「上下文在跑时切后台会不会松手」，自动播放锁本来就不是它的考点。
+4. 没有删任何 spec。
+
+ci.yml 那一步去掉 `continue-on-error` 后，上传 report 的条件改成 `failure() && steps.browser_smoke.outcome == 'failure'`（只在冒烟自己挂了时传；前面步骤挂了冒烟会被跳过，没有 report 可传），失败时的 server 日志 dump 现在也覆盖冒烟失败。注意 `client-deploy.yml` 等 `workflow_run` 部署等的是整个 CI 绿——**冒烟红现在会挡部署**。另外 `playwright.config.ts` 在 `CI` 下把 `workers` 钉成 2（= 4 vCPU runner 的默认值），否则 `scripts/e2e-local.sh` 在 22 核开发机上开 11 个 worker，首轮集体冷启动把 dev server 饿死、3 个用例超时后靠重试才过；本机修复后连跑三轮的结果见 [`server-testing-tooling.md`](server-testing-tooling.md) 末节。
 
 **2026-08-05 修复：`registerAndEnterLobby` 补上 FTUE 跳过步骤**——这条 flag 一直没摘掉的真实原因大概率就是这个：2026-07-29 那次 `HeadlessAppViews.showGame` 修复（commit `e5093451`，ADR-056 的 `reconcile()` 重写后，本地种的 `tutorial_done` flag 撑不过首次云同步，全新账号一律先进新手引导关）只动了 `test/harness/HeadlessAppViews.ts`——`test/e2e/full-link.e2e.ts` 的 `registerAndEnterLobby` 因为走的正是这层 headless views，`showGame()` 自动 `onExitToLobby()` 跳关，测试代码完全不用感知这件事。但 `smoke.spec.ts` 走真实浏览器 + 真实 `entries/web-e2e.ts`（没有这层 mock 拦截），它自己那份 `registerAndEnterLobby` 从写下来那天起就没处理过这个重定向——注册成功后 `goLobby()` 内部一查 `tutorial_done` 没设直接转 `goTutorial()`，`state.screen` 落地在 `'game'`（新手关卡），永远等不到 `'lobby'`，`screenIs(page,'lobby')` 20s 超时——这份预测比 `2026-07-29` 那次修复晚了一周，从来没同步过。修复：`registerAndEnterLobby` 注册后先等 `'lobby'` 或 `'game'` 二者之一，落在 `'game'` 就调 `window.__nwE2E.state.gameCb.onExitToLobby()`（跟玩家点"跳过新手引导"完全同一路径，`app/nav/game.ts`'s `goTutorial()` 里定义），再继续等 `'lobby'`。
 
@@ -368,7 +379,7 @@ UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴
 - **只有画在文字之后的实心矩形算「盖住」**：`Graphics` 的 bounds ≠ 它涂到的像素，头像那圈 rim 是透明 PNG、描边 `Graphics` 只画边；放弃 z 序会让每个普通按钮都中招（实测 9 条 → 46 条）；
 - 本来就该盖在别人身上的层由产品侧显式标记：`GuideOverlay` 的根容器 `name = 'overlay:guide'`，巡检只在同一层内互比。
 
-**后端**：与 `test:browser` 不同，这条跑在 **Docker 全栈**（`./docker/local-up.ps1`，nginx 单口 8088）上，所以它有自己的 `playwright.portrait.config.ts`（客户端 dev server 另开 9097，五个 `NW_*` 基址写死在配置里）。两份配置都加了 `--no-open`——`webpack.config.js` 的 `devServer.open: true` 会在每次起服务时弹开发者本机的默认浏览器。
+**后端**：与 `test:browser`（CI 栈）不同，这条跑在 **本地 Docker 全栈**（`./docker/local-up.ps1`，nginx 单口 8088）上，所以它有自己的 `playwright.portrait.config.ts`（客户端 dev server 另开 9097，五个 `NW_*` 基址写死在配置里；它导出的 `LOCAL_STACK_SPECS` 同时是冒烟配置的 `testIgnore`，见缺口 B「落地」）。两份配置都加了 `--no-open`——`webpack.config.js` 的 `devServer.open: true` 会在每次起服务时弹开发者本机的默认浏览器。
 
 **往 seed 里写数之前先找到它的上限常量**（2026-09-12 的教训，`UI_DESIGN_LOG_2026-09.md` §50.8）：第一次真跑出来 105 条 finding，其中 60 条是在量 fixture 而不是在量排版——装备词条用了两个不存在的 id、主词条存了 8630（屏幕自己乘 `enhanceMultiplier`，真值是 base 8/10/6）、卡等级 60（上限 9）、兵力池 148 万（上限 2 万）、建筑等级 20（上限 10）。**这类 finding 比没有 finding 更坏**：它带着坐标和字号，长得和真 bug 一模一样，会把人送去修一个玩家永远看不到的字符串。改回真上限后同一视口 105 → 90 条，且条条能读。
 

@@ -39,7 +39,13 @@
 // this script also prints a truecolor (non-palette, still max zlib effort) size next to the
 // palette one so you can eyeball whether the given unit is worth keeping truecolor.
 //
-// Run: node art/scripts/exportUnitCardArt.mjs
+// H5/native split (2026-10-08, ASSET_PACKAGING §23): a unit whose full export is over the H5 cap
+// keeps that export as `<name>.hires.png` (the native `mobile` build swaps it in) and ships a
+// downscaled `<name>.png` everywhere else. This script writes the FULL export, so for such a unit it
+// writes the `.hires` sibling; run art/scripts/deriveH5ArtVariants.mjs afterwards to re-derive the
+// base file. Thumbnails are cut from the largest committed export (the `.hires` one when present).
+//
+// Run: node art/scripts/exportUnitCardArt.mjs && node art/scripts/deriveH5ArtVariants.mjs
 // Out: client/src/assets/units/<name>.png, client/src/assets/units/thumb/<name>.png,
 //      client/src/assets/units/skins/skin_<name>.png
 
@@ -115,17 +121,23 @@ async function derive(srcRel, outAbs, maxLongEdge) {
   );
 }
 
+/** Where a unit's full-size export lives: its `.hires` sibling when the H5 split applies to it. */
+function fullExportPath(name) {
+  const hires = path.join(OUT_DIR, `${name}.hires.png`);
+  return fs.existsSync(hires) ? hires : path.join(OUT_DIR, `${name}.png`);
+}
+
 for (const [name, src] of Object.entries(UNITS)) {
   // A unit whose master png is missing keeps its committed export.
   if (!fs.existsSync(path.join(ROOT, src))) { console.log(`${name}.png`.padEnd(24) + ' (no master png — kept as committed)'); continue; }
-  await derive(src, path.join(OUT_DIR, `${name}.png`), UNIT_MAX_LONG_EDGE);
+  await derive(src, fullExportPath(name), UNIT_MAX_LONG_EDGE);
 }
 // Thumbnails come from the committed full exports, not the masters: every unit has one, and the
 // thumbnail is then guaranteed to be the same picture that ships at full size.
 // Skipped where the export is already within 25% of the thumbnail size: the copy would save nothing
 // and cardArt.ts falls back to the full url for a unit without a thumbnail.
 for (const name of Object.keys(UNITS)) {
-  const full = path.join(OUT_DIR, `${name}.png`);
+  const full = fullExportPath(name);
   const { width, height } = await sharp(full).metadata();
   if (Math.max(width, height) <= THUMB_MAX_LONG_EDGE * 1.25) continue;
   await derive(path.relative(ROOT, full), path.join(OUT_DIR, 'thumb', `${name}.png`), THUMB_MAX_LONG_EDGE);

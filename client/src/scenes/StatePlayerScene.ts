@@ -12,8 +12,7 @@ import { ui, sketchPanel, seedFor, fitOrWrap } from '../render/sketchUi';
 import { buildIcon } from '../render/icons';
 import { FS, snapFont } from '../render/fontScale';
 import { stateRecorder } from '../game/replay/StateRecorder';
-import type { Unit } from '@nw/engine/Unit';
-import type { Building } from '@nw/engine/Building';
+import type { UnitViewUnit, BuildingViewBuilding } from '../render/viewInput';
 import { toFp } from '@nw/engine/math/fixed';
 import { StatePlayerHud } from './StatePlayerScene/hud';
 import { tapHandler } from '../ui/hits';
@@ -54,26 +53,6 @@ const TAG_FS_MAX = 26;
 /** That owner's equipped skin ids, or none (v1 streams carry no skins at all — REPLAY_SHARE_DESIGN §2.2). */
 export function skinsForOwner(replay: StateReplay, owner: 0 | 1): readonly string[] {
   return replay.header.players.find((p) => p.side === owner)?.skins ?? [];
-}
-
-/**
- * Minimal unit structure actually read by UnitView.sync (feed data structurally; no real engine Unit needed).
- * Picked from the engine class rather than restated: the views read `hp_fp` / `maxHp_fp`, and a hand-written
- * copy once said `hp` / `maxHp` — every HP bar fraction came out NaN and nothing failed to compile.
- *
- * `effectiveAttackIntervalTicks`: UnitView time-scales the attack clip to the unit's real attack cadence. The
- * state stream doesn't record combat stats, so 0 = "play the clip at its authored duration"
- * (StickmanRuntime.setAttackInterval). Must still be present: reading it off an object that lacks it yields
- * NaN, not a skipped scale.
- */
-type UnitLike = Pick<Unit,
-  'id' | 'unitType' | 'side' | 'colExact' | 'rowExact' | 'hp_fp' | 'maxHp_fp' | 'state' | 'effectiveAttackIntervalTicks'>;
-/** Minimal building structure actually read by BuildingView.sync (`side` picks the faction ink). */
-type BuildingLike = Pick<Building, 'id' | 'buildingType' | 'side' | 'col' | 'row' | 'hp_fp' | 'maxHp_fp'>;
-/** UnitView/BuildingView.sync only reads the two Maps: board.units / board.buildings. */
-interface BoardLike {
-  units: Map<number, UnitLike>;
-  buildings: Map<number, BuildingLike>;
 }
 
 export class StatePlayerScene implements Scene {
@@ -220,24 +199,30 @@ export class StatePlayerScene implements Scene {
       this.effectIdx = this.cursor;
     }
 
-    // UnitView/BuildingView.sync only reads board.units / board.buildings (two Maps);
-    // feed data as structured objects cast to the parameter types — no real engine Board needed
-    // (the dumb player doesn't run the engine).
-    type BoardArg = Parameters<UnitView['sync']>[0];
-    this.unitView.sync(this.buildBoard(a, b, frac) as unknown as BoardArg, dt);
-    this.buildingView.sync({ buildings: this.buildBuildings(a) } as unknown as BoardArg);
+    // The views take structural inputs (render/viewInput.ts), not an engine Board — the dumb player
+    // doesn't run the engine, it hands them plain objects mapped from the state stream. No cast: a
+    // field the views read that the mapping lacks is a compile error.
+    this.unitView.sync({ units: this.buildUnits(a, b, frac) }, dt);
+    this.buildingView.sync({ buildings: this.buildBuildings(a) });
 
     // HUD + board base rings from the same frame (base HP, ink, upgrade level).
     this.hud.sync(a, curTick / this.tickRate);
     for (const r of a.res ?? []) this.boardView.setBaseUpgradeLevel(r.owner, r.upgrade);
   }
 
-  /** Build the interpolated board (unit coordinates linearly interpolated between a and b; unmatched entities use their own frame value). */
-  private buildBoard(a: StateFrame, b: StateFrame, frac: number): BoardLike {
+  /**
+   * Build the interpolated unit map (coordinates linearly interpolated between a and b; unmatched
+   * units use their own frame value).
+   *
+   * `effectiveAttackIntervalTicks`: UnitView time-scales the attack clip to the unit's real attack
+   * cadence. The state stream doesn't record combat stats, so 0 = "play the clip at its authored
+   * duration" (StickmanRuntime.setAttackInterval).
+   */
+  private buildUnits(a: StateFrame, b: StateFrame, frac: number): Map<number, UnitViewUnit> {
     const bById = new Map<number, StateUnit>();
     for (const u of b.units) bById.set(u.id, u);
 
-    const units = new Map<number, UnitLike>();
+    const units = new Map<number, UnitViewUnit>();
     for (const u of a.units) {
       const nb = bById.get(u.id);
       const col = nb ? u.col + (nb.col - u.col) * frac : u.col;
@@ -254,11 +239,11 @@ export class StatePlayerScene implements Scene {
         effectiveAttackIntervalTicks: 0,
       });
     }
-    return { units, buildings: this.buildBuildings(a) };
+    return units;
   }
 
-  private buildBuildings(f: StateFrame): Map<number, BuildingLike> {
-    const m = new Map<number, BuildingLike>();
+  private buildBuildings(f: StateFrame): Map<number, BuildingViewBuilding> {
+    const m = new Map<number, BuildingViewBuilding>();
     for (const b of f.buildings) {
       m.set(b.id, {
         id: b.id,

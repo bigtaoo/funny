@@ -5,7 +5,7 @@
 
 import * as PIXI from 'pixi.js-legacy';
 import { textureFromCanvas } from '../canvasTexture';
-import JSZip from 'jszip';
+import { readTaoBundle } from './taoZip';
 import { Skeleton } from './skeleton';
 import type { AnimationClip, BoneKeyframe, SpriteBinding } from './types';
 import type { TaoAsset, TaoAttachmentPoint } from './runtimeTypes';
@@ -18,12 +18,10 @@ export async function parseTaoAsset(url: string, targetHeight?: number): Promise
   // Fetch the .tao ZIP bytes via the platform AssetIO (Web: fetch; WeChat: CDN +
   // local cache — ASSET_PACKAGING §4.1).
   const buf = await assetIO().loadBinary(url);
-  const zip = await JSZip.loadAsync(buf);
+  const bundle = await readTaoBundle(buf);
 
   // ── animation.json ────────────────────────────────────────────────────
-  const animRaw = JSON.parse(
-    await zip.file('animation.json')!.async('string'),
-  ) as TaoAnimationJson;
+  const animRaw = JSON.parse(bundle.animationJson) as TaoAnimationJson;
 
   const clips = new Map<string, AnimationClip>();
   for (const [name, raw] of Object.entries(animRaw.animations)) {
@@ -80,11 +78,8 @@ export async function parseTaoAsset(url: string, targetHeight?: number): Promise
     : STICKMAN_SCALE;
 
   // ── spritesheet ───────────────────────────────────────────────────────
-  const spRaw  = JSON.parse(
-    await zip.file('spritesheet.json')!.async('string'),
-  ) as TaoSpritesheetJson;
-  const pngBlob = await zip.file('spritesheet.png')!.async('blob');
-  const pngUrl  = URL.createObjectURL(pngBlob);
+  const spRaw  = JSON.parse(bundle.spritesheetJson) as TaoSpritesheetJson;
+  const pngUrl  = URL.createObjectURL(bundle.spritesheetPng);
 
   const baseTex = new PIXI.BaseTexture(pngUrl);
   await new Promise<void>((resolve, reject) => {
