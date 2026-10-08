@@ -40,6 +40,16 @@ async function setHidden(page: import('@playwright/test').Page, hidden: boolean)
   }, hidden);
 }
 
+// Take the autoplay lock out of the equation. Whether a synthetic click counts as user activation
+// is a browser/launch-flag decision, not ours (`audioDucking.spec.ts` records that a suspended
+// context under CI is the normal case), and this case is not about the lock — it is about what the
+// bus does with a context that IS running when the tab goes away. It used to treat "never left the
+// lock within 5 s" as a skip; in the CI gate that made it pass-by-skipping whenever the machine was
+// busy (2026-10-08: skipped in a full local e2e run with 11 workers, green when run alone). The
+// flag makes the precondition hold by construction, so it is asserted below instead of skipped on.
+// Top-level, not inside the describe: launchOptions is worker-scoped.
+test.use({ launchOptions: { args: ['--autoplay-policy=no-user-gesture-required'] } });
+
 test.describe('browser smoke — the OS audio session', () => {
   test('backgrounding suspends the real context, and coming back resumes it', async ({ page }) => {
     await page.goto('/');
@@ -52,24 +62,15 @@ test.describe('browser smoke — the OS audio session', () => {
       na.resume();
     });
 
-    // Whether a synthetic click counts as user activation is a browser/launch-flag decision, not
-    // ours (`audioDucking.spec.ts` records that a suspended context under CI is the normal case).
-    // So this is a precondition, not an assertion: without a running context there is no session
-    // being held and nothing for the rest of the case to observe.
-    const unlocked = await page
-      .waitForFunction(() => {
-        const na = (window as unknown as { __nwAudio: { nodes(): NwNodes } }).__nwAudio;
-        return na.nodes().ctx?.state === 'running';
-      }, null, { timeout: 5_000 })
-      .then(() => true)
-      .catch(() => false);
-    test.skip(!unlocked, 'this browser never left the autoplay lock — nothing holds a session');
+    // Without a running context there is no session being held and nothing for the rest of the
+    // case to observe — with the flag above, a context that never starts is a real failure.
+    await expect.poll(() => contextState(page), { timeout: 15_000 }).toBe('running');
 
     await setHidden(page, true);
     // `suspend()` is async — the state flips when the audio thread has actually let go.
-    await expect.poll(() => contextState(page), { timeout: 5_000 }).toBe('suspended');
+    await expect.poll(() => contextState(page), { timeout: 10_000 }).toBe('suspended');
 
     await setHidden(page, false);
-    await expect.poll(() => contextState(page), { timeout: 5_000 }).toBe('running');
+    await expect.poll(() => contextState(page), { timeout: 10_000 }).toBe('running');
   });
 });

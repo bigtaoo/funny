@@ -1,9 +1,17 @@
 # CI overlay (merged with docker-compose.prod.yml). For running full end-to-end link in GitHub Actions
 # (.github/workflows/ci.yml job `e2e`; scripts/e2e-local.sh replays the same steps on a dev machine):
-#   docker compose -f docker-compose.prod.yml -f docker-compose.ci.yml up -d --build --wait #       redis mongo metaserver commercial gateway matchsvc gameserver worldsvc analyticsvc
+#   docker compose -f docker-compose.prod.yml -f docker-compose.ci.yml up -d --build --wait \
+#       redis mongo metaserver commercial gateway matchsvc gameserver worldsvc analyticsvc auctionsvc caddy
 #
 # Differences from prod (solely to serve "E2E running as Node process directly on the runner host"):
-#   • No caddy (explicit service list in up command skips the reverse proxy; E2E connects directly to each service's host-mapped port).
+#   • Two ways in. The Node-process suites (test:e2e, test:load) connect directly to each service's
+#     host-mapped port. The browser smoke (test:browser) goes through caddy, on ONE origin, exactly
+#     like a production web client: the client derives several bases from its API base by path
+#     (analytics = API base minus `/api`, see client/src/analytics/index.ts), and only the real
+#     Caddyfile routes those paths to the right process. Pointed straight at metaserver instead,
+#     `GET /analytics/config` lands on metaserver's 501 stub (metaserver/src/service/telemetry.ts).
+#     caddy keeps its prod Caddyfile; only its host port and container name change (below), and it
+#     pulls in auctionsvc/socialsvc through its prod depends_on — the services its routes point at.
 #   • Exposes meta REST / gateway public WS / game data-plane WS / worldsvc / analyticsvc to host ports, matching the
 #     defaults expected by client/test/e2e/full-link.e2e.ts (meta 18080 / gateway 8086 / game 8081).
 #   • The gateway address sent by meta + the game address in tickets both use localhost:<host-port>,
@@ -17,7 +25,8 @@
 #   NW_E2E_GAME_PORT       8081    gameserver data-plane WS   (container 8081) — also baked into NW_GAME_PUBLIC_WS_URL
 #   NW_E2E_WORLD_PORT      18084   worldsvc public REST       (container 18084)
 #   NW_E2E_ANALYTICS_PORT  18085   analyticsvc                (container 18085)
-#   NW_E2E_CONTAINER_PREFIX nw     container_name of redis/mongo (prod pins `nw-redis` / `nw-mongo`; those names are
+#   NW_E2E_PROXY_PORT      18088   caddy, the single origin   (container 80) — client/playwright.config.ts reads it too
+#   NW_E2E_CONTAINER_PREFIX nw     container_name of redis/mongo/caddy (prod pins `nw-redis` / `nw-mongo` / `nw-caddy`; those names are
 #                                  global on the Docker host, so a second stack under another `-p` project collides
 #                                  with any leftover container of that name unless this is changed)
 services:
@@ -125,3 +134,33 @@ services:
       timeout: 5s
       start_period: 5s
       retries: 20
+
+  auctionsvc:
+    # Joined the CI stack with caddy (a /auction route target and one of caddy's prod depends_on), so it
+    # gets the same healthcheck as the others for a deterministic --wait.
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:18086/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      start_period: 5s
+      retries: 20
+
+  caddy:
+    container_name: ${NW_E2E_CONTAINER_PREFIX:-nw}-caddy
+    environment:
+      # The Caddyfile's /ops/* matcher is `header X-Ops-Proxy-Secret {$NW_OPS_PROXY_SECRET}`; with
+      # the variable empty it has a field and no value, and caddy refuses the whole config
+      # ("malformed header matcher") and restart-loops. prod.yml's caddy does not pass it at all
+      # (docker-compose.cloud.yml does), so CI supplies a fixed weak value like its other keys. admin
+      # is not in this stack, so /ops/* has nothing behind it either way.
+      NW_OPS_PROXY_SECRET: ci-ops-proxy-secret
+    # !override, not a merge: prod publishes 80/443/443-udp, and an overlay's `ports` list is
+    # appended to the base one — a CI runner would then try to bind 80 and 443 as well.
+    ports: !override
+      - "${NW_E2E_PROXY_PORT:-18088}:80"
+    healthcheck:
+      # The Caddyfile's catch-all `handle` answers 200; busybox wget ships in the caddy image.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:80/"]
+      interval: 5s
+      timeout: 3s
+      retries: 10

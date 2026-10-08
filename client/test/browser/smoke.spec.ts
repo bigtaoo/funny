@@ -4,11 +4,15 @@
 // test:ui can't reach, and — since this is a solo project with no dedicated tester — automate the
 // "log in two accounts and walk the core path" smoke that used to be manual.
 //
-// Prereq: a running server stack, same as test:e2e (`npm run dev:all` in server/, dev-up.ps1).
-// The Playwright webServer only boots the client's own dev server (web-e2e target); it does NOT
-// start the backend.
+// Prereq: a running server stack behind ONE origin, the way production serves it — the CI stack
+// (server/docker-compose.ci.yml, caddy on NW_E2E_PROXY_PORT; playwright.config.ts builds the client
+// against it). The Playwright webServer only boots the client's own dev server (web-e2e target); it
+// does NOT start the backend. Not the bare-metal `npm run dev:all`: it has no reverse proxy, so the
+// analytics config fetch lands on metaserver's 501 stub and fails the console-error assertion.
 //
-// Run: npm run test:browser   (NOT part of `npm test`; opt-in, real browser + real network).
+// Run: bash scripts/e2e-local.sh   (the whole CI e2e job, stack up and down included), or against
+//      an already-running stack: npm run test:browser   (NOT part of `npm test`). The local Docker
+//      stack's nginx serves the same paths on :8088, so NW_E2E_PROXY_PORT=8088 points it there.
 
 import { test, expect } from '@playwright/test';
 import { uid, trackErrors, screenIs, registerAndEnterLobby } from './lib/nwE2E';

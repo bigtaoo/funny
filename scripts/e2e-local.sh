@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Replays the `e2e` job of .github/workflows/ci.yml on a dev machine, with the stack's host ports
-# moved off the CI defaults (18080 / 8086 / 8081 / 18084 / 18085) so it can run next to whatever
+# moved off the CI defaults (18080 / 8086 / 8081 / 18084 / 18085 / 18088) so it can run next to whatever
 # already owns those ports. Same compose files, same service list, same test commands and
 # per-step env as the workflow; the only differences are the port/container-name env vars that
 # server/docker-compose.ci.yml reads, and a dedicated compose project so `down -v` can only ever
@@ -15,15 +15,16 @@
 #
 # Env (all optional):
 #   NW_E2E_META_PORT=28080  NW_E2E_GATEWAY_PORT=28086  NW_E2E_GAME_PORT=28081
-#   NW_E2E_WORLD_PORT=28084 NW_E2E_ANALYTICS_PORT=28085      host ports (CI uses the compose defaults)
-#   NW_E2E_PROJECT=nw-e2e-local            compose project name; also the redis/mongo container-name prefix
+#   NW_E2E_WORLD_PORT=28084 NW_E2E_ANALYTICS_PORT=28085
+#   NW_E2E_PROXY_PORT=28088                host ports (CI uses the compose defaults); the last is caddy,
+#                                          which client/playwright.config.ts reads too
+#   NW_E2E_PROJECT=nw-e2e-local            compose project name; also the redis/mongo/caddy container-name prefix
 #   NW_E2E_LOG_DIR=<dir>                   where each step's output goes (default: a fresh temp dir)
 #
 # Warning: `npm ci` deletes client/node_modules first. In a worktree whose client/node_modules is a
 # junction to another checkout, that deletes the OTHER checkout's packages — use --skip-install there.
 #
-# Exit code: 0 when every hard step passed. The browser smoke is continue-on-error in CI, so its
-# failure is reported but does not change the exit code (same as the workflow).
+# Exit code: 0 when every step passed — the browser smoke included, which is a hard gate in CI too.
 
 set -uo pipefail
 
@@ -47,6 +48,7 @@ export NW_E2E_GATEWAY_PORT="${NW_E2E_GATEWAY_PORT:-28086}"
 export NW_E2E_GAME_PORT="${NW_E2E_GAME_PORT:-28081}"
 export NW_E2E_WORLD_PORT="${NW_E2E_WORLD_PORT:-28084}"
 export NW_E2E_ANALYTICS_PORT="${NW_E2E_ANALYTICS_PORT:-28085}"
+export NW_E2E_PROXY_PORT="${NW_E2E_PROXY_PORT:-28088}"
 PROJECT="${NW_E2E_PROJECT:-nw-e2e-local}"
 export NW_E2E_CONTAINER_PREFIX="$PROJECT"
 LOG_DIR="${NW_E2E_LOG_DIR:-$(mktemp -d -t nw-e2e-local.XXXXXX)}"
@@ -61,10 +63,9 @@ export NW_ADMIN_JWT_SECRET=ci-admin-jwt-secret
 
 API_BASE="http://localhost:$NW_E2E_META_PORT"
 GATEWAY_WS="ws://localhost:$NW_E2E_GATEWAY_PORT/gw"
-WORLD_BASE="http://localhost:$NW_E2E_WORLD_PORT"
 
 COMPOSE=(docker compose -p "$PROJECT" -f docker-compose.prod.yml -f docker-compose.ci.yml)
-SERVICES=(redis mongo metaserver commercial gateway matchsvc gameserver worldsvc analyticsvc)
+SERVICES=(redis mongo metaserver commercial gateway matchsvc gameserver worldsvc analyticsvc auctionsvc caddy)
 
 declare -a SUMMARY=()
 HARD_FAIL=0
@@ -99,7 +100,7 @@ teardown() {
 # Pre-flight: every host port this run needs must be bindable, including Playwright's dev server
 # (9096, fixed in client/playwright.config.ts; with CI=true it refuses to reuse a running one).
 busy=()
-for p in "$NW_E2E_META_PORT" "$NW_E2E_GATEWAY_PORT" "$NW_E2E_GAME_PORT" "$NW_E2E_WORLD_PORT" "$NW_E2E_ANALYTICS_PORT" 9096; do
+for p in "$NW_E2E_META_PORT" "$NW_E2E_GATEWAY_PORT" "$NW_E2E_GAME_PORT" "$NW_E2E_WORLD_PORT" "$NW_E2E_ANALYTICS_PORT" "$NW_E2E_PROXY_PORT" 9096; do
   node -e 'const s=require("net").createServer();s.once("error",()=>process.exit(1));s.listen(+process.argv[1],"0.0.0.0",()=>s.close(()=>process.exit(0)))' "$p" || busy+=("$p")
 done
 if [ "${#busy[@]}" -gt 0 ]; then
@@ -125,11 +126,11 @@ run_job() {
     env NW_API_BASE="$API_BASE" NW_LOAD_CLIENTS=20 npm run test:load || return 1
   step "install Playwright chromium" playwright-install.txt "$CLIENT" \
     npx playwright install --with-deps chromium || return 1
-  # ci.yml passes no env here: the web-e2e bundle falls back to webpack.config.js's localhost
-  # defaults, which are the CI ports. Off those ports the bundle has to be told where the stack is.
-  if ! step "run browser smoke (continue-on-error)" test-browser.txt "$CLIENT" \
-    env NW_API_BASE="$API_BASE" NW_GATEWAY_WS="$GATEWAY_WS" NW_WORLD_BASE="$WORLD_BASE" npm run test:browser; then
-    echo "   browser smoke failed (soft, as in CI); report: $CLIENT/playwright-report/"
+  # ci.yml passes no env here, and neither does this: client/playwright.config.ts builds the bundle
+  # against caddy's origin on NW_E2E_PROXY_PORT (exported above; unset in CI = the compose default).
+  if ! step "run browser smoke (two-account, real WebGL)" test-browser.txt "$CLIENT" npm run test:browser; then
+    echo "   browser smoke failed; report: $CLIENT/playwright-report/"
+    return 1
   fi
   return 0
 }
