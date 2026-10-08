@@ -5,13 +5,15 @@
 //   - next day (stored day key older than today = lazy reset): 3 daily slots again;
 //   - two settlements racing for the same account's last daily slot: exactly one gets it;
 //   - botsvc accounts (deviceId bot-NNNN) are never protected;
-//   - bot-fallback losses are free while a slot is left and never use one up.
+//   - bot-fallback (/pvp/bot-result) is never protected and never uses a slot (2026-10-08): a loss pays
+//     -BOT_ELO_K/2 even with slots left, and the next real ranked game still gets new-player slot 1.
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   createMongo,
   compressReplayDoc,
   computeEloDelta,
   makeDayKey,
+  BOT_ELO_K,
   DAILY_PROTECT_GAMES,
   PROTECT_KIND_NEWBIE,
   PROTECT_KIND_DAILY,
@@ -177,31 +179,29 @@ describe.skipIf(!mongo)('ELO-loss protection (e2e)', () => {
     expect((await pvpOf(bot)).dailyProtect).toBeUndefined();
   });
 
-  it('bot-fallback: a loss is free while a slot is left and uses none up; spent slots or a bot account pay', async () => {
+  it('bot-fallback: never protected and never uses a slot; the next real ranked game still gets slot 1', async () => {
     const fresh = await account('ep-fresh-0003');
-    const loseToAi = async (token: string) => {
+    const vsAi = async (token: string, won: boolean) => {
       const r = await app.inject({
-        method: 'POST', url: '/pvp/bot-result', headers: { authorization: `Bearer ${token}` }, payload: { won: false },
+        method: 'POST', url: '/pvp/bot-result', headers: { authorization: `Bearer ${token}` }, payload: { won },
       });
       expect(r.statusCode).toBe(200);
       return body(r).data as { delta: number; elo: number };
     };
-    expect(await loseToAi(fresh.token)).toMatchObject({ delta: 0, elo: 1000 });
+    // A fresh account (3 new-player + 3 daily slots left) still pays the plain bot-match loss.
+    expect(await vsAi(fresh.token, false)).toMatchObject({ delta: -BOT_ELO_K / 2, elo: 1000 - BOT_ELO_K / 2 });
     const p = await pvpOf(fresh.id);
-    expect(p).toMatchObject({ elo: 1000, wins: 0, losses: 0, streak: 0 });
+    expect(p).toMatchObject({ elo: 1000 - BOT_ELO_K / 2, wins: 0, losses: 0, streak: 0 });
     expect(p.dailyProtect).toBeUndefined();
 
-    // A veteran with daily slots left today: still free (the throttle is per-account, so this is its first).
+    // A veteran with daily slots left today pays too, and its daily counter is untouched.
     const vet2 = await account('ep-veteran-0002');
     await setPvp(vet2.id, { wins: 5, losses: 5, dailyProtect: { dayKey: today(), used: 2 } });
-    expect((await loseToAi(vet2.token)).delta).toBe(0);
+    expect((await vsAi(vet2.token, false)).delta).toBe(-BOT_ELO_K / 2);
     expect((await pvpOf(vet2.id)).dailyProtect).toEqual({ dayKey: today(), used: 2 });
 
-    // The always-spent veteran pays.
-    const vetTok = await account('ep-veteran-0001');
-    expect((await loseToAi(vetTok.token)).delta).toBeLessThan(0);
-
-    const bot = await account('bot-0002');
-    expect((await loseToAi(bot.token)).delta).toBeLessThan(0);
+    // No slot was consumed: the fresh account's first real ranked loss is new-player 1/3.
+    const g = await play(vet, fresh.id);
+    expect(g.l).toMatchObject({ delta: 0, protectedGame: 1, protectedTotal: 3, protectedKind: PROTECT_KIND_NEWBIE });
   });
 });
