@@ -1,6 +1,5 @@
 import * as PIXI from 'pixi.js-legacy';
-import { Board } from '@nw/engine/Board';
-import { Unit } from '@nw/engine/Unit';
+import type { UnitViewBoard, UnitViewUnit } from './viewInput';
 import { Side, UnitType } from '@nw/engine/types';
 import { BoardView } from './BoardView';
 import { ObjectPool } from '../cache/ObjectPool';
@@ -212,7 +211,7 @@ export class UnitView {
    * @param board  Current board state.
    * @param dt     Wall-clock delta in seconds (used to advance stickman animations).
    */
-  sync(board: Board, dt: number): void {
+  sync(board: UnitViewBoard, dt: number): void {
     const seen = new Set<number>();
     // Only look at placeholders on a frame where some art actually landed — a cheap flag test the
     // rest of the time, never a per-frame map lookup per unit.
@@ -317,7 +316,7 @@ export class UnitView {
       opponentSkinAssets: this.opponentSkinAssets,
       localSkinSheets: this.localSkinSheets, opponentSkinSheets: this.opponentSkinSheets, assets: this.assets, localSide: this.localSide,
       cellSize: this.boardView.cellSize,
-      applyGear: (runtime: UnitRuntime, unit: Unit) => this.applyGear(runtime, unit),
+      applyGear: (runtime: UnitRuntime, unit: UnitViewUnit) => this.applyGear(runtime, unit),
     };
   }
 
@@ -329,7 +328,7 @@ export class UnitView {
     };
   }
 
-  private applyGear(runtime: UnitRuntime, unit: Unit): void {
+  private applyGear(runtime: UnitRuntime, unit: UnitViewUnit): void {
     applyGear(this.gearHost(), runtime, unit);
   }
 
@@ -339,7 +338,7 @@ export class UnitView {
    * render on the opponent's side. A same-type unit on the other side always falls back to the
    * default look, exactly like an opponent with nothing equipped. See render/UnitView/build.ts.
    */
-  private acquireSprite(unit: Unit): PIXI.Container {
+  private acquireSprite(unit: UnitViewUnit): PIXI.Container {
     return acquireSprite(this.buildHost(), unit);
   }
 
@@ -348,7 +347,7 @@ export class UnitView {
    * {@link placeholderIds}). The new sprite takes the old one's slot in the container so draw order
    * is unchanged; the HP timer is keyed by unit id and carries over on its own.
    */
-  private upgradePlaceholder(unit: Unit, placeholder: PIXI.Container): PIXI.Container {
+  private upgradePlaceholder(unit: UnitViewUnit, placeholder: PIXI.Container): PIXI.Container {
     if (!hasUnitArt(this.buildHost(), unit)) return placeholder;
     const index = this.container.getChildIndex(placeholder);
     this.placeholderIds.delete(unit.id);
@@ -361,7 +360,7 @@ export class UnitView {
 
   // ─── Sprite position update ───────────────────────────────────────────────
 
-  private updateSprite(sprite: PIXI.Container, unit: Unit): void {
+  private updateSprite(sprite: PIXI.Container, unit: UnitViewUnit): void {
     const { x, y } = this.boardView.gridToScreen(unit.colExact, unit.rowExact);
     sprite.x = x;
     sprite.y = y;

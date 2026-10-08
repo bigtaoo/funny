@@ -4,7 +4,7 @@
 // ObjectPool references, mutated in place — no getter/setter needed.
 import * as PIXI from 'pixi.js-legacy';
 import { Side, UnitType } from '@nw/engine/types';
-import type { Unit } from '@nw/engine/Unit';
+import type { UnitViewUnit } from '../viewInput';
 import { ObjectPool } from '../../cache/ObjectPool';
 import { StickmanRuntime } from '../stickman/StickmanRuntime';
 import type { TaoAsset } from '../stickman/StickmanRuntime';
@@ -39,7 +39,7 @@ export interface BuildHost {
    * units on small cells so they stay inside their lane. Undefined (headless stubs) = full size.
    */
   readonly cellSize: number | undefined;
-  applyGear(runtime: UnitRuntime, unit: Unit): void;
+  applyGear(runtime: UnitRuntime, unit: UnitViewUnit): void;
 }
 
 /**
@@ -48,7 +48,7 @@ export interface BuildHost {
  * both sprite mirroring and faction tint so the joiner's view matches a vs-AI
  * view (own units face up un-mirrored, enemy units mirrored), never flipped twice.
  */
-function renderSide(host: BuildHost, unit: Unit): Side {
+function renderSide(host: BuildHost, unit: UnitViewUnit): Side {
   return unit.side === host.localSide ? Side.Bottom : Side.Top;
 }
 
@@ -58,7 +58,7 @@ function renderSide(host: BuildHost, unit: Unit): Side {
  * render on the opponent's side. A same-type unit on the other side always falls back to the
  * default look, exactly like an opponent with nothing equipped.
  */
-export function acquireSprite(host: BuildHost, unit: Unit): PIXI.Container {
+export function acquireSprite(host: BuildHost, unit: UnitViewUnit): PIXI.Container {
   const isLocal = unit.side === host.localSide;
   // A skin redrawn as a frame sheet wins first; its pool bucket is side-scoped like a skinned .tao's.
   const skinSheet = (isLocal ? host.localSkinSheets : host.opponentSkinSheets).get(unit.unitType);
@@ -85,7 +85,7 @@ export function acquireSprite(host: BuildHost, unit: Unit): PIXI.Container {
  * acquireSprite's own lookup order so the two can't disagree; UnitView polls it to swap a unit that
  * spawned as a placeholder over to its art the moment that art arrives (see UnitView.sync).
  */
-export function hasUnitArt(host: BuildHost, unit: Unit): boolean {
+export function hasUnitArt(host: BuildHost, unit: UnitViewUnit): boolean {
   const isLocal = unit.side === host.localSide;
   return (isLocal ? host.localSkinSheets : host.opponentSkinSheets).has(unit.unitType)
     || (isLocal ? host.localSkinAssets : host.opponentSkinAssets).has(unit.unitType)
@@ -108,7 +108,7 @@ function poolKey(host: BuildHost, unitType: UnitType, isLocal: boolean): string 
 // ─── Stickman container (unit type with a loaded .tao asset) ───────────────
 
 function buildStickmanContainer(
-  host: BuildHost, unit: Unit, key: string, create: (options: UnitRuntimeOptions) => UnitRuntime,
+  host: BuildHost, unit: UnitViewUnit, key: string, create: (options: UnitRuntimeOptions) => UnitRuntime,
 ): PIXI.Container {
   const side    = renderSide(host, unit);
   const mirrorX = side === Side.Top;
@@ -165,7 +165,7 @@ function buildStickmanContainer(
 
 // ─── Circle container (a unit type whose art has not loaded yet, or failed to) ──
 
-function buildCircleContainer(host: BuildHost, unit: Unit): PIXI.Container {
+function buildCircleContainer(host: BuildHost, unit: UnitViewUnit): PIXI.Container {
   const c = host.pool.acquire();
   c.visible = true;
   const side = renderSide(host, unit);

@@ -87,7 +87,7 @@ import { factionInk } from '../../src/render/theme';
 import { Building } from '@nw/engine/Building';
 import { BuildingType, Side } from '@nw/engine/types';
 import { BOTTOM_BUILDING_ROW, TOP_BUILDING_ROW } from '@nw/engine/config';
-import type { Board } from '@nw/engine/Board';
+import type { BuildingViewBoard } from '../../src/render/viewInput';
 import type { BoardView } from '../../src/render/BoardView';
 import towerArtUrl from '../../src/assets/buildings/game_arrow_tower.png';
 import barracksArtUrl from '../../src/assets/buildings/game_infantry_barracks.png';
@@ -103,8 +103,8 @@ function decode(url: string, px: { width: number; height: number }): void {
   textures.set(url, { url, baseTexture: { valid: true }, orig: { ...px } });   // decoded before the battle
 }
 
-function boardWith(...buildings: Building[]): Board {
-  return { buildings: new Map(buildings.map((b) => [b.id, b])) } as unknown as Board;
+function boardWith(...buildings: Building[]): BuildingViewBoard {
+  return { buildings: new Map(buildings.map((b) => [b.id, b])) };
 }
 
 const boardView = {

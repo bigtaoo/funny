@@ -61,7 +61,7 @@ vi.mock('pixi.js-legacy', () => {
 import { BuildingView } from '../../src/render/BuildingView';
 import { Building } from '@nw/engine/Building';
 import { BuildingType, Side } from '@nw/engine/types';
-import type { Board } from '@nw/engine/Board';
+import type { BuildingViewBoard } from '../../src/render/viewInput';
 import type { BoardView } from '../../src/render/BoardView';
 import towerArtUrl from '../../src/assets/buildings/game_arrow_tower.png';
 import barracksArtUrl from '../../src/assets/buildings/game_infantry_barracks.png';
@@ -70,8 +70,8 @@ const TOWER_ID = 7;
 const COL = 3, ROW = 0;
 
 /** Board stub: BuildingView only ever reads `.buildings`. */
-function boardWith(...buildings: Building[]): Board {
-  return { buildings: new Map(buildings.map((b) => [b.id, b])) } as unknown as Board;
+function boardWith(...buildings: Building[]): BuildingViewBoard {
+  return { buildings: new Map(buildings.map((b) => [b.id, b])) };
 }
 
 /** BoardView stub: a plain grid, so "toward the enemy row" is straight up in screen space. */
@@ -102,7 +102,7 @@ function pinPhase(view: BuildingView, id: number): void {
 
 describe('BuildingView.playFireEffect', () => {
   let view: BuildingView;
-  let board: Board;
+  let board: BuildingViewBoard;
 
   beforeEach(() => {
     view = new BuildingView(boardView, Side.Bottom);
