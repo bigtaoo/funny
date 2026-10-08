@@ -346,6 +346,37 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  # The main-branch ruleset requires checks named `server test (metaserver)` and
+  # `server test (worldsvc)` — the job names from before 2026-10-08's split into `-1`/`-2` shards.
+  # Renamed, those two would never report and every PR would wait on them forever; this job keeps
+  # the names and turns each pair of shard results into one. It reads the shards' own conclusions
+  # from the run's job list rather than `needs.server-test.result`, which is the whole matrix and
+  # would also go red for a failure in `rest`. `filter=latest` is each job's most recent attempt, so
+  # "re-run failed jobs" on one shard is judged by the re-run, not by the failure it replaced.
+  server-test-gate:
+    name: server test (${{ matrix.pkg }})
+    needs: server-test
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        pkg: [metaserver, worldsvc]
+    steps:
+      - name: both ${{ matrix.pkg }} shards passed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PKG: ${{ matrix.pkg }}
+        run: |
+          gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?filter=latest" \
+            --jq ".jobs[] | select(.name | startswith(\"server test ($PKG-\")) | \"\(.name) \(.conclusion)\"" \
+            | tee shards.txt
+          test "$(wc -l < shards.txt)" -eq 2 || { echo "::error::expected 2 $PKG shard jobs"; exit 1; }
+          if grep -qv ' success$' shards.txt; then echo "::error::a $PKG shard did not pass"; exit 1; fi
+
   # —— Client: type-check + unit tests + web build —— (own runner, parallel with server-test/tools-test)
   client-test:
     name: client test + build
