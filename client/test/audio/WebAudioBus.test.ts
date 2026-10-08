@@ -18,7 +18,7 @@
 // which is equally true of a backend that builds nothing at all.
 //
 // Run with: npm test
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { WebAudioBus } from '../../src/platform/web/WebAudioBus';
 import { fakeAudioContext, type FakeAudioContext } from './fakeAudioContext';
 
@@ -34,14 +34,17 @@ interface Registered {
   opts?: AddEventListenerOptions;
 }
 
-function listenerHost(): { events: Registered[]; addEventListener: (t: string, cb: (a?: unknown) => void, o?: AddEventListenerOptions) => void; fire: (t: string) => void } {
+function listenerHost(): { events: Registered[]; addEventListener: (t: string, cb: (a?: unknown) => void, o?: AddEventListenerOptions) => void; fire: (t: string, ev?: unknown) => void } {
   const events: Registered[] = [];
   return {
     events,
     addEventListener: (type, cb, opts) => { events.push({ type, cb, opts }); },
-    fire: (type) => { for (const e of events) if (e.type === type) e.cb(); },
+    fire: (type, ev) => { for (const e of events) if (e.type === type) e.cb(ev); },
   };
 }
+
+/** How many upcoming `play()` calls (on any element) reject the way an autoplay refusal does. */
+let refusePlays = 0;
 
 /** The slice of `HTMLAudioElement` a `WebMusicDeck` drives. */
 class FakeAudio {
@@ -54,7 +57,14 @@ class FakeAudio {
   playCalls = 0;
   pauseCalls = 0;
   addEventListener(): void { /* the deck's own 'error' listener */ }
-  play(): Promise<void> { this.playCalls++; return Promise.resolve(); }
+  play(): Promise<void> {
+    this.playCalls++;
+    if (refusePlays > 0) {
+      refusePlays--;
+      return Promise.reject(new Error('NotAllowedError'));
+    }
+    return Promise.resolve();
+  }
   pause(): void { this.pauseCalls++; }
 }
 
@@ -146,21 +156,38 @@ describe('WebAudioBus', () => {
   // ── gesture: the autoplay gate ──────────────────────────────────────────────────────────────
 
   describe('the autoplay gate', () => {
-    it('listens on window for touch-start and touch-end gesture kinds, every one of them passive', () => {
+    it('listens on window only for user-activation kinds, every one of them passive', () => {
       new WebAudioBus();
       // The *-end kinds are the ones iOS Safari accepts as user activation (portal requirement).
-      expect(win.events.map((e) => e.type)).toEqual(['pointerdown', 'keydown', 'touchstart', 'pointerup', 'touchend', 'click']);
+      // No touchstart: the start of a touch is not an activation anywhere (see the next case).
+      expect(win.events.map((e) => e.type)).toEqual(['pointerdown', 'keydown', 'pointerup', 'touchend', 'click']);
       // `passive` is load-bearing, not tidiness: a non-passive touchstart on window makes the
       // browser wait for this handler before it may scroll, on every touch for the whole session.
       expect(win.events.every((e) => e.opts?.passive === true)).toBe(true);
     });
 
-    it('any one of the three unlocks the suspended context', () => {
+    it('the end of a touch unlocks the suspended context', () => {
       new WebAudioBus();
       expect(ctx.resumeCalls).toBe(0);
-      win.fire('touchstart');
+      win.fire('touchend');
       expect(ctx.resumeCalls).toBe(1);
       expect(ctx.state).toBe('running');
+    });
+
+    it('a touch or pen PRESS does not open the music gate; a mouse press does', () => {
+      // 2026-10-08: a touch pointerdown opened the gate ~1 ms before the browser would allow
+      // `<audio>.play()`, so the bed's first start was refused (NotAllowedError) and the tutorial
+      // stayed silent. Only a mouse pointerdown is a user activation.
+      const bus = new WebAudioBus();
+      win.fire('pointerdown', { pointerType: 'touch' });
+      win.fire('pointerdown', { pointerType: 'pen' });
+      bus.updateMusic('bgm.lobby', 16);
+      expect(audios).toHaveLength(0);
+      expect(ctx.resumeCalls).toBe(0);
+
+      win.fire('pointerdown', { pointerType: 'mouse' });
+      bus.updateMusic('bgm.lobby', 16);
+      expect(audios.some((a) => a.playCalls > 0)).toBe(true);
     });
 
     it('window on the gesture seam, NOT InputManager: a tap the game discards still unlocks', () => {
@@ -170,7 +197,7 @@ describe('WebAudioBus', () => {
       // the gate must still see. The observable form: the bus registers on the raw host surface
       // and nowhere else.
       new WebAudioBus();
-      expect(win.events).toHaveLength(6);
+      expect(win.events).toHaveLength(5);
       expect(doc.events.filter((e) => e.type !== 'visibilitychange')).toHaveLength(0);
     });
 
@@ -202,6 +229,22 @@ describe('WebAudioBus', () => {
       expect(audios[0]).not.toBe(audios[1]);
       // And the bed actually started.
       expect(audios.some((a) => a.playCalls > 0)).toBe(true);
+    });
+
+    it('a refused start is logged and restarted by the next gesture', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const bus = new WebAudioBus();
+      win.fire('pointerdown');
+      refusePlays = 1;
+      bus.updateMusic('bgm.lobby', 16);
+      await Promise.resolve(); await Promise.resolve();
+      expect(warn.mock.calls.some((c) => String(c[0]).includes('refused to start'))).toBe(true);
+      const live = audios.find((a) => a.playCalls > 0)!;
+      expect(live.playCalls).toBe(1);
+
+      win.fire('pointerup');
+      expect(live.playCalls).toBe(2);
+      warn.mockRestore();
     });
 
     it('no BGM before the first gesture — the gate is the gesture, not ctx.state', () => {

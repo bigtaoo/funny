@@ -1024,6 +1024,48 @@ music` 3/3 过、`selftest.py` 全过。头注里的取舍：
   `test/audio/battleMusic.test.ts` 4 例：切点两侧（`ACCEL_THRESHOLD_2_TICKS − 1` / 恰好等于）、阈值就是 6 分钟、两条答案都在
   `MUSIC_CATALOGUE` 里。
 
+### 0.9 触屏第一下点击后整段新手引导没有 BGM（2026-10-08）
+
+**起因**：项目所有者反馈「新手引导的地图里好像没用背景音乐，只有音效」。排查结论有两层：
+
+- **项目所有者那次（电脑 + 鼠标）不是 bug，是电平**：真浏览器里接一个电平表量，引导里的床约
+  **−38 dBFS**（与普通人机对战 −38.4 一致），而音效峰值在 −16 dBFS 上下——差二十多 dB，在一局的
+  音效底下几乎听不见。这是 §0.6 把总线降到 0.2 之后的混音取舍，**这一轮没改**，等项目所有者再听一次。
+- **触屏上是真 bug，而且整段静音**：
+  1. `WebAudioBus` 把 `pointerdown` / `touchstart` 也当作手势。触摸**按下**不是用户激活（Chrome 与
+     iOS Safari 都只认触摸结束），但它照样打开了 `ContextAudioBus.gestured`；
+  2. 下一帧（按下后约 1 ms）`updateMusic` 起床，`<audio>.play()` 被 `NotAllowedError` 拒掉，
+     `WebMusicDeck` 把自己置回「没在放」——而 deck 当时没接 `warn`，控制台什么都没有；
+  3. `MusicPlayer` 仍认为那条轨在放：回绕判断见 `position() === null` 就返回，`setPaused(false)` 对没在放的
+     deck 是空操作，只有**换轨**会再 `play()`；
+  4. SFX 不受影响：上下文的 `resume()` 在触摸**结束**时又跑了一次，那次在激活之内，成功了；
+  5. CrazyGames 没有入口页（`entryNoticeOnly`），新玩家的第一下点击就落在引导里，引导全程一条轨
+     （`bgm.battle.early`），于是整段无声，回大厅换轨才恢复。普通 web 构建的第一下落在入口页，症状
+     换成入口页 / 登录页无声、进引导换轨后恢复。
+
+**修法**（三处，平台中立的一半在 `audio/`）：
+- `WebAudioBus.onGesture` 只认激活类事件：`keydown`、`pointerType === 'mouse'` 的 `pointerdown`、
+  `pointerup` / `touchend` / `click`（`pointerType` 缺省或为空的老实现照常放行）。
+- `MusicDeck` 接口加 `isIdle()`；`MusicPlayer.recover()` 在每次手势里检查「应在响的轨」所在 deck，
+  idle 就从静默重新淡入（hold 中、换轨空白中不动）。**刻意不用 `position() === null` 当判据**：一条刚
+  `play()`、还在缓冲的流也没有位置，微信上每点一次屏就 `stop()` + `play()` 一次，慢网上床永远起不来。
+- `WebAudioBus` 给两个 deck 接上 `console.warn`，被拒 / 出错从此看得见。
+
+**回归**：
+- 单元：`MusicPlayer.test.ts` 5 例（重启、淡入中途被拒、缓冲中不碰、hold / 无轨不动、重启时抛错被接住）、
+  `musicWiring.test.ts` 1 例（帧不重试、手势重试）、`WebAudioBus.test.ts`（触摸 / 笔按下不开闸、鼠标开；
+  被拒有日志、下一次 `pointerup` 重启）、`musicDecks.test.ts`（两个 deck 的 `isIdle` 语义，含微信缓冲中
+  不算 idle）。去掉 `recover()` 调用或去掉 `pointerType` 过滤，对应用例各自变红。
+- 真浏览器：`test/browser/bgmTouchFirstTap.spec.ts`。全程用 CDP `Runtime.evaluate { userGesture: false }`
+  驱动 e2e 入口进引导，然后一次真实触摸点击（按住 150 ms），断言 deck 位置在走。**旧代码上它失败、新代码
+  通过**。两个写这条用例时踩到的假阳性：① Playwright 的 `page.evaluate` 自带用户手势；② 配置里的
+  `trace: 'retain-on-failure'` 会让页面在 `goto` 之后就 `hasBeenActive === true`——两者都会让床在点击之前
+  就起来，把 bug 盖住，所以本文件关了 trace / 失败截图。另外点击要等场景过渡完（等 3 s）：过渡中按下，
+  下一帧要的还是上一个场景的轨，随后**换轨**会在激活之内重新 `play()`，旧代码就碰巧过了。
+
+**没有验证到什么**：真机（iOS Safari / Android Chrome / 微信）没测，结论来自 headless Chromium 的触摸模拟；
+音量是否该调高等项目所有者再听。
+
 ---
 
 ## 1. 美学基线（引自 art-direction，不在此复述）
@@ -1145,7 +1187,7 @@ interface AudioBus {
 
 - **`preload(ids)` → `preload()`。** 原稿设想"进场景前预载该场景所需 id"。SFX 全集是 ~100 KB 量级（daydayup 的同类集合实测 101.9 KB / 50 个文件），按场景切分省不下有意义的字节，却要求每个场景维护一份 id 清单——那是一份会腐烂的重复。BGM 是另一回事（单文件就可能几 MB），它落地时会有自己的按需接口。
 - **`playSfx(id, {volume})` → `play(cue, count)`。** 单次播放不接受调用方传音量：混音权重是内容决策，住在 `cueCatalogue.ts` 一张表里（§4），否则"为什么攻击音把结算盖住了"要翻十个触发点。`count` 是本帧合并进来的事件数（§4 的合并规则）。
-- **`unlock()` → `resume()`，且不需要调用方接。** `WebAudioBus` 自己在 `window` 上挂 `pointerdown`/`keydown`/`touchstart`。比走 `InputManager` 严格更宽：后者会在场景淡入淡出和模态框期间闸掉指针事件，而 autoplay 闸门只要"用户碰过页面"，被游戏逻辑丢弃的那次点击同样能解锁。§6 里"IntroScene 首 tap 挂 unlock()"这条因此不需要了。
+- **`unlock()` → `resume()`，且不需要调用方接。** `WebAudioBus` 自己在 `window` 上挂手势监听（**2026-10-08 订正**：只挂浏览器认作「用户激活」的那几种——`keydown`、**鼠标**的 `pointerdown`、触摸**结束**的 `pointerup`/`touchend`/`click`；`touchstart` 与触摸/笔的 `pointerdown` 不算，见 §0.9）。比走 `InputManager` 严格更宽：后者会在场景淡入淡出和模态框期间闸掉指针事件，而 autoplay 闸门只要"用户碰过页面"，被游戏逻辑丢弃的那次点击同样能解锁。§6 里"IntroScene 首 tap 挂 unlock()"这条因此不需要了。
 
 **后端只有一套，平台各自只回答两个问题**（2026-09-01 接微信时抽的，见 §0.3）。`audio/ContextAudioBus.ts` 是平台中立的那一半——总线 GainNode、SFX 音量、`SampleBank`/`CueMixer` 的装配、preload、autoplay 闸门、`loaded` 统计；平台侧注入 `createContext()`（返回 `null` = 这个宿主没有音频设备，静音而不抛出）和可选的 `onGesture(cb)`。
 
@@ -1179,7 +1221,7 @@ interface AudioBus {
 
 | 约束 | 平台 | 处理 |
 |---|---|---|
-| **autoplay 限制**：首次音频必须在用户手势后才能响 | Web（所有现代浏览器）/ iOS Safari | 首个 tap（IntroScene/LoginScene 任意首次交互）调 `audio.unlock()` 解锁 `AudioContext`；解锁前的 BGM 请求排队，解锁后补播 |
+| **autoplay 限制**：首次音频必须在用户手势后才能响 | Web（所有现代浏览器）/ iOS Safari | 首个 tap（IntroScene/LoginScene 任意首次交互）调 `audio.unlock()` 解锁 `AudioContext`；解锁前的 BGM 请求排队，解锁后补播。<br>**订正（2026-10-08，§0.9）：「手势」必须是浏览器认的「激活」，而且被拒的起播要能重试。** 触摸**按下**不是激活：旧实现把它当手势放行，下一帧 `<audio>.play()` 被 `NotAllowedError` 拒掉，之后没有任何东西再调 `play()`，直到换轨——新手引导全程一条轨，于是触屏新玩家整段引导没有音乐。现在 ① 只认激活类事件（见 §3）；② 每次手势调 `MusicPlayer.recover()`：应在响的轨所在 deck 若 `isIdle()`（从没放、被停、被拒、出错）就从静默重新淡入；缓冲中（没有位置但没坏）的 deck 不碰，否则慢网上每点一下都重启一次 |
 | **iOS WebAudio 需手势解锁** | iOS 网页 | 同上，`AudioContext.resume()` 必须在手势回调内 |
 | **同时音频实例数有限** | 微信小游戏 | ~~SFX 走对象池（如 8 个 InnerAudioContext 轮转）。~~ **订正 2（2026-09-01，§0.3）：`InnerAudioContext` 对象池不需要了。** 微信走 `wx.createWebAudioContext()`，SFX 与 web 共用 `audio/` 那条管线，而对象池真正想要的「并发上限 + 优先级抢占」本来就在平台中立的 `VoiceBudget.ts` 里，两个平台共用一份。`InnerAudioContext` 剩下的正当用途只有 BGM（单实例、流式，§7 第 7 步）。**订正 3（2026-09-01，§0.5）：上一句原先写的是「单实例、流式、`loop=true`」，第三个不成立**——MP3 两端被补齐到帧边界，样本级精确回绕根本不存在，而原生 `loop` 要么样本级精确要么不循环。BGM 用的是**两个** `InnerAudioContext` 交叉淡入，两边的 `loop` 都显式设成 `false`。下面这条**订正 1** 仍然成立，它描述的是 `VoiceBudget` 的语义：<br>**丢弃规则不是"最旧"而是"按优先级抢占"**——最旧那个很可能正是一局一次的结算 stinger，而新来的是第 40 个攻击音；丢最旧会砍掉唯一那次胜利音，换来一个听不出区别的攻击音。已实现于 `audio/VoiceBudget.ts`（同优先级判输，被抢占者 12ms 淡出而非硬切；按**时间**退休而不靠 `ended` 事件，因为一个"悄悄停止清扫"的上限会失效于静默——前 N 个 cue 之后混音直接变哑，看起来就是"音频坏了"） |
 | ~~**首包体积**~~ | ~~微信小游戏~~ | **订正（2026-08-31）：这条约束对本项目不存在。** 原稿写"BGM 放分包/CDN 按需拉，首包只带 P0 SFX"，那是通用建议；而本项目按 ASSET_PACKAGING §4 的**方案 A** 早已把**全部**美术资源托管在 CDN（`asset/resource` 的 `publicPath = NW_ASSET_CDN`，产物进 `wechatgame/cdn/`，由 `project.private.config.json` 的 `packOptions.ignore` 排除出主包），主包是**纯代码 ~1.5 MB**。音频文件走同一条规则、同一个 `assetIO`，天然落在 CDN 上，**一个字节都不进主包**——所以"首包只带 P0 SFX"这个取舍不需要做，BGM 也不需要为体积单独分包。真正要留意的是**下载量与缓存**（同 §16 的资源预算口径），不是包体红线。<br>实测（2026-09-01，微信后端落地后）：微信主包为音频总共多付 **10441 字节**（2187088 → 2197453），其中**播放引擎本身 8546 字节**（2188907 → 2197453），此前三轮的 1819 字节全是触发表的 cue 字符串字面量。距 4 MB 主包红线仍有大量余量 |

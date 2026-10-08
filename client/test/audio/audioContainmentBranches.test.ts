@@ -34,6 +34,7 @@ class ThrowingDeck implements MusicDeck {
   setGain(level: number): void { this.bang('setGain'); this.gain = level; }
   stop(): void { this.calls.push('stop'); this.bang('stop'); this.playing = false; }
   position(): number | null { return this.playing ? 0 : null; }
+  isIdle(): boolean { return !this.playing; }
   setPaused(paused: boolean): void { this.calls.push(`setPaused:${paused}`); this.bang('setPaused'); }
   private bang(fn: string): void { if (this.throwOn.has(fn)) throw new Error(`deck blew up in ${fn}`); }
 }
