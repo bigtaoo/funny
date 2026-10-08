@@ -253,6 +253,32 @@ describe('StatePlayerScene — shared replay renders skins / animation / HUD', (
     sync.mockRestore();
   });
 
+  it('sizes unit and building HP bars from the stream\'s HP (the views read fixed-point hp_fp / maxHp_fp)', () => {
+    // The board fed to the views once carried plain `hp` / `maxHp`, so `hp_fp / maxHp_fp` was
+    // undefined / undefined: every HP-bar fill came out NaN wide in a shared replay.
+    const replay = mkShared();
+    for (const f of replay.frames) {
+      f.units[0] = { ...f.units[0]!, hp: 25, maxHp: 100 };
+      f.buildings = [{ id: 7, type: 'arrow_tower', side: 1, col: 6, row: 12, hp: 30, maxHp: 120 }];
+    }
+    const scene = new StatePlayerScene(createLayout(...PORTRAIT), replay, CB);
+    scene.update(1 / 30);
+
+    const fillRatio = (view: unknown, id: number): number => {
+      const c = (view as { sprites: Map<number, PIXI.Container> }).sprites.get(id);
+      if (!c) throw new Error(`no sprite for ${id}`);
+      const fill = c.getChildByName('hpFill') as PIXI.Sprite;
+      const bg = c.getChildByName('hpBg') as PIXI.Sprite;
+      return fill.width / bg.width;
+    };
+    const views = scene as unknown as { unitView: UnitView; buildingView: unknown };
+    expect(fillRatio(views.buildingView, 7)).toBeCloseTo(30 / 120, 3);
+    expect(fillRatio(views.unitView, 1)).toBeCloseTo(25 / 100, 3);
+    expect(fillRatio(views.unitView, 2)).toBeCloseTo(1, 3);
+
+    scene.destroy();
+  });
+
   it('re-shares an adopted stream verbatim, skins and ink included', () => {
     stateRecorder.reset();
     const encoded = encodeStateReplay(mkShared());
