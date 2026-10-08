@@ -1,17 +1,23 @@
-// 对局里该放哪条轨（AUDIO_DESIGN.md §2.3）——一个从对局时钟到 `MusicTrack` 的纯函数。
+// Which track a battle should be playing (AUDIO_DESIGN.md §2.3) — a pure function from the battle
+// clock to a `MusicTrack`.
 //
-// **切点是 ×2 回墨阶段（6 分钟），由引擎的同一个常数定义**，而不是这里另写一个 360：对局节奏
-// 由 `ACCEL_THRESHOLD_*_TICKS` 决定（BALANCE.md §3），音乐要跟的正是那个节奏，所以平衡改了阈值，
-// 音乐跟着走，不需要有人记得来这里改。选 6 分钟而不是 3 分钟（×1.5）或 10 分钟（×4）是项目所有者
-// 拍的板：×1.5 几乎听不出变化，而很多对局打不到 10 分钟，后期曲会几乎没人听到。
+// **The switch point is the x2 ink-regen phase (6 minutes), defined by the engine's own constant**,
+// not a separate 360 written here: the pacing of a battle is set by `ACCEL_THRESHOLD_*_TICKS`
+// (BALANCE.md §3), and that pacing is exactly what the music follows — so when balance moves the
+// threshold, the music moves with it, with nobody having to remember to come back and change this
+// file. Six minutes rather than 3 (x1.5) or 10 (x4) was the project owner's call: x1.5 is barely
+// audible as a change, and many battles never reach 10 minutes, so the late track would hardly ever
+// be heard.
 //
-// **只读，不进确定性**（AUDIO_DESIGN.md §6）：调用方传进来的是渲染侧已经看到的 tick 数，这里
-// 不碰 `GameState`，也不往引擎里加任何事件。阶段切换不需要引擎通知——场景每帧被问一次 `music`，
-// 播放器对「还是同一条轨」是空操作，所以一次比较就是全部的接线。
+// **Read-only, outside determinism** (AUDIO_DESIGN.md §6): the caller passes in the tick count the
+// render side has already seen; nothing here touches `GameState` or adds any event to the engine.
+// The phase change needs no notification from the engine — the scene is asked for its `music` once
+// per frame and the player treats "still the same track" as a no-op, so a single comparison is all
+// the wiring there is.
 import { ACCEL_THRESHOLD_2_TICKS } from '@nw/engine/config';
 import type { MusicTrack } from './types';
 
-/** `elapsedTicks` 时刻的对局该放的轨。 */
+/** The track a battle should be playing `elapsedTicks` ticks in. */
 export function battleTrack(elapsedTicks: number): MusicTrack {
   return elapsedTicks >= ACCEL_THRESHOLD_2_TICKS ? 'bgm.battle.late' : 'bgm.battle.early';
 }

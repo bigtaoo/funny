@@ -19,7 +19,7 @@
  */
 import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n/index';
-import { ui as C, txt, txtFit, sketchPanel, seedFor } from '../../render/sketchUi';
+import { ui as C, txt, txtFit, sketchPanel, seedFor, marginLineX } from '../../render/sketchUi';
 import { makeText } from '../../render/pixiText';
 import { snapFont } from '../../render/fontScale';
 import type { Hit } from '../hits';
@@ -69,8 +69,16 @@ export function buildEntryNoticeStrip(
   const container = new PIXI.Container();
   container.name = 'overlay:entryNotice';
   const unit = Math.min(w, h);
-  const stripW = Math.round(Math.min(w * 0.94, unit * 1.6));
-  const x0 = Math.round((w - stripW) / 2);
+  // Keep the whole card (its hand-drawn border included — the frame stays inside the panel rect)
+  // right of the red margin rule, with a small gap, and the same gap off the right edge. Centred on
+  // the screen where that already clears the rule, else pushed right of it and narrowed to fit: a
+  // 0.94w centred card starts at 0.03w, and the rule is at 0.09w (the portal's 722x406 tile crossed
+  // it by 46 design px, the reviewer's 1100x574 canvas by 13).
+  const edgeGap = Math.round(unit * 0.015);
+  const minX = marginLineX(w) + edgeGap;
+  const maxRight = w - edgeGap;
+  const stripW = Math.round(Math.min(w * 0.94, unit * 1.6, maxRight - minX));
+  const x0 = Math.min(Math.max(Math.round((w - stripW) / 2), minX), maxRight - stripW);
   const pad = Math.round(unit * 0.022);
   const innerW = stripW - 2 * pad;
   // Never under 14 px in design space: on a contain-scaled small canvas a smaller design size reads
@@ -115,7 +123,7 @@ export function buildEntryNoticeStrip(
   const bodyH = Math.ceil(body.height);
   const actionsH = oneRow ? Math.max(btnH, linksRowH) : linksRowH + lineGap + btnH;
   const stripH = pad + bodyH + lineGap + actionsH + pad;
-  const y0 = Math.round(h - bottomInset - stripH - unit * 0.015);
+  const y0 = Math.round(h - bottomInset - stripH - edgeGap);
 
   const panel = sketchPanel(stripW, stripH, { fill: C.paper, border: C.accent, width: 2.4, seed: seedFor(stripW, stripH, 7) });
   panel.x = x0; panel.y = y0;
