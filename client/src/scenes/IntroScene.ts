@@ -9,19 +9,20 @@ import { FS } from '../render/fontScale';
 import { getArtTexture } from '../render/cardArt';
 import introIllustrationUrl from '../assets/story/intro_notebook.png';
 import { dispatchHit } from '../ui/hits';
+import { UI_FONT_FAMILY } from '../render/theme';
 
-// ── First-launch intro (background story) ─────────────────────────────────────
+// ── Opening story (full 7-line version) ───────────────────────────────────────
 //
-// Skeleton for the onboarding story sequence, shown once on first launch
-// (driven by the `nw_seen_intro` storage flag in app.ts).
+// No longer part of first launch (ONBOARDING_DESIGN §11.7): new players get a one-line card on
+// their first campaign-map open instead (scenes/CampaignMapScene/storyCard.ts), and this full
+// version is played from settings → "Replay story" (nav.goIntro), returning to settings after.
 //
 // Current behavior: story lines fade in one by one; a tap reveals the next
 // line instantly (or completes the current fade). A line left untouched
 // still advances on its own after AUTO_ADVANCE_DELAY seconds, so the reader
 // doesn't have to keep tapping — EXCEPT the last line, which stays on screen
-// until an explicit tap: this scene feeds into the consent/privacy gate
-// (gateConsent in auth.ts), and auto-finishing into that would fly by before
-// anyone could actually read the ending. A skip button is always available
+// until an explicit tap, so the ending isn't whisked away before anyone could
+// actually read it (the player asked to see this story). A skip button is always available
 // in the top-right corner. A background illustration (father handing Tao the
 // notebook) fades in alongside story.line.3 and then stays at
 // ILLUSTRATION_TARGET_ALPHA behind the rest of the text.
@@ -87,7 +88,7 @@ export class IntroScene implements Scene {
   update(dt: number): void {
     // Advance current line fade; once fully shown, count down to an automatic step() so the
     // reader doesn't have to keep tapping. The last line is the one exception — it waits for an
-    // explicit tap instead of auto-finishing into the consent/privacy gate that follows this scene.
+    // explicit tap instead of auto-finishing (see the header).
     if (this.shownCount > 0 && this.shownCount <= this.lines.length) {
       const line = this.lines[this.shownCount - 1]!;
       const isLastLine = this.shownCount === this.lines.length;
@@ -212,7 +213,7 @@ export class IntroScene implements Scene {
       const text = makeText(t(key), {
         fontSize,
         fill: ui.dark,
-        fontFamily: 'serif',
+        fontFamily: UI_FONT_FAMILY,
         wordWrap: true,
         wordWrapWidth: w * 0.78,
         align: 'center',
@@ -230,7 +231,7 @@ export class IntroScene implements Scene {
     this.hintText = makeText(t('story.tapToContinue'), {
       fontSize: FS.label,
       fill: ui.mid,
-      fontFamily: 'monospace',
+      fontFamily: UI_FONT_FAMILY,
     });
     this.hintText.anchor.set(0.5, 1);
     this.hintText.x = w / 2;
@@ -241,7 +242,7 @@ export class IntroScene implements Scene {
     const skipText = makeText(t('story.skip'), {
       fontSize: FS.label,
       fill: ui.mid,
-      fontFamily: 'monospace',
+      fontFamily: UI_FONT_FAMILY,
     });
     skipText.anchor.set(1, 0);
     skipText.x = w - Math.round(w * 0.04);

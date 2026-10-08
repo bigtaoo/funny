@@ -179,6 +179,12 @@ export interface SaveData {
     reachedRanks: RankId[];
     /** Timestamp (ms) of the last AI-fallback (bot) match result accepted for ELO settlement; throttles POST /pvp/bot-result. Absent = never. */
     lastBotResultAt?: number;
+    /**
+     * Daily ELO-loss protection (SEASON_DESIGN_IMPL_SPEC.md §15.5, ladder.ts DailyProtectState): daily slots
+     * used on server-UTC day `dayKey` (retention.ts makeDayKey). Written only by ranked settlement, in the same
+     * rev-guarded write as the ELO; a stale `dayKey` reads as 0 used (lazy reset). Absent = none used yet.
+     */
+    dailyProtect?: { dayKey: string; used: number };
   };
 
   // —— Stamina (A4). Server-authoritative, deducted in real time; natural regen 1 point/6 min, cap 120. Absent in old saves = treated as full. ——

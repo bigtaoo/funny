@@ -161,12 +161,12 @@ describe('portrait L1 frames the player base at 5/6 of the screen (2026-09-15)',
 
   it('routes a real phone to the ladder its ORIENTATION implies, not its device pixel count', () => {
     // The branch reads design dimensions, which are not the device's: a 390x844 phone becomes
-    // 780x1688 and a 844x390 one becomes 1688x780. Asserting on the real layouts is what makes
+    // 780x1688 and a 844x390 one becomes 1385x640. Asserting on the real layouts is what makes
     // this meaningful — `h <= w` on the raw viewport would happen to agree here and diverge on any
     // device whose design mapping is not a pure scale.
     expect(PHONE_PORTRAIT.designWidth).toBe(780); // layout/designSize.ts — 390 / 0.5
     expect(PHONE_PORTRAIT.designHeight).toBeGreaterThan(PHONE_PORTRAIT.designWidth);
-    expect(PHONE_LANDSCAPE.designHeight).toBe(780); // same rule on landscape's short axis
+    expect(PHONE_LANDSCAPE.designHeight).toBe(640); // landscape's own rule: 390 / 0.62, floored at 640
     expect(PHONE_LANDSCAPE.designWidth).toBeGreaterThan(PHONE_LANDSCAPE.designHeight);
     // A tablet in portrait (4:3) is the interesting one: much less extreme than a phone, but its
     // design space is still taller than wide, so it takes the portrait ladder too.

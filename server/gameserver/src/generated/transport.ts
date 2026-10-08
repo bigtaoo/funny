@@ -253,6 +253,18 @@ export interface EloDelta {
   delta: number;
   after: number;
   rankAfter: string;
+  /**
+   * ELO-loss protection (SEASON_DESIGN_IMPL_SPEC.md §15.5, 2026-10-07): 1-based index of this game within the
+   * slot pool it used (a loss in a protected game costs no ELO); 0 = not a protected game.
+   */
+  protectedGame: number;
+  /** pool size N; 0 when protected_game is 0 */
+  protectedTotal: number;
+  /**
+   * Which pool: 1 = new-player (account's first 3 settled ranked games), 2 = daily (first 3 of the
+   * server-UTC day that weren't new-player games). 0 = none, or a pre-2026-10-07 sender (read as new-player).
+   */
+  protectedKind: number;
 }
 
 export interface MatchOver {
@@ -2425,7 +2437,7 @@ export const PeerDc: MessageFns<PeerDc> = {
 };
 
 function createBaseEloDelta(): EloDelta {
-  return { delta: 0, after: 0, rankAfter: "" };
+  return { delta: 0, after: 0, rankAfter: "", protectedGame: 0, protectedTotal: 0, protectedKind: 0 };
 }
 
 export const EloDelta: MessageFns<EloDelta> = {
@@ -2438,6 +2450,15 @@ export const EloDelta: MessageFns<EloDelta> = {
     }
     if (message.rankAfter !== "") {
       writer.uint32(26).string(message.rankAfter);
+    }
+    if (message.protectedGame !== 0) {
+      writer.uint32(32).uint32(message.protectedGame);
+    }
+    if (message.protectedTotal !== 0) {
+      writer.uint32(40).uint32(message.protectedTotal);
+    }
+    if (message.protectedKind !== 0) {
+      writer.uint32(48).uint32(message.protectedKind);
     }
     return writer;
   },
@@ -2473,6 +2494,30 @@ export const EloDelta: MessageFns<EloDelta> = {
           message.rankAfter = reader.string();
           continue;
         }
+        case 4: {
+          if (tag !== 32) {
+            break;
+          }
+
+          message.protectedGame = reader.uint32();
+          continue;
+        }
+        case 5: {
+          if (tag !== 40) {
+            break;
+          }
+
+          message.protectedTotal = reader.uint32();
+          continue;
+        }
+        case 6: {
+          if (tag !== 48) {
+            break;
+          }
+
+          message.protectedKind = reader.uint32();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -2490,6 +2535,9 @@ export const EloDelta: MessageFns<EloDelta> = {
     message.delta = object.delta ?? 0;
     message.after = object.after ?? 0;
     message.rankAfter = object.rankAfter ?? "";
+    message.protectedGame = object.protectedGame ?? 0;
+    message.protectedTotal = object.protectedTotal ?? 0;
+    message.protectedKind = object.protectedKind ?? 0;
     return message;
   },
 };

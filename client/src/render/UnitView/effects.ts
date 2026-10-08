@@ -105,10 +105,12 @@ export function playHitEffect(host: EffectsHost, unitId: number): void {
     return;
   }
 
-  // Circle / draft placeholder units (no outline textures): alpha blink fallback.
+  // Circle / draft placeholder units (no outline textures): alpha blink fallback. Stops as soon as
+  // the unit no longer owns THIS sprite — gone, or upgraded to its real art mid-blink (UnitView
+  // sync), in which case the old container is back in the pool and must not keep blinking.
   let frames = 6;
   const tick = (): void => {
-    if (!host.sprites.has(unitId)) { removeEffectTick(host, tick); return; }
+    if (host.sprites.get(unitId) !== sprite) { removeEffectTick(host, tick); return; }
     sprite.alpha = frames % 2 === 0 ? 0.3 : 1;
     if (--frames <= 0) {
       removeEffectTick(host, tick);

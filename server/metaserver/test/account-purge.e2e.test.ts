@@ -70,6 +70,7 @@ describe.skipIf(!mongo)('account purge orchestrator e2e', () => {
       publicId: id === 'gone' ? '111111111' : String(nextPublicId++),
       password: { loginId: `${id}@example.com`, hash: 'h' },
       flags: { gdprConsent: true },
+      activeDays: [0, 1, 3], // retention-report activity (activityDays.ts) — must not survive the tombstone
       ...(deletedAt !== undefined ? { deletedAt, deletionConfirmToken: 'tok' } : {}),
     });
     const save = makeNewSave(id, 1);
@@ -130,7 +131,7 @@ describe.skipIf(!mongo)('account purge orchestrator e2e', () => {
     expect(match!.players[0]).toEqual({ side: 0, accountId: 'gone' });
     expect(match!.players[1]).toMatchObject({ displayName: 'Name other', publicId: '222222222' });
 
-    // Tombstone: no credentials, no profile, no purge bookkeeping — just enough to keep answering 410.
+    // Tombstone: no credentials, no profile, no purge bookkeeping, no activeDays — just enough to keep answering 410.
     expect(await c.accounts.findOne({ _id: 'gone' })).toEqual({ _id: 'gone', createdAt: 1, deletedAt, purgedAt: NOW });
     // The freed unique credentials can be claimed by a new account.
     await c.accounts.insertOne({ _id: 'new', createdAt: NOW, deviceId: 'dev-gone', publicId: '111111111' });

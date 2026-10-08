@@ -108,8 +108,11 @@ export function drawDecor(root: PIXI.Container, kind: string, x: number, y: numb
       const fl = new PIXI.Graphics();
       fl.beginFill(C.green, 0.85); fl.drawPolygon([x, y - s, x + s * 1.3, y - s * 0.6, x, y - s * 0.2]); fl.endFill();
       root.addChild(fl);
+      // Above the pole, not under the flag: every chapter puts its first level just below and
+      // beside the start marker, and on a portrait page (narrow content width, node radius scaled
+      // off the tall h) the level-1 ring covered the label down to "STA" (review audit, 2026-10-07).
       const lbl = txt(t('campaign.markerStart'), snapFont(Math.round(s * 0.62)), C.green, true);
-      lbl.anchor.set(0.5, 0); lbl.x = x; lbl.y = y + s * 0.2; root.addChild(lbl);
+      lbl.anchor.set(0.5, 1); lbl.x = x; lbl.y = y - s - 2; root.addChild(lbl);
       break;
     }
     case 'boss': {

@@ -6,8 +6,8 @@
     "kind": "survive"
   },
   "enemyScale": {
-    "hp": 1.257,
-    "damage": 1.135
+    "hp": 1,
+    "damage": 1
   },
   "loadout": [
     "infantry_1",
@@ -35,14 +35,14 @@
         "atTick": 120,
         "unitType": "max",
         "col": 2,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 18
       },
       {
         "atTick": 120,
         "unitType": "max",
         "col": 9,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 18
       },
       {
@@ -81,14 +81,14 @@
       },
       {
         "atTick": 600,
-        "unitType": "lena",
+        "unitType": "max",
         "col": 0,
         "count": 1,
         "spacingTicks": 10
       },
       {
         "atTick": 600,
-        "unitType": "lena",
+        "unitType": "max",
         "col": 11,
         "count": 1,
         "spacingTicks": 10
@@ -163,14 +163,14 @@
         "atTick": 1080,
         "unitType": "max",
         "col": 1,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 12
       },
       {
         "atTick": 1080,
         "unitType": "max",
         "col": 10,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 12
       },
       {
@@ -186,20 +186,6 @@
         "col": 7,
         "count": 1,
         "spacingTicks": 40
-      },
-      {
-        "atTick": 1320,
-        "unitType": "lena",
-        "col": 2,
-        "count": 1,
-        "spacingTicks": 20
-      },
-      {
-        "atTick": 1320,
-        "unitType": "lena",
-        "col": 9,
-        "count": 1,
-        "spacingTicks": 20
       }
     ]
   },
@@ -216,8 +202,8 @@
   },
   "nameKey": "campaign.ch1.lv5.name",
   "briefKey": "campaign.ch1.lv5.brief",
-  "startInk": 36,
-  "inkRegenMult": 1.5,
+  "startInk": 40,
+  "inkRegenMult": 1.6,
   "lanePunish": {
     "units": 5,
     "sustainTicks": 120,

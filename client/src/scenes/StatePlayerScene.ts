@@ -14,12 +14,15 @@ import { FS, snapFont } from '../render/fontScale';
 import { stateRecorder } from '../game/replay/StateRecorder';
 import { StatePlayerHud } from './StatePlayerScene/hud';
 import { tapHandler } from '../ui/hits';
+import { battleTrack } from '../audio/battleMusic';
+import type { MusicTrack } from '../audio/types';
 import type {
   StateReplay,
   StateFrame,
   StateUnit,
   EncodedStateReplay,
 } from '../game/replay/StateReplay';
+import { UI_FONT_FAMILY } from '../render/theme';
 
 /**
  * Dumb state player (REPLAY_SHARE_DESIGN §4.2).
@@ -83,8 +86,10 @@ interface BoardLike {
 }
 
 export class StatePlayerScene implements Scene {
-  /** 状态回放/排障，同 `GameScene.music`。 */
-  readonly music = null;
+  /** 状态回放/排障，同 `GameScene.music`，按播放时钟换算出的 tick 选轨。 */
+  get music(): MusicTrack {
+    return battleTrack(this.clock * this.tickRate);
+  }
   readonly container: PIXI.Container;
 
   private readonly boardView: BoardView;
@@ -336,7 +341,7 @@ export class StatePlayerScene implements Scene {
       fontSize: snapFont(tagSz),
       fill: 0x2244aa,
       fontWeight: 'bold',
-      fontFamily: 'monospace',
+      fontFamily: UI_FONT_FAMILY,
     });
     tag.x = tagX + tagSz + 4;
     tag.y = this.barY - 2;
@@ -388,7 +393,7 @@ export class StatePlayerScene implements Scene {
       fontSize: FS.display,
       fill: 0x2c2c2a,
       fontWeight: 'bold',
-      fontFamily: 'serif',
+      fontFamily: UI_FONT_FAMILY,
       align: 'center',
     });
     banner.anchor.set(0.5, 0.5);
@@ -434,7 +439,7 @@ export class StatePlayerScene implements Scene {
       fontSize: snapFont(Math.round(h * 0.42)),
       fill: 0xffffff,
       fontWeight: 'bold',
-      fontFamily: 'monospace',
+      fontFamily: UI_FONT_FAMILY,
     });
     label.anchor.set(0.5, 0.5);
     label.x = x + w / 2;

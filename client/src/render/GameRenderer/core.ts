@@ -47,8 +47,7 @@ import { HUDView } from '../HUDView';
 import { NetStatusView } from '../NetStatusView';
 import { UnitView } from '../UnitView';
 import type { EngineCardInstance, EngineEquipInv } from '@nw/engine';
-import { TutorialDrawPolicy } from '@nw/engine';
-import { TutorialDirector, type TutorialHost } from '../TutorialDirector';
+import { TutorialDirector, type TutorialConfig, type TutorialHost } from '../TutorialDirector';
 import { VFXSystem } from '../VFXSystem';
 import { buildWearOverlay } from '../wearOverlay';
 import { ProfilePopup, type ProfileData, type ProfileExtra } from '../../ui/dialogs/ProfilePopup';
@@ -86,8 +85,6 @@ export class GameRendererCore {
   onExitToLobby: (() => void) | null = null;
   /** Surrender dialog opened (true) / cancelled (false) — the dialog freezes the local sim (see update()). */
   onPauseChange: ((paused: boolean) => void) | null = null;
-  /** Tutorial step-level analytics hook (A9-9); wired to TutorialDirector's onStepChange when tutorialEnabled. */
-  onTutorialStep: ((stepKey: string) => void) | null = null;
 
   // One-shot gate: after GameOver the engine's step() returns early without draining the event
   // queue (GameEngine §step), so game_over/game_draw events are re-consumed by update() every
@@ -155,7 +152,7 @@ export class GameRendererCore {
 
   /** Tutorial director (activated only for the dedicated tutorial level ch0_tutorial); orchestrates presentation-layer checkpoints / tours / never-lose guarantee. */
   tutorial: TutorialDirector | null = null;
-  private tutorialEnabled = false;
+  private readonly tutorialConfig: TutorialConfig | null;
 
   /** Campaign (PvE) level: the surrender button/dialog reword to "exit level". Set before init(). */
   private campaignMode = false;
@@ -176,7 +173,7 @@ export class GameRendererCore {
     equippedSkins: readonly string[] = [],
     cardInstances: EngineCardInstance[] | null = null,
     equipmentInv: EngineEquipInv | null = null,
-    tutorial = false,
+    tutorial: TutorialConfig | null = null,
     battleLabels: BattleLabelContext = {},
     replayNames: readonly [string, string] | null = null,
     opponentSkins: readonly string[] = [],
@@ -215,7 +212,7 @@ export class GameRendererCore {
       this.unsubs.push(input.onUp((x, y)   => this.input.handleUp(x, y)));
     }
 
-    this.tutorialEnabled = tutorial;
+    this.tutorialConfig = tutorial;
   }
 
   // ── Local player helper ──────────────────────────────────────────────────────
@@ -247,42 +244,45 @@ export class GameRendererCore {
 
   init(): void {
     this.buildSceneGraph();
-    if (this.tutorialEnabled) {
+    if (this.tutorialConfig) {
       const host: TutorialHost = {
         container: this.container,
         layout: this.layout,
+        config: this.tutorialConfig,
         highlightUnitLane: (col) => this.boardView.showUnitLaneHighlights([col], new Set(), col),
         highlightBuildingLane: (col) => this.boardView.showBuildingHighlights([col], this.localBuildRow),
         clearLaneHighlights: () => this.boardView.clearHighlights(),
         handSlotCenter: (i) => this.handView.slotCenter(i),
-        switchToFreePlayDraw: () => {
-          const p = this.engine.state.bottomPlayer.drawPolicy;
-          if (p instanceof TutorialDrawPolicy) p.enterFreePlay();
-        },
+        buildCardGhost: (i) => this.input.buildCardGhost(i),
         forceVictory: () => this.forceTutorialVictory(),
+        finish: () => this.finishTutorial(),
         onSkip: () => this.onExitToLobby?.(),
-        onStepChange: (stepKey) => this.onTutorialStep?.(stepKey),
       };
       this.tutorial = new TutorialDirector(host);
     }
   }
 
   /**
-   * Tutorial graduation: scripted victory. Reuses the game_over local-win resolution chain
-   * (showGameOver → onGameEnd), but triggered by the director rather than the engine
-   * (tutorial level never actually decides a winner, §3.5).
+   * Tutorial graduation, part 1: the scripted victory moment — WIN banner + stinger, the same pair a
+   * real game_over shows (tutorial level never actually decides a winner, §3.5). The scene stays up:
+   * the director's graduation card owns the exit (finishTutorial).
    */
   private forceTutorialVictory(): void {
     if (this.gameEnded) return;
     this.gameEnded = true;
-    const winner = this.localOwner;
-    stateRecorder.setWinner(winner);
+    stateRecorder.setWinner(this.localOwner);
     this.input.cancelDrag(); this.input.cancelTapSelect();
-    this.hudView.showGameOver(winner, this.localOwner);
-    this.events.playResultStinger(winner);
+    this.hudView.showGameOver(this.localOwner, this.localOwner);
+    this.events.playResultStinger(this.localOwner);
+  }
+
+  /** Tutorial graduation, part 2: the graduation card's button — settle as a local win. */
+  private finishTutorial(): void {
+    if (this.gameEndTimer !== null) return;
+    const winner = this.localOwner;
     const stats = this.engine.state.snapshotStats();
     const summary = this.engine.state.snapshotSummary();
-    this.scheduleGameEnd(() => this.onGameEnd?.(winner, stats, summary), 1500);
+    this.scheduleGameEnd(() => this.onGameEnd?.(winner, stats, summary), 0);
   }
 
   /**
@@ -452,7 +452,8 @@ export class GameRendererCore {
     this.unitView     = new UnitView(this.boardView, this.layout.localSide, this.equippedSkins, this.cardInstances, this.equipmentInv, this.opponentSkins);
     this.buildingView = new BuildingView(this.boardView);
     this.handView     = new HandView(this.layout, this.equippedSkins);
-    this.hudView      = new HUDView(this.layout, this.campaignMode, /* hideSurrender */ this.spectator);
+    // The tutorial has its own Skip button in the same corner; a second exit would sit under it.
+    this.hudView      = new HUDView(this.layout, this.campaignMode, /* hideSurrender */ this.spectator || this.tutorialConfig !== null);
     this.netStatus    = new NetStatusView(this.layout);
     this.vfxSystem    = new VFXSystem();
 

@@ -42,6 +42,8 @@ export interface SettingsSceneCallbacks {
   onDeleteAccount?(): Promise<{ ok: boolean }>;
   /** Replay the onboarding tutorial (ONBOARDING_DESIGN §3.4); absent = not shown. */
   onReplayTutorial?(): void;
+  /** Replay the full opening story (IntroScene, ONBOARDING_DESIGN §11.7); absent = not shown. */
+  onReplayStory?(): void;
   /**
    * Analytics consent as it stands (`save.flags.gdprConsent`), for the privacy toggle.
    *

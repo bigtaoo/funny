@@ -3,8 +3,9 @@ import { LandscapeLayout } from '../src/layout/LandscapeLayout';
 import { createLayout } from '../src/layout/ScalingManager';
 import { Side } from '../src/game';
 
-// The landscape design height is 1080 on screens >= 540 CSS px tall and 720–860 on phones held
-// sideways (ADR-105, designSize.ts); the width follows the *safe
+// The landscape design height is 1080 on screens >= ~670 CSS px tall and 640–1078 below that
+// (ADR-105 + its 2026-10-07 landscape section, designSize.ts: target 0.62x, floor 640); the width
+// follows the *safe
 // drawable area* aspect (never below the classic 1920, and since 2026-08-25 never
 // above 2592 = 2.4:1, both scaled by designHeight/1080) so fit-to-height scaling
 // leaves no side letterbox on tall phones held sideways. Safe-area insets are
@@ -31,9 +32,9 @@ describe('LandscapeLayout dynamic width', () => {
   it('grows the design width on a tall phone held sideways so there is no letterbox', () => {
     // iPhone 13 landscape logical viewport: 844×390 (~19.5:9).
     const l = new LandscapeLayout(844, 390);
-    // Height 390 / 0.5 = 780; width matches the screen aspect: 780 * 844/390 = 1688.
-    expect(l.designHeight).toBe(780);
-    expect(l.designWidth).toBe(Math.round(780 * 844 / 390));
+    // Height 390 / 0.62 = 629, floored at 640; width matches the screen aspect: 640 * 844/390.
+    expect(l.designHeight).toBe(640);
+    expect(l.designWidth).toBe(Math.round(640 * 844 / 390));
     // Fit-to-height scale (screenH/designHeight) === fit-to-width scale → no letterbox.
     const scaleW = 844 / l.designWidth;
     const scaleH = 390 / l.designHeight;
@@ -46,16 +47,16 @@ describe('LandscapeLayout dynamic width', () => {
     // height. Uncapped that asked for a 3000-wide design rect: 56% more empty paper flanking a
     // 1260-wide board, and 56% more pixels in every page-sized texture (see render/bake.ts).
     const l = new LandscapeLayout(750, 270);
-    // Height floors at 720 (270 / 0.5 = 540 is below it), so the cap is 2592 * 720/1080 = 1728.
-    expect(l.designHeight).toBe(720);
-    expect(l.designWidth).toBe(1728);
+    // Height floors at 640 (270 / 0.62 = 435 is below it), so the cap is 2592 * 640/1080 = 1536.
+    expect(l.designHeight).toBe(640);
+    expect(l.designWidth).toBe(1536);
     // Past the cap it contains to height, so side bands appear — which is exactly what
     // ScalingManager's desk surround is for (it already does this on every iPad).
     const scale = Math.min(750 / l.designWidth, 270 / l.designHeight);
     expect(scale).toBe(270 / l.designHeight);
     expect(750 - l.designWidth * scale).toBeGreaterThan(2);
     // The board still fits with room for both HUD columns (boardX >= 330k for every allowed width).
-    expect(l.boardRect.x).toBeGreaterThanOrEqual(Math.floor(330 * 720 / 1080));
+    expect(l.boardRect.x).toBeGreaterThanOrEqual(Math.floor(330 * 640 / 1080));
     expect(l.hudBottomLeftRect.x).toBeGreaterThanOrEqual(0);
   });
 
@@ -97,22 +98,23 @@ describe('LandscapeLayout dynamic width', () => {
   it('routes createLayout to the landscape layout when width > height', () => {
     const l = createLayout(844, 390);
     expect(l.orientation).toBe('landscape');
-    expect(l.designWidth).toBe(Math.round(780 * 844 / 390));
+    expect(l.designWidth).toBe(Math.round(640 * 844 / 390));
   });
 
   it('shrinks the design area for safe-area insets via createLayout', () => {
     // Landscape insets (e.g. notch on the left, home indicator at the bottom)
     // reduce the drawable area, so the design width tracks the *safe* aspect.
-    const noInset = createLayout(844, 390);
-    const inset   = createLayout(844, 390, undefined, { top: 0, right: 0, bottom: 21, left: 47 });
-    // (844 − 47) × (390 − 21) → height 738, and a narrower design width than no-inset.
-    expect(inset.designHeight).toBe(738);
-    expect(inset.designWidth).toBe(Math.round(738 * (844 - 47) / (390 - 21)));
+    // On a viewport above the 640 floor, so the inset moves the height too (844x390 sits on it).
+    const noInset = createLayout(1100, 574);
+    const inset   = createLayout(1100, 574, undefined, { top: 0, right: 0, bottom: 21, left: 47 });
+    // (1100 − 47) × (574 − 21) → height 553 / 0.62 = 892, and a narrower design width than no-inset.
+    expect(inset.designHeight).toBe(892);
+    expect(inset.designWidth).toBe(Math.round(892 * (1100 - 47) / (574 - 21)));
     expect(inset.designWidth).toBeLessThan(noInset.designWidth);
   });
 
-  it('keeps the classic 1080-tall geometry on screens at least 540 CSS px tall', () => {
-    for (const [w, h] of [[1024, 768], [1280, 720], [960, 540]] as const) {
+  it('keeps the classic 1080-tall geometry on screens at least ~670 CSS px tall', () => {
+    for (const [w, h] of [[1024, 768], [1280, 720], [1366, 768], [1920, 1080], [1192, 670]] as const) {
       const l = new LandscapeLayout(w, h);
       expect(l.designHeight).toBe(1080);
       expect(l.cellSize).toBe(70);
@@ -121,11 +123,20 @@ describe('LandscapeLayout dynamic width', () => {
     }
   });
 
+  it('renders the CrazyGames canvases at the landscape target scale (2026-10-07)', () => {
+    // The reviewer's in-portal frame and the portal's preview tile: both used to sit at 0.50-0.53x.
+    for (const [w, h, dh] of [[1100, 574, 926], [722, 406, 654]] as const) {
+      const l = new LandscapeLayout(w, h);
+      expect(l.designHeight).toBe(dh);
+      expect(Math.min(w / l.designWidth, h / l.designHeight)).toBeCloseTo(0.62, 2);
+    }
+  });
+
   it('scales the battle geometry with the design height and stacks the bands exactly', () => {
-    for (const [w, h] of [[844, 390], [640, 360], [915, 412], [740, 360], [568, 320]] as const) {
+    for (const [w, h] of [[844, 390], [640, 360], [915, 412], [740, 360], [568, 320], [1100, 574], [722, 406], [1190, 668]] as const) {
       const l = new LandscapeLayout(w, h);
       const k = l.designHeight / 1080;
-      expect(l.designHeight).toBeGreaterThanOrEqual(720);
+      expect(l.designHeight).toBeGreaterThanOrEqual(640);
       expect(l.designHeight).toBeLessThan(1080);
       expect(l.cellSize).toBe(Math.floor(70 * k));
       // Top HUD + board + bottom strip = the design height, to the pixel (auditBox predicts it).

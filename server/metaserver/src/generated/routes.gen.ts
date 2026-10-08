@@ -1627,6 +1627,24 @@ const QUERY_SCHEMAS: Record<string, unknown> = {
         "enum": [
           "1"
         ]
+      },
+      "t": {
+        "type": "string",
+        "enum": [
+          "tutorial_start",
+          "beat_unit",
+          "beat_building",
+          "beat_spell",
+          "graduate",
+          "tutorial_complete",
+          "tutorial_skip",
+          "lv1_start",
+          "lv1_clear",
+          "lv2_start",
+          "lv2_clear",
+          "lv3_start",
+          "lv3_clear"
+        ]
       }
     }
   },

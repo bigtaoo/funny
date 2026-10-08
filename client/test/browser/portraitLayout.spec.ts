@@ -92,6 +92,12 @@ const VIEWPORTS = [
   // The narrow phone held sideways (2026-10-01): 360 tall sits exactly on the 720 design-height
   // floor, the tightest landscape box ADR-105 can produce (1280x720 design).
   { name: 'landscape-640x360', width: 640, height: 360, locale: 'en' },
+  // The two landscape canvases the CrazyGames review actually saw (2026-10-07): the reviewer's
+  // in-portal game frame (1100x574) and the portal's preview tile (722x406). Both sit under the
+  // ~670 CSS px line below which landscape now aims for a 0.62x design scale (layout/designSize.ts),
+  // so they are where the larger landscape geometry has to fit.
+  { name: 'landscape-1100x574', width: 1100, height: 574, locale: 'en' },
+  { name: 'landscape-722x406', width: 722, height: 406, locale: 'en' },
 ] as const satisfies readonly { name: string; width: number; height: number; locale: Locale }[];
 
 const OUT_DIR = 'portrait-report';

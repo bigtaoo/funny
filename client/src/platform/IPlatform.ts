@@ -261,6 +261,20 @@ export interface IPlatform {
   readonly silentAccountOnly?: boolean;
 
   /**
+   * True when the build must land new players in gameplay with no blocking entry screen
+   * (COMPLIANCE_GLOBAL §3.3 "CrazyGames"): no age gate (the portal is 13+, our own minimum), no
+   * terms/consent wall. The Terms of Use / Privacy Policy become a non-blocking notice, and the
+   * analytics question — where one has to be asked at all (`needsConsentChoice()`) — becomes a
+   * non-blocking prompt; see `createAppCore.gateConsent` / `offerEntryNotice`. An account already
+   * recorded as underage still gets the 'blocked' dead end.
+   *
+   * Only `CrazyGamesPlatform` sets it: the portal's gameplay requirement is "land users in gameplay
+   * immediately, at most 1 click", and its own technical requirements recommend "a simple notice
+   * rather than a pop-up blocking the user" for a game's own terms/privacy policy.
+   */
+  readonly entryNoticeOnly?: boolean;
+
+  /**
    * The server refused the portal credential {@link getAuthCredential} handed out (SSO not
    * configured, a key rotation, a bad token): hand out the anonymous device credential for the rest
    * of the session instead. Returns true when there was a portal credential to give up — i.e. a
@@ -268,13 +282,6 @@ export interface IPlatform {
    * a player the portal vouches for must not end up with no account at all.
    */
   declinePortalIdentity?(): boolean;
-
-  /**
-   * True when the story intro must not stand between launch and the first match. CrazyGames only:
-   * the portal allows at most one click before gameplay, and that click is the entry gate
-   * (age + consent) — the intro's skip button would be a second (CRAZYGAMES_LAUNCH.md §2).
-   */
-  readonly skipStoryIntro?: boolean;
 
   /**
    * Subscribe to the player signing into the portal account mid-session (CrazyGames: the SDK auth

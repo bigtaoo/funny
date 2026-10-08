@@ -125,6 +125,49 @@ describe.skipIf(!mongo)('launch counter + load time', () => {
     });
   });
 
+  // ─── countAnonymousFunnelStep (COMPLIANCE_GLOBAL §3.3) ───────────────────
+
+  describe('countAnonymousFunnelStep', () => {
+    it('accumulates one document per (date, platform, step) and stores nothing else', async () => {
+      await mongo!.collections.funnel_anon_daily.deleteMany({});
+      await svc.countAnonymousFunnelStep('crazygames', 'tutorial_start');
+      await svc.countAnonymousFunnelStep('crazygames', 'tutorial_start');
+      await svc.countAnonymousFunnelStep('crazygames', 'beat_unit');
+
+      const docs = await mongo!.collections.funnel_anon_daily.find({}).toArray();
+      expect(docs).toHaveLength(2);
+      const start = docs.find((d) => d.step === 'tutorial_start')!;
+      expect(start.count).toBe(2);
+      // Same privacy contract as boots_daily: these players did NOT consent, so a date, a build
+      // target, a step key and a number is all this row may ever hold.
+      expect(Object.keys(start).sort()).toEqual(['_id', 'count', 'date', 'platform', 'step', 'updated_at']);
+    });
+
+    it('runs concurrently without losing counts', async () => {
+      await mongo!.collections.funnel_anon_daily.deleteMany({});
+      await Promise.all(Array.from({ length: 25 }, () => svc.countAnonymousFunnelStep('web', 'graduate')));
+      const doc = await mongo!.collections.funnel_anon_daily.findOne({ platform: 'web', step: 'graduate' });
+      expect(doc?.count).toBe(25);
+    });
+
+    it('rides along on the boot funnel row it describes, and is absent where nothing ticked', async () => {
+      await mongo!.collections.boots_daily.deleteMany({});
+      await mongo!.collections.events.deleteMany({});
+      await mongo!.collections.funnel_anon_daily.deleteMany({});
+      for (let i = 0; i < 5; i++) await svc.countBoot('crazygames');
+      await svc.countBoot('web');
+      for (let i = 0; i < 3; i++) await svc.countAnonymousFunnelStep('crazygames', 'tutorial_start');
+      await svc.countAnonymousFunnelStep('crazygames', 'beat_unit');
+
+      const rows = await svc.queryBootFunnel(7);
+      const cg = rows.find((r) => r.platform === 'crazygames')!;
+      expect(cg).toMatchObject({ boots: 5, anon_funnel: { tutorial_start: 3, beat_unit: 1 } });
+      expect(rows.find((r) => r.platform === 'web')!.anon_funnel).toBeUndefined();
+      // The queryBootFunnel cases below count rows; leave no step ticks behind to add one.
+      await mongo!.collections.funnel_anon_daily.deleteMany({});
+    });
+  });
+
   describe('queryBootFunnel', () => {
     it('puts launches next to the sessions and consents that came out of them', async () => {
       await mongo!.collections.boots_daily.deleteMany({});

@@ -72,22 +72,22 @@ export type AudioCue =
  * `VoiceBudget` 抢占；轨是**流式**的、单实例、靠交叉淡入闭环。把它们塞进一个 union 只会让每个
  * 消费者第一件事就是把它拆开。
  *
- * **§2.3 列了四条轨，这里只有两条，那是拍板过的收敛而不是欠账**（2026-09-01）：
+ * **§2.3 列了四条轨，这里是三条，那是拍板过的收敛而不是欠账**：
  *  - `bgm.intro` 不存在——§2.3 自己写着「可与 BGM_lobby 共用」，而一条只在首启放一次的独立轨要
- *    多付一次生成、一份下载量和一个永远只有一个人听过的验收。它由 `IntroScene` 省略 `music`
- *    字段自动落到 `bgm.lobby`。
+ *    多付一份下载量和一个永远只有一个人听过的验收。它由 `IntroScene` 省略 `music` 字段自动落到
+ *    `bgm.lobby`。
  *  - `bgm.victory` / `bgm.defeat` 从来就不是轨：§2.3 的尾注已经把结算 stinger 归给 SFX 管线
  *    （`sfx.result.*`，catalogue 里优先级最高的三个 cue），它们不占 BGM 槽。
+ *  - §2.3 的 `bgm.battle` 拆成了前期/后期两条（2026-10-07），切点是 ×2 回墨阶段，见
+ *    `battleMusic.ts`。
  */
 export type MusicTrack =
   /** 大厅 / 菜单 / 商店 / 世界地图 / 结算 / 首启故事——轻松、低存在感。 */
-  'bgm.lobby';
-
-// **`bgm.battle` 不在这个 union 里，尽管 §2.3 列着它、尽管三个对局场景正等着它。**
-// 它没有 master（brief 在 `art/audio/suno/BRIEFS.md`），而一条没有文件的轨如果先进 union，
-// 它会以「这个界面就是安静的」的形式存在——那和设计意图长得**一模一样**，永远不会有人发现。
-// 所以对局场景现在声明的是 `music: null`（刻意的安静），等 master 到了再一起改成 `'bgm.battle'`：
-// 那时 `MUSIC_CATALOGUE` 缺条目会**编译不过**，缺文件会**构建不过**，两道都是硬的。
+  | 'bgm.lobby'
+  /** 对局开始到 ×2 回墨阶段（6 分钟）：顽皮、蹑手蹑脚，紧张但从不史诗。 */
+  | 'bgm.battle.early'
+  /** ×2 回墨阶段到对局结束：同一种顽皮，更快更忙——让加速被听见。 */
+  | 'bgm.battle.late';
 
 /**
  * 可替换的音频设备（AUDIO_DESIGN.md §3）。

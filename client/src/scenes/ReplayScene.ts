@@ -19,6 +19,9 @@ import { netLog } from '../net/log';
 import { ui, sketchPanel, seedFor } from '../render/sketchUi';
 import { FS, snapFont } from '../render/fontScale';
 import { tapHandler } from '../ui/hits';
+import { battleTrack } from '../audio/battleMusic';
+import type { MusicTrack } from '../audio/types';
+import { UI_FONT_FAMILY } from '../render/theme';
 
 /**
  * Replay player (S1-RP).
@@ -60,8 +63,10 @@ function fitLabel(label: PIXI.Text, maxW: number): void {
 const log = netLog('replay');
 
 export class ReplayScene implements Scene {
-  /** 回放的是同一场对局，声音走同一条战斗管线——刻意安静，见 `GameScene.music`。 */
-  readonly music = null;
+  /** 回放的是同一场对局，音乐跟着回放进度走，同 `GameScene.music`。快进跨过 6 分钟就换曲。 */
+  get music(): MusicTrack {
+    return battleTrack(this.renderer?.elapsedTicks ?? 0);
+  }
   readonly container: PIXI.Container;
 
   private renderer: GameRenderer | null = null;
@@ -254,7 +259,7 @@ export class ReplayScene implements Scene {
       // 2026-08-12 fix: previously always null,null here (even for a siege replay with real card
       // data available) — every siege replay silently drew zero equipment-gear glyphs on units. Now
       // mirrors the same attacker cardInstances/equipmentInv the engine config above resolves from.
-      {}, this.equippedSkins, this.cardInstances ?? null, this.equipmentInv ?? null, /* tutorial */ false, {},
+      {}, this.equippedSkins, this.cardInstances ?? null, this.equipmentInv ?? null, /* tutorial */ null, {},
       this.replayNames,
     );
     renderer.init();
@@ -308,7 +313,7 @@ export class ReplayScene implements Scene {
       fontSize: snapFont(Math.round(btnH * 0.5)),
       fill: 0xaa2222,
       fontWeight: 'bold',
-      fontFamily: 'monospace',
+      fontFamily: UI_FONT_FAMILY,
     });
     const topR = this.layout.hudTopRect;
     const marginX = Math.round(this.layout.boardRect.x - tag.width - 40);
@@ -388,7 +393,7 @@ export class ReplayScene implements Scene {
       fontSize: FS.headline,
       fill: 0xffffff,
       fontWeight: 'bold',
-      fontFamily: 'monospace',
+      fontFamily: UI_FONT_FAMILY,
       align: 'center',
     });
     this.statusLabel.anchor.set(0.5, 0.5);
@@ -434,7 +439,7 @@ export class ReplayScene implements Scene {
       fontSize: snapFont(Math.round(h * 0.42)),
       fill: 0xffffff,
       fontWeight: 'bold',
-      fontFamily: 'monospace',
+      fontFamily: UI_FONT_FAMILY,
     });
     fitLabel(label, w - 16);
     label.anchor.set(0.5, 0.5);

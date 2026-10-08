@@ -16,6 +16,7 @@ import { buildIcon, preloadInkIconTextures } from '../../render/icons';
 import { FS, snapFont } from '../../render/fontScale';
 import { t } from '../../i18n';
 import type { StateFrame, StateReplayHeader } from '../../game/replay/StateReplay';
+import { UI_FONT_FAMILY } from '../../render/theme';
 
 /** Ink-well glyph box (design px), matching HUDView's. */
 const INK_ICON_S = 28;
@@ -70,7 +71,7 @@ export class StatePlayerHud {
     };
 
     // Match clock: right end of the top strip, past the ink group.
-    this.clock = makeText('0:00', { fontSize: FS.title, fill: 0x222222, fontFamily: 'monospace' });
+    this.clock = makeText('0:00', { fontSize: FS.title, fill: 0x222222, fontFamily: UI_FONT_FAMILY });
     this.clock.anchor.set(1, 0.5);
     this.clock.x = this.layout.designWidth - PAD;
     this.clock.y = top.y + top.h / 2;
@@ -130,7 +131,7 @@ export class StatePlayerHud {
       fontSize: snapFont(Math.min(NAME_FS_MAX, Math.round(r.h * 0.42))),
       fill: color,
       fontWeight: 'bold',
-      fontFamily: 'monospace',
+      fontFamily: UI_FONT_FAMILY,
     });
     label.anchor.set(0, 0.5);
     label.x = PAD;
@@ -141,7 +142,7 @@ export class StatePlayerHud {
     hp.container.x = Math.round(board.x + (board.w - HP_BAR_W) / 2);
     hp.container.y = Math.round(r.y + (r.h - HP_CELL_H) / 2);
 
-    const inkText = makeText('0', { fontSize: FS.title, fill: 0x222222, fontFamily: 'monospace' });
+    const inkText = makeText('0', { fontSize: FS.title, fill: 0x222222, fontFamily: UI_FONT_FAMILY });
     inkText.anchor.set(1, 0.5);
     inkText.x = this.layout.designWidth - PAD - reserveRight;
     inkText.y = r.y + r.h / 2;

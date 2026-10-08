@@ -1,38 +1,47 @@
 import * as PIXI from 'pixi.js-legacy';
-import { CardType, SpellType, GameState } from '../game';
-import { TOP_SPAWN_ROW } from '@nw/engine/config';
+import type { GameState } from '../game';
 import { toFp } from '@nw/engine/math/fixed';
 import { ILayout, Rect } from '../layout/ILayout';
-import { t, type TranslationKey } from '../i18n';
-import type { Phase } from './TutorialDirector/types';
-import { buildLayers, drawPanel, clearPanel, type PanelHost } from './TutorialDirector/panels';
+import { t } from '../i18n';
+import type { Phase, TutorialConfig } from './TutorialDirector/types';
+import { buildLayers, drawStrip, clearStrip, drawGradCard, type PanelHost } from './TutorialDirector/panels';
+import { BEATS, BEAT_STEP_KEY, beatText, type BeatSpec } from './TutorialDirector/beats';
+import {
+  IDLE_GHOST_SEC, GHOST_MOVE_SEC, GHOST_HOLD_SEC, BASE_LABEL_HOLD_SEC, BASE_LABEL_FADE_SEC, FEEDBACK_SEC, STRIP_FADE_SEC, FINALE_MAX_SEC, FINALE_PAUSE_SEC, GRAD_CARD_DELAY_SEC, GRAD_POP_SEC, SHAKE_SEC, SHAKE_AMP, LANE_SNAP_COLS, METEOR_SNAP_CELLS,
+} from './TutorialDirector/beats';
+import { enemyUnits, bestMeteorAnchor, beatTargetPoint, meteorAnchorCenter } from './TutorialDirector/geometry';
 import { dispatchHit } from '../ui/hits';
 
+export type { TutorialConfig, TutorialBeatDone } from './TutorialDirector/types';
+
 /**
- * TutorialDirector — presentation-layer orchestrator for the tutorial level `ch0_tutorial` (ONBOARDING_DESIGN §3.4).
+ * TutorialDirector — presentation-layer orchestrator for the tutorial level `ch0_tutorial`
+ * (ONBOARDING_DESIGN §11, the 2026-10 "first minute" rework).
  *
- * Active only during the tutorial level. **Pure presentation layer**: reads sync state for diffing,
- * controls the engine clock (freeze/unfreeze), and controls the guidance UI.
- * Never mutates battle state (the only exception is the never-fail base floor clamp, §3.5).
- * Engine determinism, replay, and referee are unaffected.
+ * **Pure presentation layer**: reads state for diffing, controls the engine clock (freeze/unfreeze)
+ * and draws the guidance UI. Never mutates battle state — the one exception is the never-fail base
+ * floor clamp (§3.5). Engine determinism, replay and referee are unaffected: the only thing it does
+ * to a play is aim-assist the target of the guided card before the normal `play_card` goes out.
  *
- * Three-phase flow:
- *  - Phase A — Orientation (O1–O7): engine fully frozen; tap "Next" to advance through explanations.
- *  - Phase B — Three beats: deploy unit → deploy building → cast spell. Each beat highlights the
- *    target card and target lane, freezes until the player plays the matching card type;
- *    after release the engine advances, the scripted reaction wave (level JSON's atTick) fires,
- *    and on reaching the beat's gate tick the engine freezes again for the next beat.
- *  - Phase C — Free play + graduation: unfreeze, switch draw back to random, persistent
- *    "Complete Tutorial" button → scripted victory.
+ * Flow (no "Next" buttons anywhere, §11.2): the battle is live from tick 0 (`YOU` / `ENEMY` on the
+ * bases); each of the three beats runs the engine to its `setupTick`, freezes on one instruction line
+ * until the guided card lands, then runs on while the next beat's enemies arrive — no dead waits
+ * (§11.2 rules 5–6; ticks tuned headless, see beats.ts). The meteor ends it: WIN banner → graduation
+ * card, whose one button leaves.
  *
- * Never-fail guarantee: each reaction wave hits the same lane the player just defended;
- * zero threats while frozen; base HP is also clamped from below (host fallback).
+ * Idle escalation (§11.4) — never plays for the player: breathing card frame + lit target from the
+ * first frame; after IDLE_GHOST_SEC[beat] without touching a card a ghost card glides from the hand
+ * to the target on a loop; a wrong drop (wrong card or wrong place) plays the ghost immediately.
+ *
+ * Never-fail: no threats while frozen, every beat's enemies are weak (`enemyScale.hp`), and base HP
+ * is clamped from below as a host fallback.
  */
 
-// ── Host hooks: provided by GameRenderer; the director uses these to read view geometry, delegate highlights, and control the engine — zero internal coupling. ───
+// ── Host hooks: provided by GameRenderer — view geometry, highlights, engine clock, endgame. ───
 export interface TutorialHost {
   readonly container: PIXI.Container;
   readonly layout: ILayout;
+  readonly config: TutorialConfig;
   /** Highlight one unit lane (blue, unit-deploy beat). */
   highlightUnitLane(col: number): void;
   /** Highlight one building slot (blue, building-deploy beat). */
@@ -41,98 +50,78 @@ export interface TutorialHost {
   clearLaneHighlights(): void;
   /** Design-space center of a hand slot for the local player (used to frame the guided card). */
   handSlotCenter(index: number): { x: number; y: number };
-  /** Enter phase C: switch draw policy back to random (replaces TutorialDrawPolicy). */
-  switchToFreePlayDraw(): void;
-  /** Graduation: trigger scripted victory for the local player. */
+  /** A drag-ghost look-alike of the card in hand slot `index` (the ghost-hand demo), or null. */
+  buildCardGhost(index: number): PIXI.Container | null;
+  /** Scripted victory: WIN banner + stinger. Does NOT end the scene — see finish(). */
   forceVictory(): void;
+  /** Leave the tutorial as a win (fires the scene's onGameEnd). */
+  finish(): void;
   /** Skip tutorial: return to lobby (host is responsible for writing tutorial_done). */
   onSkip(): void;
-  /**
-   * Step-level analytics hook (A9-9): fired whenever the director advances to a new tutorial step, so
-   * the ops step-funnel can localise *where inside the tutorial* players quit (as opposed to the
-   * coarse tutorial_start/complete pair). `stepKey` matches analyticsvc's TUTORIAL_ORDERED_KEYS.
-   */
-  onStepChange?(stepKey: string): void;
 }
-
-interface BeatSpec {
-  cardId: string;
-  cardType: CardType;
-  col: number;
-  /** After release, freeze once the engine reaches this tick (reaction wave has finished) to enter the next beat / free play. */
-  gateTick: number;
-  kind: 'unit' | 'building' | 'spell';
-  /**
-   * clear mode (spell beat): on entering this beat, unfreeze and run to this tick so the
-   * setup enemy group spawns, then freeze and show the prompt
-   * (enemies appear first, player clears afterward, §3.2 Beat 3). Omitted in place mode
-   * (unit/building beats): place first, then reaction.
-   */
-  setupTick?: number;
-}
-
-// Three-beat config: lane columns match the level JSON reaction wave columns (4/7/2);
-// gate/setup ticks align with atTick values (20/140/300) per §3.3.
-//   Beat1 unit:     freeze@0   → deploy unit   → release → reaction@20  → gate120
-//   Beat2 building: freeze@120 → deploy tower  → release → reaction@140 → gate280
-//   Beat3 spell:    enter beat, run to setup320 (setup group@300~316 spawned) → freeze → cast spell → release+clear → gate360
-const BEATS: BeatSpec[] = [
-  { cardId: 'infantry_1', cardType: CardType.Unit,     col: 4, gateTick: 120, kind: 'unit' },
-  { cardId: 'tower_1',    cardType: CardType.Building,  col: 7, gateTick: 280, kind: 'building' },
-  { cardId: 'meteor_1',   cardType: CardType.Spell,     col: 2, gateTick: 360, kind: 'spell', setupTick: 320 },
-];
-
-// Beat kind → analytics step key (must match analyticsvc's TUTORIAL_ORDERED_KEYS).
-const BEAT_STEP_KEY: Record<BeatSpec['kind'], string> = {
-  unit: 'beat_unit',
-  building: 'beat_building',
-  spell: 'beat_spell',
-};
-
-const ORIENTATION_STEPS = 7; // O1–O7
 
 // Base never falls: clamp HP to this floor when it drops below (§3.5 fallback).
 const NEVER_FAIL_BASE_FLOOR = 1;
 
-// Handwritten notebook palette (local copy to avoid cross-module coupling). Blue = player
-// highlight — panels.ts has its own inlined copy of this same value for the instruction card border.
-const C_BLUE   = 0x4a7fc1;
+// Blue = player highlight (panels.ts keeps its own copy for the strip border).
+const C_BLUE = 0x4a7fc1;
 
 export class TutorialDirector {
   private readonly host: TutorialHost;
   private readonly layout: ILayout;
   private readonly root: PIXI.Container;
 
-  private phase: Phase = 'orientation';
-  private orientStep = 0;
+  private phase: Phase = 'intro';
+  /** Next beat to prompt (intro/beat phases) — BEATS.length once all three have been played. */
   private beatIndex = 0;
-  /**
-   * Whether the engine is frozen. Initially false: let the engine run the first tick
-   * to deal the opening hand (emitInitialEvents inside firstStep, GameEngine §step) —
-   * otherwise the orientation phase freezes immediately, the hand is empty, and Beat 1
-   * has no card to play. Once elapsedTicks >= 1, freeze immediately to enter orientation.
-   * The earliest wave is at atTick 20, so the deal window is safe.
-   */
-  engineFrozen = false;
-  /** Whether the opening first tick (deal) has already been fed. */
-  private primed = false;
-  /** Released; waiting for the current beat's reaction wave to reach gate tick. */
-  private beatReleased = false;
-  /** Set after allowCardPlay matches the guided card; engine unfreezes on the next onTick. */
+  /** A beat's prompt is up and the engine is frozen on it. */
+  private prompting = false;
+  /** Set by allowCardPlay when the guided card was accepted; consumed on the next onTick. */
   private pendingRelease = false;
-  /** clear mode: currently unfrozen while waiting for the setup enemy group to spawn, then freeze and show prompt at setupTick. */
-  private awaitingSetup = false;
+  /** Whether the engine is frozen (read by GameRendererCore.update before ticking the engine). */
+  engineFrozen = false;
 
-  private pulse = 0;
+  // Real-time clocks (seconds).
+  private time = 0;
+  private promptAt = 0;
+  private idleSec = 0;
+  private stripHideAt = Infinity;
+  private finaleAt = 0;
+  private victoryAt = Infinity;
+  private gradAt = Infinity;
+  private footnoteShown = false;
+  private shakeLeft = 0;
+  private readonly shakeOrigin = { x: 0, y: 0 };
 
-  // UI layers
-  private dim!: PIXI.Graphics;          // semi-transparent overlay for phases A/C
-  private cardPanel!: PIXI.Container;    // instruction card (title + body + button)
-  private slotRing!: PIXI.Graphics;      // pulsing ring framing the guided hand card
-  private clusterRing!: PIXI.Graphics;   // spell beat: pulsing ring at enemy cluster position
-  private nextBtnRect: Rect | null = null;
-  private actionBtnRect: Rect | null = null; // "Complete Tutorial"
+  // Per-beat analytics.
+  private ghostShown = false;
+  private wrongDrops = 0;
+
+  // Ghost-hand demo.
+  private ghostOn = false;
+  private ghostT = 0;
+  private ghostCard: PIXI.Container | null = null;
+  private ghostSlot = -1;
+  /** A hand card is being dragged / tap-selected right now: hide the demo and stop the idle clock. */
+  private holdingCard = false;
+  /** The board highlights were cleared by a drag / tap-select ending — re-light the target next frame. */
+  private highlightDirty = false;
+
+  /** Current meteor anchor (2×2 top-left cell covering the most enemies), recomputed each frame of Beat 3. */
+  private meteorAnchor: { col: number; row: number } | null = null;
+  /** Hand slot of the current guided card, -1 when not in hand. */
+  private slotIndex = -1;
+
+  // UI layers (built by panels.ts).
+  private slotRing!: PIXI.Graphics;
+  private clusterRing!: PIXI.Graphics;
+  private baseLabels!: PIXI.Container;
+  private ghost!: PIXI.Container;
+  private strip!: PIXI.Container;
+  private gradCard!: PIXI.Container;
+  private skipBtn!: PIXI.Container;
   private skipBtnRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  private ctaRect: Rect | null = null;
 
   constructor(host: TutorialHost) {
     this.host = host;
@@ -140,279 +129,364 @@ export class TutorialDirector {
     this.root = new PIXI.Container();
     host.container.addChild(this.root);
     buildLayers(this.panelHost());
-    this.renderOrientation();
-    this.emitStep('orientation_1');
-  }
-
-  private emitStep(key: string): void {
-    this.host.onStepChange?.(key);
+    this.shakeOrigin.x = host.container.x;
+    this.shakeOrigin.y = host.container.y;
   }
 
   /** Bundles what panels.ts's build/draw functions need instead of them closing over `this`. */
   private panelHost(): PanelHost {
-    const director = this;
+    const d = this;
     return {
-      root: this.root, layout: this.layout, phase: this.phase,
-      get dim() { return director.dim; },
-      set dim(v) { director.dim = v; },
-      get slotRing() { return director.slotRing; },
-      set slotRing(v) { director.slotRing = v; },
-      get clusterRing() { return director.clusterRing; },
-      set clusterRing(v) { director.clusterRing = v; },
-      get cardPanel() { return director.cardPanel; },
-      set cardPanel(v) { director.cardPanel = v; },
-      get skipBtnRect() { return director.skipBtnRect; },
-      set skipBtnRect(v) { director.skipBtnRect = v; },
-      get nextBtnRect() { return director.nextBtnRect; },
-      set nextBtnRect(v) { director.nextBtnRect = v; },
-      get actionBtnRect() { return director.actionBtnRect; },
-      set actionBtnRect(v) { director.actionBtnRect = v; },
-      onSkip: () => this.host.onSkip(),
+      root: this.root, layout: this.layout,
+      get slotRing() { return d.slotRing; }, set slotRing(v) { d.slotRing = v; },
+      get clusterRing() { return d.clusterRing; }, set clusterRing(v) { d.clusterRing = v; },
+      get baseLabels() { return d.baseLabels; }, set baseLabels(v) { d.baseLabels = v; },
+      get ghost() { return d.ghost; }, set ghost(v) { d.ghost = v; },
+      get strip() { return d.strip; }, set strip(v) { d.strip = v; },
+      get gradCard() { return d.gradCard; }, set gradCard(v) { d.gradCard = v; },
+      get skipBtn() { return d.skipBtn; }, set skipBtn(v) { d.skipBtn = v; },
+      get skipBtnRect() { return d.skipBtnRect; }, set skipBtnRect(v) { d.skipBtnRect = v; },
+      get ctaRect() { return d.ctaRect; }, set ctaRect(v) { d.ctaRect = v; },
     };
   }
 
-  get isFinished(): boolean { return this.phase === 'done'; }
+  /** True once the scripted win is in — GameRenderer stops settling engine win/loss before this. */
+  get isFinished(): boolean { return this.phase === 'graduate' || this.phase === 'done'; }
 
-  // ── Input gating (GameRenderer.handleDown asks the director first, avoiding PIXI interactive) ─────────────
+  // ── Input (GameRenderer asks the director first, avoiding PIXI interactive) ─────────────────────
+
   /** Returns true when this tap is consumed by the director; GameRenderer will not process it further. */
   handleDown(x: number, y: number): boolean {
-    // The director's three buttons (skip / next / graduate) go through the shared table like every
-    // other button, which is also where their tap cue comes from (AUDIO_DESIGN.md §2.2).
-    if (dispatchHit([{ rect: this.skipBtnRect, sound: 'sfx.ui.back', fn: () => this.host.onSkip() }], x, y)) return true;
-    if (this.phase === 'orientation') {
-      if (this.nextBtnRect) dispatchHit([{ rect: this.nextBtnRect, fn: () => this.advanceOrientation() }], x, y);
-      return true; // orientation phase swallows all input (no board interaction needed)
-    }
-    if (this.phase === 'freeplay') {
-      if (this.actionBtnRect && dispatchHit([{ rect: this.actionBtnRect, fn: () => this.graduate() }], x, y)) return true;
-      return false; // free play: pass through board/hand interactions
-    }
     if (this.phase === 'done') return true;
-    // Phase B: only consume button taps; pass everything else so the player can drag cards
-    return false;
+    if (this.phase === 'graduate') {
+      // Only the button leaves; the rest of the screen is inert so a stray tap can't skip the moment.
+      if (this.ctaRect && this.gradCard.scale.x >= 0.999) {
+        dispatchHit([{ rect: this.ctaRect, fn: () => this.leave() }], x, y);
+      }
+      return true;
+    }
+    // The skip button goes through the shared table like every other button (its tap cue lives there).
+    if (dispatchHit([{ rect: this.skipBtnRect, sound: 'sfx.ui.back', fn: () => this.host.onSkip() }], x, y)) return true;
+    return false; // board/hand interactions pass through
+  }
+
+  /** GameRenderer: a hand card was pressed (drag start / tap-select) or let go. */
+  setHoldingCard(holding: boolean): void {
+    this.holdingCard = holding;
+    if (holding) { this.idleSec = 0; this.setGhost(false); }
+  }
+
+  /** GameRenderer: a drag / tap-select just cleared the board highlights — re-light the target. */
+  markHighlightDirty(): void {
+    this.highlightDirty = true;
   }
 
   /**
-   * Called by GameRenderer.commitCardPlay: only permit playing a card of the current beat's type.
-   * Returns false → renderer skips engine.playCard (prevents accidental off-beat plays).
+   * Called by GameRenderer.commitCardPlay. Returns the (possibly aim-assisted) target to play the card
+   * at, or null to reject the play. Outside a prompt every play is rejected; inside one only the guided
+   * card itself (by id — barracks is a building too, haste a spell too) near its target is accepted
+   * (snapped onto the target); anything else counts as a wrong drop and plays the ghost demo straight
+   * away (§11.4).
    */
-  allowCardPlay(cardType: CardType, _spellType: SpellType | undefined): boolean {
-    if (this.phase === 'freeplay') return true;
-    if (this.phase !== 'beat') return false;
-    if (this.awaitingSetup || this.beatReleased) return false; // setup in progress / already released → reject
-    const beat = BEATS[this.beatIndex]!;
-    if (cardType === beat.cardType) { this.pendingRelease = true; return true; }
-    return false;
+  allowCardPlay(cardId: string, col: number, row: number): { col: number; row: number } | null {
+    if (!this.prompting || this.pendingRelease) return null;
+    const target = this.snapCardPlay(cardId, col, row);
+    if (!target) {
+      this.wrongDrops++;
+      this.holdingCard = false;
+      this.setGhost(true);
+      return null;
+    }
+    this.pendingRelease = true;
+    return target;
   }
 
-  // ── Per-frame (called at the end of GameRenderer.update): read state, control clock, never-fail clamp, advance state machine. ──────────
-  onTick(state: GameState, dt: number): void {
-    // Feed one tick to deal the opening hand, then immediately freeze and enter orientation (see engineFrozen comment).
-    if (!this.primed) {
-      if (state.elapsedTicks >= 1) { this.primed = true; this.engineFrozen = true; }
-      return;
+  /**
+   * Where a drop of `cardId` at (col, row) would land, or null if it would be rejected — the aim
+   * assist of allowCardPlay without its side effects (no wrong-drop count, no ghost demo), so the
+   * drag's landing preview can ask on every pointer move.
+   */
+  snapCardPlay(cardId: string, col: number, row: number): { col: number; row: number } | null {
+    if (!this.prompting || this.pendingRelease) return null;
+    const beat = BEATS[this.beatIndex]!;
+    if (cardId !== beat.cardId) return null;
+    if (beat.kind === 'spell') {
+      const a = this.meteorAnchor;
+      return a && Math.abs(col - a.col) <= METEOR_SNAP_CELLS && Math.abs(row - a.row) <= METEOR_SNAP_CELLS ? a : null;
     }
+    return Math.abs(col - beat.col) <= LANE_SNAP_COLS ? { col: beat.col, row } : null;
+  }
+
+  // ── Per-frame (end of GameRenderer.update): clock control, never-fail clamp, state machine, anims ──
+  onTick(state: GameState, dt: number): void {
+    this.time += dt;
 
     // Never-fail: clamp base HP from below (§3.5 presentation-layer fallback).
     if (state.bottomPlayer.baseHp_fp < toFp(NEVER_FAIL_BASE_FLOOR)) {
       state.bottomPlayer.baseHp_fp = toFp(NEVER_FAIL_BASE_FLOOR);
     }
 
-    this.pulse += dt;
-    this.setBeatSlotIndex(state);
-    this.animatePulse();
+    this.animateBaseLabels();
+    this.animateStrip(dt);
+    this.animateShake(dt);
 
-    if (this.phase === 'beat') {
-      const beat = BEATS[this.beatIndex]!;
-      if (this.awaitingSetup) {
-        // clear mode — setup in progress: enemy group has spawned (reached setupTick) → freeze so the player can now clear.
-        if (state.elapsedTicks >= beat.setupTick!) {
-          this.awaitingSetup = false;
-          this.engineFrozen = true;
+    switch (this.phase) {
+      case 'intro':
+      case 'beat':
+        this.tickBeats(state, dt);
+        break;
+      case 'finale':
+        if (this.victoryAt === Infinity) {
+          const cleared = enemyUnits(state).length === 0;
+          if (cleared || this.time - this.finaleAt >= FINALE_MAX_SEC) this.victoryAt = this.time + FINALE_PAUSE_SEC;
+        } else if (this.time >= this.victoryAt) {
+          this.victory();
         }
-      } else if (this.pendingRelease) {
-        // Guided card was played → unfreeze; reaction wave / clear sequence fires immediately.
-        this.pendingRelease = false;
-        this.beatReleased = true;
-        this.engineFrozen = false;
-        this.host.clearLaneHighlights();
-        this.slotRing.visible = false;
-        this.clusterRing.visible = false;
-        this.showBeatCollapse();
-      } else if (this.beatReleased && state.elapsedTicks >= beat.gateTick) {
-        // Current beat finished → enter next beat / free play.
-        this.beatReleased = false;
-        if (this.beatIndex + 1 < BEATS.length) {
-          this.enterBeat(this.beatIndex + 1);
-        } else {
-          this.startFreePlay();
-        }
-      }
+        break;
+      case 'graduate':
+        if (this.time >= this.gradAt) this.animateGradCard();
+        break;
+      case 'done':
+        break;
     }
   }
 
   destroy(): void {
+    this.host.container.position.set(this.shakeOrigin.x, this.shakeOrigin.y);
     this.root.destroy({ children: true });
   }
 
-  // ── Phase transitions ────────────────────────────────────────────────────────────────
-  private advanceOrientation(): void {
-    this.orientStep++;
-    if (this.orientStep < ORIENTATION_STEPS) {
-      this.renderOrientation();
-      this.emitStep(`orientation_${this.orientStep + 1}`);
-    } else {
-      this.phase = 'beat';
-      this.dim.visible = false;
-      this.enterBeat(0);
+  // ── Beats ───────────────────────────────────────────────────────────────────────────────────────
+
+  private tickBeats(state: GameState, dt: number): void {
+    if (this.pendingRelease) { this.release(); return; }
+    const beat = BEATS[this.beatIndex];
+    if (!beat) return;
+    if (!this.prompting) {
+      if (state.elapsedTicks >= beat.setupTick) this.prompt(state);
+      return;
     }
-  }
-
-  /** Enter beat i: in clear mode, unfreeze first to let the setup enemy group spawn; in place mode, freeze immediately and show the prompt. */
-  private enterBeat(i: number): void {
-    this.beatIndex = i;
-    this.beatReleased = false;
-    this.pendingRelease = false;
-    const beat = BEATS[i]!;
-    if (beat.setupTick !== undefined) {
-      this.awaitingSetup = true;
-      this.engineFrozen = false;  // unfreeze so the setup enemy group can spawn
-    } else {
-      this.awaitingSetup = false;
-      this.engineFrozen = true;
+    // Prompt up: track the guided card, idle escalation, ghost demo.
+    this.slotIndex = state.bottomPlayer.hand.slots.findIndex((s) => s?.card.id === beat.cardId);
+    if (beat.kind === 'spell') this.meteorAnchor = bestMeteorAnchor(state);
+    this.animateRings(beat);
+    if (!this.holdingCard) {
+      if (this.highlightDirty) { this.highlightTarget(beat); this.highlightDirty = false; }
+      this.idleSec += dt;
+      if (!this.ghostOn && this.idleSec >= IDLE_GHOST_SEC[this.beatIndex]!) this.setGhost(true);
     }
-    this.renderBeatPrompt();
-    this.emitStep(BEAT_STEP_KEY[beat.kind]);
+    if (this.ghostOn) this.animateGhost(dt, beat);
   }
 
-  private startFreePlay(): void {
-    this.phase = 'freeplay';
-    this.engineFrozen = false;
-    this.host.switchToFreePlayDraw();
-    this.host.clearLaneHighlights();
-    this.slotRing.visible = false;
-    this.clusterRing.visible = false;
-    this.renderFreePlay();
-    this.emitStep('freeplay');
-  }
-
-  private graduate(): void {
-    this.phase = 'done';
-    clearPanel(this.panelHost());
-    this.dim.visible = false;
-    this.slotRing.visible = false;
-    this.clusterRing.visible = false;
-    this.host.clearLaneHighlights();
-    this.host.forceVictory();
-  }
-
-  // ── Rendering ────────────────────────────────────────────────────────────────────
-  private renderOrientation(): void {
-    const n = this.orientStep + 1; // O1..O7
-    this.dim.visible = true;
-    const ls = this.layout.orientation === 'landscape';
-    // O1/O2/O4/O5 have orientation-specific copy; use the landscape variant in landscape mode (title has a variant only for O5).
-    const LANDSCAPE_STEPS = new Set([1, 2, 4, 5]);
-    const titleKey = (ls && n === 5) ? `tutorial.o${n}.title.landscape` : `tutorial.o${n}.title`;
-    const bodyKey  = (ls && LANDSCAPE_STEPS.has(n)) ? `tutorial.o${n}.body.landscape` : `tutorial.o${n}.body`;
-    drawPanel(
-      this.panelHost(),
-      tk(titleKey),
-      tk(bodyKey),
-      t('tutorial.next' as TranslationKey),
-      'next',
-    );
-  }
-
-  private renderBeatPrompt(): void {
+  private prompt(state: GameState): void {
     const beat = BEATS[this.beatIndex]!;
-    this.dim.visible = false;
-    const i = this.beatIndex + 1; // 1..3
-    const ls = this.layout.orientation === 'landscape';
-    const bodyKey = (ls && i === 1) ? `tutorial.beat${i}.body.landscape` : `tutorial.beat${i}.body`;
-    drawPanel(this.panelHost(), tk(`tutorial.beat${i}.title`), tk(bodyKey), null, 'beat');
+    this.phase = 'beat';
+    this.prompting = true;
+    this.engineFrozen = true;
+    this.promptAt = this.time;
+    this.idleSec = 0;
+    this.ghostShown = false;
+    this.wrongDrops = 0;
+    this.slotIndex = state.bottomPlayer.hand.slots.findIndex((s) => s?.card.id === beat.cardId);
 
-    // Highlight the target lane.
+    this.highlightTarget(beat);
+    this.meteorAnchor = beat.kind === 'spell' ? bestMeteorAnchor(state) : null;
+    this.animateRings(beat);
+
+    const text = beatText(beat.kind);
+    this.showStrip(text.title, text.body, Infinity);
+    this.host.config.onStep?.(BEAT_STEP_KEY[beat.kind]);
+  }
+
+  private highlightTarget(beat: BeatSpec): void {
     if (beat.kind === 'unit') this.host.highlightUnitLane(beat.col);
     else if (beat.kind === 'building') this.host.highlightBuildingLane(beat.col);
     else this.host.clearLaneHighlights();
+  }
 
-    // Frame the guided card in the hand (find its current slot by id; skip the ring if not found — text fallback covers it).
+  private release(): void {
+    const beat = BEATS[this.beatIndex]!;
+    this.pendingRelease = false;
+    this.prompting = false;
+    this.engineFrozen = false;
+    this.setGhost(false);
+    this.host.clearLaneHighlights();
     this.slotRing.visible = false;
     this.clusterRing.visible = false;
+    this.host.config.onBeatDone?.({
+      beat: beat.kind,
+      idle_ms: Math.round((this.time - this.promptAt) * 1000),
+      ghost_shown: this.ghostShown,
+      wrong_drops: this.wrongDrops,
+    });
+
+    const done = beatText(beat.kind).done;
+    if (done) this.showStrip(null, done, this.time + FEEDBACK_SEC);
+    else this.stripHideAt = this.time; // fade the instruction out
+
+    this.beatIndex++;
     if (beat.kind === 'spell') {
-      // Spell beat: draw a pulse ring at the setup enemy cluster landing point. The level JSON
-      // (ch0_tutorial.json) has no board.laneLength override for this wave, so the setup group
-      // spawns and sits at the engine's fixed TOP_SPAWN_ROW (campaign.ts) — anchor the ring there
-      // (not a guessed board-percentage row) so it lines up with where the enemies actually land.
-      const p = this.layout.gridToScreen(beat.col, TOP_SPAWN_ROW);
-      this.clusterRing.position.set(p.x, p.y);
-      this.clusterRing.visible = true;
+      this.shakeLeft = SHAKE_SEC;
+      this.phase = 'finale';
+      this.finaleAt = this.time;
     }
   }
 
-  /** "Collapse" feedback after the guided card is played: swap the body text and keep the panel briefly. */
-  private showBeatCollapse(): void {
-    const i = this.beatIndex + 1;
-    const ls = this.layout.orientation === 'landscape';
-    const doneKey = (ls && i === 1) ? `tutorial.beat${i}.done.landscape` : `tutorial.beat${i}.done`;
-    drawPanel(this.panelHost(), tk(`tutorial.beat${i}.title`), tk(doneKey), null, 'beat');
+  // ── Endgame ─────────────────────────────────────────────────────────────────────────────────────
+
+  private victory(): void {
+    this.phase = 'graduate';
+    this.engineFrozen = true;
+    this.stripHideAt = this.time;
+    this.skipBtn.visible = false;
+    this.host.forceVictory();
+    const cfg = this.host.config;
+    drawGradCard(this.panelHost(), t('tutorial.grad.body'), cfg.teaser, cfg.ctaLabel, cfg.footnote);
+    this.gradCard.scale.set(0);
+    this.gradAt = this.time + GRAD_CARD_DELAY_SEC;
+    cfg.onStep?.('graduate');
   }
 
-  private renderFreePlay(): void {
-    this.dim.visible = false;
-    drawPanel(
-      this.panelHost(),
-      t('tutorial.free.title' as TranslationKey),
-      t('tutorial.free.body' as TranslationKey),
-      t('tutorial.complete' as TranslationKey),
-      'action',
+  private leave(): void {
+    if (this.phase !== 'graduate') return;
+    this.phase = 'done';
+    this.host.finish();
+  }
+
+  // ── Animation ───────────────────────────────────────────────────────────────────────────────────
+
+  private showStrip(title: string | null, body: string | null, hideAt: number): void {
+    drawStrip(this.panelHost(), title, body, this.avoidRects());
+    this.stripHideAt = hideAt;
+  }
+
+  private animateStrip(dt: number): void {
+    if (!this.strip.visible || this.time < this.stripHideAt) return;
+    this.strip.alpha = Math.max(0, this.strip.alpha - dt / STRIP_FADE_SEC);
+    if (this.strip.alpha <= 0) { clearStrip(this.panelHost()); this.strip.visible = false; }
+  }
+
+  private animateBaseLabels(): void {
+    if (!this.baseLabels.visible) return;
+    const a = 1 - (this.time - BASE_LABEL_HOLD_SEC) / BASE_LABEL_FADE_SEC;
+    if (a >= 1) return;
+    if (a <= 0) { this.baseLabels.visible = false; return; }
+    this.baseLabels.alpha = a;
+  }
+
+  private animateShake(dt: number): void {
+    if (this.shakeLeft <= 0) return;
+    this.shakeLeft = Math.max(0, this.shakeLeft - dt);
+    const amp = SHAKE_AMP * (this.shakeLeft / SHAKE_SEC);
+    this.host.container.position.set(
+      this.shakeOrigin.x + (Math.random() * 2 - 1) * amp,
+      this.shakeOrigin.y + (Math.random() * 2 - 1) * amp,
     );
   }
 
-  // ── UI construction — see render/TutorialDirector/panels.ts's buildLayers()/drawPanel() ──────
+  private animateGradCard(): void {
+    if (!this.footnoteShown) { this.footnoteShown = true; this.host.config.onFootnoteShown?.(); }
+    const k = Math.min(1, (this.time - this.gradAt) / GRAD_POP_SEC);
+    // easeOutBack — a small overshoot reads as a stamp landing.
+    const c = 1.70158;
+    const s = 1 + (c + 1) * Math.pow(k - 1, 3) + c * Math.pow(k - 1, 2);
+    this.gradCard.scale.set(k >= 1 ? 1 : s);
+  }
 
-  /** Pulse animation: breathing rings for the guided card slot and the spell enemy cluster. */
-  private animatePulse(): void {
-    if (this.phase !== 'beat') return;
-    const beat = BEATS[this.beatIndex]!;
-    const a = 0.45 + 0.35 * (0.5 + 0.5 * Math.sin(this.pulse * 5));
-
-    // Guided card ring (locate current slot by card id).
-    if (beat.kind !== 'spell' && !this.beatReleased) {
-      const idx = this.lastSlotIndex;
-      if (idx >= 0) {
-        const c = this.host.handSlotCenter(idx);
-        const w = this.layout.cardWidth + 10;
-        const h = this.layout.cardHeight + 10;
-        this.slotRing.clear();
-        this.slotRing.lineStyle(4, C_BLUE, a);
-        this.slotRing.drawRoundedRect(c.x - w / 2, c.y - h / 2, w, h, 8);
-        this.slotRing.visible = true;
-      } else {
-        this.slotRing.visible = false;
-      }
+  /** Breathing frame around the guided card + the meteor target ring. */
+  private animateRings(beat: BeatSpec): void {
+    const a = 0.45 + 0.35 * (0.5 + 0.5 * Math.sin(this.time * 5));
+    if (this.slotIndex >= 0) {
+      const c = this.host.handSlotCenter(this.slotIndex);
+      const w = this.layout.cardWidth + 10;
+      const h = this.layout.cardHeight + 10;
+      this.slotRing.clear();
+      this.slotRing.lineStyle(4, C_BLUE, a);
+      this.slotRing.drawRoundedRect(c.x - w / 2, c.y - h / 2, w, h, 8);
+      this.slotRing.visible = true;
+    } else {
+      this.slotRing.visible = false;
     }
-
-    if (this.clusterRing.visible) {
-      const r = this.layout.cellSize * (1.1 + 0.15 * Math.sin(this.pulse * 5));
+    if (beat.kind === 'spell' && this.meteorAnchor) {
+      const p = this.anchorCenter(this.meteorAnchor);
+      const r = this.layout.cellSize * (1.25 + 0.15 * Math.sin(this.time * 5));
       this.clusterRing.clear();
       this.clusterRing.lineStyle(4, C_BLUE, a);
-      this.clusterRing.drawCircle(0, 0, r);
+      this.clusterRing.drawCircle(p.x, p.y, r);
+      this.clusterRing.visible = true;
+    } else {
+      this.clusterRing.visible = false;
     }
   }
 
-  /** Fed by GameRenderer before onTick with the slot index of the current guided card (diffed by id). -1 means not in hand. */
-  private lastSlotIndex = -1;
-  setBeatSlotIndex(state: GameState): void {
-    if (this.phase !== 'beat') { this.lastSlotIndex = -1; return; }
-    const beat = BEATS[this.beatIndex]!;
-    this.lastSlotIndex = state.bottomPlayer.hand.slots.findIndex((s) => s?.card.id === beat.cardId);
+  private setGhost(on: boolean): void {
+    if (on && (!this.prompting || this.holdingCard)) return;
+    if (on) {
+      this.ghostOn = true;
+      this.ghostShown = true;
+      this.ghostT = 0;
+      return;
+    }
+    this.ghostOn = false;
+    this.ghost.visible = false;
   }
 
-}
+  /** Ghost card glides from the guided card's hand slot to its target, holds, loops (§11.4). */
+  private animateGhost(dt: number, beat: BeatSpec): void {
+    if (this.slotIndex < 0) { this.ghost.visible = false; return; }
+    if (this.ghostSlot !== this.slotIndex || !this.ghostCard) {
+      this.ghost.removeChildren().forEach((c) => c.destroy({ children: true }));
+      this.ghostCard = this.host.buildCardGhost(this.slotIndex);
+      this.ghostSlot = this.slotIndex;
+      if (this.ghostCard) {
+        this.ghostCard.alpha = 0.85;
+        this.ghostCard.scale.set(1.4); // the drag ghost is small; the demo has to be noticed
+        this.ghost.addChild(this.ghostCard);
+      }
+      const tip = new PIXI.Graphics();
+      const r = this.layout.cellSize * 0.22;
+      tip.lineStyle(3, 0xffffff, 0.95).beginFill(C_BLUE, 0.85).drawCircle(0, 0, r).endFill();
+      this.ghost.addChild(tip);
+    }
+    this.ghost.visible = true;
+    this.ghostT = (this.ghostT + dt) % (GHOST_MOVE_SEC + GHOST_HOLD_SEC);
+    const from = this.host.handSlotCenter(this.slotIndex);
+    const to = this.targetPoint(beat);
+    const k = Math.min(1, this.ghostT / GHOST_MOVE_SEC);
+    const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2; // easeInOutQuad
+    const x = from.x + (to.x - from.x) * e;
+    const y = from.y + (to.y - from.y) * e;
+    for (const c of this.ghost.children) c.position.set(x, y);
+    // Fade in at the start of each pass, out at the end of the hold.
+    const holdLeft = GHOST_MOVE_SEC + GHOST_HOLD_SEC - this.ghostT;
+    this.ghost.alpha = Math.max(0, Math.min(1, this.ghostT / 0.15, holdLeft / 0.2));
+  }
 
-/** Small helper to narrow to TranslationKey (tutorial keys are fully populated per §3.4; missing keys fall back to the key name at runtime). */
-function tk(key: string): string {
-  return t(key as TranslationKey);
+  // ── Geometry ────────────────────────────────────────────────────────────────────────────────────
+
+  private targetPoint(beat: BeatSpec): { x: number; y: number } {
+    return beatTargetPoint(this.layout, beat, this.meteorAnchor);
+  }
+
+  private anchorCenter(a: { col: number; row: number }): { x: number; y: number } {
+    return meteorAnchorCenter(this.layout, a);
+  }
+
+  /** What the instruction strip must not cover (§11.5): the target, the guided card, the Skip button. */
+  private avoidRects(): Rect[] {
+    const out: Rect[] = [this.skipBtnRect];
+    const beat = BEATS[this.beatIndex];
+    if (!beat) return out;
+    const cs = this.layout.cellSize;
+    const p = this.targetPoint(beat);
+    const reach = beat.kind === 'spell' ? cs * 1.5 : cs;
+    out.push({ x: p.x - reach, y: p.y - reach, w: reach * 2, h: reach * 2 });
+    if (this.slotIndex >= 0) {
+      const c = this.host.handSlotCenter(this.slotIndex);
+      const w = this.layout.cardWidth;
+      const h = this.layout.cardHeight;
+      out.push({ x: c.x - w / 2, y: c.y - h / 2, w, h });
+    }
+    return out;
+  }
 }

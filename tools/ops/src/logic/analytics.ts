@@ -100,17 +100,27 @@ export const ONBOARDING_LABELS: Record<string, string> = {
   tutorial_complete: 'Finished tutorial',
   first_battle: 'Started first battle',
   first_clear: 'Cleared first level',
+  intro_seen: 'Saw the story card',
 };
 
 /** Human-readable labels for tutorial step-funnel keys (must match TUTORIAL_ORDERED_KEYS in analyticsvc). */
 export const TUTORIAL_LABELS: Record<string, string> = {
   tutorial_start: 'Started tutorial',
-  orientation_1: 'Orientation O1', orientation_2: 'Orientation O2', orientation_3: 'Orientation O3',
-  orientation_4: 'Orientation O4', orientation_5: 'Orientation O5', orientation_6: 'Orientation O6',
-  orientation_7: 'Orientation O7',
   beat_unit: 'Beat: deploy unit', beat_building: 'Beat: deploy building', beat_spell: 'Beat: cast spell',
-  freeplay: 'Free play',
+  graduate: 'Graduation card',
   tutorial_complete: 'Finished tutorial',
+};
+
+/**
+ * Labels for the anonymous first-session funnel (`anon_funnel`), in funnel order — must match
+ * ANON_FUNNEL_STEPS in analyticsvc: the tutorial steps, its Skip, and levels 1–3 first try / first clear.
+ */
+export const ANON_FUNNEL_LABELS: Record<string, string> = {
+  ...TUTORIAL_LABELS,
+  tutorial_skip: 'Skipped tutorial',
+  lv1_start: 'Lv1 tried', lv1_clear: 'Lv1 cleared',
+  lv2_start: 'Lv2 tried', lv2_clear: 'Lv2 cleared',
+  lv3_start: 'Lv3 tried', lv3_clear: 'Lv3 cleared',
 };
 
 /** The scene funnel passes no label map on purpose — its step keys are already scene names. */
@@ -202,6 +212,25 @@ export interface BootFunnelRow {
   declined?: number;
   consents: number;
   reach_rate?: number;
+  /**
+   * First-session funnel steps reached by launches, per step key — an anonymous count of every
+   * player whatever their analytics answer (COMPLIANCE_GLOBAL §3.3b), so it also covers EEA players
+   * who never consented. Absent when nothing ticked.
+   */
+  anon_funnel?: Record<string, number>;
+}
+
+/**
+ * `anon_funnel` as one table cell, in funnel order: "Started tutorial 3 · Beat: deploy unit 1".
+ * Empty when the row has none (offline builds, days before it shipped).
+ */
+export function anonFunnelCell(row: BootFunnelRow): string {
+  const counts = row.anon_funnel;
+  if (!counts) return '';
+  return Object.keys(ANON_FUNNEL_LABELS)
+    .filter((k) => (counts[k] ?? 0) > 0)
+    .map((k) => `${ANON_FUNNEL_LABELS[k]} ${counts[k]}`)
+    .join(' · ');
 }
 
 export interface BootFunnelDisplayRow extends BootFunnelRow {

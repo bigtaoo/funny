@@ -21,6 +21,7 @@ import { TokenRevocationList, disabledTokenRevocationList } from '@nw/shared';
 import { localTokenRevocationSource } from './tokenRevocations.js';
 import { registerInternalRoutes } from './internal.js';
 import { AccountCache } from './accountCache.js';
+import { ActivityRecorder } from './activityDays.js';
 import { HttpCommercialClient, type CommercialClient } from './commercialClient.js';
 import { HttpGatewayClient, type GatewayClient } from './gatewayClient.js';
 import { HttpMetaSocialsvcClient, nullMetaSocialsvcClient } from './socialsvcClient.js';
@@ -97,6 +98,11 @@ export interface BuildAppOpts {
   socialsvc?: import('./socialsvcClient.js').MetaSocialsvcClient;
   /** Active-match Redis client (login-reconnect-prompt): getSave() surfaces a resume hint, /internal/match/report clears it. null/omitted = feature disabled. */
   redis?: RedisLike | null;
+  /**
+   * Consent-free activity recorder (activityDays.ts) fed by every authenticated request. Default: one over
+   * `cols.accounts` on this app's clock. Injectable for tests; null disables recording.
+   */
+  activity?: ActivityRecorder | null;
 }
 
 export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
@@ -310,6 +316,8 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
   // MetaService is structurally checked against MetaHandlers at compile time (missing method = tsc error).
   // isRevoked: the in-memory revocation list first (a Map lookup), then the same cached ban-status read
   // rejectIfBanned uses for tombstones (one Mongo read per account per 60s at most).
+  // The fourth argument feeds the consent-free retention report (activityDays.ts): deduped, fire-and-forget.
+  const activity = opts.activity === undefined ? new ActivityRecorder(opts.cols, now) : opts.activity;
   await registerRoutes(
     app,
     service,
@@ -318,6 +326,7 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
       now,
       async (p) =>
         tokenRevocations.isRevoked(p.sub, p.iat) || !!(await accountCache.getBanStatus(opts.cols, p.sub)).purgedAt,
+      activity ? (accountId) => void activity.record(accountId) : undefined,
     ),
   );
 

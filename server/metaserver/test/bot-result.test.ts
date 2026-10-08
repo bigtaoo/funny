@@ -1,13 +1,15 @@
 // POST /pvp/bot-result (MATCHSVC_DESIGN §match_bot_fallback): AI-fallback matches are played entirely
 // client-local (no gameserver session), so this is the only settlement hook for them. Verifies:
 // always credits the 'pvp.match' daily task; ELO only moves below BOT_ELO_THRESHOLD at BOT_ELO_K;
-// throttled by BOT_RESULT_MIN_GAP_MS so scripted spam can't out-pace the real 30s queue timeout.
+// throttled by BOT_RESULT_MIN_GAP_MS so scripted spam can't out-pace the real 30s queue timeout;
+// ELO-loss protection (2026-10-07, new-player + daily slots): a loss while a slot is left costs nothing,
+// never uses up a slot (neither pool), and botsvc accounts (deviceId bot-NNNN) are never protected.
 import { describe, it, expect } from 'vitest';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { makeNewSave, BOT_ELO_K, BOT_ELO_THRESHOLD, type SaveData, type SaveDoc } from '@nw/shared';
+import { makeNewSave, makeDayKey, BOT_ELO_K, BOT_ELO_THRESHOLD, NEWBIE_PROTECT_GAMES, DAILY_PROTECT_GAMES, type SaveData, type SaveDoc } from '@nw/shared';
 import { MetaService, type ServiceDeps } from '../src/service.js';
 
-function fakeCols(seed: Record<string, SaveData>) {
+function fakeCols(seed: Record<string, SaveData>, deviceIds: Record<string, string> = {}) {
   const saves = new Map<string, SaveDoc>();
   for (const [id, s] of Object.entries(seed)) saves.set(id, { _id: id, save: s, rev: s.rev });
   return {
@@ -22,12 +24,15 @@ function fakeCols(seed: Record<string, SaveData>) {
         return next;
       },
     },
+    accounts: {
+      findOne: async (q: { _id: string }) => (deviceIds[q._id] ? { _id: q._id, deviceId: deviceIds[q._id] } : null),
+    },
     raw: saves,
   };
 }
 
-function makeService(nowRef: { t: number }, seed: Record<string, SaveData>) {
-  const cols = fakeCols(seed);
+function makeService(nowRef: { t: number }, seed: Record<string, SaveData>, deviceIds: Record<string, string> = {}) {
+  const cols = fakeCols(seed, deviceIds);
   const deps = {
     cols,
     now: () => nowRef.t,
@@ -63,7 +68,53 @@ describe('POST /pvp/bot-result', () => {
   it('below threshold: a loss applies -BOT_ELO_K/2', async () => {
     const a = makeNewSave('a', 0);
     const nowRef = { t: 1_000_000 };
+    a.pvp.losses = 3; // past the new-player pool…
+    a.pvp.dailyProtect = { dayKey: makeDayKey(nowRef.t), used: DAILY_PROTECT_GAMES }; // …and today's daily slots spent
     const { svc } = makeService(nowRef, { a });
+    const res = (await svc.submitBotResult(reqOf('a', false), fakeReply)) as { data: { delta: number } };
+    expect(res.data.delta).toBe(-BOT_ELO_K / 2);
+  });
+
+  it('new-player protection: a loss inside the window costs no ELO and does not use up a slot', async () => {
+    const a = makeNewSave('a', 0);
+    a.pvp.losses = NEWBIE_PROTECT_GAMES - 1; // last protected real ranked game still ahead
+    const nowRef = { t: 1_000_000 };
+    const { svc, cols } = makeService(nowRef, { a }, { a: 'uuid-human' });
+    const res = (await svc.submitBotResult(reqOf('a', false), fakeReply)) as { data: { delta: number; elo: number } };
+    expect(res.data.delta).toBe(0);
+    expect(res.data.elo).toBe(1000);
+    const saved = (await cols.saves.findOne({ _id: 'a' }))!.save;
+    expect(saved.pvp.losses).toBe(NEWBIE_PROTECT_GAMES - 1); // bot matches never count toward the window
+    expect(saved.pvp.streak).toBe(0);
+    expect(saved.pvp.lastBotResultAt).toBe(nowRef.t); // still an accepted (throttled) result
+  });
+
+  it('daily protection: a loss with daily slots left today costs no ELO and does not use one up', async () => {
+    const a = makeNewSave('a', 0);
+    const nowRef = { t: 1_000_000 };
+    a.pvp.losses = 40;
+    a.pvp.dailyProtect = { dayKey: makeDayKey(nowRef.t), used: DAILY_PROTECT_GAMES - 1 };
+    const { svc, cols } = makeService(nowRef, { a }, { a: 'uuid-human' });
+    const res = (await svc.submitBotResult(reqOf('a', false), fakeReply)) as { data: { delta: number } };
+    expect(res.data.delta).toBe(0);
+    const saved = (await cols.saves.findOne({ _id: 'a' }))!.save;
+    expect(saved.pvp.dailyProtect).toEqual({ dayKey: makeDayKey(nowRef.t), used: DAILY_PROTECT_GAMES - 1 });
+  });
+
+  it("daily protection: yesterday's spent slots do not carry over", async () => {
+    const a = makeNewSave('a', 0);
+    const nowRef = { t: 1_000_000 + 86_400_000 };
+    a.pvp.losses = 40;
+    a.pvp.dailyProtect = { dayKey: makeDayKey(1_000_000), used: DAILY_PROTECT_GAMES };
+    const { svc } = makeService(nowRef, { a }, { a: 'uuid-human' });
+    const res = (await svc.submitBotResult(reqOf('a', false), fakeReply)) as { data: { delta: number } };
+    expect(res.data.delta).toBe(0);
+  });
+
+  it('new-player protection: a botsvc account is never protected', async () => {
+    const a = makeNewSave('a', 0);
+    const nowRef = { t: 1_000_000 };
+    const { svc } = makeService(nowRef, { a }, { a: 'bot-0042' });
     const res = (await svc.submitBotResult(reqOf('a', false), fakeReply)) as { data: { delta: number } };
     expect(res.data.delta).toBe(-BOT_ELO_K / 2);
   });

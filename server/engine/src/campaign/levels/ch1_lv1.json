@@ -139,9 +139,8 @@
     }
   },
   "nameKey": "campaign.ch1.lv1.name",
-  "briefKey": "campaign.ch1.lv1.brief",
   "story": {
-    "introKey": "campaign.ch1.intro"
+    "outroKey": "campaign.ch1.intro"
   },
   "lanePunish": {
     "units": 5,

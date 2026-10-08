@@ -17,6 +17,7 @@
  *      future one) still can't clip.
  */
 import * as PIXI from 'pixi.js-legacy';
+import { UI_FONT_FAMILY } from './theme';
 
 /** Anti-clip padding (px) for a given font size. ~15% of the size clears the
  *  tallest CJK glyph tops at every scale we use. */
@@ -34,7 +35,15 @@ export function makeText(
   style: Partial<PIXI.ITextStyle> | PIXI.TextStyle = {},
 ): PIXI.Text {
   const explicitPad = (style as Partial<PIXI.ITextStyle>).padding;
-  const t = new PIXI.Text(text, style);
+  // A plain style that names no family gets the UI's one family (render/theme.ts) instead of
+  // PIXI's built-in default, Arial — the hand cards and the drag ghost drew in Arial for months
+  // because nobody wrote a family down. A TextStyle instance is the caller's own object; leave it.
+  // (Plain-object check rather than `instanceof PIXI.TextStyle`: several unit tests mock the module.)
+  const plain = Object.getPrototypeOf(style) === Object.prototype;
+  const withFamily = !plain || style.fontFamily != null
+    ? style
+    : { ...style, fontFamily: UI_FONT_FAMILY };
+  const t = new PIXI.Text(text, withFamily);
   if (explicitPad == null) t.style.padding = cjkPadding(t.style.fontSize as number);
   return t;
 }
@@ -91,10 +100,19 @@ export function installTextPaddingFloor(px = 8): void {
 }
 
 /**
+ * Make the UI's one family (render/theme.ts `UI_FONT_FAMILY`) PIXI's default, once at app boot —
+ * the family counterpart of {@link installTextPaddingFloor}: a `new PIXI.Text` / `new
+ * PIXI.TextStyle` that bypasses {@link makeText} and names no family would otherwise get Arial.
+ */
+export function installUiFontDefault(): void {
+  PIXI.TextStyle.defaultStyle.fontFamily = UI_FONT_FAMILY;
+}
+
+/**
  * Lower bound on the rendered width of a monospace string, derived from the string itself.
  *
  * Every text size in this game comes from the `FS` scale, and every label drawn through `txt()` is
- * `fontFamily: 'monospace'` — so a width is just a cell count: {@link MONO_CELL}.latin em per Latin
+ * `fontFamily: UI_FONT_FAMILY` (monospace) — so a width is just a cell count: {@link MONO_CELL}.latin em per Latin
  * cell, one whole em per full-width CJK cell.
  *
  * Why not simply read `Text.width`: a layout that *branches* on measured width behaves differently

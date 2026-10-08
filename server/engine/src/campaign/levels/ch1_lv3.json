@@ -106,7 +106,7 @@
         "atTick": 900,
         "unitType": "max",
         "col": 1,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 8
       },
       {
@@ -127,7 +127,7 @@
         "atTick": 900,
         "unitType": "max",
         "col": 10,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 8
       },
       {
@@ -183,18 +183,6 @@
         "col": 7,
         "count": 1,
         "isBoss": true
-      },
-      {
-        "atTick": 1560,
-        "unitType": "lena",
-        "col": 2,
-        "count": 1
-      },
-      {
-        "atTick": 1560,
-        "unitType": "lena",
-        "col": 9,
-        "count": 1
       },
       {
         "atTick": 1590,
@@ -209,20 +197,6 @@
         "col": 11,
         "count": 1,
         "spacingTicks": 8
-      },
-      {
-        "atTick": 1620,
-        "unitType": "mara",
-        "col": 4,
-        "count": 1,
-        "spacingTicks": 36
-      },
-      {
-        "atTick": 1620,
-        "unitType": "mara",
-        "col": 7,
-        "count": 1,
-        "spacingTicks": 36
       }
     ]
   },

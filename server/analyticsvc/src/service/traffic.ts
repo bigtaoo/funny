@@ -7,7 +7,7 @@
 // composition in ../service.ts.
 
 import { AnalyticsCollections } from '../db';
-import { BootFunnelRow, EventCountRow, DauRow, LoginHourRow, RETENTION_OFFSETS, RetentionOffset, RetentionRow, ONBOARDING_STEPS, ACTION_NOISE, EMPTY_STEP_KEYS, OnboardingStepRow, FirstSessionActionRow, FirstSessionResult, dayStart, toDateStr } from './defs';
+import { AnonFunnelStep, isAnonFunnelStep, BootFunnelRow, EventCountRow, DauRow, LoginHourRow, RETENTION_OFFSETS, RetentionOffset, RetentionRow, ONBOARDING_STEPS, ACTION_NOISE, EMPTY_STEP_KEYS, OnboardingStepRow, FirstSessionActionRow, FirstSessionResult, dayStart, toDateStr } from './defs';
 
 export class TrafficService {
   constructor(
@@ -109,6 +109,25 @@ export class TrafficService {
   }
 
   /**
+   * Count one first-session funnel step reached by a launch, whatever its analytics answer
+   * (COMPLIANCE_GLOBAL §3.3b, `GET /analytics/config?t=<step>`). EEA players who never say yes report
+   * nothing else, and the CrazyGames build plays its first minute before anyone has answered — which
+   * is exactly where the portal reviewer left. This is the aggregate that still sees it: date, build
+   * target, allow-listed step key, a number. Nothing else.
+   *
+   * `step` must already be validated against `ANON_FUNNEL_STEPS` by the caller (it becomes part
+   * of the `_id`). Fire-and-forget by contract, like {@link countBoot}.
+   */
+  async countAnonymousFunnelStep(platform: string, step: AnonFunnelStep): Promise<void> {
+    const date = toDateStr(this.now());
+    await this.cols.funnel_anon_daily.updateOne(
+      { _id: `${date}|${platform}|${step}` },
+      { $inc: { count: 1 }, $set: { date, platform, step, updated_at: new Date(this.now()) } },
+      { upsert: true },
+    );
+  }
+
+  /**
    * Shared write of both counters. Upsert on a composite `_id` so it is a single atomic `$inc` with
    * no index lookup and no risk of duplicate rows under concurrency.
    */
@@ -188,6 +207,14 @@ export class TrafficService {
       const row = rowFor(e._id.date, e._id.platform || 'unknown');
       if (e._id.event === 'session_start') row.sessions = e.count;
       else row.consents = e.count;
+    }
+    // The unconsented launches' tutorial ticks ride along on the same (date, platform) row: they
+    // describe the `boots − sessions` gap from the inside, so this is where they are read.
+    const anonFunnel = await this.cols.funnel_anon_daily.find({ date: { $gte: sinceDate } }).toArray();
+    for (const t of anonFunnel) {
+      if (!isAnonFunnelStep(t.step)) continue;
+      const row = rowFor(t.date, t.platform);
+      row.anon_funnel = { ...row.anon_funnel, [t.step]: t.count };
     }
 
     return [...rows.values()]

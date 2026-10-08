@@ -221,3 +221,53 @@ BOOST_WEIGHT: micro…bodyLg 1 · label 0.85 · heading 0.75 · title 0.65 · he
 **验证**：真 Chrome，`nw_locale=de`，竖屏 iframe 430×900 与 360×700，战役第 1 关：按钮 144 设计 px 宽、文案完整在框内；
 临时把六张手牌换成最长的六个德语卡名看过断行（Bogen-/schütze、Meteor-/einschlag、Brücken-/einsturz、Eisen-/wächter、Sturm-/angriff 两行，Schildträger 一行放得下）。
 
+
+## 76. 单一字体族 + 横屏放大到 0.62×（2026-10-07，CrazyGames 审核后续）
+
+### 76.1 一个字体族常量
+
+`client/src/render/theme.ts#UI_FONT_FAMILY`（仍是 `monospace`）。原来 91 处行内字面量（82 monospace / 6 serif / 2 sans-serif，另有世界地图 BitmapFont 那 1 处保留），手牌卡名与费用、拖拽幽灵卡、墨水提示气泡没写字体族，落到 PIXI 默认 Arial。现在：
+
+- 字面量全部换成常量；`makeText()` 在纯对象样式没写字体族时补上；`app.ts` 启动时 `installUiFontDefault()` 把它设成 PIXI 默认（兜住绕过工厂的 `new PIXI.Text`）。
+- 门禁 `client/test/uiFontFamily.test.ts`（源码里新的 `fontFamily: '<字面量>'` 就红）+ `test/ui/uiFontFamily.ui.ts`（运行时：`makeText` 补字体族、手牌三段文字）。
+- Arial → monospace 变宽：手牌卡名本来走 `fitFont` 单行；开场/关卡前情/插画过场/战役故事卡是 `wordWrap`，结算/回放大标题单行 `display`——1100×574、722×406、844×390 实拍都在框内（故事卡三行）。
+- 换手写字体的做法见 `design/product/art-direction-map-ui.md` §7.4。
+
+### 76.2 横屏 0.62×（ADR-105 2026-10-07 补充）
+
+规则与前后数字见 ADR-105。巡检视口表加 `landscape-1100x574`、`landscape-722x406`。
+
+**改前基线**（同一分支、只含 76.1，`--grep landscape` 五个视口）：0 条 finding。**改后第一轮**：844×390 报 4 条（大厅「战役」标题与副标题框相叠、邮件详情附件行相叠、家族公告压到两栏标题）；1100×574 报 1 条（设置页头像首字被铅笔角标盖 21%）；实拍另看到巡检不判的几处。逐条：
+
+| 位置 | 现象（0.62× 下） | 改法 |
+|---|---|---|
+| 战斗左下 · 玩家十颗心 | 心是字面 237 设计 px，左栏是 `300k`；722×406 第十颗心出屏 | 允许占用棋盘左侧整条纸边（`board.x − 22`），仍放不下才整体等比缩；点击区跟着缩 |
+| 战斗顶栏 · 投降/退出关卡 | 按钮 44 高，顶条 `60k` = 36；按钮上沿出屏 | 按钮高 ≤ 顶条高 − 4 |
+| 同上 · 标签 | 「EXIT LEVEL」被 `fitFont` 压到下限 13（8 CSS px） | 落到下限时先把按钮向左加宽（到敌方血条为止）再按全尺寸适配；桌面不触发 |
+| 战斗右下 · 刷新/升级 | `FS.title` 标签比 `200k − 24` 宽的按钮宽，「10g」出框 | 标签按按钮宽高适配（`fitFont` + 高度上限），费用变化时重算 |
+| 拖拽幽灵卡 | 64 宽卡上「Meteor Strike」「Shield Bearer」两头出框 | 先降档；到下限仍超宽、有空格就按空格折两行；单个长词（Infantry）把卡加宽，不再硬拆 |
+| 战役地图顶栏 · Chapters/Gear | 胶囊挂到顶栏下沿外（改前 722×406 就有） | 先收内边距，再上移，保证在栏内 |
+| 大厅 · 战役/世界卡 | 副标题落在卡的手绘边框上，与标题框相叠 | 副标题底边留 8 设计 px（边框是字面尺寸），标题让开副标题 |
+| 大厅顶栏 · 副标题 | 标题下的马克笔划线压住「Real-time Tower Defense」 | 副标题大写字母顶落在划线下缘之下；栏不够高才降档；1080 版式本来就满足，不动 |
+| 邮件详情 · 附件 | 按 `h×0.04` 排行距，行比行距高 | 取比例与行高较大者 |
+| 家族页（横）· 公告条 | 条高 `h×0.04` = 26，比公告字矮 | 条高不低于一行 |
+| 登录页 · 底部条款 | 换行宽 0.86w 居中，左端越过红色装订线 | 换行宽避开装订线（`marginLineX`） |
+| 设置页 · 头像角标 | 铅笔角标盖住首字「玄」21%（巡检 1100×574 唯一一条） | 角标挪到头像框角外侧一点（中心在 `av − 0.4R`）；各尺度都跟着挪 |
+
+HUD 的四条尺寸规则收在新文件 `client/src/render/HUDView/fitting.ts`（`HUDView.ts` 维持 ≤ 500 行）。
+
+**最终巡检**（`--grep landscape`，五个视口全量 48 站）：844×390 / 844×390-de / 640×360 / 722×406 全绿，1100×574 只剩上面那条设置页头像（随后修掉，再跑 `NW_SWEEP_STOPS=lobby,settings,game,campaignMap,friends+mailRead,family` 四个横屏视口全绿；`desktop-1366x768` / `tablet-1024x768` 抽这几站加 `levelPrep,result` 也全绿）。
+
+**没改的**：
+- 单位身高是字面设计 px，722×406 上中号单位 1.29 格高（ADR-105 补充里有表）——属于单位渲染那条线。
+- 小字（tiny/micro）在 1100×574 上 8.5 → 8.1 CSS px：下限按缩放取档，0.62× 落在 13 设计 px；仍高于 7 CSS px 下限。
+
+**测试**：`test/LandscapeLayout.test.ts`（新规则 + CG 两个画布）、`test/ui/landscapeSmallScale.ui.ts`（722×406：心在屏内且在棋盘左侧、投降按钮在顶条内、刷新/升级标签不高于按钮、幽灵卡卡名在卡内、战役顶栏胶囊在栏内）、`bakeDesignScaleWiring.ui.ts` / `worldMapPortraitBaseFraming.ui.ts` 的旧数字跟着改。
+
+### 76.3 CrazyGames 大厅告知条（`ui/dialogs/EntryNoticeStrip.ts`）
+
+第一次真正看到它：`start:crazygames`（development，后端默认指 `localhost:18080`——这台机器上那个端口是另一个项目的 Keycloak，请求全部失败，游戏走离线）。真 Chrome 的 srcdoc iframe 里 CG SDK 报 `environment: disabled`、画面全白（屏蔽 `window.CrazyGames` 也一样白），所以改用 headless Playwright 顶层页面（SDK `local` 环境）。流程：清存档 → 直接进教程（CG 跳过入口门）→ Skip tutorial → 大厅，告知条出现在底栏之上。
+
+- 1100×574：条宽 `min(0.94w, 1.6·短边)`，正文两行 + 隐私/条款两个链接 + 「Allow / No thanks」，字号与按钮都清楚；与战役/世界卡之间约 4 CSS px，不盖任何可点区域。
+- 722×406：同样两行正文；条左端越过红色装订线（大厅主按钮本来也压线），与上方卡片间距约 6 CSS px；点「No thanks」后条立即消失（前后两张截图对比过）。
+- 结论：能用，没改。可改进的只有观感（条与卡片贴得紧、左端压线），没动它，因为它是叠在任意宿主场景上的通用条，跟大厅内容列对齐要宿主把内容列传进来。

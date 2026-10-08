@@ -209,6 +209,7 @@ GET  /admin/monitor/trend?metric=&from=&to=          → { points: [{ ts, value 
 
 # 数据分析（analytics.view）
 GET  /admin/analytics/summary                        → { ... }                       // 自采指标聚合
+GET  /admin/analytics/retention?days=N               → { days, cohorts: [...] }      // 转发 meta /internal/retention：不靠同意的注册队列留存（ANALYTICS §3.6e）
 
 # 玩家查询（player.lookup）——两段式：先模糊搜列表 → 点行拉详情
 GET  /admin/players/search?q=                        → { players: [{accountId, publicId?, displayName?, loginId?}] }  // player.search 审计
@@ -301,6 +302,7 @@ POST   /admin/accounts/{id}/reset-password { password }
 - admin 起一个**采样定时器**（如每 30–60s），调 gateway/matchsvc `GET /internal/stats` + 可选 meta 概览，写 `metricSnapshots`。
 - 趋势查询（`GET /admin/monitor/trend`）直接读 `metricSnapshots` 聚合，前端画折线。
 - 指标示例：在线人数、匹配队列长度、平均匹配等待、活跃房间数、game 实例负载、（接入后）当日注册/补偿发送量。
+- **例外：「Server retention」卡**（2026-10-07）直接从 meta 拉 `/internal/retention`（账号 + 存档 + `accounts.activeDays` 的一条聚合），不走快照——这张表要按注册队列回看 30 天，快照给不了。放在 analyticsvc 门之前，analyticsvc 没配也能看。见 ANALYTICS §3.6e。
 - **不与 Grafana 冲突**：结构化日志（`NW_LOG_DIR` + Loki/Grafana）仍是后期全链路可观测的主力；admin 的自采快照是"运营自助看板"，轻量、随手即用、与权限体系绑定。
 
 ---

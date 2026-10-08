@@ -8,7 +8,7 @@ import { showToastMessage } from '../../net/log';
 import { resetBlockedPlayers } from '../../ui/moderation';
 import type { AppCtx, Nav } from '../appCtx';
 import {
-  SEEN_INTRO_FLAG, TOKEN_KEY, PLAYER_NAME_KEY, PLAYER_PUBLIC_ID_KEY, PLAYER_AVATAR_KEY, RENAME_COST,
+  TOKEN_KEY, PLAYER_NAME_KEY, PLAYER_PUBLIC_ID_KEY, PLAYER_AVATAR_KEY, RENAME_COST,
   FREE_RENAME_KEY, GDPR_CONSENT_FLAG, PLATFORM_AVATAR_KEY, NAME_LOCKED_KEY,
 } from '../appConstants';
 
@@ -20,7 +20,7 @@ import {
 const FORCED_LOGOUT_TOAST_MS = 1500;
 
 export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'doLogout' | 'forceLogout' | 'resolveEntry' | 'goSettings'> {
-  const { api, saveManager, platform, views, state, nav, playerName, avatarId, gateConsent, applyGatewayUrl, featureFlags, getNetSession } = ctx;
+  const { api, saveManager, platform, views, state, nav, playerName, avatarId, applyGatewayUrl, featureFlags, getNetSession } = ctx;
 
   /**
    * Gate 1 of 3 for forceLogout — one-shot latch. A single lobby screen fires half a dozen
@@ -65,16 +65,15 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
     return true;
   }
 
-  function goIntro(): void {
+  /**
+   * The full story, on demand (settings "Replay story"). No funnel events here: `intro_complete` /
+   * `intro_skip` belong to the first-run story card on the campaign map (goCampaignMap), and a
+   * replay is not that step.
+   */
+  function goIntro(onDone: () => void): void {
     state.inLobby = false;
     analytics.track('screen_view', { scene: 'IntroScene' });
-    views.showIntro({
-      onFinish(skipped) {
-        analytics.track(skipped ? 'intro_skip' : 'intro_complete', {});
-        saveManager.setFlag(SEEN_INTRO_FLAG, true);
-        gateConsent(() => void resolveEntry());
-      },
-    });
+    views.showIntro({ onFinish() { onDone(); } });
   }
 
   function goSettings(): void {
@@ -135,6 +134,9 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
       ...(loggedIn && !!api && accountSwitchable ? { onDeleteAccount: doDeleteAccount } : {}),
       // Replay tutorial (ONBOARDING_DESIGN §3.4): directly re-runs the dedicated tutorial level (never fails, can be skipped again).
       onReplayTutorial: () => nav.goTutorial(),
+      // Replay story (ONBOARDING_DESIGN §11.7): the full intro no longer plays on first launch,
+      // so this is where it lives. Returns here, to settings — where the player asked for it.
+      onReplayStory: () => goIntro(() => goSettings()),
       // Analytics consent, withdrawable and re-grantable (COMPLIANCE_GLOBAL §3.3). Same three
       // writes the consent gate makes, minus the `gdpr_consent` event: re-granting here is not a
       // first-launch conversion and would distort the funnel's consent count (ANALYTICS §3.6c).

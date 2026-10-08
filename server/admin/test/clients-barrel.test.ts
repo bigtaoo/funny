@@ -24,6 +24,7 @@ const EXPECTED_CLIENTS = [
   'HttpEnforcementClient',
   'HttpFeedbackClient',
   'HttpModerationClient',
+  'HttpRetentionClient',
 ] as const;
 
 describe('admin clients barrel', () => {

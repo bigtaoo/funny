@@ -20,10 +20,11 @@ import { allTitleIds } from '../../game/meta/titles';
 import type { SettingsSceneCallbacks, AvatarPickerItem } from './types';
 import type { Hit } from '../../ui/hits';
 import { AVATAR_TABS, AVATAR_TAB_LABEL_KEY, AVATAR_TAB_ICON, AVATAR_LOCKED_KEY } from './types';
+import { UI_FONT_FAMILY } from '../../render/theme';
 
 function txt(label: string, size: number, color: number, bold = false): PIXI.Text {
   return makeText(label, {
-    fontSize: size, fill: color, fontFamily: 'monospace',
+    fontSize: size, fill: color, fontFamily: UI_FONT_FAMILY,
     fontWeight: bold ? 'bold' : 'normal',
   });
 }

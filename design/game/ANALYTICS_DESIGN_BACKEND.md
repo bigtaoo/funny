@@ -44,8 +44,11 @@ notebook_wars_analytics
 │       { date, platform, funnel_step, count, conversion_rate? }
 │       索引：{ date: -1, platform: 1 }
 │
-└── boots_daily    启动计数（永久，2026-09-20；见 ANALYTICS_DESIGN §3.6b / §3.6c）
-        { _id: `${date}|${platform}`, date, platform, count, declined?, updated_at }
+├── boots_daily    启动计数（永久，2026-09-20；见 ANALYTICS_DESIGN §3.6b / §3.6c）
+│       { _id: `${date}|${platform}`, date, platform, count, declined?, updated_at }
+│
+└── tutorial_anon_daily    没同意埋点的启动的教学步计数（永久，2026-10-07；见 ANALYTICS_DESIGN §3.6d）
+        { _id: `${date}|${platform}|${step}`, date, platform, step, count, updated_at }
         索引：{ date: -1 }（_id 本身就是 (date, platform)，upsert 不需要额外索引）
         **只有这六列**：这是同意墙之前唯一能记的东西，没有 device_id、没有 IP、没有账号。
         写入者是 `GET /analytics/config`（每次启动必发、在年龄门/同意墙之前、无需同意）。
@@ -63,6 +66,7 @@ notebook_wars_analytics
 | `sessions` | 永久 | 轻量，留存/DAU 计算需要 |
 | `funnels_daily` | 永久 | 聚合结果，体积小 |
 | `boots_daily` | 永久 | 一天几行数字，要的就是长期趋势 |
+| `tutorial_anon_daily` | 永久 | 同上；`?t=<step>` 写入，零标识 |
 
 ---
 
@@ -312,11 +316,11 @@ cohort（某日活跃设备）
 
 ```
 新用户 cohort（首次 session_start 在窗口内的设备）
-    ↓ intro_complete | intro_skip  看完/跳过首启故事
     ↓ tutorial_start               开始引导
     ↓ tutorial_complete            完成引导  ← 引导完成率
     ↓ game_start                   首战（非引导局）
     ↓ level_complete               首通（首个真实关卡）
+    ↓ intro_complete | intro_skip  看过开场故事卡（第一次打开战役地图时出；2026-10-07 起从第 2 步挪到最后，ONBOARDING_DESIGN §11.7）
 ```
 
 ### 9.7 细粒度流失漏斗（A9-9）
@@ -353,7 +357,8 @@ cohort（某日活跃设备）
 
 按 (日期, 平台) 出行：`boots`（`boots_daily` 计数）/ `sessions`（`session_start` **条数**）/
 `declined`（`boots_daily.declined`，**`boots` 的子集**）/ `consents`（`gdpr_consent` 条数）/
-`reach_rate = sessions/boots`。
+`reach_rate = sessions/boots`；以及 `anon_tutorial`（`tutorial_anon_daily` 里同一 (日期, 平台) 的 `{ step: count }`，
+只在有计数时出现，ANALYTICS_DESIGN §3.6d）。
 
 `reach_rate` **故意不改口径**（仍是 `sessions/boots`）：它已经在趋势图里躺了一段时间，
 换分母等于把历史悄悄改写。要看"能报的人里有多少真报了"，自己拿 `sessions/(boots − declined)` 算。
@@ -464,7 +469,7 @@ ops 那边扣的是 `Lost = boots − sessions − declined`（§3.6c）。
 
 | 节点 | 补入事件 | 落点 |
 |---|---|---|
-| intro 完成/跳过 | `intro_complete` / `intro_skip`（100% 采样，取代 `tutorial_skip{step:'intro'}`） | `client/src/app/nav/auth.ts` `goIntro()` 的 `onFinish(skipped)` |
+| intro 完成/跳过 | `intro_complete` / `intro_skip`（100% 采样，取代 `tutorial_skip{step:'intro'}`） | 原为 `client/src/app/nav/auth.ts` `goIntro()` 的 `onFinish(skipped)`；2026-10-07 起改为 `app/nav/game/campaignRoster.ts` `goCampaignMap` 的故事卡 `onDone(skipped)` |
 | 首次功能引导 弹出/关闭 | `feature_guide_shown` / `feature_guide_closed{feature}`（100% 采样） | `client/src/app/nav/lobby.ts` `withGuide()` |
 | 首次功能引导 再看（预留） | `feature_guide_replay{feature}`（配置已加，尚无客户端调用点） | 待 `ONBOARDING_DESIGN.md` §8/§10 的页面内「?」按钮接入后补 |
 

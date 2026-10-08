@@ -1,5 +1,5 @@
 // Campaign / battle / roster / equipment navigation: local PvP-vs-AI, campaign map + level prep +
-// campaign match, card roster, equipment, tutorial. Split out of createGameNav (see game.ts).
+// campaign match, card roster, equipment. Split out of createGameNav (see game.ts).
 //
 // Campaign and roster stay in one factory (not two): they have a genuine two-way call
 // dependency inside the original closure — goCampaignMap.onOpenEquipment calls goEquipment/
@@ -8,7 +8,6 @@
 // for no real benefit; see claudedocs/client-modules.md's split-form note for this file.
 import * as analytics from '../../../analytics';
 import { getLevel, CAMPAIGN_LEVEL_ORDER, achievementStatDelta, type AIDifficulty } from '../../../game';
-import { TUTORIAL_LEVEL_ID } from '@nw/engine';
 import { computeStars, buildStarContext } from '@nw/engine/campaign/stars';
 import { t, type TranslationKey } from '../../../i18n';
 import { allEquippedSkins, skinEquipKey } from '../../../game/meta/skinDefs';
@@ -21,17 +20,18 @@ import { ApiError } from '../../../net/ApiClient';
 import { showToastMessage } from '../../../net/log';
 import type { CardRosterView } from '../../../scenes/CardScene';
 import type { IconKind } from '../../../render/icons';
-import { matchBadgeTelemetry } from '../../../scenes/ResultScene';
+import { matchBadgeTelemetry } from '../../../scenes/ResultScene/badges';
 import { buildEquipmentActions } from './equipmentActions';
 import { createStaminaAd } from './staminaAd';
 import type { MountOpts } from '../../AppViews';
 import type { AppCtx, Nav } from '../../appCtx';
-import { TOKEN_KEY, TUTORIAL_DONE_FLAG } from '../../appConstants';
+import { TOKEN_KEY, SEEN_INTRO_FLAG, inkHintGate } from '../../appConstants';
 import { pickPracticeDifficulty } from '../lobby';
 import { resolveRealLayerInterlude } from '../../../scenes/realLayerInterludeArt';
+import openingStoryArtUrl from '../../../assets/story/intro_notebook.png';
 
 type CampaignRosterNav = Pick<Nav,
-  'goGame' | 'goCampaignMap' | 'goLevelPrep' | 'goCardRoster' | 'goEquipment' | 'goCampaign' | 'goTutorial'>;
+  'goGame' | 'goCampaignMap' | 'goLevelPrep' | 'goCardRoster' | 'goEquipment' | 'goCampaign'>;
 
 /** See goCardRoster's SLG-fetch comment. */
 const CARD_ROSTER_SLG_BUDGET_MS = 2500;
@@ -62,7 +62,7 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
           duration_sec: Math.round((Date.now() - gameStartTs) / 1000),
         });
         // Post-match badge/title distribution (ANALYTICS_DESIGN §5.8) — local player is owner 0 in vs-AI.
-        analytics.track('match_badges', { mode, result, ...matchBadgeTelemetry(stats[0]) });
+        analytics.track('match_badges', { mode, result, ...matchBadgeTelemetry(stats[0], result) });
         // Bot-fallback matches are played entirely client-local (matchsvc issues no ticket/gameUrl),
         // so this is the only settlement hook for them: credits the daily task + (below threshold)
         // a small ELO nudge (SEASON_DESIGN §match_bot_fallback). Manually-chosen practice matches
@@ -89,6 +89,7 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
       },
     }, {
       equippedSkins: allEquippedSkins(saveManager.get().equipped),
+      inkHint: inkHintGate(saveManager),
       // PvP-vs-AI must honour the same ELO card-unlock gate as online PvP (PVP_LOADOUT §3/§6.3):
       // filter both sides' draw pool to the player's current-elo-validated deck (mirror match).
       // Without this the local engine draws from the full pool and leaks locked units (runner/splitter/…).
@@ -119,6 +120,19 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
       // PvE is server-authoritative: clearing / unlocking new levels requires an online connection (§8 decision 4). Offline, only previously unlocked levels can be replayed; new unlocks are gated.
       isOnline: () => saveManager.online(),
       getPendingLevels: () => saveManager.getPendingClears().map((p) => p.levelId),
+      // The opening story, compressed to one card, the first time the map opens
+      // (ONBOARDING_DESIGN §11.7) — no longer a 7-line scene in front of the first screen.
+      // SEEN_INTRO_FLAG is shared with the old first-launch intro on purpose: a save that already
+      // sat through that has been told the story and doesn't get the card. The funnel's
+      // `intro_seen` step reads these two events (analyticsvc ONBOARDING_STEPS).
+      getStoryCard: () => saveManager.getFlag(SEEN_INTRO_FLAG) ? null : {
+        illustrationUrl: openingStoryArtUrl,
+        text: t('story.card'),
+        onDone(skipped: boolean) {
+          analytics.track(skipped ? 'intro_skip' : 'intro_complete', {});
+          saveManager.setFlag(SEEN_INTRO_FLAG, true);
+        },
+      },
     });
   }
 
@@ -147,6 +161,10 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
       levelNumber,
       objective: level.objective,
       ...(level.rewards ? { rewards: level.rewards } : {}),
+      // Both optional per level, so what stands between a player and a level is data: ch1_lv1 — the
+      // first real level, entered straight from the tutorial — carries neither (ONBOARDING_DESIGN
+      // §11.7). Its chapter-intro text moved to `story.outroKey` and plays after the win instead;
+      // every later level keeps its brief, by which point the player has chosen to be here.
       ...(level.briefKey ? { brief: t(level.briefKey as TranslationKey) } : {}),
       ...(level.story?.introKey ? { intro: t(level.story.introKey as TranslationKey) } : {}),
       staminaCost,
@@ -358,12 +376,25 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
     }, opts);
   }
 
+  /**
+   * The anonymous first-session funnel step (ANALYTICS_DESIGN §3.6d) for starting / clearing one of
+   * the first three campaign levels — only while that level has never been cleared, so the row means
+   * "a new player got this far", not "someone replayed level 1". Read before recordClear updates it.
+   */
+  function anonLevelStep(levelId: string, phase: 'start' | 'clear'): analytics.AnonymousFunnelStep | null {
+    const n = CAMPAIGN_LEVEL_ORDER.indexOf(levelId) + 1;
+    if (n < 1 || n > 3 || saveManager.get().progress.cleared.includes(levelId)) return null;
+    return `lv${n}_${phase}` as analytics.AnonymousFunnelStep;
+  }
+
   function goCampaign(levelId: string | undefined): void {
     const level = levelId ? getLevel(levelId) : null;
     if (!level || !levelId) { nav.goLobby(); return; }
     state.inLobby = false;
     platform.onGameplayStart();
     analytics.track('game_start', { mode: 'campaign', level_id: levelId });
+    const startStep = anonLevelStep(levelId, 'start');
+    if (startStep) analytics.countAnonymousFunnelStep(startStep);
     const campaignStartTs = Date.now();
     views.showGame({
       onGameEnd(winner, stats, replay, summary) {
@@ -390,7 +421,11 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
           // the kept replay is submitted via /pve/verify for re-evaluation);
           // offline → enqueue for deferred settlement (fire-and-forget; save / pending are re-read on
           // returning to CampaignMap to reflect the state).
-          if (stars > 0) void saveManager.recordClear(levelId, stars, kept, achievementStatDelta(stats[0]));
+          if (stars > 0) {
+            const clearStep = anonLevelStep(levelId, 'clear');
+            if (clearStep) analytics.countAnonymousFunnelStep(clearStep);
+            void saveManager.recordClear(levelId, stars, kept, achievementStatDelta(stats[0]));
+          }
         } else {
           analytics.track('game_end', {
             mode: 'campaign',
@@ -401,11 +436,12 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
         }
         // Post-match badge/title distribution (ANALYTICS_DESIGN §5.8), both win and loss — same
         // computeBadges the ResultScene renders. Local player is owner 0 in campaign.
+        const outcome = winner === 0 ? 'win' : winner === 1 ? 'loss' : 'draw';
         analytics.track('match_badges', {
           mode: 'campaign',
-          result: winner === 0 ? 'win' : winner === 1 ? 'loss' : 'draw',
+          result: outcome,
           level_id: levelId,
-          ...matchBadgeTelemetry(stats[0]),
+          ...matchBadgeTelemetry(stats[0], outcome),
         });
         const outroTexts = winner === 0 && level.story?.outroKey ? [t(level.story.outroKey as TranslationKey)] : undefined;
         // Each chapter's last level (chN_lv10.json) carries a `realLayerKey` — the Tao/Anna
@@ -419,6 +455,14 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
               onFinish: () => goCampaignMap(),
             })
           : goCampaignMap;
+        // A lost level offers the retry first (through level prep, which charges the stamina) and
+        // keeps the map one tap away — before, a defeat only had "back to map".
+        if (winner !== 0) {
+          void nav.goResult(winner, stats, 0, kept, undefined, undefined, outroTexts,
+            () => goLevelPrep(levelId), t('result.retry'), undefined,
+            { label: t('result.backToMap'), icon: 'mapPin', onTap: proceedToMap });
+          return;
+        }
         void nav.goResult(winner, stats, 0, kept, undefined, undefined, outroTexts, proceedToMap, t('result.backToMap'));
       },
       onExitToLobby() {
@@ -428,6 +472,7 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
     }, {
       level,
       equippedSkins: allEquippedSkins(saveManager.get().equipped),
+      inkHint: inkHintGate(saveManager),
       // Replay labels: human at the bottom, the level's forces at the top (owner-indexed).
       players: { bottom: ctx.playerName(), top: t('replay.aiOpponent') },
       // Hero Roster → engine (card level + per-card equipment buff blueprints, §9) and to the
@@ -437,35 +482,5 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
     });
   }
 
-  /**
-   * Dedicated tutorial level ch0_tutorial (FTUE step ⑤, ONBOARDING_DESIGN §3). Never fails: the
-   * director owns the endgame, so winner is always the local player. Both completion and skip write
-   * tutorial_done then return to the lobby; does not count toward campaign progress (recordClear is
-   * not called).
-   */
-  function goTutorial(): void {
-    const level = getLevel(TUTORIAL_LEVEL_ID);
-    if (!level) { nav.goLobby(); return; }  // If the tutorial level is missing, skip silently rather than blocking new players.
-    state.inLobby = false;
-    platform.onGameplayStart();
-    analytics.track('tutorial_start', { level_id: TUTORIAL_LEVEL_ID });
-    views.showGame({
-      onGameEnd(_winner, _stats, _replay) {
-        saveManager.setFlag(TUTORIAL_DONE_FLAG, true);
-        analytics.track('tutorial_complete', { level_id: TUTORIAL_LEVEL_ID });
-        // §5 first-win hook: graduation = first win; the daily check-in is surfaced via the lobby red dot, so no additional coin source is added here.
-        nav.goLobby({ fade: true }); // exiting a match — one of the transitions that cross-fade
-      },
-      onExitToLobby() {  // Skip tutorial
-        saveManager.setFlag(TUTORIAL_DONE_FLAG, true);
-        analytics.track('tutorial_skip', { step: 'tutorial' });
-        nav.goLobby({ fade: true }); // exiting a match — one of the transitions that cross-fade
-      },
-      onTutorialStep(stepKey) {
-        analytics.track('tutorial_step', { level_id: TUTORIAL_LEVEL_ID, step_key: stepKey });
-      },
-    }, { level, tutorial: true });
-  }
-
-  return { goGame, goCampaignMap, goLevelPrep, goCardRoster, goEquipment, goCampaign, goTutorial };
+  return { goGame, goCampaignMap, goLevelPrep, goCardRoster, goEquipment, goCampaign };
 }

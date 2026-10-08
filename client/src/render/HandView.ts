@@ -197,6 +197,16 @@ export class HandView {
   }
 
   /**
+   * The illustration the hand card in slot `index` is showing right now (skin-resolved by
+   * configureArt), or null when it has none or it has not decoded yet — the drag ghost reuses it so
+   * the dragged card looks like the card that was picked up.
+   */
+  artTextureAt(index: number): PIXI.Texture | null {
+    const art = this.slots[index]?.getChildByName('art') as PIXI.Sprite | null | undefined;
+    return art && art.visible && art.texture.baseTexture.valid ? art.texture : null;
+  }
+
+  /**
    * Returns the card slot index (0-based) at design-space point (x, y), or -1.
    * Does NOT check affordability — caller should verify player.ink.
    */

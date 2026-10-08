@@ -1,7 +1,7 @@
 # Nivara Datenschutzerklärung
 
 > **Datum des Inkrafttretens**: {{EFFECTIVE_DATE}} (vor Veröffentlichung rechtlich zu bestätigen)
-> **Zuletzt aktualisiert**: 29.09.2026 (Entwurf)
+> **Zuletzt aktualisiert**: 07.10.2026 (Entwurf)
 > **Gilt für**: Nivara (Entwicklungs-Codename *Notebook Wars*; das „Spiel"), einschließlich Webversion, iOS-/Android-Clients, WeChat-Mini-Game sowie Aggregator-Plattformen wie CrazyGames.
 >
 > ⚠️ **Dies ist ein Produkt-/Engineering-Entwurf, kein endgültiger Rechtstext.** Er ist vor der Veröffentlichung von Rechtsbeiständen zu prüfen und freizugeben sowie mit jedem Vertriebskanal (App Store / Google Play / WeChat / CrazyGames) und dem anwendbaren regionalen Recht (DSGVO / UK GDPR / PIPL / CCPA usw.) abzugleichen. Platzhalter (URLs, juristische Einheit, Kontakt-E-Mail, Datum, Liste der Drittanbieter-SDKs) sind vor dem Start durch echte Werte zu ersetzen.
@@ -14,7 +14,7 @@
 
 {{COMPANY_LEGAL_NAME}} („wir", „uns") entwickelt und betreibt das Spiel. Wir achten Ihre Privatsphäre. Diese Erklärung beschreibt, **welche Daten wir erheben, wie wir sie verwenden, mit wem wir sie teilen, wie lange wir sie speichern, welche Rechte Sie haben** und wie Sie uns kontaktieren.
 
-Mit der weiteren Nutzung des Spiels bestätigen Sie, diese Erklärung gelesen und verstanden zu haben. Befinden Sie sich in der EU / im UK, erfordern bestimmte nicht notwendige Verarbeitungen Ihre **vorherige Einwilligung** (siehe §6).
+Mit der weiteren Nutzung des Spiels bestätigen Sie, diese Erklärung gelesen und verstanden zu haben. Befinden Sie sich in der EU / im EWR, erfordern bestimmte nicht notwendige Verarbeitungen Ihre **vorherige Einwilligung**; anderswo (auch im UK und in den USA) ist die Spielanalyse standardmäßig aktiv und jederzeit abschaltbar (siehe §6).
 
 ---
 
@@ -28,7 +28,9 @@ Wir folgen dem Grundsatz der **Datenminimierung** und erheben nur, was zur Berei
 | **Kontodaten** | E-Mail / Login-ID, Passwort (gesalzen gehasht gespeichert) | bei Registrierung angegeben | Optional (im anonymen/Offline-Modus nicht erhoben) | Registrierung, Cloud-Speicherung, geräteübergreifende Synchronisation |
 | **Profildaten** | Anzeigename, Avatar-Auswahl | von Ihnen angegeben | Optional | soziale Anzeige, Match-Identität |
 | **Transaktionsdaten** | Kaufaufträge, Plattform-Zahlungsbelege/-Tickets, Guthaben an virtueller Währung & Gegenständen | App-Store-IAP / Zahlungskanäle | nur bei Kauf | Kaufabwicklung, Betrugsabwehr, Support |
-| **Analyse-Ereignisse** | Spielereignisse, einer pseudonymen user_id zugeordnet (Levelfortschritt, Match-Ergebnisse, Klickpfade usw.) | automatisch vom Client gemeldet | nicht notwendig (in EU/UK Einwilligung erforderlich) | Betriebsanalyse, Balancing, Fehlerbehebung |
+| **Analyse-Ereignisse** | Spielereignisse, einer pseudonymen user_id zugeordnet (Levelfortschritt, Match-Ergebnisse, Klickpfade usw.) | automatisch vom Client gemeldet | nicht notwendig (in der EU/im EWR Einwilligung erforderlich; anderswo standardmäßig aktiv mit Opt-out) | Betriebsanalyse, Balancing, Fehlerbehebung |
+| **Dienststatistik** | Registrierungsdatum, an welchen Ihrer ersten 30 Tage Sie gespielt haben, Tutorial-Abschluss, geschaffte Level — aus den Daten, die das Spiel für seinen Betrieb ohnehin führt | von unseren Servern erfasst | entfällt, sobald Sie die Analyse abschalten | aggregierte Bindungsstatistik (wie viele neue Spieler wiederkommen) |
+| **Anonyme Schrittzählung** | Anzahl der Spielstarts, die einen Tutorial- oder frühen Levelschritt erreichen — ohne jede Kennung | automatisch vom Client gemeldet | keine personenbezogenen Daten | erkennen, wo neue Spieler aufhören |
 | **Kommunikation** | Privatchat-Texte, Meldeinhalte | von Ihnen gesendet | nur bei Nutzung sozialer Funktionen | Nachrichten, Moderation, Sicherheit |
 
 Wir erheben **nicht**: präzise Standortdaten, Kontakte, Kamera/Mikrofon oder app-übergreifende Werbe-IDs (sofern nicht gesondert um Einwilligung gebeten, siehe §6.3).
@@ -55,8 +57,8 @@ Wir verwenden Ihre personenbezogenen Daten **nicht** für automatisierte Entsche
 Für nach DSGVO / UK GDPR geschützte Nutzer sind unsere Rechtsgrundlagen:
 
 - **Vertragserfüllung**: Konto, Cloud-Speicherung, Matches, Käufe.
-- **Einwilligung**: Analyse-Ereignisse, optionale Analyse-Cookies, jegliche zielgerichtete Werbung (siehe §6). Sie können die Einwilligung jederzeit widerrufen.
-- **Berechtigte Interessen**: Betrugs- und Cheat-Abwehr, Sicherheit, erforderliche Betriebsanalyse (gegen Ihre Rechte abgewogen, mit Opt-out).
+- **Einwilligung**: in der EU/im EWR Analyse-Ereignisse; überall jegliche zielgerichtete Werbung (siehe §6). Sie können die Einwilligung jederzeit widerrufen.
+- **Berechtigte Interessen**: Betrugs- und Cheat-Abwehr, Sicherheit; Analyse-Ereignisse außerhalb der EU/des EWR (standardmäßig aktiv, in den Einstellungen abschaltbar — im UK nach der PECR-Ausnahme für statistische Zwecke); aggregierte Dienststatistik (§2). Das Abschalten der Analyse in den Einstellungen behandeln wir als Widerspruch gegen all diese Statistiken.
 - **Rechtliche Verpflichtung**: Minderjährigenschutz, Aufbewahrung von Transaktions-/Steuerdaten, Wahrscheinlichkeitsoffenlegung usw.
 
 ---
@@ -80,8 +82,12 @@ Wir **verkaufen** Ihre personenbezogenen Daten **nicht**. Wir teilen nur das Not
 
 ## 6. Ihre Wahlmöglichkeiten & Einwilligung
 
-### 6.1 Analyse-Einwilligung (EU/UK Opt-in)
-Für EU-/UK-Nutzer sind Analyse-Ereignisse und nicht notwendige Analysen **standardmäßig deaktiviert** und werden erst aktiviert, nachdem Sie dem Einwilligungsdialog beim ersten Start ausdrücklich zugestimmt haben. Sie können sie jederzeit unter **Einstellungen → Datenschutz** deaktivieren; wir erheben dann keine neuen Analyse-Ereignisse mehr.
+### 6.1 Analyse: Opt-in in der EU/im EWR, Opt-out anderswo
+- **EU / EWR**: Analyse-Ereignisse sind **standardmäßig deaktiviert** und werden erst aktiviert, nachdem Sie ausdrücklich zugestimmt haben (Dialog beim ersten Start, bzw. ein nicht blockierender Hinweis auf Aggregator-Plattformen wie CrazyGames). Ablehnen spielt sich genauso.
+- **Anderswo, auch im UK und in den USA**: Analyse-Ereignisse sind **standardmäßig aktiv**, um das Spiel zu verbessern. Wir sagen Ihnen das beim Spielstart (auf Aggregator-Plattformen, bevor Analysedaten Ihr Gerät verlassen).
+- **Überall**: Sie können die Analyse jederzeit unter **Einstellungen → Analyse** abschalten. Wir erheben dann keine neuen Analyse-Ereignisse mehr und erfassen und zählen Sie nicht mehr in der Dienststatistik (§2).
+
+Die anonyme Schrittzählung (§2) trägt keine Kennung und ist kein personenbezogenes Datum; sie zählt jeden Spieler.
 
 ### 6.2 Cookies / lokaler Speicher (Web)
 Die Webversion nutzt notwendigen lokalen Speicher (localStorage), um Login und Spielstand zu halten; etwaige Analyse-Cookies unterliegen einem Cookie-Einwilligungsbanner. Notwendiger Speicher ist für den Dienst erforderlich und nicht deaktivierbar.
@@ -97,6 +103,7 @@ Wir führen **kein app-übergreifendes Werbe-Tracking** durch. Belohnte Videos i
 - **Gemeinsame Bereiche**: Ihre Nachrichten in Familien-/Sekten-/Weltkanälen werden gelöscht. Hatten Sie eine Familie oder Sekte geleitet, geht die Leitung automatisch an ein anderes Mitglied über (oder sie wird aufgelöst, wenn niemand übrig ist). Spielverläufe und Kampfberichte anderer Spieler bleiben erhalten, Ihr Name wird daraus entfernt.
 - **Transaktionsdaten**: ein minimaler Satz wird gesetzlich/plattformbedingt (Steuern, Erstattungsstreitigkeiten) **10 volle Kalenderjahre** aufbewahrt (ab Ende des Jahres der Transaktion) und danach gelöscht. Er kann für diesen Zeitraum auch nach Kontolöschung bestehen bleiben; er ist dann nicht mehr mit Ihrer Identität verknüpft, Rohbelege und Zahlungsanbieter-Rohdaten werden entfernt.
 - **Analyse-Ereignisse**: für einen begrenzten Betriebszeitraum gespeichert; bei Kontolöschung gebündelt gelöscht, sowohl per pseudonymer user_id als auch per Gerätekennung für Ereignisse vor der Anmeldung.
+- **Dienststatistik**: die Aufzeichnung, an welchen Ihrer ersten 30 Tage Sie gespielt haben, wird beim Abschalten der Analyse und bei Kontolöschung gelöscht.
 - **Chat/Meldungen**: für einen begrenzten Zeitraum zu Moderations- und Sicherheitszwecken gespeichert. Bei Kontolöschung werden Meldungen gegen Sie entfernt; Ihre Meldungen über andere Spieler bleiben ohne Ihre Identität zur Prüfung erhalten.
 - **Sicherungen**: gelöschte Daten verschwinden aus unseren rollierenden Datenbanksicherungen, sobald diese ablaufen (standardmäßig 7 Tage).
 
@@ -112,7 +119,7 @@ Je nach Region (DSGVO / UK GDPR / PIPL / CCPA usw.) können Sie folgende Rechte 
 - **Auskunft & Datenübertragbarkeit**: eine Kopie Ihrer personenbezogenen Daten (DSAR). In der Testphase manuell über die Kontakt-E-Mail; Self-Service-Export zur allgemeinen Verfügbarkeit.
 - **Berichtigung** unrichtiger Daten (z. B. Anzeigename).
 - **Löschung** („Recht auf Vergessenwerden") — über die In-App-Kontolöschung (siehe §7).
-- **Einschränkung / Widerspruch** gegen bestimmte Verarbeitungen, soweit anwendbar.
+- **Einschränkung / Widerspruch** gegen bestimmte Verarbeitungen, soweit anwendbar — für Analyse und Dienststatistik genügt es, die Analyse in den Einstellungen abzuschalten.
 - **Widerruf der Einwilligung** für einwilligungsbasierte Verarbeitung (Analyse/Werbung) jederzeit (siehe §6).
 - **Beschwerde** bei Ihrer lokalen Datenschutzaufsichtsbehörde.
 

@@ -1,7 +1,7 @@
 // BGM 运行时（AUDIO_DESIGN.md §2.3 / §7 第 7 步），平台中立的那一半。
 //
-// **两个长期存活的 deck，一条规则：听到的东西每一次改变，都是它们之间的一次等功率交叉淡入。**
-// 这一步要做的两件事其实是同一个操作：
+// **两个长期存活的 deck，两条规则：同一首曲子接自己是一次等功率交叉淡入；换一首曲子是先淡出、
+// 留一小段空白、再淡入——两首不同的曲子从不同时发声。** 这一步要做的两件事共用同一条包络：
 //
 //   1. **闭合循环。** `el.loop = true`（微信是 `InnerAudioContext.loop`）在这里用不了：MP3 的
 //      两端都被补齐到帧边界，所以无论区段怎么切，样本级精确回绕都不存在——而所有原生循环 API
@@ -9,9 +9,12 @@
 //      deck 上从头开始**，然后淡过去。这也正是两条轨的验收门禁是 `xfade_band_diff`（头尾在 2 秒
 //      窗口内音色相容）而不是 `step_db`（末样本紧挨首样本）的原因：后者是一条本客户端没有的
 //      机制的门禁，前者是唯一**做得到**的要求。见 `tools/audio-pipeline/audit.py` 的头注释。
-//   2. **换轨。** 同一个机制，只是进来的 deck 上换个文件。
+//   2. **换轨。** 同一条包络拆成两段：旧轨淡向静默，`GAP_S` 之后新轨从静默淡入。不交叉，是因为
+//      两首曲子的调性与速度一般不同（大厅 / 对战前期 / 对战后期三条轨两两都不同调），叠在一起的
+//      2 秒听起来是两支乐队在抢拍子，而不是一次过渡。回绕不受影响：它接的是**同一首**的头尾，
+//      而头尾在 2 秒窗口内的音色相容正是 `xfade_band_diff` 门禁量过的东西。
 //
-// 因为回绕复用了换轨的机器，这个文件里只有**一条**包络，两种行为被同一批用例覆盖。
+// 两种行为用的是同一个 `Transition` 和同一个 `advance`，只是换轨时 `inIdx`/`outIdx` 总有一端为空。
 // `XFADE_S` 与资产管线共享——见 `musicCatalogue.ts` 里那一条为什么不许单边改动。
 //
 // **回绕的时刻是读回来的，不是数出来的。** `update` 收 `dtMs`，但只用它推包络和 ducking 的衰减；
@@ -84,12 +87,12 @@ export interface MusicPlayerDeps {
 type DeckIndex = 0 | 1;
 
 /** 一次在飞的过渡。`t` 在 `XFADE_S` 内从 0 走到 1。两端都可能缺席：从静默起步没有 `outIdx`，
- *  淡向静默没有 `inIdx`。 */
+ *  淡向静默没有 `inIdx`；只有回绕两端都在。 */
 interface Transition {
   inIdx: DeckIndex | null;
   outIdx: DeckIndex | null;
-  /** 淡出那一端的 catalogue gain，单独记着：两条轨之间的交叉淡入两端的 gain 不同，而到那时
-   *  `this.track` 已经被换成新的了。 */
+  /** 淡出那一端**起步时**的电平，单独记着：到那时 `this.track` 已经被换成新的了，而且一个还没
+   *  淡入完的 deck 被要求淡出时，应该从它此刻的电平往下走，而不是先跳回满电平。 */
   outGain: number;
   inGain: number;
   t: number;
@@ -110,6 +113,14 @@ const DUCK_HOLD_MS = 500;
  *  让人**不**注意到床动过。 */
 const DUCK_RELEASE_MS = 700;
 
+/**
+ * 换轨时旧轨淡完之后、新轨开始淡入之前的空白，秒。
+ *
+ * 短到不像「音乐断了」，长到让上一首的混响尾巴先散掉——没有它，新轨的第一拍会落在旧轨还剩的
+ * 那一点点上，空白就退化成了一次很低电平的交叉。
+ */
+export const GAP_S = 0.5;
+
 /** 等功率对：四分之一转的 `cos`/`sin`，于是两端在**功率**上求和为一而不是在幅度上。线性的一对
  *  会在每次淡入的中点掉约 3 dB——放在循环回绕上就是每分钟听见一次，永远。 */
 function equalPower(t: number): { out: number; in: number } {
@@ -122,6 +133,8 @@ export class MusicPlayer {
   private liveIdx: DeckIndex | null = null;
   private track: MusicTrack | null = null;
   private transition: Transition | null = null;
+  /** 换轨中、新轨（`this.track`）还要等多少秒才开始淡入；不在等时是 null。见 {@link change}。 */
+  private pendingS: number | null = null;
   private paused = false;
 
   /** 每个 deck 的交叉淡入位置（已含该轨的 catalogue gain）。总线音量和 ducking **不在**这里面——
@@ -159,6 +172,10 @@ export class MusicPlayer {
     if (this.paused) return;
     this.advanceDuck(dtMs);
     if (this.transition) this.advance(dtMs / 1000);
+    if (this.pendingS !== null) {
+      this.pendingS -= dtMs / 1000;
+      if (this.pendingS <= 0) this.startPending();
+    }
     if (desired !== this.track) this.change(desired);
     else if (!this.transition) this.checkWrap();
     this.applyGains();
@@ -195,6 +212,7 @@ export class MusicPlayer {
    *  一条还在跑的流。 */
   stop(): void {
     this.transition = null;
+    this.pendingS = null;
     this.liveIdx = null;
     this.track = null;
     this.fades[0] = this.fades[1] = 0;
@@ -209,19 +227,40 @@ export class MusicPlayer {
 
   // ── 过渡 ────────────────────────────────────────────────────────────────────────────────
 
+  /**
+   * 换轨：有轨在响就先把它淡向静默，新轨等那次淡出放完、再过 {@link GAP_S} 才从静默淡入。
+   *
+   * 等待期间再来一次换轨，只是**改写等完之后放什么**（`null` 则取消），计时不重来——从大厅进对战、
+   * 两秒内又退出来，听到的就是大厅淡出、空白、大厅从头淡入，而不是三段互相截断的包络。
+   * 什么都没在响（也没有淡出在排空）时，新轨立刻开始淡入：开机第一首没有理由先空等半秒。
+   */
   private change(next: MusicTrack | null): void {
-    const outIdx = this.liveIdx;
-    const outGain = this.track ? MUSIC_CATALOGUE[this.track].gain : 0;
-    this.track = next;
-    if (next === null) {
-      this.liveIdx = null;
-      this.begin({ inIdx: null, outIdx, inGain: 0, outGain, t: 0 });
+    if (this.pendingS !== null) {
+      this.track = next;
+      if (next === null) this.pendingS = null;
       return;
     }
-    const def = MUSIC_CATALOGUE[next];
-    const inIdx = this.freeDeck(outIdx);
+    if (this.liveIdx !== null) {
+      const outIdx = this.liveIdx;
+      this.liveIdx = null;
+      this.begin({ inIdx: null, outIdx, inGain: 0, outGain: this.fades[outIdx], t: 0 });
+    }
+    this.track = next;
+    if (next === null) return;
+    const tr = this.transition;
+    const drainS = tr && tr.outIdx !== null && tr.inIdx === null ? (1 - tr.t) * XFADE_S : 0;
+    if (drainS > 0) this.pendingS = drainS + GAP_S;
+    else this.startPending();
+  }
+
+  /** 让 `this.track` 从静默开始淡入。等待结束时，上一次淡出必然已经落定，两个 deck 都空着。 */
+  private startPending(): void {
+    this.pendingS = null;
+    if (this.track === null) return;
+    const def = MUSIC_CATALOGUE[this.track];
+    const inIdx = this.freeDeck(null);
     this.liveIdx = inIdx;
-    this.begin({ inIdx, outIdx, inGain: def.gain, outGain, t: 0 }, def.path);
+    this.begin({ inIdx, outIdx: null, inGain: def.gain, outGain: 0, t: 0 }, def.path);
   }
 
   /** 循环回绕：同一次过渡，只是进来的 deck 上是同一个文件。 */
@@ -240,10 +279,8 @@ export class MusicPlayer {
   /**
    * 一次过渡的"进来"那一端用哪个 deck：不是正在淡出的那个。
    *
-   * 只有两个 deck，所以一次过渡在另一次还在飞的时候到达，只能复用那个已经在淡出的 deck——于是
-   * 它先被硬停（见 `begin`）。这是真实存在的情况而不是理论情况：从大厅点进对战、两秒内又退出来
-   * 就会走到。另一个选项——在淡入结束前拒绝新轨——会让音乐落后局势最多 2 秒，而一条迟到的床比
-   * 一次被截短的淡入更糟：走到这一步时那次淡入本来也已经快淡到静默了。
+   * 换轨要等淡出放完才开始（见 {@link change}），所以走到这里时另一个 deck 还忙着的情况只剩回绕：
+   * 进来的是同一首的头，出去的是它的尾。
    */
   private freeDeck(outIdx: DeckIndex | null): DeckIndex {
     if (outIdx !== null) return outIdx === 0 ? 1 : 0;

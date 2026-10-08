@@ -1,5 +1,5 @@
 // analyticsvc MongoDB (A9-1).
-// Dedicated database notebook_wars_analytics, four collections: events (TTL 90d) / sessions / funnels_daily / boots_daily.
+// Dedicated database notebook_wars_analytics, five collections: events (TTL 90d) / sessions / funnels_daily / boots_daily / funnel_anon_daily.
 import { MongoClient, type Db, type Collection } from 'mongodb';
 
 /** Raw event document (TTL 90 days). */
@@ -96,6 +96,22 @@ export interface BootDailyDoc {
   updated_at: Date;
 }
 
+/**
+ * Daily anonymous first-session funnel counter, one document per (date, platform, step) — how far
+ * into the tutorial and the first levels every launch got (COMPLIANCE_GLOBAL §3.3b, written by
+ * `GET /analytics/config?t=<step>`). Same privacy position as {@link BootDailyDoc}: a date, a build
+ * target, an allow-listed step key and a number — no device id, no account, no IP. Permanent for the
+ * same reason too: a handful of numbers a day whose value is the trend.
+ */
+export interface FunnelAnonDailyDoc {
+  _id: string; // `${date}|${platform}|${step}`
+  date: string;
+  platform: string;
+  step: string;
+  count: number;
+  updated_at: Date;
+}
+
 /** Daily funnel pre-aggregation (permanent; ETL job runs every hour). */
 export interface FunnelDailyDoc {
   _id?: string;
@@ -111,6 +127,7 @@ export interface AnalyticsCollections {
   sessions: Collection<SessionDoc>;
   funnels_daily: Collection<FunnelDailyDoc>;
   boots_daily: Collection<BootDailyDoc>;
+  funnel_anon_daily: Collection<FunnelAnonDailyDoc>;
 }
 
 export interface AnalyticsMongo {
@@ -137,6 +154,7 @@ export async function createAnalyticsMongo(uri: string, dbName: string): Promise
   const sessions = db.collection<SessionDoc>('sessions');
   const funnels_daily = db.collection<FunnelDailyDoc>('funnels_daily');
   const boots_daily = db.collection<BootDailyDoc>('boots_daily');
+  const funnel_anon_daily = db.collection<FunnelAnonDailyDoc>('funnel_anon_daily');
 
   async function ensureIndexes(): Promise<void> {
     // events: TTL 90 days (7776000s); query indexes
@@ -166,12 +184,14 @@ export async function createAnalyticsMongo(uri: string, dbName: string): Promise
     // boots_daily: the _id is already `${date}|${platform}`, so the upsert needs no index of its
     // own; this one serves the range scan the boot_funnel query does.
     await boots_daily.createIndex({ date: -1 });
+    // funnel_anon_daily: same shape of _id-keyed upsert; this serves boot_funnel's range scan.
+    await funnel_anon_daily.createIndex({ date: -1 });
   }
 
   return {
     client,
     db,
-    collections: { events, sessions, funnels_daily, boots_daily },
+    collections: { events, sessions, funnels_daily, boots_daily, funnel_anon_daily },
     ensureIndexes,
     close: () => client.close(),
   };

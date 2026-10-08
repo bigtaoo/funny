@@ -46,7 +46,7 @@ export function buildCampaignHeader(root: PIXI.Container, hits: Hit[], opts: Cam
   // Laid out right→left; `rightX` walks left by each pill's width + gap.
   const fontSz = FS.label;
   const padX = Math.round(fontSz * 0.8);
-  const pillH = Math.round(fontSz + padX * 1.4);
+  let pillH = Math.round(fontSz + padX * 1.4);
   const pillGap = Math.round(w * 0.02);
   let rightX = w - Math.round(w * 0.04);
   // The pills ride the SUBTITLE's row when there is one, not the title's (2026-09-12). The bar is
@@ -57,7 +57,13 @@ export function buildCampaignHeader(root: PIXI.Container, hits: Hit[], opts: Cam
   // pills (sweep §50.12), and shrinking it to the band would have meant a 12-design-px scene
   // title. On the owner's row the title gets the whole bar right of the back pill and needs no
   // shrinking at all; the owner line is short and centred, and is clamped off the pills below.
-  const pillMidY = subtitleStr ? Math.round(tbH * 0.72) : Math.round(tbH / 2);
+  let pillMidY = subtitleStr ? Math.round(tbH * 0.72) : Math.round(tbH / 2);
+  // The bar is a share of the design height while the pill is sized from its label, so on a short
+  // landscape design (640–926 tall since 2026-10-07; the 722x406 portal tile is 654) the pills hung
+  // below the bar's bottom edge onto the page. Keep them inside: trim the padding first, then lift.
+  const pillBottomMax = tbH - 3;
+  pillH = Math.min(pillH, Math.max(Math.round(fontSz * 1.3), 2 * (pillBottomMax - pillMidY)));
+  pillMidY = Math.min(pillMidY, Math.round(pillBottomMax - pillH / 2));
 
   // Each pill carries a leading glyph, the same [icon][gap][label] shape the
   // title beside it and the world-map header entries (WorldMapPanels/headerHud)
@@ -154,8 +160,11 @@ export function buildCampaignHeader(root: PIXI.Container, hits: Hit[], opts: Cam
   if (subtitleStr) {
     const sub = txt(subtitleStr, FS.label, C.mid, false, Math.max(Math.round(w * 0.2), rightX - bandL));
     sub.anchor.set(0.5, 0.5);
-    // Centred on the bar, but never into the pills that now share this row.
-    sub.x = Math.min(w / 2, rightX - pillGap - sub.width / 2);
+    // Centred on the bar, but never into the pills that now share this row — nor, on the left,
+    // into the back pill: with the phone type boost the right-hand pills grow wide enough to push
+    // the owner line's centre left of the bar's middle, and "Tao's notebook" was drawn over Back
+    // at 722×406 (CrazyGames review audit, 2026-10-07).
+    sub.x = Math.max(bandL + sub.width / 2, Math.min(w / 2, rightX - pillGap - sub.width / 2));
     // Under the title rather than through it when the bar is too short for the fixed 0.40/0.72 rows.
     sub.y = Math.max(pillMidY, Math.round(title.y + title.height / 2 + sub.height / 2));
     sub.alpha = 0.75;

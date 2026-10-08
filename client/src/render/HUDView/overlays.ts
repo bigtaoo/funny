@@ -12,6 +12,7 @@ import { FS, snapFont } from '../fontScale';
 import { ILayout, Rect } from '../../layout/ILayout';
 import { t } from '../../i18n';
 import type { OwnerId } from '@nw/engine/types';
+import { UI_FONT_FAMILY } from '../theme';
 
 export interface OverlayHost {
   readonly container: PIXI.Container;
@@ -31,7 +32,7 @@ function makeBtn(
   const bg = new PIXI.Graphics();
   drawHudButton(bg, w, h, variant, { radius: 6 });
   const txt = makeText(label, {
-    fontSize: snapFont(Math.round(h * 0.42)), fill: hudButtonText(variant), fontWeight: 'bold', fontFamily: 'monospace',
+    fontSize: snapFont(Math.round(h * 0.42)), fill: hudButtonText(variant), fontWeight: 'bold', fontFamily: UI_FONT_FAMILY,
   });
   txt.anchor.set(0.5, 0.5);
   txt.x = w / 2; txt.y = h / 2;
@@ -66,7 +67,7 @@ export function showSurrenderConfirm(host: OverlayHost): void {
 
   const title = makeText(t(host.campaign ? 'hud.exitLevelTitle' : 'hud.surrenderTitle'), {
     fontSize: snapFont(Math.round(pH * 0.18)), fill: 0x222222,
-    fontWeight: 'bold', fontFamily: 'monospace',
+    fontWeight: 'bold', fontFamily: UI_FONT_FAMILY,
   });
   title.anchor.set(0.5, 0);
   title.x = dw / 2;

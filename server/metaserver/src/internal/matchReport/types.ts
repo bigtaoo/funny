@@ -20,6 +20,12 @@ export interface EloResult {
   delta: number;
   after: number;
   rankAfter: string;
+  /** ELO-loss protection (§15.5, 2026-10-07): 1-based index of this game within its slot pool; absent = unprotected. */
+  protectedGame?: number;
+  /** Size of that pool (NEWBIE_PROTECT_GAMES / DAILY_PROTECT_GAMES); present iff protectedGame is. */
+  protectedTotal?: number;
+  /** Which pool: PROTECT_KIND_NEWBIE (1) / PROTECT_KIND_DAILY (2); present iff protectedGame is. */
+  protectedKind?: number;
 }
 
 export interface ReportBody {

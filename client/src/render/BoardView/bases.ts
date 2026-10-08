@@ -57,6 +57,25 @@ export function drawFactionGroundPatch(g: PIXI.Graphics, color: number, rect: Re
   g.beginFill(color, 0.34); g.drawEllipse(cx,        cy,        rx * 0.6, ry * 0.6); g.endFill();
 }
 
+/**
+ * Faction pennant planted on the castle's top: both bases share one black-ink castle, and the
+ * ground patch alone left "which notebook is mine" to the reviewer (CrazyGames audit, 2026-10-07:
+ * "both bases are the same black castle"). Flies toward the middle of the board; drawn once.
+ */
+export function drawFactionPennant(g: PIXI.Graphics, color: number, rect: Rect, mirror: boolean): void {
+  const dir = mirror ? -1 : 1;
+  const poleX = -dir * rect.w * 0.04;
+  const foot = -rect.h * 0.3, top = -rect.h * 0.66;
+  const flagW = rect.w * 0.26 * dir, flagH = rect.h * 0.16;
+  g.clear();
+  g.lineStyle(3, 0x2b2b2b, 1);
+  g.moveTo(poleX, foot); g.lineTo(poleX, top);
+  g.lineStyle(2, 0x2b2b2b, 0.9);
+  g.beginFill(color, 0.95);
+  g.drawPolygon([poleX, top, poleX + flagW, top + flagH / 2, poleX, top + flagH]);
+  g.endFill();
+}
+
 export interface BaseRef {
   sprite:   PIXI.Sprite;
   crackGfx: PIXI.Graphics;
@@ -117,9 +136,11 @@ function buildBaseRef(parent: PIXI.Container, rect: Rect, mirror: boolean, tex: 
 
   const crackGfx = new PIXI.Graphics();
   const pulseGfx = new PIXI.Graphics();   // under-attack outline, drawn on top
-  con.addChild(groundGfx, ringGfx, s, crackGfx, pulseGfx);
+  const pennantGfx = new PIXI.Graphics(); // faction flag on the castle roof
+  con.addChild(groundGfx, ringGfx, s, pennantGfx, crackGfx, pulseGfx);
   parent.addChild(con);
   drawFactionGroundPatch(groundGfx, ringColor, rect);
+  drawFactionPennant(pennantGfx, ringColor, rect, mirror);
   return { sprite: s, crackGfx, pulseGfx, pulseT: 0, pulseSeed: 1, rect, upgradeTier: 0, ringGfx, ringColor, critical: false, container: con };
 }
 

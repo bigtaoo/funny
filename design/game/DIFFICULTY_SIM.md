@@ -18,7 +18,7 @@
 |---|---|
 | 开头 ~ 关卡难度模拟器（PvE Balance Tool） | **本文** |
 | 全章节矩阵扫描、护送关诊断、逐关精修、flying 单位修复 | [`DIFFICULTY_SIM_TUNING_CH2-CH6.md`](DIFFICULTY_SIM_TUNING_CH2-CH6.md) |
-| ch1 矩阵/诊断/重调，以及 ch1–ch6 星级门槛与波次方差重设计 | [`DIFFICULTY_SIM_TUNING_CH1_STARS.md`](DIFFICULTY_SIM_TUNING_CH1_STARS.md) |
+| ch1 矩阵/诊断/重调，ch1–ch6 星级门槛与波次方差重设计，以及 2026-10-07 新账号难度断崖重调 | [`DIFFICULTY_SIM_TUNING_CH1_STARS.md`](DIFFICULTY_SIM_TUNING_CH1_STARS.md) |
 
 ## 这是什么
 
@@ -38,6 +38,9 @@
 - **多种子评估** `evalCell(levelId, preset)`：用 `EVAL_SEEDS`（5 个固定种子）各跑一局，
   取**通关率**与**中位星级**——换 seed 即换发牌/抽卡顺序，抹平单局噪声，星级才可信。
 - **养成门槛扫描** `findClearThreshold(levelId)`：fresh→T2…T6 逐档多种子跑，找通关率≥50% 的最低养成。
+- **自定义卡组** `simulateLevel(level, { cards })`（2026-10-07）：用显式的卡实例数组代替档位预设，
+  表达预设表达不了的「部分养成」，例如 ch1 玩家唯一可能的进度——一张合成出来的 L2 步兵卡。
+  ⚠️ **T2 在整个 ch1 都不可达**（6 个兵种全 L2 + 武器），评估 ch1 时别拿 T2 当「普通玩家」。
 - **关卡调参 A/B** `simulateLevel(levelObj, …)`：传入改过参数的关卡对象（startInk /
   inkRegenMult / enemyScale / 波次 atTick·count），对比下调方案效果。
 
@@ -159,7 +162,7 @@ ch6_lv10 |✗0%      |✗0%      |✗0%      |✗0%      |1★60%    |1★60%   
 
 每 tick 用令牌桶按 `actionsPerSecond`（默认 8，模拟熟练玩家 APM）连续出手，优先级：
 
-1. **流星 AOE**：某车道聚 ≥2 敌人就砸（每 tick 一发）。
+1. **流星 AOE**：某车道聚 ≥2 敌人就砸（每 tick 一发）。同一规则也用于关卡专属的 Rockslide（2026-10-07 起，每 tick 一发）。
 2. **防线覆盖 + 标准 TD 阵型**（最高战术优先）：任何来敌车道阻挡 < `blockersPerLane`（默认 2）
    就在最逼近的欠守道补兵——**该道还没坦克 → 先盾兵扛线；否则优先弓手（清场主力 DPS），再退步兵**。
    本游戏防御主力是野战单位，必须每条来敌道都有「坦克扛+输出跟」。
@@ -179,8 +182,15 @@ v2 相对 v1 的关键修法（v1 几乎全 ch1 不过）：令牌桶按真实 A
 - 评星对**调好的关**可信（如 lv2 出现干净阶梯：T4=1★→T5=3★）；对 AI 过不了的关只说明「偏难/过载」，不代表人类也过不了。
 - **绝对通关与否偏保守**：AI 轻松过 ⇒ 偏易；AI 勉强过/过不了 ⇒ 偏难。
 - 调参 A/B 看的是**方向**与量级，不是精确数值。
-- **法术盲区**：AI 只用流星（单点 AOE）。Haste（buff）和关卡专属法术 Rockslide/Bridge Collapse
-  （地形/控场类）targeting 语义特殊，AI 完全不会用——含这些卡的关卡，AI 的评估会比实际更悲观。
+- **法术盲区**：AI 用流星（单点 AOE），2026-10-07 起也用关卡专属法术 **Rockslide**（同流星的
+  「某道 ≥2 敌就砸」规则，砸敌人最多的那条道）。Haste（buff）和 Bridge Collapse（控场）仍完全不会用——
+  含这两张卡的关卡，AI 的评估会比实际更悲观。在此之前 Rockslide 也不会用：`levelSpells` 强塞进开局手
+  牌的那几张就成了占 30 秒手牌槽的死卡，教学关 `ch1_lv5` 等于被拿掉教学工具再锁掉三分之一手牌来测，
+  详见 [`DIFFICULTY_SIM_TUNING_CH1_STARS.md`](DIFFICULTY_SIM_TUNING_CH1_STARS.md)「新账号难度断崖」。
+- **手牌堵塞（2026-10-07 诊断发现，未修）**：兵营只建 1 座（`barracksCap`）、Haste 从不打，于是 ch1
+  的 12 卡 loadout 里兵营/Haste 抽多了就堆在手里直到 30 秒刷新，AI 常常握着 50–100 墨却无牌可打
+  （`ch1_lv5` fresh 逐 3 秒时间线实测）。真人会多建兵营或花 10 墨刷新手牌，所以这是基线 AI 偏保守的
+  又一来源。没修是因为改它会挪动全部 61 关的基线，属于单独的一轮工作。
 
 ## 兵种角色泛化（2026-07-05：从 ch1-only 扩到全部章节）
 

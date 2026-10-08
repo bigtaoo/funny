@@ -27,6 +27,7 @@ import { tapHandler, runHit, inRect, type Hit } from '../hits';
 import { t, type TranslationKey } from '../../i18n/index';
 import type { BlockedUserView } from '../../net/ApiClient/social';
 import { REPORT_CATEGORIES, type ModerationTarget, type ReportCategory } from '../moderation';
+import { UI_FONT_FAMILY } from '../../render/theme';
 
 /**
  * Shared card geometry — ProfilePopup's caps, with a slightly larger landscape unit: these cards are
@@ -124,7 +125,7 @@ abstract class ModerationCard {
   /** Centered wrapped text at `y`; returns its bottom. */
   protected text(label: string, y: number, cardW: number, size: number, color: number, bold = false): number {
     const node = makeText(label, {
-      fontSize: size, fill: color, fontFamily: 'monospace', fontWeight: bold ? 'bold' : 'normal',
+      fontSize: size, fill: color, fontFamily: UI_FONT_FAMILY, fontWeight: bold ? 'bold' : 'normal',
       wordWrap: true, wordWrapWidth: cardW * 0.86, breakWords: true, align: 'center',
     });
     node.anchor.set(0.5, 0);
@@ -163,7 +164,7 @@ abstract class ModerationCard {
     this.card.addChild(g);
     const size = snapFont(Math.round(bh * 0.38));
     const fitted = fitFont(size, monospaceWidth(label, size), bw * 0.9);
-    const style = { fontSize: fitted, fill: hudButtonText(onTap ? variant : 'disabled'), fontWeight: 'bold' as const, fontFamily: 'monospace' };
+    const style = { fontSize: fitted, fill: hudButtonText(onTap ? variant : 'disabled'), fontWeight: 'bold' as const, fontFamily: UI_FONT_FAMILY };
     // Decided on the MEASURED width (fitToWidth), not the monospace estimate: iOS resolves
     // 'monospace' to Menlo (~0.6 em bold) where the estimate assumes 0.54 em, so only a real
     // measurement sees the overflow.
@@ -362,11 +363,11 @@ export class BlockedPlayersDialog extends ModerationCard {
           this.card.addChild(line);
           const textW = innerW - btnW - Math.round(innerW * 0.04);
           const name = makeText(fitToWidth(p.displayName || `#${p.publicId}`, nameSize, textW, true), {
-            fontSize: nameSize, fill: palette.pencil, fontWeight: 'bold', fontFamily: 'monospace',
+            fontSize: nameSize, fill: palette.pencil, fontWeight: 'bold', fontFamily: UI_FONT_FAMILY,
           });
           name.x = x0; name.y = y + Math.round(rowH * 0.1);
           this.card.addChild(name);
-          const id = makeText(`#${p.publicId}`, { fontSize: idSize, fill: palette.inkBlue, fontFamily: 'monospace' });
+          const id = makeText(`#${p.publicId}`, { fontSize: idSize, fill: palette.inkBlue, fontFamily: UI_FONT_FAMILY });
           id.x = x0; id.y = name.y + name.height;
           this.card.addChild(id);
           const busy = this.busy.has(p.publicId);
@@ -379,7 +380,7 @@ export class BlockedPlayersDialog extends ModerationCard {
           const nbH = Math.round(unit * 0.1);
           y += Math.round(unit * 0.02);
           this.button('<', x0, y, nbW, nbH, 'secondary', this.page > 0 ? () => { this.page--; this.draw(); } : null);
-          const pl = makeText(`${this.page + 1} / ${pages}`, { fontSize: snapFont(Math.round(nbH * 0.4)), fill: palette.pencil, fontFamily: 'monospace' });
+          const pl = makeText(`${this.page + 1} / ${pages}`, { fontSize: snapFont(Math.round(nbH * 0.4)), fill: palette.pencil, fontFamily: UI_FONT_FAMILY });
           pl.anchor.set(0.5, 0.5); pl.x = cardW / 2; pl.y = y + nbH / 2;
           this.card.addChild(pl);
           this.button('>', x0 + innerW - nbW, y, nbW, nbH, 'secondary', this.page < pages - 1 ? () => { this.page++; this.draw(); } : null);

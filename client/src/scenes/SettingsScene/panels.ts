@@ -75,7 +75,11 @@ export function drawProfile(host: PanelHost, page: Page, col: Column): void {
     // is enabled (onSetAvatar present).
     if (cb.onSetAvatar) {
       const badgeR = Math.round(av * 0.16);
-      const bcx = sec.x0 + av - badgeR, bcy = ay + av - badgeR;
+      // Hangs a little past the avatar's corner rather than sitting inside it, so it marks the
+      // corner without covering the letter initial (which `snapFont` can round up to fill the
+      // circle — the landscape sweep caught it over a fifth of "玄" at 1100x574, 2026-10-07).
+      const off = av - Math.round(badgeR * 0.4);
+      const bcx = sec.x0 + off, bcy = ay + off;
       const badge = new PIXI.Graphics();
       badge.beginFill(C.accent); badge.drawCircle(bcx, bcy, badgeR); badge.endFill();
       page.add(badge);
@@ -172,7 +176,7 @@ function canOpenLegalLinks(): boolean {
 }
 
 /**
- * Tutorial replay, then the Privacy policy / Terms links (Apple 5.1.1(i), store-assets-checklist
+ * Tutorial and story replay, then the Privacy policy / Terms links (Apple 5.1.1(i), store-assets-checklist
  * §1.5: App Review checks the policy is reachable from INSIDE the app — the ConsentDialog pair is
  * shown once and unreachable afterwards). URLs come from {@link legalUrl}: relative on the web,
  * absolute https in the native shell and on CrazyGames (IOS_RELEASE.md §10.3).
@@ -182,9 +186,10 @@ export function drawHelp(host: PanelHost, page: Page, col: Column): void {
   const legal = canOpenLegalLinks();
   // Blocked players (App Review 1.2): where a block made anywhere in the social hub is undone.
   const blocked = !cb.offline && moderationAvailable();
-  if (!cb.onReplayTutorial && !legal && !blocked) return;
+  if (!cb.onReplayTutorial && !cb.onReplayStory && !legal && !blocked) return;
   section(page, col, t('settings.help'), (sec) => {
     if (cb.onReplayTutorial) sec.linkRow({ label: t('settings.replayTutorial'), icon: 'replay', onTap: () => cb.onReplayTutorial!() });
+    if (cb.onReplayStory) sec.linkRow({ label: t('settings.replayStory'), icon: 'replay', onTap: () => cb.onReplayStory!() });
     if (blocked) sec.linkRow({ label: t('moderation.blockedTitle'), icon: 'close', onTap: () => openBlockedPlayers() });
     if (!legal) return;
     const links: ReadonlyArray<readonly [TranslationKey, '/privacy' | '/terms']> = [

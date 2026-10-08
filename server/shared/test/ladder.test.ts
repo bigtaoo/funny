@@ -13,6 +13,17 @@ import {
   nextStreak,
   streakMultiplier,
   pickBotDifficulty,
+  NEWBIE_PROTECT_GAMES,
+  DAILY_PROTECT_GAMES,
+  PROTECT_KIND_NEWBIE,
+  PROTECT_KIND_DAILY,
+  newbieProtectedGame,
+  dailyProtectUsed,
+  dailyProtectedGame,
+  nextProtectSlot,
+  consumeDailyProtect,
+  protectedGamesLeft,
+  applyLossProtection,
   type RankId,
 } from '../src/ladder';
 
@@ -202,6 +213,122 @@ describe('nextStreak', () => {
 });
 
 // cross-check: RankId union is exhaustively covered by RANK_TIERS
+// ── ELO-loss protection: new-player + daily slots (2026-10-07) ─────────────────────
+
+describe('newbieProtectedGame', () => {
+  it('protects exactly the first NEWBIE_PROTECT_GAMES settled games, 1-based', () => {
+    expect(NEWBIE_PROTECT_GAMES).toBe(3);
+    expect(newbieProtectedGame(0)).toBe(1);
+    expect(newbieProtectedGame(1)).toBe(2);
+    expect(newbieProtectedGame(2)).toBe(3);
+    expect(newbieProtectedGame(3)).toBe(0);
+    expect(newbieProtectedGame(250)).toBe(0);
+  });
+
+  it('treats garbage counts defensively (negative -> fresh, non-finite -> unprotected)', () => {
+    expect(newbieProtectedGame(-4)).toBe(1);
+    expect(newbieProtectedGame(Number.NaN)).toBe(0);
+    expect(newbieProtectedGame(Number.POSITIVE_INFINITY)).toBe(0);
+  });
+});
+
+describe('daily protection counter', () => {
+  const D1 = '2026-10-07';
+  const D2 = '2026-10-08';
+
+  it('counts only the stored day; another day (or no state) reads as 0 used', () => {
+    expect(DAILY_PROTECT_GAMES).toBe(3);
+    expect(dailyProtectUsed(undefined, D1)).toBe(0);
+    expect(dailyProtectUsed({ dayKey: D1, used: 2 }, D1)).toBe(2);
+    expect(dailyProtectUsed({ dayKey: D1, used: 3 }, D2)).toBe(0);
+  });
+
+  it('dailyProtectedGame is 1-based and 0 once the day is used up', () => {
+    expect(dailyProtectedGame(undefined, D1)).toBe(1);
+    expect(dailyProtectedGame({ dayKey: D1, used: 2 }, D1)).toBe(3);
+    expect(dailyProtectedGame({ dayKey: D1, used: 3 }, D1)).toBe(0);
+    expect(dailyProtectedGame({ dayKey: D1, used: 3 }, D2)).toBe(1);
+  });
+
+  it('treats a corrupt count as used up (never more than the pool)', () => {
+    expect(dailyProtectedGame({ dayKey: D1, used: Number.NaN }, D1)).toBe(0);
+    expect(dailyProtectedGame({ dayKey: D1, used: -2 }, D1)).toBe(1);
+  });
+});
+
+describe('nextProtectSlot / consumeDailyProtect', () => {
+  const D1 = '2026-10-07';
+  const D2 = '2026-10-08';
+
+  it('new-player slots come first and do not touch the daily counter', () => {
+    const slot = nextProtectSlot(0, undefined, D1);
+    expect(slot).toEqual({ kind: PROTECT_KIND_NEWBIE, game: 1, total: NEWBIE_PROTECT_GAMES });
+    expect(consumeDailyProtect(undefined, D1, slot)).toBeUndefined();
+    const prev = { dayKey: D1, used: 1 };
+    expect(consumeDailyProtect(prev, D1, nextProtectSlot(2, prev, D1))).toBe(prev);
+  });
+
+  it('a new account plays 1-3 new-player, 4-6 daily, 7+ unprotected on its first day; day 2 resets the daily pool', () => {
+    let daily: { dayKey: string; used: number } | undefined;
+    const kinds: Array<string> = [];
+    for (let settled = 0; settled < 7; settled++) {
+      const slot = nextProtectSlot(settled, daily, D1);
+      kinds.push(slot ? `${slot.kind}:${slot.game}/${slot.total}` : 'none');
+      daily = consumeDailyProtect(daily, D1, slot);
+    }
+    expect(kinds).toEqual(['1:1/3', '1:2/3', '1:3/3', '2:1/3', '2:2/3', '2:3/3', 'none']);
+    expect(daily).toEqual({ dayKey: D1, used: 3 });
+    // Next day: three daily slots again (lazy reset), the new-player pool stays spent.
+    const slot = nextProtectSlot(7, daily, D2);
+    expect(slot).toEqual({ kind: PROTECT_KIND_DAILY, game: 1, total: DAILY_PROTECT_GAMES });
+    expect(consumeDailyProtect(daily, D2, slot)).toEqual({ dayKey: D2, used: 1 });
+  });
+
+  it('an unprotected game leaves the counter as it was', () => {
+    const spent = { dayKey: D1, used: 3 };
+    const slot = nextProtectSlot(40, spent, D1);
+    expect(slot).toBeNull();
+    expect(consumeDailyProtect(spent, D1, slot)).toBe(spent);
+  });
+});
+
+describe('protectedGamesLeft', () => {
+  const D1 = '2026-10-07';
+  it('adds the new-player slots left to the daily slots left', () => {
+    expect(protectedGamesLeft(0, undefined, D1)).toBe(6);
+    expect(protectedGamesLeft(2, undefined, D1)).toBe(4);
+    expect(protectedGamesLeft(3, { dayKey: D1, used: 1 }, D1)).toBe(2);
+    expect(protectedGamesLeft(50, { dayKey: D1, used: 3 }, D1)).toBe(0);
+    expect(protectedGamesLeft(50, { dayKey: '2026-10-06', used: 3 }, D1)).toBe(3);
+  });
+});
+
+describe('applyLossProtection', () => {
+  it('a protected loss costs nothing and does not start a losing streak', () => {
+    expect(applyLossProtection(-16, 0, false, true)).toEqual({ delta: 0, streak: 0 });
+  });
+
+  it('a protected loss breaks a win streak but never extends a losing streak', () => {
+    expect(applyLossProtection(-16, 2, false, true)).toEqual({ delta: 0, streak: 0 });
+    // A pre-existing loss streak (e.g. yesterday's skid) is frozen, not deepened.
+    expect(applyLossProtection(-20, -1, false, true)).toEqual({ delta: 0, streak: -1 });
+  });
+
+  it('a protected win settles normally (delta + streak)', () => {
+    expect(applyLossProtection(16, 0, true, true)).toEqual({ delta: 16, streak: 1 });
+    expect(applyLossProtection(21, 2, true, true)).toEqual({ delta: 21, streak: 3 });
+  });
+
+  it('an unprotected loss settles exactly like nextStreak / the raw delta', () => {
+    expect(applyLossProtection(-16, -2, false, false)).toEqual({ delta: -16, streak: nextStreak(-2, false) });
+    expect(applyLossProtection(-16, 3, false, false)).toEqual({ delta: -16, streak: -1 });
+  });
+
+  it('never returns -0 for a protected loss', () => {
+    expect(Object.is(applyLossProtection(-1, 0, false, true).delta, 0)).toBe(true);
+  });
+});
+
 describe('RankId coverage', () => {
   it('RANK_TIERS covers every RankId used elsewhere', () => {
     const ids = RANK_TIERS.map((t) => t.id);

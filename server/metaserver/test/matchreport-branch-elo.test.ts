@@ -10,6 +10,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   makeNewSave,
+  makeDayKey,
+  DAILY_PROTECT_GAMES,
   accrueRetentionTask,
   xpToLevel,
   BP_XP_PER_RANKED_WIN,
@@ -26,6 +28,8 @@ import { fakeCommercial, FakeSocialsvc } from './helpers/fakeClients.js';
 
 const NOW = 1_700_000_000_000;
 const now = () => NOW;
+/** No ELO-loss protection slot left today (SEASON_DESIGN_IMPL_SPEC §15.5): the daily pool for NOW's day is spent. */
+const spentToday = (s: SaveData): void => { s.pvp.dailyProtect = { dayKey: makeDayKey(NOW), used: DAILY_PROTECT_GAMES }; };
 const WINNER = { side: 0, accountId: 'w' };
 const LOSER = { side: 1, accountId: 'l' };
 
@@ -68,7 +72,7 @@ describe('eloSettlement branch backfill', () => {
   it('accelerates each side of the swing by that side own streak only', async () => {
     const { cols } = makeCols([
       doc('w', (s) => { s.pvp.streak = 2; }),
-      doc('l', (s) => { s.pvp.streak = -3; }),
+      doc('l', (s) => { s.pvp.streak = -3; s.pvp.losses = 3; spentToday(s); }), // a real 3-loss skid: no protection slot left
     ]);
     const out = await settleElo(cols, now, fakeCommercial(false), socialsvc(), WINNER, LOSER);
     expect(out[0]!.delta).toBe(21);
@@ -235,7 +239,7 @@ describe('eloSettlement branch backfill', () => {
   // The opponent still settles, so the archived match ends up with a one-sided eloDelta — the shape
   // an operator sees in match history when this happens.
   it('gives up after three lost races, leaving the opponent settled one-sided', async () => {
-    const { cols, saves } = makeCols([doc('w'), doc('l')]);
+    const { cols, saves } = makeCols([doc('w'), doc('l', (s) => { s.pvp.losses = 3; spentToday(s); })]); // l has no protection slot left
     const real = saves.findOneAndUpdate.bind(saves);
     saves.findOneAndUpdate = async (filter, update, opts) => {
       if (filter._id === 'w') return null;

@@ -22,7 +22,7 @@ import {
   setSpellTargetPreview, playHitEffect, playDeathEffect, getHitPoint, NO_SPELL_TARGETS, type EffectsHost,
 } from './UnitView/effects';
 import { applyGear, type GearHost } from './UnitView/gear';
-import { acquireSprite, type BuildHost } from './UnitView/build';
+import { acquireSprite, hasUnitArt, type BuildHost } from './UnitView/build';
 
 export { STICKMAN_ASSETS, resolveSkinOverrides } from './UnitView/assets';
 
@@ -56,6 +56,17 @@ export class UnitView {
 
   /** Active animated figures (bone rig or frame sheet), keyed by unit id. */
   private readonly stickmanRuntimes: Map<number, UnitRuntime> = new Map();
+
+  /**
+   * Units currently drawn as the procedural draft placeholder because none of their art had loaded
+   * when they spawned. {@link sync} swaps each one over to its frame sheet / rig as soon as that
+   * arrives — before 2026-10-07 a placeholder stayed a placeholder for the unit's whole life, so a
+   * shared-replay deep link (no asset gate) played its opening units as blue/red stick drafts to the end.
+   */
+  private readonly placeholderIds = new Set<number>();
+
+  /** Set whenever any rig / sheet load resolves; tells {@link sync} a placeholder may now be upgradable. */
+  private artArrived = false;
 
   /** Pool bucket key of each active stickman unit — needed to return its pair to the matching pool. */
   private readonly stickmanPoolKeys: Map<number, string> = new Map();
@@ -161,10 +172,11 @@ export class UnitView {
       bytesEach: 16 * 1024,
     });
 
-    // Start loading every stickman asset in the background. The game is playable
-    // before the first unit can spawn, so by the time acquireSprite() runs for a
-    // stickman-animated unit these Promises will normally be settled; until then
-    // that unit falls back to the circle placeholder. The default bundle always
+    // Start loading every stickman asset in the background. Every scene that builds a
+    // UnitView sits behind ensureBattleAssets (app/battleGate.ts), so these hit warm
+    // caches and settle before the first frame; if one still lands late (failed gate
+    // step, a caller that skipped the gate), the unit draws the procedural draft until
+    // then and sync() swaps it to the real art when it arrives. The default bundle always
     // loads (an opponent of a type the local player has skinned still needs the
     // unskinned look) — the equipped skin (S3-4) additionally loads into a
     // side-scoped override map, applied only to that side's units (acquireSprite).
@@ -179,7 +191,7 @@ export class UnitView {
   private loadSheetsInto(sheets: Partial<Record<UnitType, FrameAsset>>, into: Map<UnitType, FrameSheet>): void {
     for (const [type, { png, json }] of Object.entries(sheets) as [UnitType, FrameAsset][]) {
       loadFrameSheet(png, json)
-        .then(sheet => { into.set(type, sheet); })
+        .then(sheet => { into.set(type, sheet); this.artArrived = true; })
         .catch(err => { console.warn(`[UnitView] ${type} frame sheet failed to load:`, err); });
     }
   }
@@ -187,7 +199,7 @@ export class UnitView {
   private loadAssetsInto(urls: Partial<Record<UnitType, string>>, into: Map<UnitType, TaoAsset>): void {
     for (const [type, url] of Object.entries(urls) as [UnitType, string][]) {
       StickmanRuntime.loadAsset(url, targetScreenHeight(type))
-        .then(asset => { into.set(type, asset); })
+        .then(asset => { into.set(type, asset); this.artArrived = true; })
         .catch(err  => { console.warn(`[UnitView] ${type} .tao failed to load:`, err); });
     }
   }
@@ -200,6 +212,10 @@ export class UnitView {
    */
   sync(board: Board, dt: number): void {
     const seen = new Set<number>();
+    // Only look at placeholders on a frame where some art actually landed — a cheap flag test the
+    // rest of the time, never a per-frame map lookup per unit.
+    const upgrade = this.artArrived && this.placeholderIds.size > 0;
+    this.artArrived = false;
 
     for (const unit of board.units.values()) {
       seen.add(unit.id);
@@ -209,6 +225,9 @@ export class UnitView {
         sprite = this.acquireSprite(unit);
         this.sprites.set(unit.id, sprite);
         this.container.addChild(sprite);
+        if (!this.stickmanRuntimes.has(unit.id)) this.placeholderIds.add(unit.id);
+      } else if (upgrade && this.placeholderIds.has(unit.id)) {
+        sprite = this.upgradePlaceholder(unit, sprite);
       }
 
       // Update stickman animation state + advance clock. The 'attack' clip is
@@ -321,6 +340,22 @@ export class UnitView {
     return acquireSprite(this.buildHost(), unit);
   }
 
+  /**
+   * Replace a placeholder unit's draft figure with its real art once some has loaded (see
+   * {@link placeholderIds}). The new sprite takes the old one's slot in the container so draw order
+   * is unchanged; the HP timer is keyed by unit id and carries over on its own.
+   */
+  private upgradePlaceholder(unit: Unit, placeholder: PIXI.Container): PIXI.Container {
+    if (!hasUnitArt(this.buildHost(), unit)) return placeholder;
+    const index = this.container.getChildIndex(placeholder);
+    this.placeholderIds.delete(unit.id);
+    this.pool.release(placeholder);
+    const sprite = this.acquireSprite(unit);
+    this.sprites.set(unit.id, sprite);
+    this.container.addChildAt(sprite, Math.min(index, this.container.children.length));
+    return sprite;
+  }
+
   // ─── Sprite position update ───────────────────────────────────────────────
 
   private updateSprite(sprite: PIXI.Container, unit: Unit): void {
@@ -353,6 +388,7 @@ export class UnitView {
   private releaseUnit(unitId: number, sprite: PIXI.Container): void {
     this.sprites.delete(unitId);
     this.hpTimers.delete(unitId);
+    this.placeholderIds.delete(unitId);
 
     const runtime = this.stickmanRuntimes.get(unitId);
     if (runtime) {
@@ -399,6 +435,7 @@ export class UnitView {
     this.previewUnitIds = NO_SPELL_TARGETS;
     this.sprites.clear();
     this.hpTimers.clear();
+    this.placeholderIds.clear();
     this.assets.clear();
     this.frameSheets.clear();
     this.localSkinAssets.clear();

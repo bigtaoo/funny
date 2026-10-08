@@ -27,6 +27,7 @@ import { BuildPanel } from './LobbyScene/build';
 import { BadgesPanel } from './LobbyScene/badges';
 import { OverlaysPanel } from './LobbyScene/overlays';
 import { matchFound } from './LobbyScene/matchState';
+import type { EntryNoticeSpec } from '../ui/dialogs/EntryNoticeStrip';
 
 export type { LobbySceneCallbacks } from './LobbyScene/core';
 
@@ -119,5 +120,9 @@ export class LobbyScene implements Scene {
   /** Apple consumption-data consent question (IOS_RELEASE.md §4.1b) — answered, never dismissed. */
   showConsumptionConsent(onAnswer: (consented: boolean) => void): void {
     this.overlays.showConsumptionConsent(onAnswer);
+  }
+  /** Non-blocking Terms/Privacy notice + analytics prompt (IPlatform.entryNoticeOnly). */
+  showEntryNotice(spec: EntryNoticeSpec): void {
+    this.overlays.showEntryNotice(spec);
   }
 }

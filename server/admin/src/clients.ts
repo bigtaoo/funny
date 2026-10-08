@@ -20,3 +20,4 @@ export * from './clients/appeals';
 export * from './clients/enforcement';
 export * from './clients/feedback';
 export * from './clients/moderation';
+export * from './clients/retention';

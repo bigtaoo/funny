@@ -17,13 +17,14 @@
  */
 import * as PIXI from 'pixi.js-legacy';
 import { txt } from '../../render/sketchUi';
+import { UI_FONT_FAMILY } from '../../render/theme';
 
 const ELLIPSIS = '…';
 
 /** The style `txt()` builds, minus everything that cannot affect advance width. */
 function styleFor(size: number, bold: boolean): PIXI.TextStyle {
   return new PIXI.TextStyle({
-    fontSize: size, fontFamily: 'monospace', fontWeight: bold ? 'bold' : 'normal',
+    fontSize: size, fontFamily: UI_FONT_FAMILY, fontWeight: bold ? 'bold' : 'normal',
   });
 }
 

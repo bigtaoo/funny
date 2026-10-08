@@ -110,3 +110,41 @@ describe('PixiAppViews.showGacha asset-gate wiring', () => {
     expect(showGacha).toMatch(/enterWithAssets\([\s\S]*?build,/);
   });
 });
+
+/**
+ * The two replay players (2026-10-07). Both build a UnitView, and until this date both were plain
+ * volatile mounts with no gate: a shared-replay deep link is a cold-cache first visit, its opening
+ * units spawned before any frame sheet or rig had loaded, and they played out as procedural draft
+ * stick figures (reproduced in Chrome — design/product/unit-art-inventory.md §2). Static for the same
+ * reason as the gacha block above. The gate's own forwarding is covered in test/battleGate.test.ts,
+ * UnitView's placeholder upgrade in test/render/unitViewPlaceholderUpgrade.test.ts.
+ */
+describe('PixiAppViews replay-player asset-gate wiring', () => {
+  const src = fs.readFileSync(path.resolve(__dirname, '../src/app/PixiAppViews.ts'), 'utf8');
+  /** Source of one method: from its declaration to the next class member (CRLF-agnostic). */
+  const method = (name: string): string => {
+    const start = src.indexOf(`  ${name}(`);
+    if (start < 0) return '';
+    const end = src.indexOf(': void {', start);
+    const close = /\r?\n {2}\}/.exec(src.slice(end));
+    return close ? src.slice(start, end + close.index + close[0].length) : '';
+  };
+
+  for (const [name, scene] of [['showReplay', 'ReplayScene'], ['showStatePlayer', 'StatePlayerScene']] as const) {
+    it(`${name} builds ${scene} only through enterReplay`, () => {
+      const body = method(name);
+      expect(body, `${name} not found in PixiAppViews.ts`).not.toBe('');
+      const gate = body.indexOf('enterReplay(');
+      expect(gate).toBeGreaterThan(-1);
+      expect(body.indexOf(`new ${scene}(`)).toBeGreaterThan(gate);
+      expect(body).not.toMatch(/mounts\.volatile\(/);
+      expect(src.split(`new ${scene}(`)).toHaveLength(2); // exactly one construction site
+    });
+  }
+
+  it('warms both recorded sides’ skins for a shared replay', () => {
+    const body = method('showStatePlayer');
+    expect(body).toMatch(/skinsForOwner\(replay, 0\)/);
+    expect(body).toMatch(/skinsForOwner\(replay, 1\)/);
+  });
+});

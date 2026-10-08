@@ -36,6 +36,7 @@ import type { InputManager } from '../../inputSystem/InputManager';
 import { t } from '../../i18n';
 import { isChatDisabled } from '../../ui/chatPolicy';
 import { ui as C, buildPaperBackground, tearDownChildren } from '../../render/sketchUi';
+import { FS } from '../../render/fontScale';
 import { drawConfirmDialog } from '../../ui/dialogs/confirmDialog';
 import { ProfilePopup, type ProfileAction } from '../../ui/dialogs/ProfilePopup';
 import { showToastMessage } from '../../net/log';
@@ -234,7 +235,11 @@ export class FamilySceneCore {
    *  prosperity + announcement band; landscape lifts the identity into the header (see
    *  drawHeaderTitle) and reserves the band only for an announcement, if any. */
   get infoBandH(): number {
-    if (this.landscape) return this.family?.announcement ? Math.round(this.h * 0.04) : 0;
+    // Never shorter than the announcement line itself (FS.label, drawn 4 px below the band top):
+    // 4% of a 640-tall landscape design (2026-10-07) is 26 px, and the line ran into the column titles.
+    if (this.landscape) {
+      return this.family?.announcement ? Math.max(Math.round(this.h * 0.04), Math.ceil(FS.label * 1.3) + 8) : 0;
+    }
     return Math.round(this.h * 0.085);
   }
 

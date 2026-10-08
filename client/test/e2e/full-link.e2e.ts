@@ -82,11 +82,9 @@ async function waitFor(cond: () => boolean, label: string, ms = 15_000): Promise
 
 const uid = (): string => `e2e_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
 
-/** Real register flow through the core: intro → login → register → online lobby. */
+/** Real register flow through the core: entry gates → login → register → online lobby. */
 async function registerAndEnterLobby(c: Client, name: string): Promise<string> {
   c.core.start();
-  expect(c.views.screen).toBe('intro');
-  c.views.intro!.onFinish();
   c.views.declareAdultAge(); // neutral age gate, ahead of the consent gate
   c.views.consent!.onAccept(); // GDPR gate (L1-1) before entry
   await waitFor(() => c.views.screen === 'login', 'login screen');
@@ -99,10 +97,9 @@ async function registerAndEnterLobby(c: Client, name: string): Promise<string> {
   return loginId;
 }
 
-/** Real login flow: intro → login → onLogin → online lobby. */
+/** Real login flow: entry gates → login → onLogin → online lobby. */
 async function loginAndEnterLobby(c: Client, loginId: string, password: string): Promise<void> {
   c.core.start();
-  c.views.intro!.onFinish();
   c.views.declareAdultAge(); // neutral age gate, ahead of the consent gate
   c.views.consent!.onAccept(); // GDPR gate (L1-1) before entry
   await waitFor(() => c.views.screen === 'login', 'login screen');
@@ -253,7 +250,6 @@ describe('full-link E2E (live stack)', () => {
     // ── Client A: register, recharge, rename (−500) ──
     const a = createClient();
     a.core.start();
-    a.views.intro!.onFinish();
     a.views.declareAdultAge(); // neutral age gate, ahead of the consent gate
     a.views.consent!.onAccept(); // GDPR gate (L1-1) before entry
     await waitFor(() => a.views.screen === 'login', 'A login screen');
@@ -428,7 +424,6 @@ describe('full-link E2E (live stack)', () => {
     // First registration succeeds.
     const a = createClient();
     a.core.start();
-    a.views.intro!.onFinish();
     a.views.declareAdultAge(); // neutral age gate, ahead of the consent gate
     a.views.consent!.onAccept(); // GDPR gate (L1-1) before entry
     await waitFor(() => a.views.screen === 'login', 'A login screen');
@@ -438,7 +433,6 @@ describe('full-link E2E (live stack)', () => {
     // Second registration with the SAME loginId is rejected; the client stays on login.
     const b = createClient();
     b.core.start();
-    b.views.intro!.onFinish();
     b.views.declareAdultAge(); // neutral age gate, ahead of the consent gate
     b.views.consent!.onAccept(); // GDPR gate (L1-1) before entry
     await waitFor(() => b.views.screen === 'login', 'B login screen');

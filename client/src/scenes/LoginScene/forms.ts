@@ -5,7 +5,7 @@
 // never reaching back to the scene's own field (same reasoning as RoomScene/views.ts's RoomViewHost).
 import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
-import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
+import { ui as C, txt, sketchPanel, seedFor, marginLineX } from '../../render/sketchUi';
 import { buildIcon } from '../../render/icons';
 import type { IconKind } from '../../render/icons';
 import { drawButtonLabel } from '../../ui/widgets/buttonLabel';
@@ -93,7 +93,9 @@ export function drawLanding(host: FormHost): void {
  */
 function drawTermsNotice(host: FormHost, minY: number): void {
   const { w, h } = host;
-  const note = txt(t('auth.termsNotice'), FS.label, C.mid, false, Math.round(w * 0.86));
+  // Centred, so the wrap width has to clear the red margin rule on the left (it is at 0.09w; 0.86w
+  // centred starts at 0.07w, and the larger landscape text since 2026-10-07 filled the line out to it).
+  const note = txt(t('auth.termsNotice'), FS.label, C.mid, false, w - 2 * (marginLineX(w) + Math.round(w * 0.01)));
   note.style.align = 'center';
   note.anchor.set(0.5, 0);
   const link = txt(t('consent.terms'), FS.label, C.accent, true);

@@ -9,7 +9,7 @@ import type { ApiClient } from '../net/ApiClient';
 import { getOrCreateDeviceId } from '../platform/uuid';
 import { onAppLifecycleChange } from '../platform/appLifecycle';
 import { getLocale } from '../i18n';
-import { fetchAnalyticsConfig, pingDeclinedLaunch, shouldTrack } from './config';
+import { fetchAnalyticsConfig, pingAnonymousFunnelStep, pingDeclinedLaunch, shouldTrack } from './config';
 import { EventQueue, type AnalyticsEvent, type BatchMeta } from './queue';
 import { telemetrySessionId } from './session';
 
@@ -75,14 +75,52 @@ export function countDeclinedLaunch(): void {
 }
 
 /**
+ * The first-session steps {@link countAnonymousFunnelStep} accepts: the v2 tutorial sequence
+ * (ONBOARDING_DESIGN §11.9), its Skip, and the first attempt / first clear of the first three
+ * campaign levels. Must match analyticsvc's `ANON_FUNNEL_STEPS` (service/defs.ts) and the `t` enum on
+ * `GET /analytics/config`; the server drops anything else.
+ */
+export const ANONYMOUS_FUNNEL_STEPS = [
+  'tutorial_start', 'beat_unit', 'beat_building', 'beat_spell', 'graduate', 'tutorial_complete', 'tutorial_skip',
+  'lv1_start', 'lv1_clear', 'lv2_start', 'lv2_clear', 'lv3_start', 'lv3_clear',
+] as const;
+export type AnonymousFunnelStep = (typeof ANONYMOUS_FUNNEL_STEPS)[number];
+
+/** Steps already ticked this launch — see {@link countAnonymousFunnelStep}. */
+let anonFunnelSent = new Set<string>();
+
+/**
+ * Tick the anonymous, aggregate first-session funnel counter (COMPLIANCE_GLOBAL §3.3b,
+ * ANALYTICS_DESIGN §3.6d). Sends only the build target and `step` (`GET /analytics/config?p=…&t=…`):
+ * no device id, no token, no session id, nothing stored on the device — the server keeps a (date,
+ * platform, step) count and nothing else. Being neither personal data nor device access, it needs no
+ * consent, so it counts **every** player whatever their analytics answer: it is the one funnel that
+ * covers the EEA players who never said yes, and the one consented and unconsented players can be
+ * compared on.
+ *
+ * Once per step per launch: a settings "replay tutorial", or a second try at a level in the same
+ * launch, is not a second player reaching the step. (A level failed in two separate launches does
+ * tick twice — the `lvN_start` row counts attempt-launches, read it against `lvN_clear`.) A no-op
+ * offline (no base URL). Safe to call from anywhere, unconditionally.
+ */
+export function countAnonymousFunnelStep(step: AnonymousFunnelStep): void {
+  if (!bootCounterBase) return;
+  if (!(ANONYMOUS_FUNNEL_STEPS as readonly string[]).includes(step)) return; // JS callers / stale keys
+  if (anonFunnelSent.has(step)) return;
+  anonFunnelSent.add(step);
+  pingAnonymousFunnelStep(bootCounterBase, getPlatformName(), step);
+}
+
+/**
  * Events tracked before the SDK could send them — because consent had not been granted yet, or
  * because {@link init} had not run yet. **Nothing here has left the device**: the buffer is
  * memory-only, is replayed by {@link flushPreConsent} once both are true, and is dropped outright if
  * consent never comes. That is the same privacy position as the old "no-op until consent" behaviour,
  * but it keeps the events a funnel is actually built on.
  *
- * Why the consent half exists: a brand-new player's boot order is `goIntro() → age gate → consent
- * dialog` (app/createAppCore.ts `start()`), so *every* pre-lobby event — `session_start`, the
+ * Why the consent half exists: a brand-new player's boot order was `goIntro() → age gate → consent
+ * dialog` (app/createAppCore.ts `start()`; the intro left the boot path in ONBOARDING_DESIGN §11.7,
+ * the gate still comes before everything else), so *every* pre-lobby event — `session_start`, the
  * IntroScene `screen_view`/`nav_checkpoint`, and `intro_complete`/`intro_skip` — was tracked while the
  * gate was still closed and silently discarded. Only `session_start` was re-emitted on accept. The
  * result was structural, not statistical: the `intro_seen` step of the onboarding funnel
@@ -151,6 +189,7 @@ export async function init(
   // here rather than living for the lifetime of the module.
   bootCounterBase = null;
   declinedLaunchSent = false;
+  anonFunnelSent = new Set();
 
   if (!apiBase) return; // no server → analytics disabled silently
 
@@ -185,13 +224,24 @@ export async function init(
     ...deviceFields,
   });
 
-  queue = new EventQueue({ analyticsBaseUrl: base, getToken, getBatchMeta });
+  const q = new EventQueue({ analyticsBaseUrl: base, getToken, getBatchMeta });
 
   // Fetch sampling config; on failure the disabled fallback is already in place. The platform rides
   // along as `?p=` for the server-side launch counter — see fetchAnalyticsConfig.
   await fetchAnalyticsConfig(base, platformName);
 
-  queue.start();
+  // The queue is published only NOW, after the sampling config has arrived (2026-10-07 fix). Both
+  // track() and flushPreConsent() read "queue is set" as "the SDK is ready" and then sample through
+  // shouldTrack() — which, while the config request is still in flight, answers from the disabled
+  // fallback and drops everything. With the queue assigned before the await, a consent granted
+  // inside that window replayed the whole pre-consent buffer into shouldTrack() and lost it, and
+  // every event tracked after it was lost too. That is the CrazyGames reviewer's session
+  // (CRAZYGAMES_LAUNCH §7): the consent gate is the first screen there, a QA tester answers it in
+  // about a second, and the session came out with `session_start` (tracked after the config landed)
+  // but no `boot`/`first_frame`/`load_time` and no `gdpr_consent`, while the save — written through a
+  // different path — said consent was true. Until this line every event stays in `pending`.
+  queue = q;
+  q.start();
   bindSessionLifecycle();
 
   // Release anything tracked before this point FIRST, so the queue stays in chronological order:

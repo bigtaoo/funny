@@ -132,7 +132,6 @@ const DYNAMIC_FAMILIES: ReadonlyArray<{ why: string; keys: string[]; coverage: '
   // dictionary decides how far the walk goes: .done exists only for beats, .landscape only where a
   // wide-screen rewrite was actually needed. Requiring the full cross product would demand ~30
   // strings nobody wants written.
-  { why: 't(`tutorial.o${n}.…`) / t(`tutorial.beat${i}.…`)', keys: cross(['tutorial.'], ['o1', 'o2', 'o3', 'o4', 'o5', 'o6', 'o7', 'beat1', 'beat2', 'beat3'], ['.title', '.body', '.done'], ['', '.landscape']) , coverage: 'partial' },
   { why: 'slgTitleKey() in shared/titles.ts → t(`title.slg.${id}.{full,short}`)', keys: cross(['title.slg.'], ['champion', 'top3'], ['.full', '.short']) , coverage: 'complete' },
   { why: 't(`auction.mail.${reason}.{subject,body}`) — FriendsScene/mail.ts', keys: cross(['auction.mail.'], ['sold', 'returned', 'proceeds', 'refund'], ['.subject', '.body']) , coverage: 'complete' },
   // Server mail whose body carries interpolation params is sent as `key|name=value|name2=value2`

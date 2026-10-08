@@ -14,6 +14,7 @@
 import type { IPlatform } from '../platform/IPlatform';
 import { needsConsentChoice } from '../platform/consentRegion';
 import type { AppViews } from './AppViews';
+import type { EntryNoticeHost } from '../ui/dialogs/EntryNoticeStrip';
 import type { Replay } from '../game';
 import { initI18n, t } from '../i18n';
 import { LocalSaveStore, SaveManager, ReplayStore } from '../game/meta';
@@ -28,7 +29,7 @@ import * as analytics from '../analytics';
 import { installModerationBackend, syncBlockedForSession } from './blockedSync';
 import {
   clientPlatformName,
-  SEEN_INTRO_FLAG, GDPR_CONSENT_FLAG, TERMS_ACCEPTED_FLAG, AGE_DECLARED_FLAG, MIN_AGE_YEARS, TOKEN_KEY, PLAYER_NAME_KEY, PLAYER_PUBLIC_ID_KEY,
+  GDPR_CONSENT_FLAG, TERMS_ACCEPTED_FLAG, AGE_DECLARED_FLAG, MIN_AGE_YEARS, TOKEN_KEY, PLAYER_NAME_KEY, PLAYER_PUBLIC_ID_KEY,
   PLAYER_AVATAR_KEY, FALLBACK_SEASON, FREE_RENAME_KEY, PLATFORM_AVATAR_KEY, NAME_LOCKED_KEY,
 } from './appConstants';
 import type { AppCtx, AppState, Nav } from './appCtx';
@@ -245,6 +246,22 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       if (answeredGdpr === false) analytics.countDeclinedLaunch();
     }
 
+    // No entry screen at all on a notice-only build (IPlatform.entryNoticeOnly — CrazyGames,
+    // COMPLIANCE_GLOBAL §3.3): straight into the game. No age question either: the portal itself is
+    // 13+, the same minimum we declare (MIN_AGE_YEARS), and an account already recorded as underage
+    // was stopped above. Terms/Privacy become a notice and the analytics question a non-blocking
+    // prompt, both on the first lobby arrival (offerEntryNotice) — never over the tutorial battle.
+    // Outside the EEA (needsConsentChoice) analytics are on by default with an opt-out, but only
+    // from the moment the player has been *told*: until the analytics notice has been on screen —
+    // the graduation card's small print, or the lobby strip for a player who skipped — events wait
+    // in the pre-consent buffer and nothing leaves the device (statsNoticePending). Inside the EEA
+    // they wait for the prompt's answer. Either way countAnonymousFunnelStep() counts the first
+    // minute meanwhile.
+    if (platform.entryNoticeOnly) {
+      next();
+      return;
+    }
+
     const needAge = declaredAge !== true;
     const needConsent = answeredGdpr === undefined;
     // The current Terms of Use (EULA) — see TERMS_ACCEPTED_FLAG. A player who answered consent under
@@ -252,16 +269,8 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     const needTerms = saveManager.get().flags[TERMS_ACCEPTED_FLAG] !== true;
     if (!needAge && !needConsent && !needTerms) { next(); return; }
 
-    /** Shared tail of a granted/refused consent answer: persist locally, mirror to the account. */
-    const recordConsent = (granted: boolean): void => {
-      saveManager.setFlag(GDPR_CONSENT_FLAG, granted);
-      analytics.setConsent(granted);
-      if (granted) analytics.track('gdpr_consent', { granted: true });
-      else analytics.countDeclinedLaunch();
-      const token = platform.storage.getItem(TOKEN_KEY);
-      if (api && token) { api.setToken(token); void api.recordGdprConsent(granted).catch(() => { /* best-effort; flag still syncs via SaveManager */ }); }
-    };
-
+    // How long the gate was up before the accept (ONBOARDING_DESIGN §11.9) — `gdpr_consent.dwell_ms`.
+    const shownAt = Date.now();
     views.showEntryGate(
       {
         age: needAge ? 'ask' : 'ok',
@@ -277,13 +286,108 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
           // Either consent button (and the lone 'terms' Accept) accepts the Terms of Use; only a real
           // consent question records an analytics answer.
           if (granted !== undefined) {
-            if (needConsent) recordConsent(granted);
+            if (needConsent) recordConsent(granted, { mode: 'gate', dwellMs: Date.now() - shownAt });
             saveManager.setFlag(TERMS_ACCEPTED_FLAG, true);
           }
           next();
         },
       },
     );
+  }
+
+  /**
+   * Shared tail of every granted/refused analytics answer — the entry gate, the notice-only
+   * build's implicit accept, and its non-blocking prompt: persist locally, apply, mirror to the
+   * account. `gdpr_consent` is tracked on the granted path only (see gateConsent's doc for why the
+   * refusal reports nothing but the anonymous launch tick); `mode` says which surface produced it and
+   * `dwell_ms` how long that surface was on screen before the accept (absent for 'notice', which
+   * has no surface of its own).
+   */
+  function recordConsent(granted: boolean, how: { mode: 'gate' | 'notice' | 'prompt'; dwellMs?: number }): void {
+    saveManager.setFlag(GDPR_CONSENT_FLAG, granted);
+    analytics.setConsent(granted);
+    if (granted) {
+      analytics.track('gdpr_consent', {
+        granted: true, mode: how.mode, ...(how.dwellMs !== undefined ? { dwell_ms: Math.max(0, Math.round(how.dwellMs)) } : {}),
+      });
+    } else {
+      analytics.countDeclinedLaunch();
+    }
+    const token = platform.storage.getItem(TOKEN_KEY);
+    if (api && token) { api.setToken(token); void api.recordGdprConsent(granted).catch(() => { /* best-effort; flag still syncs via SaveManager */ }); }
+  }
+
+  /**
+   * Notice-only build (IPlatform.entryNoticeOnly), outside the EEA, analytics never answered: they are
+   * on by default with an opt-out in Settings (COMPLIANCE_GLOBAL §3.3b), and wait in the pre-consent
+   * buffer until the player has been shown the analytics notice. The screen that shows it calls
+   * {@link acknowledgeStatsNotice}, which records the default as consent mode 'notice' and so
+   * releases the buffer — the events of the first minute are kept, they just leave the device after
+   * the notice rather than before it.
+   */
+  function statsNoticePending(): boolean {
+    const flags = saveManager.get().flags;
+    return platform.entryNoticeOnly === true && flags[GDPR_CONSENT_FLAG] === undefined
+      && flags[AGE_DECLARED_FLAG] !== false && !needsConsentChoice();
+  }
+
+  function acknowledgeStatsNotice(): void {
+    if (statsNoticePending()) recordConsent(true, { mode: 'notice' });
+  }
+
+  /**
+   * The notice-only build's Terms/Privacy notice and analytics prompt (IPlatform.entryNoticeOnly,
+   * COMPLIANCE_GLOBAL §3.3), put on `host` — the lobby today, any screen that implements
+   * {@link EntryNoticeHost} later. A no-op everywhere else, and when there is nothing left to say:
+   *
+   *  * **terms** — shown until it has been shown once; being shown is what records
+   *    TERMS_ACCEPTED_FLAG ("by playing you agree": the notice IS the acceptance on this build).
+   *  * **stats** — the analytics notice ({@link statsNoticePending}): one more sentence, and being
+   *    shown is the acknowledgement, like `terms`.
+   *  * **consent** — only where `needsConsentChoice()` and the player has not answered yet. "Allow"
+   *    / "No thanks" go through the same {@link recordConsent} as the gate. Leaving the screen is
+   *    not an answer: the question comes back next launch, and Settings' toggle works meanwhile.
+   *
+   * Decided once per launch: a strip the player has not closed or answered yet is simply put back
+   * every time the host is shown again (a resize rebuild, a profile refresh, coming back from another
+   * screen) — like any non-blocking notice bar it stays until dealt with, but it never grows into a
+   * second, different offer. Exposed on the ctx so other screens can offer it too (e.g. the campaign
+   * map, once nothing else is drawn over it there).
+   */
+  let entryNoticeOffered = false;
+  let entryNoticeOpen: { terms: boolean; stats: boolean; consent: boolean; shownAt: number } | null = null;
+  function offerEntryNotice(host: EntryNoticeHost): void {
+    if (!platform.entryNoticeOnly || !host.showEntryNotice) return;
+    if (entryNoticeOpen) { mountEntryNotice(host, entryNoticeOpen); return; }
+    if (entryNoticeOffered) return;
+    const flags = saveManager.get().flags;
+    if (flags[AGE_DECLARED_FLAG] === false) return;
+    const terms = flags[TERMS_ACCEPTED_FLAG] !== true;
+    const consent = flags[GDPR_CONSENT_FLAG] === undefined && needsConsentChoice();
+    const stats = statsNoticePending();
+    if (!terms && !consent && !stats) return;
+    entryNoticeOffered = true;
+    if (terms) saveManager.setFlag(TERMS_ACCEPTED_FLAG, true);
+    entryNoticeOpen = { terms, stats, consent, shownAt: Date.now() };
+    mountEntryNotice(host, entryNoticeOpen);
+    if (stats) acknowledgeStatsNotice();
+  }
+
+  function mountEntryNotice(
+    host: EntryNoticeHost, open: { terms: boolean; stats: boolean; consent: boolean; shownAt: number },
+  ): void {
+    host.showEntryNotice?.({
+      terms: open.terms,
+      stats: open.stats,
+      consent: open.consent,
+      onAnswer(granted) {
+        entryNoticeOpen = null;
+        // A Settings toggle in between may already have answered; the strip does not overwrite it.
+        if (saveManager.get().flags[GDPR_CONSENT_FLAG] !== undefined) return;
+        recordConsent(granted, { mode: 'prompt', ...(granted ? { dwellMs: Date.now() - open.shownAt } : {}) });
+      },
+      onClose() { entryNoticeOpen = null; },
+    });
   }
 
   /**
@@ -325,7 +429,8 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
   // ── Assemble the ctx + nav registry ─────────────────────────────────────────
   const ctx: AppCtx = {
     platform, views, api, baseUrl, saveManager, replayStore, featureFlags, state, nav,
-    getNetSession, applyGatewayUrl, playerName, avatarId, gateConsent, resolvePvpDeck, keepReplay, resolveWorldShard,
+    getNetSession, applyGatewayUrl, playerName, avatarId, gateConsent, offerEntryNotice, statsNoticePending, acknowledgeStatsNotice,
+    resolvePvpDeck, keepReplay, resolveWorldShard,
   };
 
   Object.assign(
@@ -341,7 +446,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
   );
 
   function start(): void {
-    // Replay share deep-link landing (REPLAY_SHARE_DESIGN §4.1): if the launch parameters contain a share code → skip intro/login and go directly to the mute player.
+    // Replay share deep-link landing (REPLAY_SHARE_DESIGN §4.1): if the launch parameters contain a share code → skip the entry gate/login and go directly to the mute player.
     const shareCode = platform.getLaunchShareCode();
     if (shareCode && api) {
       void nav.goStatePlayer(shareCode);
@@ -355,11 +460,11 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     // safe: resolveEntry/doAuth still (re)apply the authoritative one for their own path.
     const storedToken = platform.storage.getItem(TOKEN_KEY);
     if (api && storedToken) api.setToken(storedToken);
-    if (saveManager.getFlag(SEEN_INTRO_FLAG) || platform.skipStoryIntro) {
-      gateConsent(() => void nav.resolveEntry());
-    } else {
-      nav.goIntro();
-    }
+    // No story before play, on any platform (ONBOARDING_DESIGN §11.7): the first screen is the
+    // entry gate, then straight into the game. The story is told later and shorter — a one-shot card
+    // the first time the campaign map opens (goCampaignMap) — and the full intro is replayable from
+    // settings.
+    gateConsent(() => void nav.resolveEntry());
   }
 
   function onResized(): void {

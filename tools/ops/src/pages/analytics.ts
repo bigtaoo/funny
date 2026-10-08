@@ -17,6 +17,7 @@ import {
   bar, badgeDistCards, featureGuideCard, launchFunnelCard, levelFunnelCard, loadTimeCard,
   sessionDurationCard, shareCard, stepFunnelCard,
 } from './analyticsCards';
+import { serverRetentionCard } from './serverRetention';
 import { showErr, sparkline, type Ctx } from './shared';
 
 export async function pageAnalytics(ctx: Ctx): Promise<void> {
@@ -89,6 +90,10 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
       }
       body.append(h('div', { class: 'card' }, h('div', { class: 'muted' }, 'Compensation tickets overview'), tk));
     }
+
+    // Consent-free server retention (metaserver account/save data). Placed before the analyticsvc gate on
+    // purpose: it does not depend on analyticsvc or on client consent, so it shows even when those are off.
+    body.append(serverRetentionCard(api));
 
     // Analytics service unavailable notice (shown at most once)
     if (analyticsUnavailable(evCounts)) {

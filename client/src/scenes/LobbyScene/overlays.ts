@@ -10,6 +10,8 @@ import { makeText } from '../../render/pixiText';
 import { txtFit } from '../../render/sketchUi';
 import { C, txt, sketchPanel, type LobbySceneCore } from './core';
 import { snapFont } from '../../render/fontScale';
+import { buildEntryNoticeStrip, type EntryNoticeSpec } from '../../ui/dialogs/EntryNoticeStrip';
+import { UI_FONT_FAMILY } from '../../render/theme';
 
 export class OverlaysPanel {
   constructor(private readonly core: LobbySceneCore) {}
@@ -200,6 +202,31 @@ export class OverlaysPanel {
     core.consentOnAnswer = onAnswer;
   }
 
+  /**
+   * The non-blocking Terms/Privacy notice + analytics prompt (IPlatform.entryNoticeOnly — the
+   * CrazyGames build, COMPLIANCE_GLOBAL §3.3). A strip above the bottom nav that owns only its own
+   * rectangle: build.ts routes taps inside it to the strip and lets every other tap through to the
+   * lobby, so it never stands between the player and a button. A second call replaces the first.
+   */
+  showEntryNotice(spec: EntryNoticeSpec): void {
+    const core = this.core;
+    if (core.destroyed) return;
+    this.clearEntryNotice();
+    const navH = Math.round(core.h * 0.105); // drawBottomNav's bar height — the strip sits on top of it
+    const built = buildEntryNoticeStrip(core.w, core.h, navH, spec, () => this.clearEntryNotice());
+    core.container.addChild(built.container);
+    core.noticeLayer = built.container;
+    core.noticeRect = built.rect;
+    core.noticeHits = built.hits;
+  }
+
+  clearEntryNotice(): void {
+    const core = this.core;
+    core.noticeRect = null;
+    core.noticeHits = [];
+    if (core.noticeLayer) { core.noticeLayer.destroy({ children: true }); core.noticeLayer = null; }
+  }
+
   /** Tear the consent card down and report the answer (called by build.ts's tap routing). */
   answerConsumptionConsent(consented: boolean): void {
     const core = this.core;
@@ -295,7 +322,7 @@ export class OverlaysPanel {
 /** A card's wrapped body paragraph, anchored top-centre. */
 function wrappedBody(text: string, fontSize: number, cardW: number): PIXI.Text {
   const lbl = makeText(text, {
-    fontSize, fill: C.mid, fontFamily: 'monospace', align: 'center',
+    fontSize, fill: C.mid, fontFamily: UI_FONT_FAMILY, align: 'center',
     lineHeight: Math.round(fontSize * 1.4),
     wordWrap: true, wordWrapWidth: cardW - Math.round(cardW * 0.12), breakWords: true,
   });

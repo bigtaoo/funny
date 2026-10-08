@@ -1,5 +1,7 @@
 import { Scene } from './SceneManager';
 import { GameRenderer, type GameProfiles } from '../render/GameRenderer';
+import type { InkHintGate } from '../render/GameRenderer/inkHint';
+import type { TutorialConfig } from '../render/TutorialDirector';
 import type { BattleLabelContext } from '../render/battleLabels';
 import { ILayout } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
@@ -19,6 +21,8 @@ import { preloadL1CardArtTextures } from '../render/cardArt';
 import type { NetState } from '../net/NetClient';
 import type { MatchOver, PeerDc } from '../net/proto/transport';
 import { acquireBattleBusy } from '../net/battleBusy';
+import { battleTrack } from '../audio/battleMusic';
+import type { MusicTrack } from '../audio/types';
 
 export interface GameSceneCallbacks {
   /**
@@ -38,8 +42,6 @@ export interface GameSceneCallbacks {
    * here — the server already decided. Only fired in netplay.
    */
   onNetMatchOver?(winner: OwnerId | null, stats: [PlayerStats, PlayerStats], reason: string): void;
-  /** Tutorial step-level analytics hook (A9-9, `opts.tutorial` only) — fired on every TutorialDirector step advance. */
-  onTutorialStep?(stepKey: string): void;
 }
 
 export interface GameSceneOptions {
@@ -95,27 +97,30 @@ export interface GameSceneOptions {
    */
   decks?: { top: string[]; bottom: string[] };
   /**
-   * Dedicated tutorial level `ch0_tutorial` (ONBOARDING_DESIGN §3). Enables the
-   * presentation-layer tutorial director: guided overview + three-beat gating +
-   * free play + never-fail mode. Only used together with `level=ch0_tutorial`.
+   * Dedicated tutorial level `ch0_tutorial` (ONBOARDING_DESIGN §11). Enables the
+   * presentation-layer tutorial director (three guided beats + graduation card, never-fail);
+   * carries its graduation copy and analytics hooks. Only used together with `level=ch0_tutorial`.
    */
-  tutorial?: boolean;
+  tutorial?: TutorialConfig;
   /**
    * Owner-indexed display names (bottom = owner 0 = human, top = owner 1 = AI/level) written into the
    * recorded replay's `meta.players` so the replay player can label the bases + viewpoint. Ignored
    * for netplay (server records that match) — netplay names are written in nav/result.ts instead.
    */
   players?: { bottom?: string; top?: string };
+  /** The one-time "not enough ink" bubble's gate (ONBOARDING_DESIGN §9 item 9); absent = never shown. */
+  inkHint?: InkHintGate;
 }
 
 export class GameScene implements Scene {
   /**
-   * 对局刻意**安静**（AUDIO_DESIGN.md §2.3）。`bgm.battle` 还没有 master，而它没有进
-   * `MusicTrack` union——一条没有文件的轨会以「这个界面就是安静的」形式存在，和设计意图无法
-   * 区分。所以这里写的是显式的 `null`：它和「忘了声明」（省略 = 大厅床）是两回事。
-   * master 到了之后，这三处（本类、`ReplayScene`、`StatePlayerScene`）一起改成 `'bgm.battle'`。
+   * 对局 BGM（AUDIO_DESIGN.md §2.3）：前期曲，到 ×2 回墨阶段换后期曲，见 `battleMusic.ts`。
+   * 一个 getter 而不是字段：`SceneManager` 每帧问一次，阶段一到答案就变，不需要任何事件。
+   * 回放（`ReplayScene`）和状态回放（`StatePlayerScene`）按各自的播放进度问同一个函数。
    */
-  readonly music = null;
+  get music(): MusicTrack {
+    return battleTrack(this.renderer.elapsedTicks);
+  }
   readonly container;
   private readonly renderer: GameRenderer;
   private readonly cb: GameSceneCallbacks;
@@ -164,17 +169,17 @@ export class GameScene implements Scene {
       : { start: true, boss: opts.level?.objective.kind === 'boss' };
 
     void preloadL1CardArtTextures();
-    this.renderer = new GameRenderer(engine, layout, input, opts.net ?? false, false, opts.profiles ?? {}, opts.equippedSkins ?? [], opts.cardInstances ?? null, opts.equipmentInv ?? null, opts.tutorial ?? false, battleLabels, null, opts.opponentSkins ?? []);
+    this.renderer = new GameRenderer(engine, layout, input, opts.net ?? false, false, opts.profiles ?? {}, opts.equippedSkins ?? [], opts.cardInstances ?? null, opts.equipmentInv ?? null, opts.tutorial ?? null, battleLabels, null, opts.opponentSkins ?? []);
     // Campaign (PvE) levels reword the surrender button/dialog as "exit level" —
     // surrendering to a stage reads oddly. Mirror createLocalMatch's mode resolution.
     const isCampaign = !opts.net && (opts.mode ?? (opts.level ? 'campaign' : 'pvp')) === 'campaign';
     this.renderer.setCampaignMode(isCampaign);
+    this.renderer.setInkHint(opts.inkHint ?? null);
     this.renderer.init();
     // Attach the recording (if any) to the end-of-game callback.
     this.renderer.onGameEnd = (winner, stats, summary) => this.cb.onGameEnd(winner, stats, buildReplay(winner), summary);
     this.renderer.onExitToLobby = cb.onExitToLobby;
     if (cb.onPauseChange) this.renderer.onPauseChange = (p) => cb.onPauseChange?.(p);
-    if (cb.onTutorialStep) this.renderer.onTutorialStep = cb.onTutorialStep;
 
     this.container = this.renderer.container;
   }

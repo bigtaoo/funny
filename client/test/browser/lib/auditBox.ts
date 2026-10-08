@@ -19,7 +19,8 @@ export interface ViewportSize { width: number; height: number }
  * The design rect `createLayout` will build for this viewport — the two layouts' own sizing rules,
  * duplicated rather than imported because those modules pull `@nw/engine/config` and PIXI into a
  * Playwright process with no DOM. Landscape's height and width come from the shared
- * `landscapeDesignHeight`/`landscapeDesignWidth` (1080 tall on tablets, 720–860 on phones; the width
+ * `landscapeDesignHeight`/`landscapeDesignWidth` (1080 tall from ~670 CSS px up, 640–1078 below at a
+ * 0.62x target since 2026-10-07; the width
  * tracks the aspect between the scaled 1920 and 2592, past which it letterboxes on purpose).
  * Portrait's width comes from the shared, dependency-free `portraitDesignWidth` (1080 on tablets,
  * 720–860 on phones) and its height tracks the aspect, never shorter than the scaled 1920.

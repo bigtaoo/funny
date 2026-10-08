@@ -64,8 +64,11 @@ function tap(dlg: EntryGateDialog, label: string): void {
   btn!.node.emit('pointertap', {} as PIXI.FederatedPointerEvent);
 }
 
-function tapStep(dlg: EntryGateDialog, label: '+1' | '−1' | '+10' | '−10', times = 1): void {
-  for (let i = 0; i < times; i++) tap(dlg, label);
+/** The two-tap year picker: open it from the year field, pick the decade, pick the year. */
+function pickYear(dlg: EntryGateDialog, current: number, year: number): void {
+  tap(dlg, t('entryGate.yearPick', { year: current }));
+  tap(dlg, t('entryGate.decade', { decade: Math.floor(year / 10) * 10 }));
+  tap(dlg, String(year));
 }
 
 const MODES: Array<[string, EntryGateMode]> = [
@@ -103,9 +106,9 @@ describe('EntryGateDialog — fits every mode, in all three locales, both orient
 });
 
 describe('EntryGateDialog — ask + choice (combined tap answers both)', () => {
-  it('declares the current stepper year and the pressed consent button in one call', () => {
+  it('declares the picked year and the pressed consent button in one call', () => {
     const { dlg, answers } = build({ age: 'ask', consent: 'choice' });
-    tapStep(dlg, '+10'); // 1996 -> 2006
+    pickYear(dlg, NOW - 30, 2006); // 1996 -> 2006, two taps after opening the field
     tap(dlg, t('consent.acceptAll'));
     expect(answers).toEqual([{ birthYear: NOW - 30 + 10, granted: true }]);
   });
@@ -116,10 +119,9 @@ describe('EntryGateDialog — ask + choice (combined tap answers both)', () => {
     expect(answers).toEqual([{ birthYear: NOW - 30, granted: false }]);
   });
 
-  it('an underage stepper value asks for confirmation instead of answering', () => {
+  it('an underage year asks for confirmation instead of answering', () => {
     const { dlg, answers } = build({ age: 'ask', consent: 'choice' });
-    tapStep(dlg, '+10', 2); // 1996 -> 2016
-    tapStep(dlg, '−1', 2);  // -> 2014, exactly one year short of the threshold (2013)
+    pickYear(dlg, NOW - 30, 2014); // exactly one year short of the threshold (2013)
     tap(dlg, t('consent.acceptAll'));
     const all = texts(dlg.container).map((n) => n.text);
     expect(all).toContain(t('ageGate.confirmTitle'));
@@ -130,6 +132,60 @@ describe('EntryGateDialog — ask + choice (combined tap answers both)', () => {
     // consent would ever be asked (createAppCore.gateConsent).
     expect(answers).toEqual([{ birthYear: NOW - MIN_AGE + 1 }]);
   });
+});
+
+describe('EntryGateDialog — the two-tap year picker (ONBOARDING_DESIGN §11.8)', () => {
+  it('starts from 30 years ago — neither the threshold nor an obvious pass value (COMPLIANCE_GLOBAL §3.4)', () => {
+    const { dlg } = build({ age: 'ask', consent: 'accept-only' });
+    expect(texts(dlg.container).map((n) => n.text)).toContain(t('entryGate.yearPick', { year: NOW - 30 }));
+  });
+
+  it('offers every decade alike, and nothing outside the 100-year range', () => {
+    const { dlg } = build({ age: 'ask', consent: 'accept-only' });
+    tap(dlg, t('entryGate.yearPick', { year: NOW - 30 }));
+    const all = texts(dlg.container).map((n) => n.text);
+    for (let d = 2020; d >= 1920; d -= 10) expect(all).toContain(t('entryGate.decade', { decade: d }));
+    expect(all).not.toContain(t('entryGate.decade', { decade: 1910 }));
+    // The consent buttons are not on the picker card: nothing can be answered while choosing.
+    expect(all).not.toContain(t('consent.accept'));
+  });
+
+  it('Back walks year grid -> decade grid -> card without changing the year', () => {
+    const { dlg, answers } = build({ age: 'ask', consent: 'accept-only' });
+    tap(dlg, t('entryGate.yearPick', { year: NOW - 30 }));
+    tap(dlg, t('entryGate.decade', { decade: 1980 }));
+    tap(dlg, t('entryGate.pickBack'));
+    expect(texts(dlg.container).map((n) => n.text)).toContain(t('entryGate.pickDecade'));
+    tap(dlg, t('entryGate.pickBack'));
+    tap(dlg, t('consent.accept'));
+    expect(answers).toEqual([{ birthYear: NOW - 30, granted: true }]);
+  });
+
+  const VIEWPORTS: Array<[number, number]> = [[800, 1280], [1280, 800], [640, 1136], [1024, 768], [722, 406]];
+  for (const locale of ['zh', 'en', 'de'] as Locale[]) {
+    for (const [w, h] of VIEWPORTS) {
+      it(`[${locale}] ${w}x${h}: both picker grids keep every chip on screen`, () => {
+        setLocale(locale);
+        try {
+          const { dlg } = build({ age: 'ask', consent: 'choice' }, w, h);
+          tap(dlg, t('entryGate.yearPick', { year: NOW - 30 }));
+          const check = (): void => {
+            for (const n of texts(dlg.container)) {
+              expect(n.b.x, `"${n.text}" spills left`).toBeGreaterThanOrEqual(0);
+              expect(n.b.y, `"${n.text}" spills above`).toBeGreaterThanOrEqual(0);
+              expect(n.b.x + n.b.width, `"${n.text}" spills right`).toBeLessThanOrEqual(w);
+              expect(n.b.y + n.b.height, `"${n.text}" spills below`).toBeLessThanOrEqual(h);
+            }
+          };
+          check();
+          tap(dlg, t('entryGate.decade', { decade: 1990 }));
+          check();
+        } finally {
+          setLocale('en');
+        }
+      });
+    }
+  }
 });
 
 describe('EntryGateDialog — Terms of Use (EULA) re-accept (App Review 1.2)', () => {
@@ -168,11 +224,11 @@ describe('EntryGateDialog — reduced modes render the standalone copy unchanged
     expect(answers).toEqual([{ birthYear: NOW - 30 }]);
   });
 
-  it('consent-only (age already known) shows consent.* copy and no stepper', () => {
+  it('consent-only (age already known) shows consent.* copy and no year picker', () => {
     const { dlg, answers } = build({ age: 'ok', consent: 'choice' });
     const all = texts(dlg.container).map((n) => n.text);
     expect(all).toContain(t('consent.title'));
-    expect(all.some((s) => /^\d{4}$/.test(s))).toBe(false); // no year stepper drawn
+    expect(all.some((s) => /\d{4}/.test(s))).toBe(false); // no year field drawn
     tap(dlg, t('consent.acceptAll'));
     expect(answers).toEqual([{ granted: true }]);
   });

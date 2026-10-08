@@ -9,15 +9,16 @@
 // call `super.update(dt)` then run the highlight-refresh accumulator is now a plain `update(dt)`
 // method the outer assembly calls AFTER `core.update(dt)` — same order, no `super` needed.
 import * as PIXI from 'pixi.js-legacy';
-import { makeText } from '../pixiText';
 import { ATTACK_LANES } from '@nw/engine/config';
+import type { CardDefinition } from '@nw/engine/types';
 import { CardType, SpellType } from '../../game';
 import { t, type TranslationKey } from '../../i18n';
 import type { GameRendererCore } from './core';
-import { FS } from '../fontScale';
+import { buildDragGhost, landingSpot, LandingPreview, GHOST_ALPHA, GHOST_ALPHA_OVER_LANDING } from './dragGhost';
 import { EMPTY_UNIT_IDS, updatePlacementHighlights as updatePlacementHighlightsImpl } from './placementHighlights';
 import { playSfx } from '../../audio/audioBus';
 import { dispatchHit, type Hit } from '../../ui/hits';
+import { InkHintBubble, type InkHintGate } from './inkHint';
 
 // ── Drag state ─────────────────────────────────────────────────────────────────
 
@@ -26,7 +27,12 @@ interface CardDragState {
   handIndex: number;
   cardType: CardType;
   spellType?: SpellType;
+  /** The card itself — its unit / building type and id drive the landing preview. */
+  card: CardDefinition;
+  /** The hand card's illustration (null: none loaded) — shared by the ghost and the unit preview. */
+  art: PIXI.Texture | null;
   ghost: PIXI.Container;
+  landing: LandingPreview;
 }
 
 export type DragState = CardDragState;
@@ -67,7 +73,14 @@ export class InputPanel {
 
   private highlightRefreshAccum = 0;
 
+  /** One-time "not enough ink" bubble; inert until the scene hands it a gate (see setInkHint). */
+  private inkHint: InkHintBubble | null = null;
+
   constructor(private readonly core: GameRendererCore) {}
+
+  setInkHint(gate: InkHintGate | null): void {
+    this.inkHint = gate ? new InkHintBubble(this.core.container, gate) : null;
+  }
 
   // Board state (unit occupancy) changes every tick independent of pointer input,
   // so the active placement highlight must be re-evaluated periodically too — see
@@ -80,6 +93,10 @@ export class InputPanel {
       this.highlightRefreshAccum = 0;
       this.refreshPlacementHighlights();
     }
+    this.inkHint?.update(dt);
+    // Tutorial idle escalation (§11.4): a card in the player's hand (pressed, dragged or
+    // tap-selected) pauses the ghost-hand demo and its idle clock.
+    this.core.tutorial?.setHoldingCard(!!(this.pendingCardDown || this.drag || this.tapSelect));
   }
 
   // ── Input handling (design-space coords) ─────────────────────────────────
@@ -88,9 +105,8 @@ export class InputPanel {
     this.downX = x;
     this.downY = y;
 
-    // Tutorial director intercepts taps first: if it hits its own buttons (next/finish/skip)
-    // or is in tour/graduation phase → swallow the tap, don't pass to board/hand (§3.4).
-    // During phase B checkpoint it passes non-button taps through so the player can drag cards normally.
+    // Tutorial director intercepts taps first: its own buttons (skip / graduation) and, once the
+    // graduation card is up, every tap. Otherwise taps pass through so the player can drag cards.
     if (this.core.tutorial?.handleDown(x, y)) return;
 
     // Profile popup open → its own dim backdrop (PIXI interactive) handles the
@@ -298,16 +314,18 @@ export class InputPanel {
   private startCardDrag(handIndex: number): void {
     const player = this.core.localPlayer(this.core.engine.state);
     const slot   = player.hand.slots[handIndex];
-    if (!slot || player.ink < slot.card.cost) { this.rejectPlay(!!slot); return; }
+    if (!slot || player.ink < slot.card.cost) { this.rejectPlay(!!slot, !!slot); return; }
 
-    const card   = slot.card;
-    const ghost  = this.buildDragGhost(t(card.nameKey as TranslationKey), card.cost);
-    const center = this.core.handView.slotCenter(handIndex);
+    const card    = slot.card;
+    const art     = this.core.handView.artTextureAt(handIndex);
+    const ghost   = buildDragGhost(card.cardType, t(card.nameKey as TranslationKey), card.cost, art);
+    const landing = new LandingPreview();
+    const center  = this.core.handView.slotCenter(handIndex);
     ghost.x = center.x;
     ghost.y = center.y;
-    this.core.container.addChild(ghost);
+    this.core.container.addChild(landing.sprite, ghost);
 
-    this.drag        = { kind: 'card', handIndex, cardType: card.cardType, spellType: card.spellType, ghost };
+    this.drag = { kind: 'card', handIndex, cardType: card.cardType, spellType: card.spellType, card, art, ghost, landing };
     this.dragCol     = -1;
     this.dragRow     = -1;
     this.dragOnBoard = false;
@@ -320,7 +338,7 @@ export class InputPanel {
   private startTapSelect(handIndex: number): void {
     const player = this.core.localPlayer(this.core.engine.state);
     const slot   = player.hand.slots[handIndex];
-    if (!slot || player.ink < slot.card.cost) { this.rejectPlay(!!slot); return; }
+    if (!slot || player.ink < slot.card.cost) { this.rejectPlay(!!slot, !!slot); return; }
 
     const card = slot.card;
     this.tapSelect = { handIndex, cardType: card.cardType, spellType: card.spellType };
@@ -334,6 +352,7 @@ export class InputPanel {
     this.tapSelect = null;
     this.core.handView.clearSelection();
     this.core.boardView.clearHighlights();
+    this.core.tutorial?.markHighlightDirty(); // the tutorial's lit target lives on the same layer
     this.core.unitView.setSpellTargetPreview(EMPTY_UNIT_IDS);
   }
 
@@ -354,8 +373,10 @@ export class InputPanel {
    * "you pressed an empty hand slot". The latter is not a rejection, it is nothing at all, and
    * making blank space squeak would teach the player the sound means less than it does.
    */
-  private rejectPlay(real: boolean): void {
+  private rejectPlay(real: boolean, inkShort = false): void {
     if (real) playSfx('sfx.card.invalid');
+    // Real matches only — the tutorial deals enough ink that the hint could never be earned there.
+    if (inkShort && !this.core.tutorial) this.inkHint?.offer(this.core.layout.handRect);
   }
 
 
@@ -363,8 +384,15 @@ export class InputPanel {
     handIndex: number, cardType: CardType, spellType: SpellType | undefined,
     col: number, row: number,
   ): void {
-    // Tutorial checkpoint: only the target card type is allowed this beat; wrong plays are rejected (avoids waste / going off-script, §3.4).
-    if (this.core.tutorial && !this.core.tutorial.allowCardPlay(cardType, spellType)) { this.rejectPlay(true); return; }
+    // Tutorial: only the guided card near its target is allowed, aim-assisted onto the target;
+    // anything else is rejected and the director replays the ghost demo (ONBOARDING_DESIGN §11.4).
+    if (this.core.tutorial) {
+      const cardId = this.core.localPlayer(this.core.engine.state).hand.slots[handIndex]?.card.id ?? '';
+      const target = this.core.tutorial.allowCardPlay(cardId, col, row);
+      if (!target) { this.rejectPlay(true); return; }
+      col = target.col;
+      row = target.row;
+    }
     switch (cardType) {
       case CardType.Unit: {
         if (!(ATTACK_LANES as readonly number[]).includes(col)) { this.rejectPlay(true); return; }
@@ -396,6 +424,20 @@ export class InputPanel {
     col: number, row: number, x: number, y: number,
   ): void {
     updatePlacementHighlightsImpl(this.core, cardType, spellType, col, row, x, y);
+    if (this.drag) this.updateLanding(this.drag, col, row, !this.core.layout.isOutsideBoard(x, y));
+  }
+
+  /**
+   * Show the translucent unit / building where this drop would place it, or hide it when the drop
+   * would be rejected — the same checks commitCardPlay makes, and in the tutorial the same aim assist
+   * (snapped onto the guided lane). The ghost fades while the preview is up so the finger's card does
+   * not cover what it is about to place (art-direction-map-ui.md §7.2.2).
+   */
+  private updateLanding(drag: CardDragState, col: number, row: number, onBoard: boolean): void {
+    const spot = onBoard ? landingSpot(this.core, drag.card, drag.art, col, row) : null;
+    if (spot) drag.landing.show(spot.tex, spot.x, spot.y, spot.w, spot.h);
+    else drag.landing.hide();
+    drag.ghost.alpha = drag.landing.visible ? GHOST_ALPHA_OVER_LANDING : GHOST_ALPHA;
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
@@ -404,35 +446,24 @@ export class InputPanel {
     this.pendingCardDown = null;
     if (!this.drag) return;
     this.drag.ghost.parent?.removeChild(this.drag.ghost);
-    this.drag.ghost.destroy();
+    this.drag.ghost.destroy({ children: true });
+    this.drag.landing.destroy();
     this.drag        = null;
     this.dragCol     = -1;
     this.dragRow     = -1;
     this.dragOnBoard = false;
     this.core.handView.clearSelection();
     this.core.boardView.clearHighlights();
+    this.core.tutorial?.markHighlightDirty(); // the tutorial's lit target lives on the same layer
     this.core.unitView.setSpellTargetPreview(EMPTY_UNIT_IDS);
   }
 
-  private buildDragGhost(label: string, cost: number, accentColor = 0x2244aa): PIXI.Container {
-    const c   = new PIXI.Container();
-    const gfx = new PIXI.Graphics();
-    gfx.beginFill(0xfaf6ee, 0.9);
-    gfx.lineStyle(2, accentColor);
-    gfx.drawRoundedRect(-32, -42, 64, 84, 6);
-    gfx.endFill();
-
-    const nameText = makeText(label, { fontSize: FS.micro, fill: 0x222222, align: 'center' });
-    nameText.anchor.set(0.5, 0.5);
-    nameText.y = -10;
-
-    const costText = makeText(String(cost), { fontSize: FS.tiny, fill: accentColor, fontWeight: 'bold' });
-    costText.anchor.set(0.5, 0.5);
-    costText.y = 18;
-
-    c.addChild(gfx, nameText, costText);
-    c.alpha = 0.9;
-    return c;
+  /** The drag ghost of the card in hand slot `handIndex` — the tutorial's ghost-hand demo reuses it. */
+  buildCardGhost(handIndex: number): PIXI.Container | null {
+    const slot = this.core.localPlayer(this.core.engine.state).hand.slots[handIndex];
+    if (!slot) return null;
+    const card = slot.card;
+    return buildDragGhost(card.cardType, t(card.nameKey as TranslationKey), card.cost, this.core.handView.artTextureAt(handIndex));
   }
 
   /**
@@ -443,7 +474,8 @@ export class InputPanel {
    * runs in the destroy() sequence).
    */
   destroy(): void {
-    this.drag?.ghost.destroy();
+    this.drag?.ghost.destroy({ children: true });
+    this.drag?.landing.destroy();
     this.drag            = null;
     this.tapSelect       = null;
     this.pendingCardDown = null;

@@ -1,6 +1,6 @@
 # CrazyGames 上架：官方要求 ↔ 我们的实现
 
-> 状态：**2026-10-05 已提交，门户状态 AWAITING REVIEW**（构建 `64c620eb`，来自提交 `b452aedf4`）；Basic Launch 代码侧 2026-09-27 完成 · 权威：本文（CrazyGames 专属要求的单一入口）
+> 状态：**2026-10-07 被拒**（理由只有一句「overall quality」，审核员轨迹见 §7）；2026-10-05 提交的构建是 `64c620eb`（来自提交 `b452aedf4`）；Basic Launch 代码侧 2026-09-27 完成 · 权威：本文（CrazyGames 专属要求的单一入口）
 > 来源：[docs.crazygames.com/requirements](https://docs.crazygames.com/requirements/intro/)（2026-09-27 逐页核过两轮：
 > 要求 8 页 + SDK intro/game + resources 的 CrazyGames App / Basic Launch 指标 / 加载 / 鼠标四页）；
 > SDK 行为以 `https://sdk.crazygames.com/crazygames-sdk-v3.js` 源码为准（文档页之外的细节都是在源码里查到的）。
@@ -26,7 +26,7 @@
 
 | 要求 | 实现 |
 |---|---|
-| 访客默认可玩、最多 1 次点击进游戏 | `IPlatform.silentAccountOnly`：CG 包**没有登录页**。启动 → 年龄+同意合屏（唯一一次点击，`EntryGateDialog`）→ 大厅 → 首次自动进新手关。`IPlatform.skipStoryIntro` 跳过开场故事（它的「跳过」按钮会是第二次点击）。 |
+| 访客默认可玩、最多 1 次点击进游戏 | `IPlatform.silentAccountOnly`：CG 包**没有登录页**。启动 → 首次自动进新手关，**零点击**：2026-10-07 起 CG 包没有年龄+同意入口门（`IPlatform.entryNoticeOnly`，[`COMPLIANCE_GLOBAL.md` §3.3a](COMPLIANCE_GLOBAL.md)），条款与埋点提示改成大厅里的非阻塞通知条。开场故事不在首启播放（所有平台，[`ONBOARDING_DESIGN.md` §11.7](ONBOARDING_DESIGN.md)；原先的 `IPlatform.skipStoryIntro` 随之删除），所以不会多出第二次点击。 |
 | 禁止外部登录方式 | CG 包里账号密码登录/注册表单**不可达**：`goLogin()` 在 silentAccountOnly 平台上改为重跑静默入口；设置页与大厅不给登录/登出/删号入口；大厅离线态不画「登录」字样。 |
 | 进度保存（Data 模块或自有后端） | 走自有后端：静默拿到的会话 token **写入 `TOKEN_KEY`**，于是所有「已登录」闸门（邮件/每日/排行/排位/大地图/拍卖/改名）把访客当真账号。身份优先级：门户已登录 → CG SSO；否则 → 匿名设备账号。 |
 | 门户身份被服务端拒绝时 | `IPlatform.declinePortalIdentity()`：SSO 校验失败（本部署没配 `NW_CRAZYGAMES_GAME_ID`、换钥、坏 token）就本会话改用设备身份重试一次，**不能让门户玩家落到「没有账号」**。本地 dev 服务器就是这个场景：SDK 本地模式会给一个演示 CG token。 |
@@ -135,7 +135,7 @@
 | 别用 Esc / Ctrl+W 做操作、适配 AZERTY | 没有任何键盘操作（`WebAdapter` 只听 pointer 与 wheel）。 |
 | 鼠标锁定（resources/mouse-control） | 点击为主的游戏不要求。 |
 | 禁止应用商店链接、交叉推广 | 没有；唯一外链是隐私政策/用户协议（官方允许的例外）。 |
-| 数据收集要有 T&C / 隐私告知 | 首启同意弹窗（`EntryGateDialog`）。 |
+| 数据收集要有 T&C / 隐私告知 | 2026-10-07 起：大厅底部非阻塞通知条（条款 + 隐私链接；EU/美国时区附「允许 / 不用了」埋点提示），照 CG 的「simple notice rather than a pop-up」建议，见 [`COMPLIANCE_GLOBAL.md` §3.3a](COMPLIANCE_GLOBAL.md)。此前是首启阻塞弹窗 `EntryGateDialog`。 |
 | Sitelock 白名单 | 没做 sitelock；服务端 CORS 是 `origin: true`，CG 网站与 App 的来源（`https://app.crazygames.com`、`capacitor://app.crazygames.com`）都放行。 |
 | 不同刷新率下物理一致 | 30 Hz 定点 lockstep，与显示帧率无关。 |
 | 桌面横屏可玩、DPR=1 可读 | 有横屏布局分支；门户在 iOS/低内存安卓上强制 DPR=1，这点要在门户 QA 工具里看一眼字清不清。 |
@@ -144,3 +144,77 @@
 
 Basic 期间的运营信息：更新**自动通过**；评估指标参考值——平均时长 10 分钟以上、次日留存 10–15%、玩满 1 分钟的转化 80% 以上；
 累计 5 万次游玩后才有官方技术支持。
+
+## 7. 2026-10-07 拒稿与审核员轨迹
+
+**邮件原文要点**：Nivara: Notebook Wars 未通过，理由只有一句 overall quality does not yet meet the expectations of our platform，没有具体条目。
+
+**审核员是谁**：后台查 2026-10-05 提交后到拒稿前的全部 CG 会话（analyticsvc `events` 的 `platform:'crazygames'`），按设备分组后，排除用户自测和我们自己的体检，只剩一条外部会话：
+
+- 走 SSO 登录，`displayName` 为 `Testing2`，即门户 QA 号。metaserver `accounts` 里 `oauth.provider=crazygames`，所以 **SSO 首登在生产上实测通过**。
+- 时间 2026-10-07 07:59 UTC，Windows Chrome 桌面，画布 1100×574。
+
+**轨迹**：一共 **57 秒**，没打完新手关。
+
+1. 在第 1 张讲解卡上停了 44.5 秒。
+2. 第 2–7 张 1.2 秒内连点过去。
+3. 放兵，约 3 秒做完。
+4. 进入「Build a defense」，3 秒后关页。
+
+逐事件时间表见 [`ONBOARDING_DESIGN.md` §11.1](ONBOARDING_DESIGN.md)。
+
+他**没见过大厅、战役、结算页和 PvP**。所以判决落在「同意页 + 文字卡教学 + 前两拍」，重做方案在 ONBOARDING_DESIGN §11。§6 末尾引用的 Basic 参考指标里有一条「玩满 1 分钟的转化 80% 以上」，审核员恰好没撑过 60 秒。
+
+**埋点缺口**：这条会话里没有 `load_time`，也没有 `gdpr_consent`，但存档里的同意标记已经是 true，说明 CG SSO 首登这条路丢掉了启动和同意页阶段的记录。**根因已查明并修复（2026-10-07）**：与 SSO 无关，是 `analytics.init()` 先挂上事件队列、后等采样配置，配置回来前点了同意，缓冲里的事件和 `gdpr_consent` 都被禁用兜底配置丢掉了——CG 包同意门是第一屏，QA 一秒内就点，正好落进这个窗口。详见 [`ANALYTICS_DESIGN.md` §3.6d](ANALYTICS_DESIGN.md)。
+
+**入口门的处理**：CG 包从此不设入口门，条款改通知、埋点改非阻塞提示、没同意的人用匿名教学步计数——依据（CG 官方文档原文）与分区逻辑见 [`COMPLIANCE_GLOBAL.md` §3.3a](COMPLIANCE_GLOBAL.md)。
+
+**同一次排查里体检出的其它问题**：
+- 战役地图元素重叠；
+- 结算页按钮被压住，DEFEAT 时仍发夸奖徽章；
+- 手牌卡名压住插画。
+
+审核员没有走到这些地方，它们不是这次被拒的直接原因，但重投前也要修，清单在会话记忆 `crazygames-rejection-audit-2026-10-07` 里。
+
+### 7.1 体检问题修复（2026-10-07）
+
+都在 722×406 门户画框下用真 Chrome 看过，回归测试在 `client/test/ui/reviewAuditFixes.ui.ts`。
+
+| 问题 | 改法 |
+|---|---|
+| 战役地图：笔记本主人那行字压在 Back 上 | `CampaignMapScene/header.ts`：副标题中心夹在「Back 右缘 + 半宽」到「右侧按钮左缘 − 半宽」之间 |
+| 战役地图：START 被第 1 关圆圈挡成 "STA" | `CampaignMapScene/drawing.ts`：START 改到旗杆上方 |
+| 结算页：失败仍发夸奖徽章 | `computeBadges(stats, outcome)` 失败时返回空，只显示「Keep going!」；`badge_earned` 埋点同样不发 |
+| 结算页：英文里用中文直角引号 | 新 i18n `result.badgeQuote`：en “…” / de „…“ / zh 「…」 |
+| 结算页：徽章压在 PLAY AGAIN 下 | 徽章整块（主徽章 + 引语 + 次级徽章行）超出按钮上沿时，以顶部中点为基准等比缩小，最小 0.5 倍；有签到预览行时按它的上沿算。横屏原本让次级徽章行上提、与引语并排，现在只有引语宽度让得开图标时才上提（字体放大后引语会顶到图标上） |
+| 结算页：战役失败没有 Retry | 战役失败时主按钮改成「RETRY」（回本关准备页），「BACK TO MAP」放进次级按钮行（`ResultSceneCallbacks.secondaryAction`） |
+| 手牌：两词卡名折行压住插画 | `HandView/cellDraw.ts`：先不折行、按卡宽缩字；缩到下限仍放不下才折行；插画区底边跟着卡名上沿走 |
+| 阵营只靠脚下淡色阴影区分；两座基地是同一张黑墨城堡 | 基地旗杆上加阵营色三角旗（`BoardView/bases.ts`，旗面朝棋盘中间）；单位脚下的阵营圈加一道阵营色描边（`UnitView/assets.ts`） |
+| 墨不够时没有任何解释 | 一次性气泡提示，见 ONBOARDING_DESIGN §9 第 9 条 |
+
+**复核后不用改的**：
+- 「敌人从边框外排队走进来」：在当前 `ch1_lv1` 和新教学关里都没复现，刷怪点都在 12×18 棋盘内。
+- 旧教学关的面板挡目标、Skip 压陨石圈、陨石只放倒 2 个：旧教学关已经整体重做（ONBOARDING_DESIGN §11），这几条随之作废。
+- 「战役第 1 关一上来就输」：难度模拟器（`npx vitest run -c vitest.sim.config.ts test/difficulty/ch1`）显示新号打 `ch1_lv1` 胜率 100%，体检时输掉是我出牌的问题。断崖在后面几关，见下方第二轮表格。
+
+**第二轮（2026-10-07 下午，日分支 `07.10.2026`）**：
+
+| 问题 | 改法 | 详见 |
+|---|---|---|
+| 横屏小画面字和单位太小（1100×574 下正文 9.6px） | 横屏设计高改为 `clamp(even(可用高 / 0.62), 640, 1080)`：1100×574 从 0.53× 到 0.62×（正文 11.2px），722×406 从 0.50× 到 0.62×；竖屏不变。放大后挤出的十几处排版一并修 | ADR-105 2026-10-07 节、`UI_DESIGN_LOG` §76 |
+| 字体混杂（等宽 / 粗无衬线 / 衬线） | 全部收进 `client/src/render/theme.ts` 的 `UI_FONT_FAMILY`，`makeText()` 自动填；`test/uiFontFamily.test.ts` 禁止再写字面量。以后换手写体只改一行 | `art-direction-map-ui.md` §7.4 |
+| ch1 难度断崖（新号通关率 lv3 61% / lv4 45% / lv5 2% / lv8 0%） | ch1 只掉 L1 步兵卡，整章最多合到步兵 L2，模拟器的 T2 新号够不到。lv3/4/5/7/8/10 降强度后，新号通关率为 lv3 83 / lv4 73 / lv5 65 / lv7 54 / lv8 44 / lv10 38。星级门槛没动 | 提交 `feat/ch1-difficulty` |
+| 回放里单位一直是草稿火柴人 | 两个回放播放器补上战斗资源门；`UnitView` 在美术到达后原地换掉占位 | `design/product/unit-art-inventory.md` |
+| 大厅通知条（CG 包）没看过 | 1100×574 和 722×406 下都能正常显示和关闭，没改 | `UI_DESIGN_LOG` §76 |
+| 新号一进大厅就打 PvP 掉分 | 大厅主按钮仍是 Ranked（用户有意鼓励 PvP）。改为排位保护：新号前 3 局 + 每天前 3 局输了不扣分，大厅主按钮上贴剩余局数 | `SEASON_DESIGN_IMPL_SPEC.md` §15.5 |
+| 拖卡时只看见一张写着卡名的白卡 | 拖动中显示手牌插画 + 费用圈；落点合法时棋盘上显示半透明单位 / 建筑 | `art-direction-map-ui.md` §7.2.2 |
+
+**仍待用户拍板**：
+- 敌方单位整体改红墨（可行性评估在 `unit-art-inventory.md`，约 3–3.5 天）；建筑仍无阵营标识。
+- 722×406 下单位约 1.29 格高；CG 通知条越过页边红线（纯观感）。
+- `ch1_lv3` 的 3 星门槛；`ch2_lv5` 因模拟器 AI 学会用落石而显得变容易（关卡数据没动）。
+
+**查法**（只读）：
+1. 在 analyticsvc 容器里查 `events`，按 `platform` + 时间窗筛选，再按 `device_id` 分组，逐条导出事件。
+2. 拿 `user_id` 到 metaserver 容器查 `accounts`（看 `displayName`、`oauth`、`createdAt`）和 `saves`（看 `save.flags`）。
+3. 查询脚本用完即删，连接串不要外传。

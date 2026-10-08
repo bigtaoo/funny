@@ -5,6 +5,7 @@ import { t, type TranslationKey } from '../../i18n';
 import { isFirstChapterCleared } from '../../game/campaign/progress';
 import { hasClaimable, reachedTierKeys } from '../../game/meta/achievements';
 import { getPvpUnlockedCards, validatePvpDeckClient, PVP_DECK_SIZE } from '../../game/meta/pvpLoadout';
+import { protectedGamesLeftToday } from '../../game/meta/eloProtect';
 import { WorldApiClient } from '../../net/WorldApiClient';
 import { getWorldBaseUrl } from '../../net/config';
 import { serverNow } from '../../net/serverClock';
@@ -238,6 +239,7 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
       playerName: playerName(),
       avatarId: avatarId(),
       pvp: { rank: pvp.rank, elo: pvp.elo },
+      getProtectedGamesLeft: () => protectedGamesLeftToday(saveManager.get().pvp, serverNow()),
       getCoins: () => saveManager.get().wallet.coins,
       onSaveChanged: (listener: () => void) => saveManager.subscribe(listener),
       offline: state.offlineMode,
@@ -272,6 +274,11 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
         void recordConsumptionConsent(client, platform.storage, consented);
       });
     }
+
+    // Terms/Privacy notice + analytics prompt on the notice-only build (CrazyGames, COMPLIANCE_GLOBAL
+    // §3.3): non-blocking, and here rather than at boot because the first lobby is the first screen
+    // a new player reaches that is not the tutorial battle. A no-op on every other build.
+    ctx.offerEntryNotice?.(lobby);
 
     // Paint the cached social total immediately so the dot survives a resize
     // rebuild without flicker; then refresh from the server (skip on resize).

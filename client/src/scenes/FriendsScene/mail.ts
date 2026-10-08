@@ -21,6 +21,7 @@ import { drawStatusTag } from '../../ui/widgets/statusTag';
 import { addButton, centerLabel, scrollRegion } from './chrome';
 import type { NetworkHandlers } from './network';
 import { canModerate, isBlocked, messageContent, requestBlock, requestReport, type ModerationTarget } from '../../ui/moderation';
+import { UI_FONT_FAMILY } from '../../render/theme';
 
 // ⚠️ Material-attachment id namespace: every server system that sends a `kind: 'material'` mail
 // attachment (auctionsvc, worldsvc season rewards, battlepass, retention, events) uses the short
@@ -145,7 +146,7 @@ export class MailPanel {
     core.container.addChild(from);
 
     const bodyTxt = makeText(systemText(m.body), {
-      fontSize: FS.heading, fill: C.dark, fontFamily: 'monospace',
+      fontSize: FS.heading, fill: C.dark, fontFamily: UI_FONT_FAMILY,
       wordWrap: true, wordWrapWidth: panelW, breakWords: true,
     });
     bodyTxt.x = px; bodyTxt.y = Math.max(top + Math.round(h * 0.10), Math.ceil(from.y + from.height));
@@ -157,13 +158,15 @@ export class MailPanel {
       const label = txt(t('mail.attachments'), FS.heading, C.mid, true);
       label.anchor.set(0, 0); label.x = px; label.y = cy;
       core.container.addChild(label);
-      cy += Math.round(h * 0.04);
+      // Same rule as the lines above: an `h` fraction is the pitch on a tall page, the line's own
+      // height on a short one (a 640-tall landscape design since 2026-10-07 stacked them into each other).
+      cy += Math.max(Math.round(h * 0.04), Math.ceil(label.height));
       for (const a of m.attachments!) {
         const desc = attachmentLabel(a);
         const row = txt('· ' + desc, FS.heading, C.dark);
         row.anchor.set(0, 0); row.x = px + Math.round(w * 0.02); row.y = cy;
         core.container.addChild(row);
-        cy += Math.round(h * 0.04);
+        cy += Math.max(Math.round(h * 0.04), Math.ceil(row.height));
       }
       // One picture per attachment, laid out left-to-right below the name list.
       const iconSize = Math.round(h * 0.07);

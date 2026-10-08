@@ -26,6 +26,12 @@ export interface EloResult {
   delta: number;
   after: number;
   rankAfter: string;
+  /** ELO-loss protection: 1-based game index within its slot pool; absent = unprotected (meta omits it). */
+  protectedGame?: number;
+  /** Slot pool size; present iff protectedGame is. */
+  protectedTotal?: number;
+  /** Slot pool: 1 = new-player, 2 = daily; present iff protectedGame is. */
+  protectedKind?: number;
 }
 /** side → ELO delta (returned by meta after ranked settlement). */
 export type EloBySide = Record<number, EloResult>;

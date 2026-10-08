@@ -62,8 +62,8 @@ describe.skipIf(!mongo)('analyticsvc service domains (funnel / dist / sessions w
     it('computes per-step cohort counts and conversion rates from tutorial_step events', async () => {
       await mongo!.collections.events.insertMany([
         evDoc('tut-a', 'dev-tut-a', 'tutorial_start'),
-        evDoc('tut-a', 'dev-tut-a', 'tutorial_step', { step_key: 'orientation_1' }, 100),
-        evDoc('tut-a', 'dev-tut-a', 'tutorial_step', { step_key: 'orientation_2' }, 200),
+        evDoc('tut-a', 'dev-tut-a', 'tutorial_step', { step_key: 'beat_unit' }, 100),
+        evDoc('tut-a', 'dev-tut-a', 'tutorial_step', { step_key: 'beat_building' }, 200),
         evDoc('tut-a', 'dev-tut-a', 'tutorial_complete', {}, 300),
         // B only starts the tutorial — everything downstream of tutorial_start stays at 0 for B.
         evDoc('tut-b', 'dev-tut-b', 'tutorial_start'),
@@ -74,22 +74,32 @@ describe.skipIf(!mongo)('analyticsvc service domains (funnel / dist / sessions w
 
       expect(res.cohort_size).toBe(2);
       expect(step('tutorial_start')?.count).toBe(2);
-      expect(step('orientation_1')?.count).toBe(1);
-      expect(step('orientation_2')?.count).toBe(1);
-      expect(step('orientation_3')?.count).toBe(0);
-      expect(step('beat_unit')?.count).toBe(0);
-      expect(step('freeplay')?.count).toBe(0);
+      expect(step('beat_unit')?.count).toBe(1);
+      expect(step('beat_building')?.count).toBe(1);
+      expect(step('beat_spell')?.count).toBe(0);
+      expect(step('graduate')?.count).toBe(0);
       expect(step('tutorial_complete')?.count).toBe(1);
 
       // conversion_rate = count / immediately-preceding step's count.
       expect(step('tutorial_start')?.conversion_rate).toBeUndefined(); // first step, no predecessor
-      expect(step('orientation_1')?.conversion_rate).toBeCloseTo(1 / 2);
-      expect(step('orientation_2')?.conversion_rate).toBeCloseTo(1 / 1);
-      expect(step('orientation_3')?.conversion_rate).toBeCloseTo(0); // 0/1, still defined (predecessor > 0)
-      // freeplay's predecessor count is 0, so every step chained after another 0-count step reports
+      expect(step('beat_unit')?.conversion_rate).toBeCloseTo(1 / 2);
+      expect(step('beat_building')?.conversion_rate).toBeCloseTo(1 / 1);
+      expect(step('beat_spell')?.conversion_rate).toBeCloseTo(0); // 0/1, still defined (predecessor > 0)
+      // graduate's predecessor count is 0, so every step chained after another 0-count step reports
       // conversion_rate undefined (division only defined when the previous step's count > 0) — this
       // includes tutorial_complete itself, even though 1 session did complete the tutorial.
       expect(step('tutorial_complete')?.conversion_rate).toBeUndefined();
+    });
+
+    it('ignores retired step keys (orientation_*, freeplay) from before the 2026-10 rework', async () => {
+      await mongo!.collections.events.insertMany([
+        evDoc('tut-old', 'dev-tut-old', 'tutorial_start'),
+        evDoc('tut-old', 'dev-tut-old', 'tutorial_step', { step_key: 'orientation_1' }, 100),
+        evDoc('tut-old', 'dev-tut-old', 'tutorial_step', { step_key: 'freeplay' }, 200),
+      ]);
+      const res = await svc.queryTutorialFunnel(7);
+      expect(res.funnel.map((f) => f.step)).not.toContain('orientation_1');
+      expect(res.funnel.map((f) => f.step)).not.toContain('freeplay');
     });
 
     it('returns a zero-filled funnel with cohort_size 0 when no tutorial_start falls in the window', async () => {

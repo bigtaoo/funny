@@ -2,7 +2,7 @@
 // ELO settlement logic migrated from gameserver (M19, meta is authoritative). Uses fastify inject + in-memory fake cols (no Mongo).
 import { describe, it, expect, vi } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
-import { makeNewSave, compressReplayDoc, type Collections, type SaveData, type SaveDoc, type MatchReplayDoc } from '@nw/shared';
+import { makeNewSave, makeDayKey, compressReplayDoc, NEWBIE_PROTECT_GAMES, DAILY_PROTECT_GAMES, type Collections, type SaveData, type SaveDoc, type MatchReplayDoc } from '@nw/shared';
 import { registerInternalRoutes } from '../src/internal.js';
 import type { GatewayClient, JudgeRes } from '../src/gatewayClient.js';
 import type { CommercialClient } from '../src/commercialClient.js';
@@ -221,6 +221,9 @@ describe('internal routes', () => {
   it('ranked base — both sides agree → settle ELO ±16, write saves, archive, return elo', async () => {
     const a = makeNewSave('a', FIXED_TS);
     const b = makeNewSave('b', FIXED_TS);
+    // Past the new-player pool and with today's daily slots spent (§15.5), so the loss settles in full.
+    b.pvp.losses = NEWBIE_PROTECT_GAMES;
+    b.pvp.dailyProtect = { dayKey: makeDayKey(1000), used: DAILY_PROTECT_GAMES };
     const { cols, matches } = fakeCols({ a, b });
     const app = build(cols);
     const res = await app.inject({
@@ -255,6 +258,9 @@ describe('internal routes', () => {
     const a = makeNewSave('a', FIXED_TS);
     a.pvp.streak = 2; // already on a 2-win streak entering this match
     const b = makeNewSave('b', FIXED_TS); // fresh (streak 0)
+    // Past the new-player pool and with today's daily slots spent (§15.5), so the loss settles in full.
+    b.pvp.losses = NEWBIE_PROTECT_GAMES;
+    b.pvp.dailyProtect = { dayKey: makeDayKey(1000), used: DAILY_PROTECT_GAMES };
     const { cols } = fakeCols({ a, b });
     const app = build(cols);
     const res = await app.inject({
@@ -453,6 +459,9 @@ describe('internal routes', () => {
   it('ranked mismatch + judge matches a\'s hash → b judged as loser + archived cheat + ELO settled', async () => {
     const a = makeNewSave('a', FIXED_TS);
     const b = makeNewSave('b', FIXED_TS);
+    // Past the new-player pool and with today's daily slots spent (§15.5), so the loss settles in full.
+    b.pvp.losses = NEWBIE_PROTECT_GAMES;
+    b.pvp.dailyProtect = { dayKey: makeDayKey(1000), used: DAILY_PROTECT_GAMES };
     const { cols, matches } = fakeCols({ a, b });
     const gateway = fakeGateway({
       available: true,

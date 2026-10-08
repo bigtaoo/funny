@@ -10,7 +10,7 @@ import { createAdminMongo } from './db';
 import { AdminService } from './service';
 import { startHttpApi } from './httpApi';
 import { seedSuperAdmin } from './seed';
-import { HttpAnalyticsClient, HttpAntiCheatClient, HttpAuctionClient, HttpEventsClient, HttpGachaPoolsClient, HttpLadderClient, HttpMailDispatcher, HttpMismatchClient, HttpPaddleEventsClient, HttpPlayerClient, HttpPvpCardStatsClient, HttpStatsClient, HttpSuspiciousPveClient, HttpWorldClient, HttpReportsClient, HttpAppealsClient, HttpEnforcementClient, HttpFeedbackClient, HttpModerationClient } from './clients';
+import { HttpAnalyticsClient, HttpAntiCheatClient, HttpAuctionClient, HttpEventsClient, HttpGachaPoolsClient, HttpLadderClient, HttpMailDispatcher, HttpMismatchClient, HttpPaddleEventsClient, HttpPlayerClient, HttpPvpCardStatsClient, HttpStatsClient, HttpSuspiciousPveClient, HttpWorldClient, HttpReportsClient, HttpAppealsClient, HttpEnforcementClient, HttpFeedbackClient, HttpModerationClient, HttpRetentionClient } from './clients';
 
 const log = createLogger('admin');
 
@@ -27,6 +27,7 @@ async function main(): Promise<void> {
   const mismatches = new HttpMismatchClient(env.metaBaseUrl, env.internalKey);
   const pvpCardStats = new HttpPvpCardStatsClient(env.metaBaseUrl, env.internalKey);
   const suspiciousPve = new HttpSuspiciousPveClient(env.metaBaseUrl, env.internalKey);
+  const retention = new HttpRetentionClient(env.metaBaseUrl, env.internalKey);
   const mail = new HttpMailDispatcher(env.metaBaseUrl, env.internalKey);
   const analytics = new HttpAnalyticsClient(env.analyticsBaseUrl, env.internalKey);
   const world = new HttpWorldClient(env.worldInternalUrl, env.internalKey);
@@ -42,7 +43,7 @@ async function main(): Promise<void> {
 
   // Staff content removal (Guideline 1.2): socialsvc (DM/family/announcement/mail) + worldsvc (sect/world chat).
   const moderation = new HttpModerationClient(env.socialInternalUrl, env.worldInternalUrl, env.internalKey);
-  const svc = new AdminService({ cols: mongo.collections, stats, players, antiCheat, mismatches, pvpCardStats, suspiciousPve, mail, analytics, world, auction, ladder, events, gachaPools, paddleEvents, reports, appeals, enforcement, feedback, moderation, now: () => Date.now() });
+  const svc = new AdminService({ cols: mongo.collections, stats, players, antiCheat, mismatches, pvpCardStats, suspiciousPve, mail, analytics, world, auction, ladder, events, gachaPools, paddleEvents, reports, appeals, enforcement, feedback, moderation, retention, now: () => Date.now() });
 
   const jwt: JwtConfig = { secret: env.adminJwtSecret, expiresIn: env.adminJwtTtl };
   const server = startHttpApi(

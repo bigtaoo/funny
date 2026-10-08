@@ -160,14 +160,20 @@ export function configureSlot(
     // German names ("Sturmangriff", "Bogenschuetze") at FS.bodyLg are wider than the card and
     // wordWrap cannot break a single word. Re-measured at the full token on every configure so a
     // pooled slot never keeps a size fitted to the previous card.
+    // Measured on ONE line: with wordWrap on, "Arrow Tower" / "Meteor Strike" simply wrapped at the
+    // space, so the measured width always fit, fitFont never shrank them, and every two-word name
+    // in a portrait hand was two lines tall over the art (review audit, 2026-10-07).
+    nameText.style.wordWrap = false;
     nameText.style.breakWords = false;
     nameText.style.fontSize = FS.bodyLg;
     nameText.style.fontSize = fitFont(FS.bodyLg, nameText.width, cardW - 8);
+    // Still too wide at the floor: wrap at a space when the name has one.
+    if (nameText.width > cardW - 8) nameText.style.wordWrap = true;
     // At the floor and still too wide ("Meteoreinschlag" on a 720-wide portrait design, where the
     // card is 112 design px): split the word across two lines rather than run off the card — at
     // its compound seam with a hyphen when one is listed ("Bogen-" / "schütze"), else wherever the
-    // glyphs run out. The name is bottom-anchored, so the second line grows up over the art, not
-    // out of the card.
+    // glyphs run out. The name is bottom-anchored and the art box stops at its top, so a second line
+    // shrinks the art instead of covering it.
     if (nameText.width > cardW - 8) {
       const seam = compoundSeam(nameText.text, getLocale());
       if (seam) nameText.text = `${seam[0]}-
@@ -177,7 +183,7 @@ ${seam[1]}`;
     nameText.x = (cardW - nameText.width) / 2;
     nameText.y = cardH - nameText.height - 6;
 
-    configureArt(ctx, c.getChildByName('art') as PIXI.Sprite, card, cardW, cardH);
+    configureArt(ctx, c.getChildByName('art') as PIXI.Sprite, card, cardW, nameText.y - 2);
 
     const costText = c.getChildByName('cost') as PIXI.Text;
     costText.text = String(card.cost);
@@ -225,7 +231,7 @@ export function drawAfford(c: PIXI.Container, canAfford: boolean, cardW: number,
   art.tint = canAfford ? 0xffffff : 0x888888;
 }
 
-function configureArt(ctx: CellCtx, art: PIXI.Sprite, card: CardDefinition, cardW: number, cardH: number): void {
+function configureArt(ctx: CellCtx, art: PIXI.Sprite, card: CardDefinition, cardW: number, artBottom: number): void {
   const key = cardArtKey(card);
   if (key === null) {
     art.visible = false;
@@ -264,10 +270,10 @@ function configureArt(ctx: CellCtx, art: PIXI.Sprite, card: CardDefinition, card
     return;
   }
 
-  // Fit into the area between the type row and the name/cost row, keep aspect
+  // Fit into the area between the type row and the top of the name, keep aspect
   const boxW  = cardW - 16;
   const boxY0 = 16;
-  const boxY1 = cardH - 28;
+  const boxY1 = Math.max(boxY0 + 8, artBottom);
   const scale = Math.min(boxW / tex.width, (boxY1 - boxY0) / tex.height);
 
   art.texture = tex;

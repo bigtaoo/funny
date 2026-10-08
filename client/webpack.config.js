@@ -183,6 +183,7 @@ module.exports = (env, argv) => {
         '@nw/shared/battlepass': path.resolve(__dirname, '../server/shared/src/battlepass.ts'),
         '@nw/shared/rechargeMilestone': path.resolve(__dirname, '../server/shared/src/rechargeMilestone.ts'),
         '@nw/shared/titles': path.resolve(__dirname, '../server/shared/src/titles.ts'),
+        '@nw/shared/onboarding': path.resolve(__dirname, '../server/shared/src/onboarding.ts'),
         // @nw/shared/economy/iapTiers = IAP_TIERS_LIST (IOS_RELEASE.md §4.1/§4.1b, ECONOMY_BALANCE
         // §2.2) — zero-import, same treatment as the four above. Lets ShopScene/coins.ts read the
         // `mobileOnly` flag on t099/t199 from the one authoritative table instead of hand-copying a

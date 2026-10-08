@@ -55,6 +55,8 @@ export interface AnalyticsBootFunnelRow {
   declined: number;
   consents: number;
   reach_rate?: number;
+  /** Tutorial steps reached by launches without analytics consent (anonymous counter, COMPLIANCE_GLOBAL §3.3). */
+  anon_funnel?: Record<string, number>;
 }
 export interface AnalyticsLoadTimeRow {
   platform: string;

@@ -62,14 +62,20 @@ export async function cancelAccountDeletionHandler(deps: ServiceDeps, req: Fasti
   return ok({ ok: true });
 }
 
-/** C5-c GDPR consent recording: sets accounts.flags.gdprConsent=true. */
+/**
+ * C5-c GDPR consent recording: sets accounts.flags.gdprConsent to the player's choice. Turning analytics
+ * off (`consent: false`) is also an objection to the consent-free retention report (activityDays.ts):
+ * the activity days recorded so far are erased in the same write, and none are recorded afterwards.
+ */
 export async function recordGdprConsentHandler(deps: ServiceDeps, req: FastifyRequest) {
   const accountId = accountIdOf(req);
   const { consent } = req.body as { consent: boolean };
   const { cols } = deps;
   await cols.accounts.updateOne(
     { _id: accountId },
-    { $set: { 'flags.gdprConsent': consent } },
+    consent
+      ? { $set: { 'flags.gdprConsent': consent } }
+      : { $set: { 'flags.gdprConsent': consent }, $unset: { activeDays: '' } },
   );
   return ok({ ok: true });
 }

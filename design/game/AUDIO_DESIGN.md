@@ -1,6 +1,6 @@
 # Notebook Wars — 音频系统设计
 
-> 状态：**§7 的七步全部完成。** 战斗 + UI 触发点都已接，设置页有三档音量与静音；五轮实测都已做完（§0.1 战斗 / §0.2 UI / §0.3 微信 / §0.4 素材 / §0.5 BGM）；素材第一批已发货（10 个 cue 共 22 个样本，8 个 cue 刻意保留合成音，全部 CC0、无需署名）；**BGM 已发货（§7 第 7 步 ✅）——一条轨 `bgm.lobby`，73 秒循环（0.7x 重切、BGM 总线默认 0.2，§0.6）、两个 deck 等功率交叉淡入、频带电平 −29 dBFS、失焦暂停 + ducking**。开放项五个：`bgm.battle` 缺 master、微信真机、**混音会话真机未验**（§0.7：本地每一层都只走空转分支）、**除大厅床外仍然没有人听过任何一个声音**（大厅床 2026-09-05 被听过**两轮**，反馈「太急促」+「音量太大」，已重切并把总线默认压到 0.2，见 §0.6）、ducking 未在真实 stinger 下听过 ；**混音会话已接**（2026-09-11，§0.7：`ambient` + 不发声就不占会话，**真机未验**）· 权威：本文（音频**系统**的单一入口）· 更新：2026-09-11
+> 状态：**§7 的七步全部完成。** 战斗 + UI 触发点都已接，设置页有三档音量与静音；五轮实测都已做完（§0.1 战斗 / §0.2 UI / §0.3 微信 / §0.4 素材 / §0.5 BGM）；素材第一批已发货（10 个 cue 共 22 个样本，8 个 cue 刻意保留合成音，全部 CC0、无需署名）；**BGM 已发货（§7 第 7 步 ✅）——2026-10-07 整套换成三条 FreePD 的 CC0 曲子（§0.8）：大厅 `bgm.lobby`，对局 `bgm.battle.early` → 6 分钟（×2 回墨）→ `bgm.battle.late`；同曲回绕等功率交叉淡入、换曲先淡出再隔 0.5 秒淡入；频带电平 −29 dBFS、BGM 总线默认 0.2、失焦暂停 + ducking**。开放项五个：**三条新曲没有在游戏里听过、也没在真浏览器里量过**（§0.8）、微信真机、**混音会话真机未验**（§0.7：本地每一层都只走空转分支）、**除大厅床外仍然没有人听过任何一个声音**（大厅床 2026-09-05 被听过**两轮**，反馈「太急促」+「音量太大」，已重切并把总线默认压到 0.2，见 §0.6）、ducking 未在真实 stinger 下听过 ；**混音会话已接**（2026-09-11，§0.7：`ambient` + 不发声就不占会话，**真机未验**）· 权威：本文（音频**系统**的单一入口）· 更新：2026-10-07
 >
 > **权威边界**：音频**美学方向**（音色取向、禁用清单）仍归 [`../product/art-direction.md`](../product/art-direction.md) §声音；本文拥有**系统实现**——资产清单与命名、触发表、播放层抽象、混音、设置项、平台约束。两者不重述对方。
 
@@ -8,7 +8,7 @@
 
 ## 0. 落地状态（2026-09-01）
 
-§7 **七步全部完成**：平台接缝 + cue 目录 + 程序化合成音 + 样本加载/解码/并发上限/混音器 + 战斗触发点 + UI 触发点 + 设置页音量 + 微信后端 + 素材第一批 + **BGM**，五轮实测（§0.1 战斗 / §0.2 UI / §0.3 微信 / §0.4 素材 / §0.5 BGM）都已做完，**§0.6 是第一次真正的听感反馈**（2026-09-05，两轮：太急促 → 0.8x → 0.7x；音量太大 → BGM 总线 0.5 → 0.2）。开放项五个：`bgm.battle` 缺 master（§2.3）、微信真机（§0.3 末尾）、混音会话真机未验（§0.7）、**18 个 cue 仍然没有人听过**（§0.5 末尾；大厅床是唯一的例外）、ducking 未在真实 stinger 下听过。
+§7 **七步全部完成**：平台接缝 + cue 目录 + 程序化合成音 + 样本加载/解码/并发上限/混音器 + 战斗触发点 + UI 触发点 + 设置页音量 + 微信后端 + 素材第一批 + **BGM**，五轮实测（§0.1 战斗 / §0.2 UI / §0.3 微信 / §0.4 素材 / §0.5 BGM）都已做完，**§0.6 是第一次真正的听感反馈**（2026-09-05，两轮：太急促 → 0.8x → 0.7x；音量太大 → BGM 总线 0.5 → 0.2）。**§0.8（2026-10-07）**：上一条大厅床被整体否掉（「AI 生成音乐还是不行」），换成三条 FreePD CC0 曲子，对局第一次有了音乐。开放项五个：三条新曲没人在游戏里听过、也没在真浏览器里量过（§0.8）、微信真机（§0.3 末尾）、混音会话真机未验（§0.7）、**18 个 cue 仍然没有人听过**（§0.5 末尾；大厅床是唯一的例外）、ducking 未在真实 stinger 下听过。
 
 **已存在的模块**（`client/src/audio/`，平台中立，无 PIXI 依赖）：
 
@@ -628,7 +628,7 @@ reward 0.08915 / error 0.07825 / gacha common 0.06680 · rare 0.07756 · epic 0.
 24 kHz 立体声、**74.0 s 循环**、70.6 kbps VBR，频带电平 **−29.00 dBFS**（250–2000 Hz RMS）、
 接缝 **0.57 dB**。母带是**项目自有**素材（`art/audio/sources/first-party/doodle-bed.flac`，13266428
 字节，由投进来的 40.9 MB WAV 无损转出——逐样本比对相等），不需要署名。§2.3 的另一条轨 `bgm.battle`
-仍然缺 master（brief 在 [`art/audio/suno/BRIEFS.md`](../../art/audio/suno/BRIEFS.md)），**它不在 `MusicTrack` union 里**，所以对局
+仍然缺 master（brief 当时在 `art/audio/suno/BRIEFS.md`，2026-10-07 已随 FreePD 换曲删除），**它不在 `MusicTrack` union 里**，所以对局
 现在是三处显式的 `music: null`，而不是漏接。
 
 #### ⚠️ 这一轮真正的教训在代码之外：同一件事被做了两遍
@@ -953,6 +953,79 @@ no-op / `peak_regions` 的两个已知答案），共 112 例全过；`musicAsse
 
 ---
 
+### 0.8 换掉整套 BGM：三条 FreePD CC0 曲子，对局有了音乐（2026-10-07）
+
+**起因**：项目所有者的反馈是「背景音乐非常不好，AI 生成音乐还是不行，去网上找合适的」。§0.6 的两轮
+重切（0.8x → 0.7x）都没救回来——而 0.7x 本身用相位声码器拉伸 1.43 倍，发糊的拉伸痕迹可能就是「不好听」
+的一部分。这一轮不再修那条床，整套换掉。
+
+**选曲过程**：只找**真人创作、CC0、可商用免署名**的曲子（与 22 个 SFX 同一档授权，因为游戏没有致谢
+页面，见 §2.3 的合规段）。来源两个，都在 archive.org 上：
+- **FreePD**（Kevin MacLeod / Rafael Krux / Bryan Teoh 等）。原站 2025 年关闭，archive.org 的
+  `freepd` 条目是完整镜像；授权声明从 Wayback 的首页存档核对（「This music is all licensed CC0 1.0
+  Universal Public Domain Dedication」），文本归档在 `art/audio/licenses/freepd-LICENSE.txt`。
+- **Komiku《Animal Summer Music Camp》**（作者在 archive.org 上以 CC0 发布）。入围但最终没选。
+
+刻意避开 chiptune 与史诗管弦（art-direction 的禁区），只挑轻快、顽皮、原声乐器的。28 首 FreePD + 10 首
+Komiku 下下来，每首都用管线自己的度量筛一遍（时长、BPM 估计、低频−中频、电平起伏、`search_regions` 的
+最佳循环区段与接缝），淘汰 7 首，剩 25 首做成本地试听页交给项目所有者**用耳朵选**——这一步刻意不由
+测量代替，§0.6 已经证明「量得过」和「好听」是两回事。
+
+**选定的三条（项目所有者拍板）**：
+
+| 轨 | 曲子 | 区段 | 接缝 | 文件 | 理由 |
+|---|---|---|---|---|---|
+| `bgm.lobby` | Rafael Krux「Hopeful」 | 20.5 s 起 79.0 s | 0.67 dB | 848880 字节 | 轻快、电平极稳（2 s 窗起伏 2.1 dB） |
+| `bgm.battle.early` | Bryan Teoh「Managing Mischief」 | 52.5 s 起 74.0 s | 0.55 dB | 825336 字节 | 原站描述「frisky yet cautious」，正是对局 brief（课桌底下的战争，紧张但不史诗） |
+| `bgm.battle.late` | Bryan Teoh「Busybody」 | 2.0 s 起 77.5 s | 1.00 dB | 789696 字节 | 「happily frantic」，约 136 BPM（前期约 120），全曲电平平（2.7 dB） |
+
+三条都**原速**（`speed: 1.0`）、无 low shelf、24 kHz 立体声 VBR、频带 −29.00 dBFS，`audit.py --class
+music` 3/3 过、`selftest.py` 全过。头注里的取舍：
+- 大厅不取 31 s 那段更好的接缝（0.54 dB）——同 §0.5 的理由，短循环的重复比接缝更容易被听出来。
+- 后期曲不取 50 s 那段（0.82 dB）而取 77.5 s（0.99 dB）：后期阶段最长能跑 11 分钟，50 s 的循环要转
+  十三圈；0.99 dB 仍不到 2.5 dB 上限的一半。
+- Managing Mischief 全曲电平起伏 12 dB，看着吓人，但那是前奏和结尾；选定区段内 2 s 窗只起伏 6 dB。
+
+**对局分前后期**：§2.3 的 `bgm.battle` 拆成两条，切点是 **×2 回墨阶段（6 分钟）**，项目所有者在
+3 / 6 / 10 分钟三个加速点里选的（×1.5 几乎听不出变化；10 分钟很多对局打不到）。实现是
+`audio/battleMusic.ts` 的一个纯函数 `battleTrack(elapsedTicks)`，阈值直接引用引擎的
+`ACCEL_THRESHOLD_2_TICKS`——平衡改阈值，音乐跟着走。三个对局场景的 `music` 从 `null` 改成 getter：
+`GameScene` / `ReplayScene` 读 `GameRenderer.elapsedTicks`（新加的只读 getter），`StatePlayerScene`
+用播放时钟 × tickRate。**不碰引擎、不加事件、不进确定性**：`SceneManager` 本来就每帧问一次 `music`，
+播放器对「同一条轨」是空操作，所以阶段一到答案变了，就是全部的接线。
+
+**换曲不再交叉淡入**（`MusicPlayer`）：三条曲子两两不同调、不同速，叠在一起的 2 秒听起来是两支乐队
+抢拍子。新规则：**同一首的回绕**仍是等功率交叉淡入（`xfade_band_diff` 量的就是这个）；**换一首**是
+旧轨用同一条包络淡到静默（2 s），再空 `GAP_S` = 0.5 s，新轨从静默淡入（2 s）。等待期间再换只改写
+「等完放什么」（`null` 则取消），计时不重来；一个还没淡入完的 deck 被要求淡出时从它**当前**电平往下走。
+大厅 ↔ 对局的切换也走这条（以前大厅 → 对局是淡到 `null` 的静默）。用例 8 条，含「逐帧检查两个 deck
+从不同时有声」。
+
+**顺手修掉的一个潜伏 bug**：`process.py`（cue 管线）重跑时会**整份重写** `credits.json`，把
+`music` / `music_terms` 两段一起抹掉，只有 `musicAssets.test.ts` 会报。现在 `process_music.py` 自己写
+`music` / `music_sources` 两段，`process.py` 重写时原样带过去；两边用同一种序列化（indent 2、UTF-8
+原文、末尾换行），互相不改对方的字节。
+
+**删掉的东西**：`art/audio/sources/first-party/doodle-bed.flac`（旧大厅床母带）与
+`art/audio/suno/BRIEFS.md`（Suno 生成路线的 brief）——两者都不再有任何引用，git 历史里仍在。
+
+**没有验证到什么**（这一段才是这一节的价值）：
+- **三条曲子没有在游戏里听过。** 选曲时项目所有者在试听页上听的是**原曲**，不是切好、归一过电平、
+  在对局音效底下的循环。
+- **真浏览器没量过。** 本该在真 Chrome 里量「淡出 → 0.5 s 空白 → 淡入」的实际时序和 6 分钟切换，但
+  当时 Chrome 窗口处于隐藏状态（`visibilityState = hidden`，rAF 完全停转，`SceneManager.onTick` 不跑，
+  音乐逻辑一帧都不走），项目所有者选择跳过。所以覆盖它的只有单元测试（`MusicPlayer.test.ts` 的逐帧
+  断言）、`tsc` 与 webpack 生产构建。
+- 回绕点在真浏览器里是否仍落在 `lengthS − XFADE_S`：机制没改，§0.5 量过；新文件的 `lengthS` 由
+  `musicAssets.test.ts` 按 MP3 帧数钉住。
+- **包体门禁当时没跑。** 三首共多出约 1783 KiB，把 `dist.total` 顶到 28734 KiB，超出 27000 的预算；
+  PR 的 CI 才发现。2026-10-07 把预算抬到 29500 KiB（理由见 ASSET_PACKAGING §13.4），没有为它压码率。
+- **`battleTrack` 当时没有单元测试**（`checkNewFileCoverage` 在 PR 上报 0 行覆盖）。补了
+  `test/audio/battleMusic.test.ts` 4 例：切点两侧（`ACCEL_THRESHOLD_2_TICKS − 1` / 恰好等于）、阈值就是 6 分钟、两条答案都在
+  `MUSIC_CATALOGUE` 里。
+
+---
+
 ## 1. 美学基线（引自 art-direction，不在此复述）
 
 一句话锚点：**轻巧、卡通、非写实的"文具拟音"**——铅笔沙沙、橡皮擦、翻笔记本页、笔帽咔哒；**禁止**金属碰撞、爆炸轰鸣等写实战争音效。所有音效服从「我蓝敌红 / 手绘笔记本」的整体调性。细节见 art-direction §声音。
@@ -997,8 +1070,9 @@ no-op / `peak_regions` 的两个已知答案），共 112 例全过；`musicAsse
 ### 2.3 BGM（循环长音）
 | 轨 id | 场景 | 备注 |
 |---|---|---|
-| `bgm.lobby` | **除对局之外的一切**（大厅/菜单/商店/世界地图/结算/首启故事） | 🎵 **已发货 2026-09-01**（§0.5），**2026-09-05 按 0.7x 重切**（§0.6）：73 s 循环、637848 字节、频带 −29 dBFS、交付 −42.98 dBFS（总线 0.2）|
-| `bgm.battle` | 对战 / 战役关卡内 | ⛔ **缺 master，因此不在 `MusicTrack` union 里**；三个对局场景声明 `music: null`（刻意的安静） |
+| `bgm.lobby` | **除对局之外的一切**（大厅/菜单/商店/世界地图/结算/首启故事） | 🎵 **2026-10-07 换成 FreePD「Hopeful」**（§0.8）：79 s 循环、848880 字节、频带 −29 dBFS、原速。（此前是自有床 `doodle-bed` 的 0.7x 重切，§0.5 / §0.6，已退役） |
+| `bgm.battle.early` | 对战 / 战役关卡 / 回放，**开局到 6 分钟**（×2 回墨阶段之前） | 🎵 **2026-10-07**（§0.8）：FreePD「Managing Mischief」，74 s 循环 |
+| `bgm.battle.late` | 同上，**6 分钟之后** | 🎵 **2026-10-07**（§0.8）：FreePD「Busybody」，77.5 s 循环 |
 | `bgm.intro` | 首启故事（IntroScene） | 🎵 **与 `bgm.lobby` 共用**（本表原稿就写着"可与 BGM_lobby 共用"），由 `IntroScene` 省略 `Scene.music` 落到默认值 |
 | `bgm.victory` / `bgm.defeat` | 结算短乐句（stinger，非循环） | ✅ 从来就走 SFX 管线，见下 |
 
@@ -1012,28 +1086,34 @@ no-op / `peak_regions` 的两个已知答案），共 112 例全过；`musicAsse
 >   字段自动落到 `bgm.lobby`——不是特判，是默认值。
 > - **`bgm.victory` / `bgm.defeat` 从来就不是轨**，上面那条尾注早就把它们归给了 SFX 管线。它们留在
 >   这张表里只是历史。
-> - **`bgm.battle` 有位置但没有文件，所以它也不在 union 里。** 一条没有 master 的轨如果先进 union，
+> - **~~`bgm.battle` 有位置但没有文件，所以它也不在 union 里。~~（2026-10-07 已落地，见下一条订正。）** 一条没有 master 的轨如果先进 union，
 >   它会以「这个界面就是安静的」的形式存在——而那和设计意图**长得一模一样**，永远不会有人发现。
 >   所以对局场景写的是显式的 `music: null`，与「省略」（= 落到大厅床）是两回事。master 到了之后，
 >   union、`MUSIC_CATALOGUE`、三处 `music: null` 与 `musicAssets.test.ts` 的轨数断言一起改；
 >   缺条目**编译不过**，缺文件**构建不过**，两道门都是硬的。
 >
-> **⚠️ 合规：BGM 不是 CC0，它的记录必须与 `packs.json` 完全分开。**（这条原先写的是「Suno 生成」；
-> 实际发货的 `bgm.lobby` 是**项目自有**素材，而结论一个字都不变——见下面 `music_terms` 那一段。） 22 个 SFX 源
-> 全部 CC0 且无需署名，`audioAssets.test.ts` 的 `checkPacks` 断言的正是这一条，`packs.json` 顶层
-> 还有 `all_sources_commercial_ok_without_attribution: true`。把音乐填进去只有两种结局，而两种都
-> 坏：那条断言变红，或者有人「修好」它——**而一条被削弱的断言比没有断言更糟，因为它对另外 22 个
-> 文件的保证从此静默地不再被检查**。所以音乐走 `credits.json` 里独立的 `music` / `music_terms`
-> 两段（`note` 里必须用**明确的字面**写着 NOT CC0），**不进 `packs.json`**，另配
-> `musicAssets.test.ts`，其中 `checkNotInPacks` **双向**断言这条分隔。形状抄 daydayup，它踩过同一处。
+> **订正（2026-10-07，§0.8）：`bgm.battle` 拆成 `bgm.battle.early` / `bgm.battle.late` 两条，union 现在
+> 有三个成员。** 切点是 ×2 回墨阶段（6 分钟，`battleMusic.ts` 引用引擎的 `ACCEL_THRESHOLD_2_TICKS`），
+> 三个对局场景的 `music` 从 `null` 改成按对局时钟选轨的 getter。`Scene.music = null`（= 静音）这个
+> 语义仍然保留在 `SceneManager` 里，只是今天没有场景在用。
 >
-> **两条规则按 provenance 分岔（2026-09-01 落地时改的）**：`checkReproducible` 问的是「这个文件还能
-> 不能再产出来」，而答案的形状取决于母带是什么——**生成的**母带只以 prompt 的形式存在（必须归档，
-> daydayup 丢过一次，其 `credits.json` 里因此留着两条 `prompt_note`）；**项目自有的**母带是一个
-> 文件，对应的要求是它在仓库里（`bgm.lobby` 的在，无损 FLAC）。给自有母带强制一个 prompt 字段，
-> 等于用一段虚构去满足门禁——正是这条规则本来要挡的东西。`checkTerms` 同理：`terms_url` 只在**存在
-> 第三方**时是必填的，而 `accepted_by` / `accepted_on` 两边都必填（「谁把它放进仓库、什么时候」是
-> 一条非 CC0 记录里承重的那一半）。
+> **⚠️ 合规（2026-10-07 重写）：BGM 现在是 CC0，但它的记录仍然与 `packs.json` 分开。** 原先这一段的
+> 理由是「BGM 不是 CC0」（先按 Suno 生成、后按项目自有素材写的），那个前提已经不成立；**分开**这个
+> 结论保留，理由换成管线：`packs.json` 是 `write_packs.py` 对 **cue 管线**素材包的记录，
+> `audioAssets.test.ts` 拿它约束 22 个 SFX 样本；音乐由另一个 driver（`process_music.py`）切进另一个
+> 目录、过另一道门禁。一份记录描述两条管线，迟早有一条的检查会悄悄不再覆盖另一条。所以音乐仍走
+> `credits.json` 的 `music` / **`music_sources`** 两段（取代 `music_terms`，都由 `process_music.py`
+> 写），`checkNotInPacks` 双向断言分隔照旧。
+>
+> **授权规则（`musicAssets.test.ts` 的 `checkSources`）**：每条轨记 `provenance` / `title` /
+> `author` / `source_url` / `license`；`music_sources.<provenance>` 记授权、归档的授权原文路径（必须
+> 在仓库里）、`accepted_by` / `accepted_on`；轨上的 `license` 必须等于来源的；没有轨用的来源条目算错。
+> **最要紧的一条：`attribution_required` 必须是 `false`**——这个游戏没有致谢页面，一份要求署名的
+> 授权（CC BY 之类）在玩家看得到的地方兑现不了，所以在这里拒收，而不是先发货再欠着。
+>
+> **`checkReproducible` 不再按 provenance 分岔**：生成路线（Suno + prompt 归档）已经放弃，自有母带
+> 已经退役，剩下的只有一种形状——**母带原文件必须在仓库里**（下载下来的原字节，MD5 记在授权原文里）。
+> 上游已经关过一次站（FreePD.com，2025），不是一个可以回去重新下载的地方。
 
 ---
 
@@ -1112,10 +1192,10 @@ interface AudioBus {
 
 | 项 | 现状 |
 |---|---|
-| BGM 运行时 | ✅ **2026-09-01**（§7 第 7 步 / §0.5）。`audio/MusicPlayer.ts`（两个长期存活的 deck，**一条等功率包络同时服务循环回绕和换轨**）+ `audio/musicCatalogue.ts`（目录 + `XFADE_S` + `DUCK_CUES`，也是 BGM 的 `import` 所在）+ `platform/{web,wechat}/*MusicDeck.ts`。**四个入口一行没改**——它们装的后端本来就都是 `ContextAudioBus`。回绕在真浏览器里量到：正好在 `lengthS − XFADE_S` 触发，两端等功率（中点功率和 = 稳态²），淡出结束后那个 deck 被**停掉**。微信主包 +8938 字节 |
-| BGM 素材 + 授权 | ✅ **2026-09-01**，**2026-09-05 两轮重切到 0.7x**（§0.6）。`client/src/assets/audio/music/bgm-lobby.mp3`（637848 字节、73.0 s、频带 −29 dBFS），母带 `art/audio/sources/first-party/doodle-bed.flac`（无损，项目自有、无需署名）。区段由 `--search` 在**放慢后的**母带上按门禁同一个度量重挑（0.69 dB / 73 s）——**每换一次速度就得重挑一次**。记录走 `credits.json` 的 `music` / `music_terms`（含 `speed` 字段），**不进 `packs.json`** |
+| BGM 运行时 | ✅ **2026-09-01**（§7 第 7 步 / §0.5）。`audio/MusicPlayer.ts`（两个长期存活的 deck，**一条等功率包络同时服务循环回绕和换轨；2026-10-07 起换轨改为先淡出、隔 `GAP_S` 0.5 s 再淡入（§0.8）**）+ `audio/musicCatalogue.ts`（目录 + `XFADE_S` + `DUCK_CUES`，也是 BGM 的 `import` 所在）+ `platform/{web,wechat}/*MusicDeck.ts`。**四个入口一行没改**——它们装的后端本来就都是 `ContextAudioBus`。回绕在真浏览器里量到：正好在 `lengthS − XFADE_S` 触发，两端等功率（中点功率和 = 稳态²），淡出结束后那个 deck 被**停掉**。微信主包 +8938 字节 |
+| BGM 素材 + 授权 | ✅ **2026-10-07 整套换成 FreePD CC0**（§0.8）：`bgm-lobby.mp3`（Hopeful，79.0 s）/ `bgm-battle-early.mp3`（Managing Mischief，74.0 s）/ `bgm-battle-late.mp3`（Busybody，77.5 s），全部原速、频带 −29 dBFS。母带原字节在 `art/audio/sources/freepd/`，授权原文 `art/audio/licenses/freepd-LICENSE.txt`。记录走 `credits.json` 的 `music` / `music_sources`（`process_music.py` 写），**不进 `packs.json`**。（此前：自有床 `doodle-bed.flac` 的 0.7x 重切，已退役删除） |
 | BGM 的门禁 | ✅ **2026-09-01** `client/test/audio/musicAssets.test.ts`（13 条纯规则 + 23 例变异）+ `audit.py --class music` + `selftest.py` 105 项。**最要紧的一条是 `lengthS` 仍然等于文件真实时长**——回绕在 `lengthS − XFADE_S` 触发，漂了就把交叉淡入放在一个门禁从未测量过的位置上，而文件照样能加载、能播、能过 `audit.py`，唯一症状是循环每分钟踉跄一次 |
-| BGM 触发（哪条轨） | 🚧 同上。`Scene.music?`（**省略 = 大厅床**，与 §7 第 4 步 `Hit.sound` 同一个默认值形状；`null` = 静音）+ `SceneManager.onTick` 每帧推导。全仓库只有三个场景不走默认值：`GameScene` / `ReplayScene` / `StatePlayerScene`。**刻意不按场景名查表**：`setActiveScene` 那个现成漏斗取的是 `constructor.name`，production webpack 会把它混淆——ANR 归因能忍，音乐不能 |
+| BGM 触发（哪条轨） | ✅ `Scene.music?`（**省略 = 大厅床**，与 §7 第 4 步 `Hit.sound` 同一个默认值形状；`null` = 静音）+ `SceneManager.onTick` 每帧推导。三个对局场景（`GameScene` / `ReplayScene` / `StatePlayerScene`）的 `music` 是 getter，按对局时钟走 `battleMusic.ts` 的 `battleTrack()`：6 分钟前 `bgm.battle.early`，之后 `bgm.battle.late`（2026-10-07）。**刻意不按场景名查表**：`setActiveScene` 那个现成漏斗取的是 `constructor.name`，production webpack 会把它混淆——ANR 归因能忍，音乐不能 |
 | BGM 资产门禁 | 🚧 同上。`client/test/audio/musicAssets.test.ts`——13 条纯规则 + **22 例变异测试**（§0.4 那条教训：门禁写完当天就要写变异测试）。最该看住的一条是 **`lengthS` 仍然等于文件真实时长**：回绕在 `lengthS - XFADE_S` 处触发，长度漂了就把交叉淡入放到了 `xfade_band_diff` 从没测量过的地方，而文件照样加载、流式、播放、过 `audit.py`，唯一症状是循环每分钟踉跄一次 |
 | 平台音频抽象 | ✅ `audio/audioBus.ts`（模块级接缝，**不是** `IPlatform` 成员——见 §3 订正）+ `audio/ContextAudioBus.ts`（平台中立的后端，2026-09-01 从 `WebAudioBus` 抽出）+ 两个各约 15 行的平台半边：`platform/web/WebAudioBus.ts` / `platform/wechat/WechatAudioBus.ts` |
 | 微信音频后端 | ✅ **2026-09-01**（§7 第 5 步）。`wx.createWebAudioContext()`，管线原样复用，**不需要** `InnerAudioContext` 对象池（§5 订正 2）。`wx.d.ts` 补了三条声明（`createWebAudioContext` 声明为**可选**——低版本基础库真的没有，`ContextAudioBus` 把那种设备降级为静音）。DevTools 实测见 §0.3；**真机是开放项**，三件待验的事列在那一节末尾。微信主包 +8546 字节，播放引擎首次进包 |
@@ -1161,4 +1241,5 @@ interface AudioBus {
    - ~~素材来源~~ 拍板走 **Suno 生成**（CC0 音乐池几乎全是 chiptune，与「手绘笔记本」直接冲突），brief 交在 `art/audio/suno/BRIEFS.md`。**结果第一条轨没走这条路**：项目自己有一首合用的曲子（`doodle-bed`），于是 `bgm.lobby` 是**项目自有**素材，`process_music.py` 的 `SRC_DIR` 因此从 `art/audio/suno/` 放宽成 `art/audio/sources/`（一个目录一种出处）。那两条门禁规则也跟着按 provenance 分岔，见 §2.3。brief 留着给 `bgm.battle`。
    - **⚠️ 同一件事被做了两遍。** 第一轮建成但因缺素材未合并（判断是对的），第二轮拿到 master 后从零又实现了一遍，因为开工前只依赖自动召回、没有扫 `index/open.md`。留下的是第一轮那份，它在三件事上更好——交叉淡入循环、推导出来的电平、**以及 iOS**（第二轮每帧写 `el.volume`，而那个属性在 iOS Safari 上是只读的，所有淡入淡出会静默退化成硬切）。完整比较与教训见 §0.5。
    - **⚠️ 合规陷阱已提前设计掉**：BGM 不是 CC0，它的记录与 `packs.json` 完全分开，另配 `musicAssets.test.ts`。理由（一条被削弱的断言比没有断言更糟）见 §2.3。
-   - **仍然欠着**：`bgm.battle` 的 master、还是没有人听过、微信真机、ducking 从未在真实 stinger 下听过。
+   - **仍然欠着**：~~`bgm.battle` 的 master~~（2026-10-07 落地，两条）、三条新曲没有在游戏里听过也没在真浏览器里量过、微信真机、ducking 从未在真实 stinger 下听过。
+   - **2026-10-07 整套换曲（§0.8）**：Suno 生成路线与自有床都放弃，三条轨全部换成 FreePD 的 CC0 曲子（由项目所有者从 25 首候选里试听选定）；`bgm.battle` 拆成前后期两条、6 分钟切换；换曲改为先淡出再淡入。上面「拍板走 Suno 生成」「BGM 不是 CC0」两条是当时的状态，结论见 §2.3 的两条 2026-10-07 订正。

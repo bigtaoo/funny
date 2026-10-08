@@ -95,9 +95,9 @@ describe('createMongo', () => {
     await handle.ensureIndexes();
     await handle.ensureIndexes();
     const idx = await handle.collections.accounts.indexes();
-    // _id_ + the 7 explicit indexes on accounts (openid/deviceId/password.loginId/oauth/publicId/
-    // reputationDecayAt/deletedAt), not doubled by a second ensureIndexes() call.
-    expect(idx.length).toBe(8);
+    // _id_ + the 8 explicit indexes on accounts (openid/deviceId/password.loginId/oauth/publicId/
+    // reputationDecayAt/deletedAt/createdAt), not doubled by a second ensureIndexes() call.
+    expect(idx.length).toBe(9);
     // Same for the token revocation list: _id_ + revokedAt + the expireAt TTL.
     expect((await handle.collections.tokenRevocations.indexes()).length).toBe(3);
   });

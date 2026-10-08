@@ -125,26 +125,26 @@
         "atTick": 840,
         "unitType": "max",
         "col": 4,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 8
       },
       {
         "atTick": 840,
         "unitType": "max",
         "col": 7,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 8
       },
       {
         "atTick": 1080,
-        "unitType": "lena",
+        "unitType": "max",
         "col": 1,
         "count": 1,
         "spacingTicks": 20
       },
       {
         "atTick": 1080,
-        "unitType": "lena",
+        "unitType": "max",
         "col": 10,
         "count": 1,
         "spacingTicks": 20
@@ -193,20 +193,6 @@
       },
       {
         "atTick": 1380,
-        "unitType": "lena",
-        "col": 2,
-        "count": 1,
-        "spacingTicks": 18
-      },
-      {
-        "atTick": 1380,
-        "unitType": "lena",
-        "col": 9,
-        "count": 1,
-        "spacingTicks": 18
-      },
-      {
-        "atTick": 1380,
         "unitType": "max",
         "col": 1,
         "count": 2,
@@ -234,8 +220,8 @@
   },
   "nameKey": "campaign.ch1.lv7.name",
   "briefKey": "campaign.ch1.lv7.brief",
-  "startInk": 30,
-  "inkRegenMult": 1.42,
+  "startInk": 40,
+  "inkRegenMult": 1.6,
   "lanePunish": {
     "units": 5,
     "sustainTicks": 120,

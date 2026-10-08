@@ -51,6 +51,8 @@ import { preloadIconArt } from '../../render/icons';
 import { makeText } from '../../render/pixiText';
 import { tearDownChildren, sketchPanel as sharedSketchPanel, buildPaperBackground } from '../../render/sketchUi';
 import { addPanelFrame } from '../../render/panelFrame';
+import type { Hit } from '../../ui/hits';
+import { UI_FONT_FAMILY } from '../../render/theme';
 
 export { fmtCoins } from './format';
 
@@ -101,7 +103,7 @@ export const TIER_COLORS: Record<string, number> = {
 
 export function txt(label: string, size: number, color: number, bold = false): PIXI.Text {
   return makeText(label, {
-    fontSize: size, fill: color, fontFamily: 'monospace',
+    fontSize: size, fill: color, fontFamily: UI_FONT_FAMILY,
     fontWeight: bold ? 'bold' : 'normal',
   });
 }
@@ -227,6 +229,11 @@ export interface LobbySceneCallbacks {
   /** Server-authoritative ladder standing (SaveData.pvp); shown as a header badge. */
   pvp?: { rank: string; elo: number };
   /**
+   * Ranked games left today whose loss costs no ELO (new-player + daily slots, SEASON_DESIGN_IMPL_SPEC
+   * §15.5) — read at build time and drawn as a sticker on the hero when online and > 0.
+   */
+  getProtectedGamesLeft?(): number;
+  /**
    * Live soft-currency balance getter (SaveData.wallet.coins mirror); shown in the header (online only).
    * A closure rather than a snapshot value so the header re-renders with the current balance instead of
    * whatever it was at the moment `showLobby` was called (matches the getCoins convention used by every
@@ -305,6 +312,8 @@ export class LobbySceneCore {
   rankChipRect: Rect | null = null;
   /** Hit rect for the top-left profile chip (opens SettingsScene). */
   profileChipRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  /** Bounds of the hero's "N games today without ELO loss" sticker (protectSticker.ts); null when hidden. */
+  protectStickerRect: Rect | null = null;
 
   /** Aggregate social unread (friends + chat + mail) → red dot on the social nav slot. */
   socialBadge = 0;
@@ -355,6 +364,14 @@ export class LobbySceneCore {
   consentYesRect: Rect | null = null;
   consentNoRect: Rect | null = null;
   consentOnAnswer: ((consented: boolean) => void) | null = null;
+  /**
+   * Non-blocking Terms/Privacy notice + analytics prompt (IPlatform.entryNoticeOnly, ui/dialogs/
+   * EntryNoticeStrip.ts). Unlike the modals around it this swallows only taps inside `noticeRect`;
+   * the rest of the lobby stays live underneath.
+   */
+  noticeLayer: PIXI.Container | null = null;
+  noticeRect: Rect | null = null;
+  noticeHits: Hit[] = [];
   /** First-time feature guide overlay (ONBOARDING §4.1). After dismissal the callback continues navigation to the feature. */
   guideLayer: PIXI.Container | null = null;
   guideDismissRect: Rect | null = null;
@@ -412,7 +429,7 @@ export class LobbySceneCore {
     // unseen buttons — on iOS a first login rebuilds once or twice right after entry (tab-icon
     // art, the save adopted from the server), which is the "lobby dead for 80 s" report
     // (IOS_RELEASE.md §10.7).
-    const modals = [this.settlementLayer, this.guideLayer, this.consentLayer]
+    const modals = [this.settlementLayer, this.guideLayer, this.consentLayer, this.noticeLayer]
       .filter((l): l is PIXI.Container => !!l);
     for (const l of modals) this.container.removeChild(l);
     tearDownChildren(this.container);
@@ -439,6 +456,9 @@ export class LobbySceneCore {
     this.toastRect = null;
     this.settlementLayer = null;
     this.settlementDismissRect = null;
+    this.noticeLayer = null;
+    this.noticeRect = null;
+    this.noticeHits = [];
     // Tear the page tree down too. titleBoil / heroFigure (the Ticker.shared-driven
     // children) were destroyed explicitly above; this frees the remaining static
     // children so nothing outlives the scene. All async repaint paths (badges /

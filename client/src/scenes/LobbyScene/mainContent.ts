@@ -20,6 +20,7 @@ import type { BadgesPanel } from './badges';
 import { drawButtonLabel } from '../../ui/widgets/buttonLabel';
 import { headerMetrics } from './format';
 import { snapFont } from '../../render/fontScale';
+import { drawProtectSticker } from './protectSticker';
 
 /**
  * One shortcut in the engagement strip. `icon` is the same glyph the destination screen wears on its
@@ -200,6 +201,7 @@ export function drawMainContent(core: LobbySceneCore, badges: BadgesPanel): void
   const heroSubMaxW = contentW * 0.92;
   if (heroSub.width > heroSubMaxW) heroSub.scale.set(heroSubMaxW / heroSub.width);
   core.container.addChild(heroSub);
+  drawProtectSticker(core, core.btnRect, tbH, core.cb.online ? (core.cb.getProtectedGamesLeft?.() ?? 0) : 0);
 
   // 2. Pillars: Campaign (gold, PvE) | World map (accent, SLG). The world map needs an account,
   // so it's hidden in offline mode — Campaign then takes the full content width.
@@ -339,6 +341,16 @@ function drawPillar(
   subLbl.x = x + w / 2; subLbl.y = y + h * 0.88;
   fitToCard(subLbl, w);
   core.container.addChild(subLbl);
+
+  // The two rows are placed by fractions of the card, but their sizes are snapped to the type scale
+  // and floored: on a short card (a 640-tall landscape design, 2026-10-07) the subtitle sits on the
+  // floor at a larger share of the card, its box ran into the title's and its baseline onto the
+  // card's border. Keep it inside the card, then lift the title clear of it.
+  // The hand-drawn border is literal design px, not a share of the card, so the inset is too.
+  const subBottomMax = y + h - Math.max(8, Math.round(h * 0.04));
+  subLbl.y = Math.min(subLbl.y, subBottomMax - subLbl.height / 2);
+  const titleBottomMax = subLbl.y - subLbl.height / 2;
+  titleLbl.y = Math.min(titleLbl.y, titleBottomMax - titleLbl.height / 2);
 }
 
 /**

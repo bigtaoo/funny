@@ -53,11 +53,82 @@
 - **两件事，两种法律依据，不能绑在一个按钮上**（2026-09-21 落地，细节见 ANALYTICS §3.6c）：
   - **协议 + 隐私政策** = 缔约必要（Art 6(1)(b)），**可以硬门**，拒绝就是不玩；
   - **埋点** = 只能靠 consent，而把服务访问权绑在它上面就不算「自由给出」（Art 7(4) / Recital 43），所以**拒绝之后必须照样能进游戏**。
-- **EU/EEA/UK/CH + US**：首启弹窗给「全部接受」/「仅必要」两个按钮，两个都进游戏。其余地区（含微信）看单按钮版，埋点随协议一起接受——**不显示一个点了不算数的假按钮**。地区靠 IANA 时区粗判（`client/src/platform/consentRegion.ts`），偏向多问。
+- **EU/EEA（+ CH 等 `Europe/*` 时区）**：首启弹窗给「全部接受」/「仅必要」两个按钮，两个都进游戏。**英国、美国**和其余地区（含微信）看单按钮版：埋点**默认开、设置里可关**（2026-10-07 起，依据见 §3.3b）——**不显示一个点了不算数的假按钮**。地区靠 IANA 时区粗判（`client/src/platform/consentRegion.ts`），偏向多问。
 - **拒绝之后唯一离开设备的东西是一次无鉴权计数**（`GET /analytics/config?d=1`，2026-09-21）：服务端只在 `boots_daily` 的「日期 / 平台 / 计数」那行上加一，没有 device id、没有 IP、没有账号，跟同意墙之前的启动计数是同一套立场。目的是把「拒绝埋点还在玩的人」从启动漏斗的 `Lost` 里摘出来，细节见 ANALYTICS §3.6b / §3.6c。
 - 微信小游戏另有平台强制的《用户隐私保护指引》弹窗，那道门归微信管，我们不重复弹。
 - Web 端如用 cookie/localStorage 做分析，需 cookie 同意条。
-- **撤回 = 关采集 + 可请求删除**：设置页「匿名数据」开关两个方向都能改（Art 7(3)：撤回要和给出一样容易），写 `flags.gdprConsent` + `POST /account/gdpr-consent`；analyticsvc 顶层 `enabled` 开关（ANALYTICS §10）仍是服务端总闸；按 `user_id` 批删事件已支持，account/save/commercial 侧的删除走 §3.5。
+- **CrazyGames 包例外**：入口不设门，条款改通知、埋点改非阻塞提示，见下面 §3.3a。上面两条「首启弹窗」只适用于其余平台。
+- **撤回 = 关采集 + 可请求删除**：设置页「数据统计」开关（2026-10-07 前中文叫「匿名数据」——数据带假名 ID，不算匿名，改了）两个方向都能改（Art 7(3)：撤回要和给出一样容易），写 `flags.gdprConsent` + `POST /account/gdpr-consent`；analyticsvc 顶层 `enabled` 开关（ANALYTICS §10）仍是服务端总闸；按 `user_id` 批删事件已支持，account/save/commercial 侧的删除走 §3.5。
+
+### 3.3a CrazyGames：入口不设门，条款改通知（2026-10-07 拍板）
+
+**起因**：CG 以「整体质量」拒稿，审核员 57 秒就走了（[`CRAZYGAMES_LAUNCH.md` §7](CRAZYGAMES_LAUNCH.md)）。CG 包当时的第一屏是
+年龄 + 同意 + 条款合屏的 `EntryGateDialog`，挡在一切玩法之前。
+
+**依据**（CG 官方文档，2026-10-07 查）：
+- <https://docs.crazygames.com/requirements/gameplay/>：*"Games should land new users in gameplay immediately. If this is not
+  feasible given the game specifics, a maximum of 1 click is allowed."*；同页 *"CrazyGames is a website for an audience aged 13 or
+  more. Your game must be PEGI 12 compliant."*
+- <https://docs.crazygames.com/requirements/technical/>（User Consent）：*"In case your game collects additional personal data beyond
+  the events in our SDK, the game should add a Terms & Conditions and/or Privacy Policy notice to new players."* 以及
+  *"We recommend to make this a simple notice rather than a pop-up blocking the user."*（给的例子：游戏内的隐私链接、新标签页打开政策）
+- CG SDK **不暴露任何同意 / GDPR / 年龄状态**（`user`/`systemInfo` 只有 countryCode、locale、设备、OS、浏览器、applicationType）。
+  门户自己的 CMP 只管它自己的广告和 cookie，**管不到我们自己的埋点和后端**——所以埋点同意仍是我们的事。
+- 我们的 `MIN_AGE_YEARS` = 13（`client/src/app/appConstants.ts`），与门户的最低年龄相同。
+
+**做法**（只对 CG 包；平台能力位 `IPlatform.entryNoticeOnly`，仅 `CrazyGamesPlatform` 置 true）：
+
+| 项 | CG 包 | 代码 |
+|---|---|---|
+| 入口门 | **没有**。`gateConsent` 直接 `next()`，启动即进新手关 | `app/createAppCore.ts` `gateConsent` |
+| 年龄 | **不问**（门户本身 13+ = 我们的门槛）。不伪造 `ageOk`；已经记录为未满 13（`ageOk === false`）的账号仍停在 blocked 死路上 | 同上 |
+| 条款 + 隐私政策 | **非阻塞通知条**：新玩家第一次到大厅时，底部导航上方一条「开始游戏即表示同意用户协议（EULA）与隐私政策」+ 两个链接 + OK。只吃自己矩形内的点击，其余照常落到大厅。**展示即记 `termsAccepted.v2`**（browsewrap：通知本身就是这条包的接受方式）。链接走 `legalUrl()`——CG 包解析到自有站点的绝对地址（§8 那次「门户域名下 404」的修法），`openExternalUrl` 新标签页打开 | `ui/dialogs/EntryNoticeStrip.ts`、`scenes/LobbyScene/overlays.ts`、`createAppCore.ts` `offerEntryNotice` |
+| 埋点（`needsConsentChoice()` 为 false 的地区：英国、美国及其余） | **默认开，但先告知再上传**（§3.3b）：启动时**不**记同意，事件留在同意前缓冲；统计说明第一次上屏——新玩家是毕业卡底部那行小字，跳过教学的是大厅通知条里多出的一句——才 `recordConsent(true, {mode:'notice'})`，缓冲补发 | `createAppCore.ts` `statsNoticePending` / `acknowledgeStatsNotice` |
+| 埋点（EU/EEA/CH，即 `Europe/*` 去掉英国） | **先不采**：事件留在内存的同意前缓冲（ANALYTICS §3.6），大厅那条通知条上同时问「愿意提供匿名数据吗？允许 / 不用了」。两个答案走与入口门**同一条** `recordConsent`：允许 → 缓冲补发 + `gdpr_consent { mode:'prompt', dwell_ms }`；不用了 → `gdprConsent=false` + 账号留痕 + `?d=1` 计数，**零事件**。离开大厅不算回答：本次启动里回大厅时条子还在，下次启动再问；设置页「匿名数据」开关照旧可用 | 同上 |
+| 第一分钟（所有人） | 匿名、聚合的首局漏斗计数 `GET /analytics/config?t=<step>` → `funnel_anon_daily`（日期 / 平台 / 步骤 / 计数，零标识），2026-10-07 起**对所有人计**、并扩到前三关，见 ANALYTICS §3.6d | `analytics.countAnonymousFunnelStep` |
+
+**为什么放大厅、不放加载页**：CG 包的加载期间被门户自己的 loading splash 盖住（`app.ts` 里 `onLoadingComplete()` 在我们的
+`LoadingOverlay` 撤掉**之后**才撤门户那层），玩家根本看不到我们的加载页；而新玩家首次进大厅会被立即转去新手关——
+新手关的战斗过程中不放任何东西。所以新玩家第一次看到条款通知是**教学毕业后第一次到大厅**；统计说明则提前到毕业卡上（§3.3b）。`ctx.offerEntryNotice(host)` 留给别的界面
+（例如战役地图——首开时那里有开场故事卡，等两者不再叠时再接）。
+
+**取舍，写清楚**：
+- ~~非选择区的埋点在通知出现之前就开了~~（2026-10-07 当天改掉：先告知再上传，§3.3b）。
+- browsewrap 的可执行性弱于点击同意。CG 包没有任何付费入口（§8 Web 专属），条款里最要紧的是行为规范 + 举报/拉黑，
+  这些在游戏内本来就可用。App Review 1.2 的 EULA 硬门只管 iOS，CG 包不受影响。
+- 其余平台（自有域名 web、微信、App）**保留入口门**，但按 ONBOARDING §11.8 压缩：一段短文案 + 两个链接，出生年份改成
+  「点年份 → 选年代 → 选年份」两次点击的选择器（仍从 30 年前起、仍问年份不问「满不满 13」、未满仍要二次确认，§3.4 的中性要求不变），
+  三个答案和所有 flag 语义不变；`gdpr_consent` 加 `mode:'gate'` 与 `dwell_ms`。
+
+**覆盖**：`client/test/entryNoticeOnly.test.ts`（各时区都零入口屏、非选择区记 `notice`、选择区不预先同意、允许/不用了两条记录路径、
+条子回大厅时还在、答完不再出、未满 13 账号仍 blocked、其它平台门仍在且带 `mode:'gate'`+`dwell_ms`）+
+`client/test/ui/lobbyEntryNotice.ui.ts`（三语言五视口不压底栏不溢出、条外点击照常进大厅、条内点击不穿透、重建后还在）+
+`client/test/ui/entryGate.ui.ts`（年份选择器：从 30 年前起、年代全列、返回不改值、722×406 也放得下）。
+
+### 3.3b 默认收集、设置里可关（2026-10-07 拍板）
+
+**起因**：产品方的原话——「收集数据对我来说很重要，不然我都不知道玩家是怎么流失的」。问能不能**默认收集、玩家手动关**。
+
+**按地区的结论**（2026-10-07 查；不是律师意见，上线前法务过一遍）：
+
+| 地区 | 默认收集 + 可关？ | 依据 |
+|---|---|---|
+| 美国 | **可以** | 各州隐私法管的是卖数据 / 定向广告 / 跨站追踪，自家第一方统计不在其列；CG 门户 13+，COPPA 管不到 |
+| 英国 | **可以，有条件** | Data (Use and Access) Act 2025 给 PECR 加了 Schedule A1，2026-02-05 起生效：第一方、为改进服务的统计用途，**告知 + 免费简单的反对途径**即可，不需事先同意 |
+| EU/EEA | **不行** | ePrivacy 5(3)（德国 TDDDG §25）：在终端设备上存 / 读非必要信息（我们的 device id）要事先同意。欧盟 Digital Omnibus 提案（GDPR 新 88a 条，允许第一方受众统计免同意）**尚未生效** |
+
+**做法**：
+1. **地区表**：`consentRegion.ts` 把美国时区整表删掉，把英国（`Europe/London`、`Europe/Belfast`、`GB`、`GB-Eire`）从 `Europe/*` 里摘出来。泽西、根西、马恩岛、直布罗陀有自己的数据保护法、不适用 PECR，**仍问**。
+2. **先告知再上传**：英国豁免的条件之一是「告知」。单按钮门本身就是告知，文案改成「我们会收集游玩数据改进游戏，可随时在设置里关闭」（去掉「匿名」——带假名 ID，不算匿名）。CG 包没有门，就让事件**留在同意前缓冲里，统计说明第一次上屏再放行**：
+   - 新玩家：毕业卡底部一行 ≥14 CSS px 的小字（`TutorialConfig.footnote`），卡弹出时 `onFootnoteShown` → `acknowledgeStatsNotice()`；这时进关才 10–60 秒，缓冲（上限 100 条，保留最早的）装得下；
+   - 跳过教学 / 老账号：大厅通知条多一句 `entryNotice.stats`，挂上即确认；
+   - 中途关页的人：缓冲丢掉，只剩匿名漏斗计数（第 3 条）——这正是「告知之前不上传」的代价，接受。
+3. **匿名首局漏斗对所有人计**：`?t=<step>` 原来只在没同意时发，现在**谁都发**——它不带任何标识、不碰设备存储，既不是个人数据也不是终端访问，不需要同意。白名单扩到 `tutorial_skip` 和前三关的首次尝试 / 首次通关（`lv1_start … lv3_clear`，只在该关还没通过时计）。好处：这是唯一一张**同意的和没同意的玩家在同一口径下**的漏斗，EU 没同意的人在哪一步掉也看得到。集合 `tutorial_anon_daily` 改名 `funnel_anon_daily`（还没上线过，直接改）。
+4. **服务端留存表**（不经客户端埋点）：metaserver 在已鉴权请求上记账号**注册后前 30 天里哪几天来过**（`accounts.activeDays`，日偏移 0–30 的集合），ops 后台按注册日分组出 D1/D3/D7/D14/D30 留存和教程 / 前三关通过率，数据取自游戏本来就存的账号与存档。法律依据：正当利益（Art 6(1)(f)）+ 隐私政策写明 + 反对权；**把「关掉数据统计」当成反对**——`gdprConsent === false` 的账号不记、不计，关掉时把已有的 `activeDays` 清掉，账号清除时同样清掉。只看前 30 天、只存日偏移，是数据最小化。它从第一个已鉴权请求就开始记，**早于**第 2 条的统计说明上屏——这些请求是游戏本来就要发的，依据是正当利益不是同意，所以不必等告知；关掉统计即清。细节见 ANALYTICS §3.6e。
+
+**隐私政策**：`client/public/web/privacy.html`（线上那份）与 `design/product/legal/privacy-policy.{en,de,zh}.md` 同步改了：埋点一行的法律依据按地区写、新增「服务统计」「匿名步骤计数」两行、新增「Analytics and Your Choice」一节、反对权写明「设置里关掉即可」。
+
+**覆盖**：`client/test/consentGate.test.ts`（美国 / 英国时区不再给两个按钮，泽西 / 直布罗陀仍给）、`client/test/entryNoticeOnly.test.ts`（CG 非 EU：启动时不记同意、通知上屏才记；毕业卡带小字且弹出即确认；EU 毕业卡不带小字）、`client/test/analyticsAnonFunnel.test.ts`、analyticsvc e2e（新步骤入白名单、`lv9_clear` 不记）。
 
 ### 3.4 儿童（COPPA / GDPR-K）
 - **已拍板（ADR-018，2026-06-21）：自我定级为「13+ / 不面向儿童」**，规避 COPPA/家长同意的重负担。
@@ -173,7 +244,7 @@
 - [ ] IARC 分级问卷
 
 ### Web 专属
-- [x] cookie/同意条（若用分析 cookie）——`ConsentDialog` 首启阻塞式同意，全区都弹（§3.3）
+- [x] cookie/同意条（若用分析 cookie）——`ConsentDialog` 首启阻塞式同意，全区都弹（§3.3）；**CrazyGames 包除外**：2026-10-07 起改为大厅里的非阻塞通知条 + 埋点提示（§3.3a）
 - [ ] 聚合平台（CrazyGames 等）的隐私/内容要求逐条核对 —— **2026-09-04 修掉了其中四条硬伤**（后端地址没烘死导致整包离线、隐私政策链接在门户域名下 404、Paddle 网页支付面随包上传、广告播放期间不静音 + `sdkGameLoadingStart` 从未调用）；详见 [`store-assets-checklist.md §4.2/§4.3`](../product/release/store-assets-checklist.md)。**剩余**：门户内容政策逐条核对（外链/账号系统/加载时长）+ 该平台冒烟从未跑过。2026-09-27 按官方公开要求改完 Basic Launch 一档，见 [`CRAZYGAMES_LAUNCH.md`](CRAZYGAMES_LAUNCH.md)
 - [x] 支付渠道合规 + 虚拟道具条款 —— CrazyGames 上没有任何支付入口（`iapKind()` 返回 null，且 2026-09-04 起支付页与 Paddle 模块都不进该构建），变现只走门户激励视频
 
