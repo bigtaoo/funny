@@ -198,6 +198,10 @@ module.exports = (env, argv) => {
         // (pure/deterministic, no Node.js built-ins) to avoid pulling in password/logger
         // which import node:crypto / node:fs / node:path and break webpack browser builds.
         '@nw/shared': path.resolve(__dirname, '../server/shared/src/slg/index.ts'),
+        // npm `url` (Node's legacy url module + punycode + qs, ~75 KB minified) → a throwing stub, on
+        // every target. Its only importer is @pixi/utils' deprecated `PIXI.utils.url` getter, which
+        // nothing reads; see the stub's header and test/nodeUrlStub.test.ts for the contract.
+        'url$': path.resolve(__dirname, 'src/platform/stubs/nodeUrl.ts'),
       },
     },
     output: isWechat ? {
