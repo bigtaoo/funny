@@ -16,9 +16,10 @@
 //
 // Skipped unless NW_FRAMECOST=1, for the same reason captureEndStats is: it asserts almost nothing,
 // it spends 30s per case waiting for a real `render_profile` window, and it needs the local stack up
-// (docker: metaserver et al behind nginx on 8088 — the dev server must be built against it).
+// (docker: metaserver et al behind nginx on 8088 — the dev server must be built against it, which
+// is why it is listed in playwright.portrait.config.ts and not in the CI smoke config).
 //
-//   Run: NW_FRAMECOST=1 npx playwright test frameCost
+//   Run: docker/local-up.ps1, then  NW_FRAMECOST=1 npx playwright test --config playwright.portrait.config.ts frameCost
 import { test, expect, type Page } from '@playwright/test';
 import { uid, registerAndEnterLobby, callCb, screenIs, dismissFeatureGuide } from './lib/nwE2E';
 

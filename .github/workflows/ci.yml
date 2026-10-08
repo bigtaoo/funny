@@ -753,13 +753,15 @@ jobs:
         working-directory: client
         run: npm ci
 
-      # Bring up the full stack and wait for all services to be healthy (--wait works with healthchecks in compose). Caddy is not started.
+      # Bring up the full stack and wait for all services to be healthy (--wait works with healthchecks in compose).
+      # caddy (host 18088) fronts it on one origin for the browser smoke, exactly as in production; the
+      # Node-process suites keep using the services' direct ports (see server/docker-compose.ci.yml).
       - name: bring up server stack
         working-directory: server
         run: |
           docker compose -f docker-compose.prod.yml -f docker-compose.ci.yml \
             up -d --build --wait \
-            redis mongo metaserver commercial gateway matchsvc gameserver worldsvc analyticsvc
+            redis mongo metaserver commercial gateway matchsvc gameserver worldsvc analyticsvc auctionsvc caddy
 
       # SLG worldsvc deployment smoke (S8-0): proves the 7th process starts in the prod image and the public REST 4th face is reachable.
       - name: worldsvc health smoke
@@ -787,10 +789,12 @@ jobs:
 
       # Browser smoke (claudedocs/client-testing.md 缺口B): the only layer with a real renderer /
       # real WebGL, driven via window.__nwE2E (see entries/web-e2e.ts) instead of pixel clicks.
-      # Reuses the stack already brought up above — no separate docker-compose bring-up. New as of
-      # 2026-07-22: continue-on-error until it's proven stable across a run of PRs, then remove the
-      # flag to make it a hard merge gate (this is the day-branch → main PR gate, chosen precisely
-      # because this job's stack cost is too high to pay on every feature-branch merge).
+      # Reuses the stack already brought up above — no separate docker-compose bring-up — through its
+      # caddy origin (client/playwright.config.ts bakes http://localhost:18088 into the e2e bundle).
+      # A hard gate since 2026-10-08: it ran as continue-on-error from 2026-07-22, and in that time
+      # went red without anyone seeing it (18 failures, none of them product bugs — see
+      # claudedocs/client-testing.md). This job is the day-branch → main PR gate, chosen precisely
+      # because its stack cost is too high to pay on every feature-branch merge.
       - name: install Playwright chromium
         working-directory: client
         run: npx playwright install --with-deps chromium
@@ -798,13 +802,12 @@ jobs:
       - name: run browser smoke (two-account, real WebGL)
         id: browser_smoke
         working-directory: client
-        continue-on-error: true
         run: npm run test:browser
 
-      # continue-on-error above means `failure()` never sees this step fail — check its recorded
-      # outcome directly instead, or this upload (and the trial-period signal) would never fire.
+      # Only when the smoke itself failed: an earlier step failing skips the smoke, and there is no
+      # report to upload then. The explicit `failure() &&` replaces the implicit `success() &&`.
       - name: upload Playwright report on failure
-        if: steps.browser_smoke.outcome == 'failure'
+        if: failure() && steps.browser_smoke.outcome == 'failure'
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report

@@ -805,25 +805,29 @@ MMS 的 `killProcess` 就是 `await childprocess.once('exit')`——**这个事�
 | `NW_E2E_GAME_PORT` | 8081 | gameserver 数据面 WS；**同时**拼进 matchsvc/gameserver 的 `NW_GAME_PUBLIC_WS_URL`（ticket 里的地址） |
 | `NW_E2E_WORLD_PORT` | 18084 | worldsvc 公网 REST（health smoke + 浏览器包的 `NW_WORLD_BASE`） |
 | `NW_E2E_ANALYTICS_PORT` | 18085 | analyticsvc（health smoke） |
-| `NW_E2E_CONTAINER_PREFIX` | `nw` | redis/mongo 的 `container_name`（prod 写死 `nw-redis`/`nw-mongo`，容器名在 Docker 主机上全局唯一，换 `-p` 也照撞；本机就有一对 5 周前退出的旧 `nw-redis`/`nw-mongo`） |
+| `NW_E2E_PROXY_PORT` | 18088 | caddy（2026-10-08 加，见下节）：浏览器冒烟走的**单一入口**；`client/playwright.config.ts` 也读它 |
+| `NW_E2E_CONTAINER_PREFIX` | `nw` | redis/mongo/caddy 的 `container_name`（prod 写死 `nw-redis`/`nw-mongo`/`nw-caddy`，容器名在 Docker 主机上全局唯一，换 `-p` 也照撞；本机就有一对 5 周前退出的旧 `nw-redis`/`nw-mongo`） |
 
 消费方：`full-link.e2e.ts` / `ranked.load.ts` 本来就读 `NW_API_BASE` / `NW_EXPECT_GATEWAY`；唯一写死端口的断言
-（`gwA.includes(':18080')`，「gateway 地址不能是 meta 地址」）改成比 `host:port`。浏览器冒烟的 web-e2e 包在 CI 里
-不传环境变量、靠 `webpack.config.js` 的 localhost 默认值（恰好是 CI 端口），所以换端口后脚本要显式传
-`NW_API_BASE` / `NW_GATEWAY_WS` / `NW_WORLD_BASE`。CORS 无需改：metaserver 是 `origin: true`（反射任意 origin）。
+（`gwA.includes(':18080')`，「gateway 地址不能是 meta 地址」）改成比 `host:port`。浏览器冒烟的 web-e2e 包
+（2026-10-08 起）由 `client/playwright.config.ts` 的 `webServer.env` 烘焙成 caddy 单一入口
+`http://localhost:${NW_E2E_PROXY_PORT:-18088}`（`/api`、`/gw`、world/social/auction 同源），ci.yml 和脚本都不再
+给这一步传 `NW_*`；脚本只需导出 `NW_E2E_PROXY_PORT=28088`。CORS 无需改：metaserver 是 `origin: true`（反射任意
+origin），analyticsvc 回 `access-control-allow-origin: *`。
 
 **一条命令**（Git Bash，仓库任意位置）：
 
 ```bash
-scripts/e2e-local.sh                  # 默认端口 28080/28086/28081/28084/28085，compose 项目 nw-e2e-local
+scripts/e2e-local.sh                  # 默认端口 28080/28086/28081/28084/28085/28088，compose 项目 nw-e2e-local
 scripts/e2e-local.sh --skip-install   # client/node_modules 已就绪时跳过 npm ci
 scripts/e2e-local.sh --keep           # 跑完不拆栈
 ```
 
 脚本逐步照抄 `ci.yml` 的 `e2e` job（同 compose 文件、同服务列表、同 job 级 env、`CI=true`），每步输出写进日志目录
 （默认新建临时目录，可用 `NW_E2E_LOG_DIR` 指定，**不往终端灌**）；先用 node 试绑全部端口 + Playwright 的 9096，
-有被占的直接退出；`trap EXIT` 保证 `down -v` 只拆自己的 `-p nw-e2e-local` 项目。浏览器冒烟照 CI 的
-`continue-on-error` 处理：失败只报告，不改退出码。`ci.yml` 的 job 头注释已指向这个脚本，**改 job 步骤时两边一起改**。
+有被占的直接退出；`trap EXIT` 保证 `down -v` 只拆自己的 `-p nw-e2e-local` 项目。浏览器冒烟和 CI 一样是**硬步骤**
+（2026-10-08 起；此前照 CI 的 `continue-on-error` 只报告不改退出码）。`ci.yml` 的 job 头注释已指向这个脚本，
+**改 job 步骤时两边一起改**。
 
 **⚠️ `npm ci` 会先删 `client/node_modules`**：worktree 里如果那是 junction 到主检出的，删掉的是**主检出的**包 —— 这种
 worktree 一律加 `--skip-install`。
@@ -857,3 +861,25 @@ worktree 一律加 `--skip-install`。
    请求落到 metaserver 那个恒返 501 的占位路由上。
 2. `portraitLayout.spec.ts` ×14、`rotateLayout.spec.ts` ×1：`test/browser/lib/seed.ts` 用
    `docker exec nw-local-mongo …` 种数据，只认**本地栈**（`docker/local-up.ps1`）的容器；CI 栈里没有这个容器。
+
+### 修复后（2026-10-08，同日，分支 `ci/browser-smoke-gate`）
+
+上面两类加 6 个 skip 的处理（细节见 [`client-testing.md`](client-testing.md) 缺口 B）：CI 栈加 caddy（prod
+`Caddyfile` 原样，`NW_E2E_PROXY_PORT` 默认 18088），浏览器包走 caddy 单一入口；本地栈专用的 5 个 spec 用
+`playwright.portrait.config.ts` 导出的 `LOCAL_STACK_SPECS` 从冒烟配置里排除；`audioSession` 的「负载下 skip」
+改成带自动播放旗标的硬断言；ci.yml 与本脚本都去掉了 `continue-on-error`。没有删 spec。
+
+| 轮次 | bring up（11 服务 + caddy） | `test:e2e` | `test:load` | `test:browser` |
+|---|---|---|---|---|
+| 1 | healthy | 6 passed / 1 skipped | 20/20 matched | 9 passed，其中 **3 flaky**（首轮全部超时、重试即过） |
+| 2（`workers: 2`） | healthy | 6 passed / 1 skipped | 20/20 matched | **9 passed，0 flaky，0 skipped** |
+| 3（`workers: 2`） | healthy | 6 passed / 1 skipped | 20/20 matched | **9 passed，0 flaky，0 skipped** |
+
+第 1 轮那 3 个 flaky 不是用例问题：`CI=true` 下 Playwright 默认 worker 数 = 半数核心，本机 22 核 → 11 个 worker，
+6 个 spec 同时冷启动 dev bundle（每页约 265 个请求，全走软件 WebGL 渲染），dev server 被饿住——trace 里
+`page.goto('/')` 用了 61 s。GitHub 的 ubuntu-latest 是 4 vCPU，默认本来就是 2；`playwright.config.ts` 在 `CI` 下
+钉成 2，让本脚本复现 runner 而不是开发机。
+
+`test:e2e` 的 1 skipped 仍是 auction 块：它探 `NW_AUCTION_BASE`（默认 `127.0.0.1:18086`）的 `/health`，而栈里的
+auctionsvc 现在虽然起着，却只经 caddy 的 `/auction*` 暴露、没有宿主端口。要把它也收进 CI，候选做法是给这一步传
+`NW_AUCTION_BASE=http://localhost:18088`——但 caddy 的 `/health` 路由的是 worldsvc，探针要随之改，**未做**。

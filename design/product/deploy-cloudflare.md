@@ -200,6 +200,8 @@ cd .. && npx wrangler deploy -c wrangler/client.jsonc
 
 > 手动两条命令的老路仍可用（上面命令块），适合本机临时发布或 CI 不可用时兜底。
 
+> 2026-10-08 起 e2e job 里的浏览器冒烟（`npm run test:browser`）去掉了 `continue-on-error`、成为硬步骤：它红，CI 就红，这里的部署也就不触发（详见 `claudedocs/client-testing.md` 缺口 B）。
+
 #### ⚠ 部署基线为什么是「上次部署成功的 commit」而不是「上一个 commit」（2026-08-15 线上事故）
 
 **现象**：头像改版（20 张预设立绘 + 删掉 装备/材料 分类）已经在 `main` 上躺了一天多，`a.gamestao.com/version.json` 却还是 `220cf45`，玩家看到的仍是旧的 8 图标 / 6 页签选择器。期间 Actions 页面上 client-deploy 一路显示 **success**，没有任何红码。
