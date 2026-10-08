@@ -2,7 +2,7 @@
 // (claudedocs/client-modules.md "单文件 500 行收敛"). gearSpecCache is a plain readonly Map
 // reference (mutated in place via .set, never reassigned) — no getter/setter needed.
 import { Side } from '@nw/engine/types';
-import type { Unit } from '@nw/engine/Unit';
+import type { UnitViewUnit } from '../viewInput';
 import type { UnitType } from '@nw/engine/types';
 import { PLAYER_EQUIPPABLE_UNITS } from '@nw/engine';
 import type { EngineCardInstance, EngineEquipInv } from '@nw/engine';
@@ -63,6 +63,6 @@ export function gearSpecsFor(host: GearHost, unitType: UnitType): GearGlyphSpec[
  * keyed by type, not side, so a runtime can flip sides on reuse). setGear is
  * idempotent, so the common pooled-reuse-same-side case is a no-op.
  */
-export function applyGear(host: GearHost, runtime: UnitRuntime, unit: Unit): void {
+export function applyGear(host: GearHost, runtime: UnitRuntime, unit: UnitViewUnit): void {
   runtime.setGear(unit.side === host.localSide ? gearSpecsFor(host, unit.unitType) : []);
 }

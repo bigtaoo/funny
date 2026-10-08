@@ -104,7 +104,7 @@
 - **观战 HUD**（`StatePlayerScene/hud.ts`）：上/下两条 HUD 带各显示**一方**的展示名 + 基地血条 + 墨水，外加比赛时钟。观战者没有「我方」，所以两边都显示（战斗内 `HUDView` 只显示自己那份）。**不复用 `HUDView`**：它按真 `GameState` 同步、要读数值表（`@nw/engine/config` 的 `BASE_HP`/升级费用），还画玩家自己的按钮（升级/换手牌/投降）—— 这些在分享录像里既没有数据也没有意义。
 - **皮肤**：owner 0 恒在下方（`ownerToSide`），故头部里 owner 0 的 `skins` 作为 UnitView 的「local」集、owner 1 的作为「opponent」集 —— 与真打同一条规则（皮肤只改自己那方的单位）。
 - **动作**：`UnitView.sync(board, dt)` 的 `dt` 是**唯一**推进 stickman 时钟的东西，且必须是**按倍速缩放后**的 dt（1×/2×/4× 下腿脚要跟着走）。
-- **血条**：状态流里的 `hp`/`maxHp` 是取整后的**整数血量**，而 `UnitView`/`BuildingView` 读的是引擎的**定点** `hp_fp`/`maxHp_fp`。换算在哑播放器边界做（`toFp`），视图的定点契约不动。喂给视图的 `UnitLike`/`BuildingLike` 是从引擎 `Unit`/`Building` 类 `Pick` 出来的，不是手抄的结构 —— 引擎字段一改名，这里直接编译不过。
+- **血条**：状态流里的 `hp`/`maxHp` 是取整后的**整数血量**，而 `UnitView`/`BuildingView` 读的是引擎的**定点** `hp_fp`/`maxHp_fp`。换算在哑播放器边界做（`toFp`），视图的定点契约不动。视图的入参类型收窄成 `render/viewInput.ts` 里的 `UnitViewBoard`/`BuildingViewBoard`（元素是从引擎 `Unit`/`Building` `Pick` 出来的 `UnitViewUnit`/`BuildingViewBuilding`），引擎 `Board` 与哑播放器的映射对象都**不经 cast** 直接传入 —— 视图多读一个字段、或引擎字段改名，两边都直接编译不过。
 
 > **历史坑（2026-08-26 修，用户报的分享链接）**：分享出去的录像「①角色没皮肤 ②角色没动作 ③没有任何 UI 信息（血量/墨水）」三连，三个独立成因：①哑播放器 `new UnitView(..., [])` 硬编码空皮肤表，**而且**状态流头部根本没有皮肤字段可读（schema v1）；②`unitView.sync(board, 0)` 把 dt 写死 0 —— 单位照样在棋盘上滑，但每个 rig 都冻在自己 clip 的第一帧；③哑播放器只画了两个名字标签 + transport，没有 HUD，而且墨水本来也没录。修法：schema 升 v2（头部 `players[].skins` + 每帧 `res`）、`GameRenderer.buildSceneGraph` 把它给 UnitView 的同一份名册 `setRoster` 报给录制器、哑播放器传真 dt 并新增观战 HUD。**顺带修**：`doShareReplay` 曾把分享者名字硬钉在 side 0，联机 joiner（owner 1）分享出去的录像双方名字是错的 —— 现在名字落在名册里 `localOwner` 指的那一侧；transport 进度条改锚在 HUD 上带下方（原按 designHeight 比例算，横屏时压在敌方血条上）。老链接（v1）继续能放：无皮肤、隐藏墨水读数，其余照旧。
 
