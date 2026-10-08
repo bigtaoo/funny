@@ -239,7 +239,8 @@ describe('the mobile bundle carries no web payment surface', () => {
   it('branding icons are not commerce and stay on every non-wechat target', () => {
     for (const target of ['web', 'mobile', 'crazygames']) {
       expect(copiedFiles(target)).toContain('public/site.webmanifest');
-      expect(copiedFiles(target)).toContain('public/apple-touch-icon.png');
+      // `mobile` copies the full-quality `.hires` original under the same name (hiresSplit.test.ts).
+      expect(copiedFiles(target).some((f) => /^public\/apple-touch-icon(\.hires)?\.png$/.test(f))).toBe(true);
     }
   });
 

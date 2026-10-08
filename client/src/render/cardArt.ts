@@ -113,6 +113,10 @@ export const THUMB_LONG_EDGE = 640;
  * `texImage2D` in one frame — then again on every return a minute later, because textures that big
  * are what PIXI's texture GC evicts first. archer/infantry/shieldbearer have no entry: their export
  * is already thumbnail-sized, so they are their own full size.
+ *
+ * On H5 builds (web/crazygames/wechat) the six exports over 1400 px are 1400 px long-edge copies; the
+ * native `mobile` build resolves the untouched originals through their `.hires` siblings
+ * (ASSET_PACKAGING §23). Only max/lena/mara are reachable here today: no card def maps to the rest.
  */
 const FULL_ART_BY_THUMB: Record<string, string> = {
   [maxThumbUrl as string]:       maxArtUrl as string,
