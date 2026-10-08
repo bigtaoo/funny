@@ -198,6 +198,10 @@ module.exports = (env, argv) => {
         // (pure/deterministic, no Node.js built-ins) to avoid pulling in password/logger
         // which import node:crypto / node:fs / node:path and break webpack browser builds.
         '@nw/shared': path.resolve(__dirname, '../server/shared/src/slg/index.ts'),
+        // npm `url` (Node's legacy url module + punycode + qs, ~75 KB minified) → a throwing stub, on
+        // every target. Its only importer is @pixi/utils' deprecated `PIXI.utils.url` getter, which
+        // nothing reads; see the stub's header and test/nodeUrlStub.test.ts for the contract.
+        'url$': path.resolve(__dirname, 'src/platform/stubs/nodeUrl.ts'),
       },
     },
     output: isWechat ? {
@@ -291,9 +295,16 @@ module.exports = (env, argv) => {
         // across submissions, so a new recording gets a new file name rather than replacing this one.
         { from: 'public/web/review', to: 'review' },
       ] })] : []),
+      // The three large icons follow the same `.hires` rule as imported art (see the swap below): the
+      // base file is a palette-quantised copy for the network-loaded targets, and the `mobile` build
+      // copies the untouched `.hires` original under the base name. CopyPlugin never goes through
+      // module resolution, so the NormalModuleReplacementPlugin cannot do this one for us.
       ...(!isWechat ? [new CopyPlugin({ patterns: [
         { from: 'public/favicon-16.png' }, { from: 'public/favicon-32.png' }, { from: 'public/favicon-48.png' },
-        { from: 'public/apple-touch-icon.png' }, { from: 'public/icon-192.png' }, { from: 'public/icon-512.png' },
+        ...['apple-touch-icon.png', 'icon-192.png', 'icon-512.png'].map((name) => {
+          const hires = `public/${name.replace(/\.png$/, '.hires.png')}`;
+          return isMobile && fs.existsSync(path.resolve(__dirname, hires)) ? { from: hires, to: name } : { from: `public/${name}` };
+        }),
         { from: 'public/site.webmanifest' },
       ] })] : []),
       // Emit version.json at build time (for client version polling) and _headers (CF Workers / nginx cache policy).

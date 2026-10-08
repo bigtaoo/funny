@@ -114,7 +114,7 @@ const measured = {
   },
   'dist.total': {
     bytes: distTotalBytes(),
-    what: 'every emitted file except the web-only site pages — the whole-package figure the WeChat/mobile targets inherit',
+    what: 'every emitted file except the web-only site pages — the H5 package figure (the WeChat CDN set is the same art; the native mobile build swaps in the .hires originals)',
   },
 };
 

@@ -67,6 +67,7 @@
     "eslint-plugin-prettier": "^4.2.5",
     "file-loader": "^6.2.0",
     "html-webpack-plugin": "^5.6.6",
+    "jszip": "^3.10.1",
     "openapi-typescript": "^7.13.0",
     "prettier": "^2.8.8",
     "rollup": "^4.60.1",
@@ -90,7 +91,7 @@
     "@capgo/capacitor-updater": "^6.0.0",
     "@pixi/unsafe-eval": "^7.4.3",
     "@rollup/plugin-json": "^6.1.0",
-    "jszip": "^3.10.1",
+    "fflate": "^0.8.3",
     "pixi.js-legacy": "^7.4.3"
   }
 }

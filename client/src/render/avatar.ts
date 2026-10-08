@@ -155,7 +155,11 @@ const HEAD_TOP = 0.05;
 const HEAD_SPAN = 0.90;
 const HEAD_MAX_W = 0.88;
 
-/** Nominal bust-portrait pixel size — every one of the 26 is 512×768; used only before the real texture loads. */
+/**
+ * Nominal bust-portrait pixel size, used only before the real texture loads. The originals are 512×768
+ * (the native build ships those as `.hires`); H5 builds get 384×576 copies (ASSET_PACKAGING §23) — the
+ * same 2:3 aspect, and the fit is recomputed from the real size on load either way.
+ */
 const BUST_W = 512, BUST_H = 768;
 
 /**

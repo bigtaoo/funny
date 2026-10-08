@@ -150,21 +150,13 @@ vi.mock('../../src/assets/decor/decor_merged_atlas.json', () => ({
   default: { frames: {}, meta: { size: { w: 1024, h: 675 }, app: '', version: '', image: '', format: 'RGBA8888', scale: '1', smartupdate: '' } },
 }));
 
-// ── JSZip stub (used by StickmanRuntime) ───────────────────────────────────────
-vi.mock('jszip', () => ({
-  default: {
-    loadAsync: () => Promise.resolve({
-      file: (name: string) => {
-        if (name === 'animation.json')
-          return { async: () => Promise.resolve(JSON.stringify({ animations: {}, bindings: {}, boneLengthScales: {} })) };
-        if (name === 'spritesheet.json')
-          return { async: () => Promise.resolve(JSON.stringify({ frames: {} })) };
-        if (name === 'spritesheet.png')
-          return { async: () => Promise.resolve(new Blob()) };
-        return undefined;
-      },
-    }),
-  },
+// ── .tao unzip stub (used by StickmanRuntime) ──────────────────────────────────
+vi.mock('../../src/render/stickman/taoZip', () => ({
+  readTaoBundle: () => Promise.resolve({
+    animationJson: JSON.stringify({ animations: {}, bindings: {}, boneLengthScales: {} }),
+    spritesheetJson: JSON.stringify({ frames: {} }),
+    spritesheetPng: new Blob(),
+  }),
 }));
 
 // ── Image stub for StickmanRuntime's loadImageEl() ────────────────────────────

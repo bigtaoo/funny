@@ -1,6 +1,6 @@
 # Notebook Wars — 资源打包补测/复核/重打包记录（spec 见 [`ASSET_PACKAGING.md`](ASSET_PACKAGING.md)）
 
-> 从 `ASSET_PACKAGING.md` 拆出（2026-08-29，ADR-067 单册形态：hub 原位留同号 stub + 箭头，不建索引表）。§1–§13（当前架构：三层分级/各平台打包方案/首屏加载策略）仍在 hub；本册是 §14 起的逐条记录——§14 预取裁剪+省流开关、§15 补测、§16 icons_atlas 重打包、§17 微信黑屏、§18 微信 REST 接缝、§19 隐藏 `<input>` → `IPlatform.openTextInput`、§20 真机测试清单——小节编号与正文一字未改。
+> 从 `ASSET_PACKAGING.md` 拆出（2026-08-29，ADR-067 单册形态：hub 原位留同号 stub + 箭头，不建索引表）。§1–§13（当前架构：三层分级/各平台打包方案/首屏加载策略）仍在 hub；本册是 §14 起的逐条记录——§14 预取裁剪+省流开关、§15 补测、§16 icons_atlas 重打包、§17 微信黑屏、§18 微信 REST 接缝、§19 隐藏 `<input>` → `IPlatform.openTextInput`、§20 真机测试清单——小节编号与正文一字未改。此后直接写在本册的：§21–§22 微信包内两处故障、§23 H5/原生美术分级第二批 + 入口 bundle 瘦身（2026-10-08）。
 
 ## 14. 预取按使用面裁剪 + 省流开关（2026-08-25）
 
@@ -779,3 +779,89 @@ register failed: {"ok":false,"errorKey":"auth.err.network","detail":"AbortContro
 **这是第一次有证据表明微信包能和后端说上话。** 反过来也要说清楚：这只证明 REST 能通了，
 **不等于微信侧登录这条产品路径验过了**——真机上走的是 `wx.login` + `/auth/wx`，巡检入口故意换成了
 device 凭证（理由见该入口文件头）。那条仍在 §20 的真机清单里欠着。
+
+## 23. H5/原生美术分级第二批 + 入口 bundle 瘦身（2026-10-08）
+
+**起因**：`checkBundleSize.mjs` 三道门禁同时到 ~97%（web 构建：`entry.brotli` 534.3/550、`boot.gate` 822.4/850、`dist.total` 28735.4/29500 KiB）。
+
+**项目所有者的硬约束**：原生 iOS/Android 包（`--env TARGET=mobile`，Capacitor）**必须保留全部高清原图**；压缩图只给 H5（web、crazygames）。微信（`TARGET=wechat*`）走 CDN 且有硬包体预算，按 §9 机制默认就拿压缩 base 文件，与 H5 相同——这是有意的。
+
+### 23.1 机制：沿用 §9 的 `.hires` 同目录变体，只补了一处
+
+- 先核实了触达路径：本轮动到的美术**全部是静态 `import`**（`render/cardArt.ts`、`presetAvatarArt.ts`、`heroAvatarArt.ts`、`skinAvatarArt.ts`），走 `asset/resource`，所以 `mobile` 构建的 `NormalModuleReplacementPlugin` 换 `.hires` 照常生效，调用点零改动。
+- **唯一的例外是 PWA 图标**（`client/public/icon-512.png` / `icon-192.png` / `apple-touch-icon.png`）：它们由 CopyPlugin 拷贝，不经模块解析，替换插件够不着。于是在 `webpack.config.js` 的图标 CopyPlugin 里补了同一条规则：`mobile` 构建把 `<name>.hires.png` 拷成 `<name>.png`，其它目标拷 base 文件。
+- base 文件由 `art/scripts/deriveH5ArtVariants.mjs` 从 `.hires` 原图派生（sharp Lanczos3，保持 PNG 与宽高比；原图首次运行时**原样改名**为 `.hires.png`，字节不动）。脚本幂等、可重跑；`--check` 只校验不写。`exportUnitCardArt.mjs` 已改为：某单位存在 `.hires` 时把全尺寸导出写到 `.hires`，缩略图也从 `.hires` 切；`measureAvatarHeadBox.mjs` 优先量 `.hires`（head box 是比例，两版通用）。
+- 编码：这批原图**全部是 8-bit 调色板 PNG**（头像只有 60–110 色）。Lanczos 会产生原调色板里没有的中间色，所以必须重新量化才能「图小了文件也小」：384 px 头像按 quality 100 或真彩编码，体积只比 512 px 原图小 ~10% 甚至更大；quality 90（与 `exportUnitCardArt.mjs` 对卡面用的同一参数）落在 ~55%，对未量化的 Lanczos 结果仍有 ~44–46 dB PSNR。PWA 图标只换编码不缩尺寸（quality 100 调色板），对原图预乘 alpha 后 PSNR ~40 dB、98% 像素差 ≤ 8/255，3 倍放大并排看不出差别。
+
+**现在有 `.hires` 兄弟文件的资源**（共 42 对；`client/test/hiresSplit.test.ts` 逐对校验「`.hires` 像素更大、比例一致、base 字节更小」以及两项上限）：
+
+| 资源 | H5/微信 base | mobile `.hires` |
+|---|---|---|
+| `src/assets/logo.png`（§9，原有） | 256 px | 1024 px |
+| `src/assets/units/{berserker,harpy,ironclad,mara,max,splitter}.png` 卡面全图 | 长边 1400 px | 原导出（最大 2181×1514） |
+| `src/assets/avatars/{preset,hero,skin}/*.png` 32 张半身像 | 宽 384 px | 512 px |
+| `public/{icon-512,icon-192,apple-touch-icon}.png` | 同尺寸，调色板 | 原图 |
+
+lena（1394）、medic（1283）、runner（904）及 archer/infantry/shieldbearer 本来就在 1400 以内，不拆。
+
+### 23.2 显示尺寸推理（实测，不是估算）
+
+用 headless Playwright 跑 `web-e2e` 生产构建（`page.route` 直接喂 dist，不起服务），stub 挂载设置页（当前头像 + 头像选择器）、好友页的 `ProfilePopup`、抽卡单抽揭示卡（mara / max），遍历舞台算每个 sprite 的「设备像素 / 源纹素」= `|worldTransform| × renderer.resolution`。>1 即被放大。注意 `MAX_RENDER_RESOLUTION = 2`：dpr 3 的手机与 dpr 2 一样（实测 `renderer.resolution` = 2）。
+
+**头像**：最大的显示点是 `ProfilePopup`（`avSize = cardH × 0.34`，横屏 184 / 竖屏 245 设计 px），最坏的是裁得最紧的 `preset_nerdcrush`（圆内只覆盖 ~414 源像素宽）。设备像素/纹素（512 原图 → 384 base，即 ×4/3）：
+
+| 视口 | ProfilePopup | 设置页/选择器最大 |
+|---|---|---|
+| 1920×969 @1 | 0.36 → 0.48 | 0.23 → 0.31 |
+| 1920×969 @2（4K 200%） | 0.72 → 0.96 | 0.46 → 0.62 |
+| 1728×1000 @2（MBP 16） | 0.72 → 0.96 | 0.47 → 0.62 |
+| 1024×1366 @2（iPad 竖） | 0.76 → **1.02** | 0.48 → 0.65 |
+| 1366×1024 @2（iPad 横） | 0.57 → 0.76 | 0.37 → 0.49 |
+| 390×844 @3（手机竖） | 0.54 → 0.72 | 0.30 → 0.40 |
+| 844×390 @3（手机横） | 0.29 → 0.38 | 0.18 → 0.24 |
+| 2560×1329 @2（5K iMac） | 0.99 → **1.32** | 0.64 → 0.85 |
+
+结论：384 px 对手机、平板、≤ 1000 CSS px 高的 dpr-2 桌面全部够（最坏 1.02，即 2% 放大，不可见）。**唯一的例外是 5K iMac 一类（≥ ~1300 CSS px 高且 dpr 2）的 ProfilePopup**：最紧的那几张会放大 ~1.3 倍——要在那里也不放大，宽度得回到 ~506 px，等于不做。世界地图 LOD 降级的 hero 圆点（`buildDotToken`，竖屏 L1 最大 ~165 设计 px）按公式估算同样在 1 以内（未实测）。
+
+**卡面全图**：只有抽卡单抽揭示卡会用（`artUrlForBox`），而且**只对 max/lena/mara**——另外六个全图（berserker/harpy/ironclad/medic/runner/splitter）没有任何卡牌定义指向它们，今天根本到不了屏幕。max/mara 在 1400 cap 下只少 4% / 6%。实测这张卡在大屏上**原图就已经被放大**（mara：4K@200% 1.54、5K 2.06、MBP16 1.39、iPad 横 1.10），cap 后各乘 1.065；在原图不放大的视口（1080p@1 0.77、iPad 竖 0.62、手机横 0.68）cap 后仍 < 1。手机竖屏走的是 640 px 缩略图，不受影响。
+
+截图对比（同一视口、同一 stub，旧构建 vs 新构建，8 个视口 × 5 个画面）：逐像素差异 >36/765 的像素占整屏 0.01–0.33%，>150 的 ≤ 0.001%，全部集中在头像圆和卡面插画内。并排放大逐张看过：dpr 1（1080p）与 dpr 3（手机）下 ProfilePopup / 选择器 / 揭示卡看不出差别；唯一能看出的是 5K iMac 的 ProfilePopup——放大 2 倍并排时发丝排线略软一点，原尺寸下几乎分辨不出。
+
+### 23.3 入口 bundle（entry.brotli）
+
+两项都对**所有目标**生效（含 mobile/wechat），因为是代码不是美术；行为逐项证明不变：
+
+1. **npm `url` → 抛错桩**（`webpack.config.js` `resolve.alias['url$']` → `src/platform/stubs/nodeUrl.ts`）。webpack stats 证明它唯一的引入者是 `@pixi/utils/lib/url.mjs`（web / mobile / wechat 三张图一致），而后者只是通过 7.3.0 起废弃的 `PIXI.utils.url` getter 转手；PixiJS 内部与客户端源码都不读它。连带 `punycode` + `qs`，约 75 KB minified。`test/nodeUrlStub.test.ts` 钉住两端（引入者唯一、无人读 `utils.url`）以及各目标的 alias。
+2. **JSZip → fflate**（`src/render/stickman/taoZip.ts`）。客户端只在 `assetLoader.parseTaoAsset` 读 `.tao` 的三个条目。`test/taoZip.test.ts` 用 JSZip（降为 devDependency，只当参照实现）和新路径**逐个读全部 18 个出包 `.tao`**，断言两个 JSON 字符串与 PNG Blob 的字节、MIME（空串，同 JSZip `async('blob')`）完全一致；非 ZIP / 缺条目都 reject（`StickmanRuntime.loadAsset` 靠 reject 走圆圈占位兜底）；STORE/DEFLATE 与非 ASCII UTF-8 都覆盖。三个原来 `vi.mock('jszip')` 的测试改为 mock `taoZip`。
+
+### 23.4 结果
+
+三道门禁（web，`npm run build:web && npm run check:bundlesize`；预算数字**未改**）：
+
+| 改动 | entry.brotli | boot.gate | dist.total |
+|---|---|---|---|
+| 基线 | 534.3 KiB | 822.4 KiB | 28735.4 KiB |
+| 卡面全图 1400 cap | 0 | 0 | −1884 KiB |
+| PWA 图标调色板 | 0 | 0 | −442 KiB |
+| 32 张半身像 384 px（preset −1591 / hero −523 / skin −531） | 0 | 0 | −2645 KiB |
+| `url` 桩 | −12.7 KiB | 0 | （JS 两项合计 −140.6 KiB raw） |
+| JSZip → fflate | −22.5 KiB | 0 | ↑ |
+| **合计** | **499.1 KiB（90.7%）** | **822.4 KiB（96.8%）** | **23623.8 KiB（80.1%）** |
+
+`boot.gate` 没动：L0 阻塞层的 8 个资源都不在本轮范围（icons_atlas 那条路见预算 reason）。
+
+其它目标（同一套三项指标；crazygames 的 index.html 先列门户 SDK，所以用同口径脚本量本地 entry）：
+
+| 目标 | 基线 | 现在 |
+|---|---|---|
+| crazygames | 531.4 / 822.4 / 28726.1 KiB | 496.7 / 822.4 / 23615.0 KiB |
+| mobile | 535.0 / 2588.3 / 30512.1 KiB | 500.0 / 2588.3 / 30374.0 KiB（只少了 JS，美术一字节没少） |
+| wechat | `pixigame.js` 2494089 B，`cdn/` 26089532 B | 2352980 B，21449865 B；`check:wechatpackage` ✅ |
+
+**分级证明**（按内容哈希把产物里的 PNG 对回源文件）：42 对里，`build:mobile` 产物含全部 42 个 `.hires` 原图（12847 KiB，如 `splitter` 2181×1514、`harpy` 1564×2094、`preset_gogetter` 512×768）且 0 个 base；`build:web` / `build:crazygames` 含 0 个 `.hires`、42 个 base（6108 KiB，`splitter` 1400×972、`harpy` 1046×1400、头像 384×576）；wechat 含 39 个 base（不带 PWA 图标）、0 个 `.hires`。
+
+### 23.5 没做的
+
+- BGM 码率（所有者否决）、`world_atlas` 编码（§13.5 禁止）、全量无损 PNG 重压（实测无收益）——按约定未碰。
+- 三个 favicon（16/32/48）：调色板版反而更大或几乎不变，不动。
+- 预算数字不降：本次只订正了 `dist.total` 的 reason——它曾把「退役 rig PNG/`.tao`」写成下一刀，但 `units/<name>.png` 是卡面插画不是 rig 贴图（rig 贴图在 `.tao` 里面），18 个 `.tao` 加起来才 ~340 KiB。
