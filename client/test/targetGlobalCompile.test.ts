@@ -49,7 +49,12 @@ async function compiledProbe(target: string): Promise<{ raw: string; viaAppConst
   cfg.entry = FIXTURE;
   // commonjs2 so Node can require the emitted bundle; `target: 'node'` so webpack does not wrap it
   // in browser-only runtime bootstrapping. Neither touches DefinePlugin, which is the thing tested.
-  cfg.output = { path: outDir, filename: 'probe.js', library: { type: 'commonjs2' } };
+  // `.cjs`, not `.js`: the bundle lives under os.tmpdir(), and Node decides a `.js` file's module
+  // system from the nearest package.json walking *up* from it — a stray `{"type":"module"}` that
+  // some other tool left in %TEMP% made every require below throw "module is not defined in ES
+  // module scope" on one machine while CI stayed green. The extension is the only signal Node
+  // cannot take from the surrounding directory tree.
+  cfg.output = { path: outDir, filename: 'probe.cjs', library: { type: 'commonjs2' } };
   cfg.target = 'node';
   cfg.devtool = false;
   // Only DefinePlugin is kept: the rest need real templates and asset trees, and none of them
@@ -72,7 +77,7 @@ async function compiledProbe(target: string): Promise<{ raw: string; viaAppConst
       resolve();
     });
   });
-  const bundlePath = path.join(outDir, 'probe.js');
+  const bundlePath = path.join(outDir, 'probe.cjs');
   return requireJs(bundlePath) as { raw: string; viaAppConstants: string };
 }
 
