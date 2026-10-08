@@ -1,6 +1,6 @@
 # 资源分包与加载策略（ASSET_PACKAGING）
 
-> 状态：实现中 · 权威：本文 §1–§13（资源分层/加载/分包的单一来源；§14 起的逐条记录在 [`ASSET_PACKAGING_LOG.md`](ASSET_PACKAGING_LOG.md)）· 更新：2026-09-01（§4.3 宿主适配层；§4.4 微信欠账盘点；§18 REST 走 `wx.request`；§14 移入 LOG 册，hub 回到 500 行以内）
+> 状态：实现中 · 权威：本文 §1–§13（资源分层/加载/分包的单一来源；§14 起的逐条记录在 [`ASSET_PACKAGING_LOG.md`](ASSET_PACKAGING_LOG.md)）· 更新：2026-10-08（§9 `.hires` 第二批：卡面全图/半身像/PWA 图标，H5 压缩、原生保留原图，详见 LOG §23；§13.4 `dist.total` 订正）
 
 游戏要在 **Web（含 CrazyGames）/ 微信小游戏 / 手机套壳** 三个平台发布，三者对"资源何时进内存"的约束完全不同。本文锁定：
 
@@ -249,6 +249,8 @@ frame 名称互不冲突（合并前用脚本核对过），故直接共享一�
 
 **已应用**：`client/src/assets/logo.png`（256px/129KB，L0 闸门项，见 `bootManifest.ts`）+ `client/src/assets/logo.hires.png`（1024px/1.9MB，均来自既有 `art/logo/derived/` 输出，非新生成美术）。
 
+**第二批（2026-10-08，[LOG §23](ASSET_PACKAGING_LOG.md#23-h5原生美术分级第二批--入口-bundle-瘦身2026-10-08)）**：6 张卡面全图（H5 长边 1400 px）、32 张半身像头像（H5 宽 384 px）、3 个 PWA 图标（同尺寸调色板）。规则写死：**原生 `mobile` 包永远拿 `.hires` 原图；web/crazygames/微信拿压缩 base**。base 由 `art/scripts/deriveH5ArtVariants.mjs` 从 `.hires` 派生（原图首次运行时原样改名为 `.hires`），`client/test/hiresSplit.test.ts` 逐对校验。PWA 图标走 CopyPlugin、不经模块解析，`webpack.config.js` 的图标拷贝里单独实现了同一条规则——**新增「拷贝而非 import」的资源要分级时，替换插件管不到，照那里办**。
+
 **后续候选**：其余 L0/常驻大图（如登录/大厅背景类，若未来引入）可按同一约定接入，无需再动 webpack 配置。
 
 ---
@@ -431,7 +433,7 @@ bundle 从 §1 记的 ~1.5 MB 长到 2.08 MB（raw），**没有任何东西发�
 |---|---|---|---|
 | `entry.brotli` | 470.9 KiB | 550 KiB | 整包代码，跑任何东西之前都得下完 |
 | `boot.gate` | 694.2 KiB | 800 KiB | **玩家真正在等的那一层**（L0 阻塞层） |
-| `dist.total` | 22.9 MiB | 29500 KiB | 前两者都看不见的美术膨胀。不计 `public/web` 拷出的官网页（含 App Review 录屏 `review/`）：只有 TARGET=web 产出它们，任何包都不继承（2026-10-04）。2026-10-05 由 26000 抬到 27000（当日实测 26380.7 KiB）：12 张帧图（约 1.3 MB，64 色调色板）与 `.tao` rig 兜底同时出包；抬之前先把漏了 `colors` 的 lena/mara 两张 RGBA 帧图按 64 色重 bake（省约 800 KiB）。下一次要砍，就退役已有帧图的单位的 rig PNG/`.tao`，而不是再抬。**2026-10-07 由 27000 抬到 29500**（当日实测 28734.0 KiB，余量 2.7%）：上面那句「不再抬」没守住，原因写在这里——超出的 1734 KiB 里约 1783 KiB 是 AUDIO_DESIGN §0.8 换上的三首 FreePD BGM（大厅曲换新 +211 KB，对局第一次有音乐、两首共 +1.6 MB），另有约 546 KB 是 10-05 之后补进 main 的 6 张皮肤帧图（main 自己已到约 26930 KiB）。BGM 是项目所有者亲耳选的曲子，已经是 24 kHz 约 85 kbps；全部压到 64 kbps 也只省约 450 KB、还要牺牲音质，补不回缺口；退役 rig 那一刀要改加载行为、要视觉验证，不该塞进一次 CI 修复。所以**这次抬是给真实新增内容让路，「退役 rig」仍是下一刀**。音频与其它资源一样走 CDN（AUDIO_DESIGN §5「首包体积」订正），不进微信主包 |
+| `dist.total` | 22.9 MiB | 29500 KiB | 前两者都看不见的美术膨胀。不计 `public/web` 拷出的官网页（含 App Review 录屏 `review/`）：只有 TARGET=web 产出它们，任何包都不继承（2026-10-04）。2026-10-05 由 26000 抬到 27000（当日实测 26380.7 KiB）：12 张帧图（约 1.3 MB，64 色调色板）与 `.tao` rig 兜底同时出包；抬之前先把漏了 `colors` 的 lena/mara 两张 RGBA 帧图按 64 色重 bake（省约 800 KiB）。下一次要砍，就退役已有帧图的单位的 rig PNG/`.tao`，而不是再抬。**2026-10-07 由 27000 抬到 29500**（当日实测 28734.0 KiB，余量 2.7%）：上面那句「不再抬」没守住，原因写在这里——超出的 1734 KiB 里约 1783 KiB 是 AUDIO_DESIGN §0.8 换上的三首 FreePD BGM（大厅曲换新 +211 KB，对局第一次有音乐、两首共 +1.6 MB），另有约 546 KB 是 10-05 之后补进 main 的 6 张皮肤帧图（main 自己已到约 26930 KiB）。BGM 是项目所有者亲耳选的曲子，已经是 24 kHz 约 85 kbps；全部压到 64 kbps 也只省约 450 KB、还要牺牲音质，补不回缺口；退役 rig 那一刀要改加载行为、要视觉验证，不该塞进一次 CI 修复。所以这次抬是给真实新增内容让路。音频与其它资源一样走 CDN（AUDIO_DESIGN §5「首包体积」订正），不进微信主包。**2026-10-08 订正**：「退役 rig PNG/`.tao`」不是下一刀——`units/<name>.png` 是卡面插画、不是 rig 贴图（rig 贴图在 `.tao` 里），18 个 `.tao` 合计才 ~340 KiB。当日 H5/原生美术分级（LOG §23）后实测 **23623.8 KiB**；此后本指标是 **H5 口径**，原生 `mobile` 包带 `.hires` 原图另计（~30.4 MB）。预算数字未降 |
 
 两个设计选择：
 - **绝对预算 + 明示余量，不是 ratchet**。行数是人加的，字节是依赖升级/minifier 版本/美术重导出天天在动的——no-growth ratchet 会在没做错事的提交上变红，然后训练所有人条件反射地抬基线。
