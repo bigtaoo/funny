@@ -7,6 +7,7 @@
     "start": "webpack serve --mode development --port 9090 --env TARGET=web",
     "start:crazygames": "webpack serve --mode development --port 9090 --env TARGET=crazygames",
     "start:e2e": "webpack serve --mode development --port 9096 --env TARGET=web-e2e",
+    "start:e2e:prod": "webpack serve --mode production --port 9096 --env TARGET=web-e2e --no-client-overlay-warnings",
     "build:web": "webpack --mode production --env TARGET=web",
     "build:crazygames": "webpack --mode production --env TARGET=crazygames",
     "build:wechat": "webpack --mode production --env TARGET=wechat && npm run check:wechatpackage",

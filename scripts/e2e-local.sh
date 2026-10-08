@@ -114,6 +114,10 @@ run_job() {
   if [ "$SKIP_INSTALL" -eq 0 ]; then
     step "client install" install.txt "$CLIENT" npm ci || return 1
   fi
+  # ci.yml installs chromium before joining the stack it started in the background; here the
+  # bring-up simply runs in the foreground, same steps in the same order.
+  step "install Playwright chromium" playwright-install.txt "$CLIENT" \
+    npx playwright install --with-deps chromium || return 1
   step "bring up server stack" compose-up.txt "$SERVER" \
     "${COMPOSE[@]}" up -d --build --wait "${SERVICES[@]}" || return 1
   step "worldsvc health smoke" health-world.txt "$ROOT" \
@@ -124,8 +128,6 @@ run_job() {
     env NW_API_BASE="$API_BASE" NW_EXPECT_GATEWAY="$GATEWAY_WS" npm run test:e2e || return 1
   step "run ranked load smoke (small fleet)" test-load.txt "$CLIENT" \
     env NW_API_BASE="$API_BASE" NW_LOAD_CLIENTS=20 npm run test:load || return 1
-  step "install Playwright chromium" playwright-install.txt "$CLIENT" \
-    npx playwright install --with-deps chromium || return 1
   # ci.yml passes no env here, and neither does this: client/playwright.config.ts builds the bundle
   # against caddy's origin on NW_E2E_PROXY_PORT (exported above; unset in CI = the compose default).
   if ! step "run browser smoke (two-account, real WebGL)" test-browser.txt "$CLIENT" npm run test:browser; then

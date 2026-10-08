@@ -21,6 +21,27 @@
   - ~~**有意不做的事**：没有进一步把 `metaserver`/`worldsvc` 各自内部再用 vitest 原生 `--shard` 切成更小分片——那样能把两者都压到 ~3 分钟左右，但每个分片各自产出的 `coverage-summary.json` 只反映它跑到的那部分测试文件，`coverageSummary.mjs` 现有的 `readLcov`/`readJsonSummary` 都是整包读一份文件、不做跨分片按文件去重合并，会导致覆盖率数字失真（尤其 lcov 按 SF: 块求和的写法，同一源文件被两个分片各自命中一部分会重复计入分母）——如果以后真需要再压这两个分片的时间，要先给 `coverageSummary.mjs` 补上按文件路径去重合并的逻辑，而不是简单再加一层 matrix。~~
   - **✅ 2026-10-08 已做（上一条的前提补上了）**：两包测试又长回 685 s / 553 s，各自成了 CI 长杆。`server-test` matrix 改成 `metaserver-1/2`、`worldsvc-1/2`、`rest` 五片，前四片带 `split: i/2` → `npm run test:coverage -w <pkg> -- --shard=i/2`。覆盖率合并**没有**改 `coverageSummary.mjs`，而是在它之前加一步：两包的 `vitest.config.ts` 多出 `json` reporter（`coverage-final.json`，逐语句/函数/分支的原始命中数），`coverage-report` 用 `download-artifact` 的 `pattern` 把四份分片产物放进 `coverage-shards/`，再由 `scripts/mergeCoverageShards.mjs` 用 istanbul 自己的 `CoverageMap.merge`（按源码位置对齐、命中数相加——上面担心的「同一文件被两片各算一次分母」正是它解决的）+ `json-summary` reporter 写回 `server/<pkg>/coverage/coverage-summary.json`。下游所有门禁读到的文件形状不变。istanbul 三个库不是直接依赖，取自 `server/` lockfile 里 `@vitest/coverage-v8` 的依赖，所以 `coverage-report` 多了一步 `npm ci --ignore-scripts`（有 npm 缓存约 10 s）。**缺一片就不写**（脚本 exit 0 + `::warning::`），交给门禁按「没产出覆盖率」报——半份合并会是一个看着合理的错数字。测试：`server/shared/test/mergeCoverageShards.test.ts`。**必过检查名没变**：main 的 ruleset（「Only PR」）要求 `server test (metaserver)` / `server test (worldsvc)` 两个检查，分片后这两个 job 名不复存在，PR 会永远等它们。所以加了 `server-test-gate`（matrix `pkg: [metaserver, worldsvc]`，名字就是旧名），用 `gh api …/runs/<id>/jobs?filter=latest` 读两片各自的结论、两片都 success 才绿——不用 `needs.server-test.result`，那是整个 matrix 的结果，`rest` 挂了也会把它染红。以后再改分片名或加片，先看 ruleset 的必过列表。
   - **本地实测（2026-10-08）**：metaserver 全量 152 文件 824 s；分片 76 + 76 文件，399 s / 411 s。worldsvc 分片 65 + 65 文件，280 s / 262 s。合并结果和全量对照：**行、语句、函数逐文件完全一致**（9218/10110 行）；**分支偏高一点**——全量 4512/4594（98.21%），合并 4555/4620（98.59%）。原因在 v8：vitest 是先在 raw v8 层合并区段再转换一次，分片则是各自先转成 istanbul 再按位置合并，会多保留几处块拆分。行门禁和新文件门禁（读的也是行）因此是精确的；分支数字会偏高零点几个百分点，所以本 PR 第一次跑时分支 Δ 会是一个小正数，这是预期的。
+  - **✅ 2026-10-08 续：分片后的下一根长杆是 client 和 e2e，也拆了**（worktree `ci-client-split`）。
+    - **改动**
+      - `client-test`（570 s：单测 238 + UI smoke 189 串行）拆成两个并行 job：
+        - `client-test`，显示名 `client unit tests + checks`：codegen / lint / typecheck / 单测 + 覆盖率 artifact。id 没改，`coverage-report` 的 `needs.client-test.result` 照旧。
+        - `client-ui-build`：UI smoke + `build:web` + 体积 / 缓存门禁。
+      - 必过检查名 `client test + build` 改由 `client-test-gate` 承担：`needs` 两个 job、`if: always()`、两者都 success 才绿。这里用 `needs.*.result` 就够，它不是 matrix，不会出现 server 那边「rest 挂了把整组染红」的问题。
+      - `e2e` job：
+        - compose 栈改在后台起（子 shell `set +e`，退出码写进 `$RUNNER_TEMP/compose-up.rc`），和 `client install`、`playwright install` 重叠；
+        - 新加 `wait for server stack` 一步，等后台退出码再跑测试；
+        - 浏览器冒烟在 CI 下改用 production 包，细节见 [`client-testing.md`](client-testing.md) 缺口 B 一节末尾。
+    - **CI 实测**（run 37778595052 对比 37766693920，后者是分片前）：
+
+      | 项目 | 改前 | 改后 |
+      |---|---|---|
+      | 整个 workflow | 796 s | 474 s |
+      | client | 570 s | 201 / 196 s（两个 job） |
+      | e2e | 458 s | 291 s |
+      | 浏览器冒烟 | 192 s（含一次 60 s 超时 + 44 s 重试） | 81 s，零重试 |
+      | 栈启动 | 68 s | 等待步骤只剩 39 s |
+
+    - **现在的长杆**：metaserver-1（401 s）和 rest（395 s）。
 
 **首次实测基线（2026-08-13，行覆盖 %，本地跑出，用于对照未来回归）**：
 
