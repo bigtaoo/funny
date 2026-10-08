@@ -729,6 +729,8 @@ jobs:
 
   # Slow path: docker compose brings up the full stack (mongo + meta + commercial + gateway + matchsvc + game),
   # then runs the real client orchestration core (createAppCore) as a Node process on the runner host for full end-to-end tests.
+  # scripts/e2e-local.sh replays these steps on a dev machine with the host ports moved (NW_E2E_*_PORT,
+  # read by server/docker-compose.ci.yml) — keep the two in step when a step changes here.
   e2e:
     name: full-link E2E (live stack)
     runs-on: ubuntu-latest

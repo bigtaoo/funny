@@ -1,4 +1,4 @@
-# 服务端 — 覆盖率百分比工具与 CI 稳定性（2026-08-13 ~ 10-01）
+# 服务端 — 覆盖率百分比工具与 CI 稳定性（2026-08-13 ~ 10-08）
 
 > 从 [`server-testing.md`](server-testing.md) 拆出（2026-08-20，原文件 501 行，ADR-067）。姊妹分册：[`server-testing-coverage.md`](server-testing-coverage.md)（各服务逐个补测记录）、[`server-testing-typecheck.md`](server-testing-typecheck.md)（`test/**` 类型检查）。
 > 本册是工具/流水线侧：怎么量出百分比、90% 门禁怎么加、CI 怎么并行拆分、以及「PR 绿了、合进 main 却红」那轮 flaky 治理。下文各处「见下方各自小节」指的是各包的补测记录，现在在 [`server-testing-coverage.md`](server-testing-coverage.md)；下文「前两节」指的是 hub 上保留的那两轮人工审计。
@@ -788,3 +788,72 @@ MMS 的 `killProcess` 就是 `await childprocess.once('exit')`——**这个事�
 **同日复跑（run 37139205923，`workflow_dispatch` 到 `03.10.2026`，metaserver × 5）**：5 轮全绿，每轮 11–13 分钟，
 没出现 `exited before teardown`，没复现。结合 09-26 / 09-30 / 10-03 挂、10-02 绿，这是隔几天才出一次的问题，
 更像 runner 侧（内存压力等）而不是代码。上面的观测只有合进 `main` 后才会跟着 nightly 跑，等下一次挂了再看证据。
+
+## 本机复现 CI 的 `e2e` job：宿主端口可覆盖（2026-10-08，worktree `ci/e2e-port-overrides`）
+
+**问题**：`ci.yml` 的 `e2e` job 把整栈（`docker-compose.prod.yml` + `docker-compose.ci.yml`）的端口发布到宿主
+18080 / 8086 / 8081 / 18084 / 18085。本机 18080 长期被别的项目的 Keycloak 容器占着（不归我们管，别停它），
+所以这个 job 在本地一直跑不起来，E2E 每次都被跳过。
+
+**改法**：`server/docker-compose.ci.yml` 里所有宿主端口 + 两个写死的容器名改成带默认值的变量，**不设变量时
+`docker compose config` 的输出与改前逐字节相同**（已 diff 验证），CI 行为不变：
+
+| 变量 | 默认（= CI） | 用在哪 |
+|---|---|---|
+| `NW_E2E_META_PORT` | 18080 | metaserver REST |
+| `NW_E2E_GATEWAY_PORT` | 8086 | gateway 公网 WS；**同时**拼进 meta 下发的 `NW_GATEWAY_PUBLIC_WS_URL` |
+| `NW_E2E_GAME_PORT` | 8081 | gameserver 数据面 WS；**同时**拼进 matchsvc/gameserver 的 `NW_GAME_PUBLIC_WS_URL`（ticket 里的地址） |
+| `NW_E2E_WORLD_PORT` | 18084 | worldsvc 公网 REST（health smoke + 浏览器包的 `NW_WORLD_BASE`） |
+| `NW_E2E_ANALYTICS_PORT` | 18085 | analyticsvc（health smoke） |
+| `NW_E2E_CONTAINER_PREFIX` | `nw` | redis/mongo 的 `container_name`（prod 写死 `nw-redis`/`nw-mongo`，容器名在 Docker 主机上全局唯一，换 `-p` 也照撞；本机就有一对 5 周前退出的旧 `nw-redis`/`nw-mongo`） |
+
+消费方：`full-link.e2e.ts` / `ranked.load.ts` 本来就读 `NW_API_BASE` / `NW_EXPECT_GATEWAY`；唯一写死端口的断言
+（`gwA.includes(':18080')`，「gateway 地址不能是 meta 地址」）改成比 `host:port`。浏览器冒烟的 web-e2e 包在 CI 里
+不传环境变量、靠 `webpack.config.js` 的 localhost 默认值（恰好是 CI 端口），所以换端口后脚本要显式传
+`NW_API_BASE` / `NW_GATEWAY_WS` / `NW_WORLD_BASE`。CORS 无需改：metaserver 是 `origin: true`（反射任意 origin）。
+
+**一条命令**（Git Bash，仓库任意位置）：
+
+```bash
+scripts/e2e-local.sh                  # 默认端口 28080/28086/28081/28084/28085，compose 项目 nw-e2e-local
+scripts/e2e-local.sh --skip-install   # client/node_modules 已就绪时跳过 npm ci
+scripts/e2e-local.sh --keep           # 跑完不拆栈
+```
+
+脚本逐步照抄 `ci.yml` 的 `e2e` job（同 compose 文件、同服务列表、同 job 级 env、`CI=true`），每步输出写进日志目录
+（默认新建临时目录，可用 `NW_E2E_LOG_DIR` 指定，**不往终端灌**）；先用 node 试绑全部端口 + Playwright 的 9096，
+有被占的直接退出；`trap EXIT` 保证 `down -v` 只拆自己的 `-p nw-e2e-local` 项目。浏览器冒烟照 CI 的
+`continue-on-error` 处理：失败只报告，不改退出码。`ci.yml` 的 job 头注释已指向这个脚本，**改 job 步骤时两边一起改**。
+
+**⚠️ `npm ci` 会先删 `client/node_modules`**：worktree 里如果那是 junction 到主检出的，删掉的是**主检出的**包 —— 这种
+worktree 一律加 `--skip-install`。
+
+### 与本机其它栈的端口关系
+
+- `docker/local-up.ps1`（`docker/docker-compose.local.yml`，项目名 `funny`）：nginx 8088、admin 18083、工具 9091–9093，
+  **另外把 worldsvc 直接发布在 18084**（写死，不可覆盖）——它开着时 CI 默认端口的 18084 会撞，用脚本的 28084 不撞。
+  容器名是 `nw-local-*`，与本栈不冲突。
+- Windows `excludedportrange` 本机目前只保留 80 和 8082（`netsh interface ipv4 show excludedportrange protocol=tcp`），
+  28xxx 都可绑；脚本的预检会把 EACCES 一并拦下。
+- 镜像 tag：prod compose 让所有服务进程共用 `nw-server:latest`，两套 CI 式的栈同时 `--build` 会互相覆盖这个 tag；
+  本地栈用的是 `nw-server:local`，不受影响。
+
+### 首次实跑结果（2026-10-08，本机，端口 28xxx）
+
+| 步骤 | 结果 |
+|---|---|
+| bring up（`--build --wait`，9 个服务 + socialsvc 依赖） | 全部 healthy |
+| worldsvc / analyticsvc health smoke | ok |
+| `test:e2e` | 6 passed / 1 skipped（auction 块：栈里没有 auctionsvc，CI 同样跳过） |
+| `test:load`（20 clients） | 1 passed，registered 20/20，matched 20/20 |
+| `test:browser` | 5 passed / 6 skipped / **18 failed** |
+
+浏览器那 18 个失败**与同日 CI（run 37750227427，PR `08.10.2026`）完全同一批**，是既有问题，不是换端口带来的，只因
+`continue-on-error` 一直没显红：
+
+1. `smoke.spec.ts` ×2、`shareReplay.spec.ts` ×1：控制台 `501 (Not Implemented)`。来源是
+   `GET <meta>/analytics/config`——客户端 `analyticsBaseUrl()` 把 API base 去掉 `/api` 后缀当 analytics 地址
+   （prod 由 Caddy 把 `/analytics*` 路由给 analyticsvc），CI 栈没有 Caddy、`NW_API_BASE` 也没有 `/api` 后缀，
+   请求落到 metaserver 那个恒返 501 的占位路由上。
+2. `portraitLayout.spec.ts` ×14、`rotateLayout.spec.ts` ×1：`test/browser/lib/seed.ts` 用
+   `docker exec nw-local-mongo …` 种数据，只认**本地栈**（`docker/local-up.ps1`）的容器；CI 栈里没有这个容器。
