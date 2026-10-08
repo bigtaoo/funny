@@ -50,7 +50,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import JSZip from 'jszip';
+import { readTaoBundle } from '../src/render/stickman/taoZip';
 
 const CLIENT = path.resolve(__dirname, '..');
 const REPO = path.resolve(CLIENT, '..');
@@ -85,12 +85,11 @@ function shippedRigs(): Array<[string, string]> {
   return out.sort(([a], [b]) => a.localeCompare(b));
 }
 
-/** Read `animation.json` out of a .tao the way the runtime does — same ZIP library the client ships. */
+/** Read `animation.json` out of a .tao the way the runtime does — the client's own unzip path. */
 async function animationJson(file: string): Promise<AnimationJson> {
-  const zip = await JSZip.loadAsync(fs.readFileSync(file));
-  const entry = zip.file('animation.json');
-  expect(entry, `${path.basename(file)} has no animation.json`).toBeTruthy();
-  return JSON.parse(await entry!.async('string')) as AnimationJson;
+  const bytes = fs.readFileSync(file);
+  const bundle = await readTaoBundle(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+  return JSON.parse(bundle.animationJson) as AnimationJson;
 }
 
 /**

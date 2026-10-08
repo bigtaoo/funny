@@ -5,7 +5,7 @@
 // StickmanRuntime.setOutlineFlash the way it's supposed to.
 //
 // In the headless PIXI test environment the .tao binary asset is stubbed (vitest.ui.config.ts's
-// stubBinaryAssets → a 1x1 PNG that jszip can't parse), so StickmanRuntime.loadAsset() always
+// stubBinaryAssets → a 1x1 PNG that is not a ZIP), so StickmanRuntime.loadAsset() always
 // rejects and UnitView never actually builds a real stickman container for a unit spawned through
 // the normal sync() path — every unit renders as the circle-placeholder fallback, same root cause
 // documented in unit-view-tao-asset-imports-not-unit-testable.md. Rather than fight that, these
