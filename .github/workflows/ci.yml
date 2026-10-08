@@ -183,7 +183,8 @@ jobs:
   # getting a runner of their own — CI job startup (checkout+node+npm ci, ~20-30s) would dominate
   # actual test time at that granularity. Net effect: server test wall-clock ~11-12min -> ~6.3min
   # (bounded by the metaserver shard), running concurrently with client-test/tools-test below
-  # instead of after them.
+  # instead of after them. 2026-10-08: the suites grew back (metaserver 685 s, worldsvc 553 s of
+  # tests), so each now runs as two `--shard` runners — same reasoning, one level further down.
   server-test:
     name: server test (${{ matrix.shard.name }})
     runs-on: ubuntu-latest
@@ -191,14 +192,29 @@ jobs:
       fail-fast: false
       matrix:
         shard:
-          - name: metaserver
+          # metaserver and worldsvc each run `fileParallelism: false` (one shared mongod), so each was
+          # CI's long pole on its own (685 s / 553 s of tests on 2026-10-08). Each is now split in two
+          # with `vitest --shard`; `split` is that flag's value. A shard's coverage/ holds only half the
+          # suite's hits, so coverage-report merges the pair (scripts/mergeCoverageShards.mjs, from
+          # each shard's coverage-final.json) before any gate reads the package.
+          - name: metaserver-1
             workspaces: metaserver
+            split: 1/2
             # upload-artifact roots the artifact at the least-common-ancestor of these paths; a
             # single directory here means that directory's CONTENTS become the artifact root
             # (coverage-report's download step below accounts for that per shard).
             coverage_paths: server/metaserver/coverage
-          - name: worldsvc
+          - name: metaserver-2
+            workspaces: metaserver
+            split: 2/2
+            coverage_paths: server/metaserver/coverage
+          - name: worldsvc-1
             workspaces: worldsvc
+            split: 1/2
+            coverage_paths: server/worldsvc/coverage
+          - name: worldsvc-2
+            workspaces: worldsvc
+            split: 2/2
             coverage_paths: server/worldsvc/coverage
           - name: rest
             workspaces: shared engine gateway matchsvc gameserver commercial admin analyticsvc socialsvc auctionsvc botsvc
@@ -288,7 +304,9 @@ jobs:
         run: |
           args=()
           for w in ${{ matrix.shard.workspaces }}; do args+=(-w "$w"); done
-          npm run test:coverage "${args[@]}" --if-present
+          split='${{ matrix.shard.split }}'
+          if [ -n "$split" ]; then args+=(-- "--shard=$split"); fi
+          npm run test:coverage --if-present "${args[@]}"
 
       # 2026-08-21, same gap as server-checks' econ-sim typecheck step: not a workspace, so no
       # `--workspaces` fan-out ever reached its 18 tests (~5s). Rides the `rest` shard rather than
@@ -327,6 +345,37 @@ jobs:
           path: server/*/flaky-report.json
           if-no-files-found: ignore
           retention-days: 7
+
+  # The main-branch ruleset requires checks named `server test (metaserver)` and
+  # `server test (worldsvc)` — the job names from before 2026-10-08's split into `-1`/`-2` shards.
+  # Renamed, those two would never report and every PR would wait on them forever; this job keeps
+  # the names and turns each pair of shard results into one. It reads the shards' own conclusions
+  # from the run's job list rather than `needs.server-test.result`, which is the whole matrix and
+  # would also go red for a failure in `rest`. `filter=latest` is each job's most recent attempt, so
+  # "re-run failed jobs" on one shard is judged by the re-run, not by the failure it replaced.
+  server-test-gate:
+    name: server test (${{ matrix.pkg }})
+    needs: server-test
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        pkg: [metaserver, worldsvc]
+    steps:
+      - name: both ${{ matrix.pkg }} shards passed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PKG: ${{ matrix.pkg }}
+        run: |
+          gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?filter=latest" \
+            --jq ".jobs[] | select(.name | startswith(\"server test ($PKG-\")) | \"\(.name) \(.conclusion)\"" \
+            | tee shards.txt
+          test "$(wc -l < shards.txt)" -eq 2 || { echo "::error::expected 2 $PKG shard jobs"; exit 1; }
+          if grep -qv ' success$' shards.txt; then echo "::error::a $PKG shard did not pass"; exit 1; fi
 
   # —— Client: type-check + unit tests + web build —— (own runner, parallel with server-test/tools-test)
   client-test:
@@ -602,16 +651,13 @@ jobs:
       # `<pkg>/coverage/` subpath). `if-no-files-found: ignore` on upload plus continue-on-error
       # here means a shard that produced no coverage (e.g. it failed before running) just leaves
       # that package's row as "—" in the report instead of failing this job.
+      # metaserver / worldsvc arrive as two shard artifacts each; they land in coverage-shards/ and
+      # the merge step below writes the package's real coverage/coverage-summary.json from them.
       - uses: actions/download-artifact@v4
         continue-on-error: true
         with:
-          name: server-coverage-metaserver
-          path: server/metaserver/coverage
-      - uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          name: server-coverage-worldsvc
-          path: server/worldsvc/coverage
+          pattern: server-coverage-{metaserver,worldsvc}-*
+          path: coverage-shards
       - uses: actions/download-artifact@v4
         continue-on-error: true
         with:
@@ -631,6 +677,18 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      # Only for the istanbul libraries mergeCoverageShards.mjs loads (vitest's own, via server/'s
+      # lockfile) — ~10 s with the npm cache.
+      - name: server install (istanbul libs for the shard merge)
+        working-directory: server
+        run: npm ci --ignore-scripts
+      - name: merge sharded coverage (metaserver, worldsvc)
+        run: |
+          for pkg in metaserver worldsvc; do
+            node scripts/mergeCoverageShards.mjs "server/$pkg/coverage" "coverage-shards/server-coverage-$pkg-1" "coverage-shards/server-coverage-$pkg-2"
+          done
       # Δ column (2026-09-02): the last green `main` run's per-package numbers, carried between
       # runs by actions/cache. Restore-only here — the save step at the bottom of this job is what
       # publishes a new baseline, and only on a green push to main, so a red run can never poison
