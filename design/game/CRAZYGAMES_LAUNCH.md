@@ -120,6 +120,17 @@
     **2026-10-05 已修**（`render/TutorialDirector/panels.ts::drawSkipButton`：先排字、底板宽度跟字走、从右缘向左长，
     封顶 `W*0.34`，超了用 `fitFont` 缩字号、不低于可读下限）；英/德 × 横/竖四种组合实测字都在底板内。
     **随下一次「Submit new version」上线**，已审核中的 `64c620eb` 不含此修复。
+- **2026-10-08 重投 = 新建一条游戏**（10-07 被拒的那条在门户里打不开了，被拒的提交不能「Submit new version」）：
+  - 用的是另一个开发者账号（列表里另有一个 Holy Kicker），旧 submission `8f3d95b1…` 打开报「An error occurred.」。
+    新条目：`submission.id` = `9cbe0a77-1129-4a27-9563-ad810c0f708d`，slug `nivara-notebook-wars-wfc`，**`gameId` = `136102`**，
+    首个构建 `2de7e81f`（main `e994f5e5b`，总 23 MB / 首包 1.6 MB / 加载 3 s），当天提交，状态 Awaiting review。
+  - 表单照 10-05 那份填；Description 那句「Gold refills on its own」更正为 **「Ink refills on its own」**（对局资源是墨水，见 `hint.ink`）。
+  - 新坑：④**门户不收 zip**（「Archive files are not supported」），要把 `client/dist/` 里的文件本身拖进 Upload files；
+    文件上传工具单次 ≤ 10 MB，包得用户手拖；⑤**Billing 按账号走**，换了账号要重填；
+    ⑥驱动用户本机 Chrome 时，Chrome 被别的窗口**整个盖住**就是 `document.hidden`，rAF 停、游戏只在截图那一刻走一帧——让用户留一角 Chrome 露在外面。
+  - 换了 `gameId` 就要同步生产 `NW_CRAZYGAMES_GAME_ID`（流程同下一条）：没改之前预览里两次 `POST /auth/crazygames -> 400`（回落设备访客）。
+    10-08 已改为 `136102`（备份 `.env.bak-20261008221515`，secrets `9435f67`），假 token 回 `invalid or expired CrazyGames token`；
+    真 token 的 200 这次没测到（预览标签页在后台，`visibleBoot` 一直等前台）。
 - **2026-10-12 版本更新记录**（gameId 136102 已过审后的第一次换包）：
   - 构建：在 main `4248bfcd0` 的干净 detached worktree 里 `npm run build:crazygames`，dist 拷出仓库（`D:\cg-builds\crazygames-main-4248bfcd0`，388 文件 / 23 MB）后
     把文件夹**里的文件**拖进门户（不收 zip）。内容 = 10-10 的 ch1_lv1 造塔提示 + 10-12 的自动继续（A/B/C，ONBOARDING_DESIGN §13）+ 按设备的 `open_*`/`loaded_*` 计数。
@@ -128,7 +139,7 @@
   - QA 预览里实测：SDK 事件顺序完整、Warnings 为空、首包 2.1 MB；面板上的 Load time 是「到第一次 `gameplayStart`」，在大厅停留会把它拉长，不是真实加载耗时。
     新账号流程（Skip→ch1_lv1、毕业卡自动继续、赢后自动下一关、点空白取消倒计时）由用户在无痕窗口实测通过——Claude in Chrome 扩展接管不了用户自开的无痕窗口。
   - Update Notes（仅管理员可见）写英文改动摘要，并注明不涉及广告/SDK/登录。**换包没有重新审核，提交后新 build `7aea0eda` 直接 Active**，旧 build 变 Accepted。
-- **`NW_CRAZYGAMES_GAME_ID` 的值是 `133101`**（2026-10-05 核）：取自预览页 `__NEXT_DATA__` 的 `props.pageProps.game.id`。
+- **`NW_CRAZYGAMES_GAME_ID` 的值曾是 `133101`**（2026-10-05 核，旧条目；现为 `136102`，见上）：取自预览页 `__NEXT_DATA__` 的 `props.pageProps.game.id`。
   门户 URL 里的 `8f3d95b1-c884-4175-bb28-08728dae174d` 是 **`submission.id`**，不是 token 里的 `gameId`——
   官方 User 文档的 token 示例就是数字（`"gameId": "20267"`）。配错不会卡人（服务端拒 token → §2 回退设备访客），但等于没配。
 - 生产环境 `NW_CRAZYGAMES_GAME_ID`：**2026-10-05 已配 `133101` 并实测通过**。流程：`sops set secrets/funny/prod.yaml` → `push-env.py funny prod funny-vps '~/funny/server/.env' --yes`（diff 只有这一个 key；备份 `.env.bak-20261005140500`）→ `docker compose -f docker-compose.cloud.yml --env-file .env up -d --no-build metaserver`。验证：容器 `printenv` 得 `133101`；假 token 从 `SSO not configured` 变成 `invalid or expired CrazyGames token`；门户预览（build `64c620eb`）里真 token 的 `POST /auth/crazygames -> 200`（签名 + `gameId` 都对上）。它只被 `/auth/crazygames` 读，对其他平台零影响。
