@@ -163,7 +163,9 @@ describe('full-link E2E (live stack)', () => {
     expect(gwA, 'no gateway socket opened').toBeTruthy();
     expect(gwA!.startsWith(EXPECT_GATEWAY)).toBe(true);
     expect(gwA!.includes('token=')).toBe(true);
-    expect(gwA!.includes(':18080')).toBe(false); // must not be the meta base
+    // Must not be the meta base. Compared by host:port, not a literal ':18080', so the check still
+    // bites when the stack runs on remapped host ports (NW_E2E_META_PORT, scripts/e2e-local.sh).
+    expect(new URL(gwA!).host).not.toBe(new URL(API_BASE).host);
 
     // Pairing → match_found → data-plane game WS connected with a signed ticket.
     await waitFor(
