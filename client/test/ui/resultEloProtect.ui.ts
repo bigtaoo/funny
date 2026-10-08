@@ -3,7 +3,8 @@
 // first 3 of each server-UTC day) costs no ELO on a loss, and match_over.elo carries
 // protectedGame/protectedTotal/protectedKind so ResultScene can say which under the ELO line. Verifies
 // the line is drawn (loss and win, both kinds), sits under the ELO line without overlapping any other
-// text, stays on screen at every locale in portrait and landscape, and is absent for an unprotected game.
+// text, stays on screen at every locale in portrait and landscape, and is absent for an unprotected game
+// and for a local AI-fallback match (2026-10-08: protection slots are for real ranked games only).
 //
 // Runs under the headless PIXI adapter (vitest.ui.config.ts). Run: npm run test:ui
 import { describe, it, expect } from 'vitest';
@@ -34,7 +35,7 @@ function zeroStats(owner: 0 | 1): PlayerStats {
   };
 }
 
-function buildScene(w: number, h: number, winner: 0 | 1, elo: EloResult): ResultScene {
+function buildScene(w: number, h: number, winner: 0 | 1, elo: EloResult | undefined): ResultScene {
   return new ResultScene(w, h, winner, [zeroStats(0), zeroStats(1)], { onPlayAgain() {}, onBack() {} }, 0, elo);
 }
 
@@ -119,6 +120,26 @@ describe('ResultScene - ELO-loss protection line', () => {
       expect(all.some((s) => s.includes('3)') || s.includes('3）'))).toBe(false);
       expect(all.some((s) => s.includes('-16'))).toBe(true);
       scene.destroy();
+    }
+  });
+
+  it('draws no protection line for a local AI-fallback match (no match_over.elo; slots are for real ranked games only)', () => {
+    // campaignRoster.goGame({ fromBotFallback: true }) calls nav.goResult with elo === undefined: the
+    // /pvp/bot-result delta is never protected (SEASON_DESIGN_IMPL_SPEC.md §15.5, 2026-10-08).
+    for (const locale of ['zh', 'en', 'de'] as Locale[]) {
+      setLocale(locale);
+      try {
+        for (const [, w, h] of VIEWPORTS) for (const winner of [0, 1] as const) {
+          const scene = buildScene(w, h, winner, undefined);
+          const all = texts(scene.container).map((n) => n.text);
+          for (const { key } of KINDS) for (let n = 1; n <= 3; n++) {
+            expect(all, `${locale}/${winner}: ${key} ${n}/3`).not.toContain(t(key, { n, total: 3 }));
+          }
+          scene.destroy();
+        }
+      } finally {
+        setLocale('en');
+      }
     }
   });
 });
