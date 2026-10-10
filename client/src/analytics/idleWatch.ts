@@ -17,7 +17,7 @@
  * and ends nothing — the player may well come back, and a session that ends here would take its own
  * duration with it.
  */
-import { track, currentScene } from './index';
+import { track, currentScene, battleProps } from './index';
 import { onAppLifecycleChange } from '../platform/appLifecycle';
 
 /** How long without input counts as idle. Named by the event value itself (`idle_10min`). */
@@ -86,7 +86,7 @@ export function startIdleWatch(probe: IdleProbe, opts: IdleWatchOpts = {}): () =
     if (idleFor < idleMs) { armed = true; return; }
     if (!armed) return;
     armed = false;
-    track('churn_signal', { reason: 'idle_10min', scene: currentScene(), idle_sec: Math.round(idleFor / 1000) });
+    track('churn_signal', { reason: 'idle_10min', scene: currentScene(), idle_sec: Math.round(idleFor / 1000), ...battleProps() });
   }, checkMs);
 
   return () => clearIv(handle);

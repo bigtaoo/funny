@@ -266,8 +266,31 @@ let hiddenFired = false;
 function onAppHidden(reason: string): void {
   if (hiddenFired) return;
   hiddenFired = true;
-  track('churn_signal', { reason, scene: currentScene() });
+  track('churn_signal', { reason, scene: currentScene(), ...battleProps() });
   endSession();
+}
+
+// ── Battle probe → `battle` on mid-battle exits (ANALYTICS_DESIGN §5.6d) ─────
+// The views layer points this at the live GameScene when a battle is mounted; the scene answers null
+// once destroyed, so a probe left behind after the battle simply adds nothing.
+let battleProbe: (() => object | null) | null = null;
+
+export function setBattleProbe(probe: (() => object | null) | null): void {
+  battleProbe = probe;
+}
+
+/**
+ * `{ battle: {...} }` while a battle is on screen, `{}` otherwise — spread into the props of every event
+ * that can mean "left in the middle of a fight" (churn_signal, level_abandon). Runs on the unload path,
+ * so a probe that throws costs the snapshot, never the event.
+ */
+export function battleProps(): { battle?: object } {
+  try {
+    const b = battleProbe?.();
+    return b ? { battle: b } : {};
+  } catch {
+    return {};
+  }
 }
 
 function bindSessionLifecycle(): void {

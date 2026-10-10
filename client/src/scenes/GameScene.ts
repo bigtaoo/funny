@@ -1,6 +1,8 @@
 import { Scene } from './SceneManager';
 import { GameRenderer, type GameProfiles } from '../render/GameRenderer';
 import type { InkHintGate } from '../render/GameRenderer/inkHint';
+import type { BuildHintConfig } from '../render/GameRenderer/buildHint';
+import type { BattleSnapshot } from '../render/GameRenderer/battleSnapshot';
 import type { TutorialConfig } from '../render/TutorialDirector';
 import type { BattleLabelContext } from '../render/battleLabels';
 import { ILayout } from '../layout/ILayout';
@@ -110,6 +112,14 @@ export interface GameSceneOptions {
   players?: { bottom?: string; top?: string };
   /** The one-time "not enough ink" bubble's gate (ONBOARDING_DESIGN §9 item 9); absent = never shown. */
   inkHint?: InkHintGate;
+  /** The "build a defense first" nudge (ONBOARDING_DESIGN §12); absent = never shown. */
+  buildHint?: BuildHintConfig;
+}
+
+/** What analytics attaches to a mid-battle exit (ANALYTICS_DESIGN §5.6d). */
+export interface GameSceneSnapshot extends BattleSnapshot {
+  mode: string;
+  level_id?: string;
 }
 
 export class GameScene implements Scene {
@@ -134,6 +144,8 @@ export class GameScene implements Scene {
   private destroyed = false;
   /** Keeps peer-judge requests away from this client while the battle is on screen. */
   private readonly releaseBattleBusy = acquireBattleBusy();
+  /** Mode + level, fixed at construction, for battleSnapshot(). */
+  private readonly snapshotTag: { mode: string; level_id?: string };
 
   constructor(layout: ILayout, input: InputManager, cb: GameSceneCallbacks, opts: GameSceneOptions = {}) {
     this.cb = cb;
@@ -175,6 +187,11 @@ export class GameScene implements Scene {
     const isCampaign = !opts.net && (opts.mode ?? (opts.level ? 'campaign' : 'pvp')) === 'campaign';
     this.renderer.setCampaignMode(isCampaign);
     this.renderer.setInkHint(opts.inkHint ?? null);
+    this.renderer.setBuildHint(opts.buildHint ?? null);
+    this.snapshotTag = {
+      mode: opts.net ? 'pvp_net' : (opts.mode ?? (opts.level ? 'campaign' : 'pvp')),
+      ...(opts.level ? { level_id: opts.level.id } : {}),
+    };
     this.renderer.init();
     // Attach the recording (if any) to the end-of-game callback.
     this.renderer.onGameEnd = (winner, stats, summary) => this.cb.onGameEnd(winner, stats, buildReplay(winner), summary);
@@ -186,6 +203,12 @@ export class GameScene implements Scene {
 
   update(dt: number): void { this.renderer.update(dt); }
   destroy():         void { this.destroyed = true; this.releaseBattleBusy(); this.renderer.destroy(); }
+
+  /** The battle as it stands, or null once the scene is gone (a stale probe must report nothing). */
+  battleSnapshot(): GameSceneSnapshot | null {
+    if (this.destroyed) return null;
+    return { ...this.snapshotTag, ...this.renderer.battleSnapshot() };
+  }
 
   // ── Network status (driven by app.ts from NetSession events, S1-9) ───────────
 

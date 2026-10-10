@@ -11,10 +11,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const tracked: Array<{ event: string; props: Record<string, unknown> }> = [];
 let lifecycle: ((state: 'visible' | 'hidden' | 'exit') => void) | null = null;
+let battle: Record<string, unknown> | null = null;
 
 vi.mock('../src/analytics/index', () => ({
   track: (event: string, props: Record<string, unknown> = {}) => { tracked.push({ event, props }); },
   currentScene: () => 'LobbyScene',
+  battleProps: () => (battle ? { battle } : {}),
 }));
 vi.mock('../src/platform/appLifecycle', () => ({
   onAppLifecycleChange: (cb: (state: 'visible' | 'hidden' | 'exit') => void) => { lifecycle = cb; },
@@ -27,6 +29,7 @@ async function harness() {
   vi.resetModules();
   tracked.length = 0;
   lifecycle = null;
+  battle = null;
   const { startIdleWatch } = await import('../src/analytics/idleWatch');
   let fire: (() => void) | null = null;
   const state = { clock: 0, idle: 0 };
@@ -63,6 +66,15 @@ describe('idle watch', () => {
     h.tick();
     expect(signals()).toHaveLength(1);
     expect(signals()[0].props).toMatchObject({ reason: 'idle_10min', scene: 'LobbyScene', idle_sec: 600 });
+    expect(signals()[0].props).not.toHaveProperty('battle');
+  });
+
+  it('carries the battle snapshot when the player went still mid-battle (ANALYTICS_DESIGN §5.6d)', async () => {
+    const h = await harness();
+    battle = { mode: 'campaign', level_id: 'ch1_lv1', tick: 900 };
+    h.idleFor(10 * MIN);
+    h.tick();
+    expect(signals()[0].props).toMatchObject({ reason: 'idle_10min', battle: { level_id: 'ch1_lv1', tick: 900 } });
   });
 
   it('does not repeat every minute for the same idle stretch', async () => {
