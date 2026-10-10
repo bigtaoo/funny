@@ -25,7 +25,7 @@ import { buildEquipmentActions } from './equipmentActions';
 import { createStaminaAd } from './staminaAd';
 import type { MountOpts } from '../../AppViews';
 import type { AppCtx, Nav } from '../../appCtx';
-import { TOKEN_KEY, SEEN_INTRO_FLAG, inkHintGate } from '../../appConstants';
+import { TOKEN_KEY, SEEN_INTRO_FLAG, inkHintGate, buildHintFor } from '../../appConstants';
 import { pickPracticeDifficulty } from '../lobby';
 import { resolveRealLayerInterlude } from '../../../scenes/realLayerInterludeArt';
 import openingStoryArtUrl from '../../../assets/story/intro_notebook.png';
@@ -86,7 +86,7 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
         );
       },
       onExitToLobby() {
-        analytics.track('game_end', { mode, result: 'abandon', duration_ticks: 0 });
+        analytics.track('game_end', { mode, result: 'abandon', duration_ticks: 0, ...analytics.battleProps() });
         nav.goLobby({ fade: true }); // exiting a match — one of the transitions that cross-fade
       },
     }, {
@@ -468,13 +468,15 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
         void nav.goResult(winner, stats, 0, kept, undefined, undefined, outroTexts, proceedToMap, t('result.backToMap'));
       },
       onExitToLobby() {
-        analytics.track('level_abandon', { level_id: levelId, phase: 'in_game' });
+        analytics.track('level_abandon', { level_id: levelId, phase: 'in_game', ...analytics.battleProps() });
         nav.goLobby({ fade: true }); // exiting a match — one of the transitions that cross-fade
       },
     }, {
       level,
       equippedSkins: allEquippedSkins(saveManager.get().equipped),
       inkHint: inkHintGate(saveManager),
+      buildHint: buildHintFor(levelId, saveManager.get().progress.stars[levelId] ?? 0,
+        (outcome, tick) => analytics.track('build_hint', { level_id: levelId, outcome, tick })),
       // Replay labels: human at the bottom, the level's forces at the top (owner-indexed).
       players: { bottom: ctx.playerName(), top: t('replay.aiOpponent') },
       // Hero Roster → engine (card level + per-card equipment buff blueprints, §9) and to the

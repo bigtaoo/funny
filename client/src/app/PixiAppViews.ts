@@ -26,6 +26,7 @@ import { IntroScene } from '../scenes/IntroScene';
 import { IllustratedInterludeScene } from '../scenes/IllustratedInterludeScene';
 import { LobbyScene, type LobbySceneCallbacks } from '../scenes/LobbyScene';
 import { GameScene, type GameSceneCallbacks, type GameSceneOptions } from '../scenes/GameScene';
+import { setBattleProbe } from '../analytics';
 import { RoomScene, type RoomSceneCallbacks } from '../scenes/RoomScene';
 import { FriendsScene, type FriendsSceneCallbacks } from '../scenes/FriendsScene';
 import { ChatScene, type ChatSceneCallbacks } from '../scenes/ChatScene';
@@ -90,6 +91,9 @@ function withGameplayPause(platform: IPlatform, cb: GameSceneCallbacks): GameSce
     },
   };
 }
+
+/** Points analytics' battle probe at a freshly built match, for mid-battle exits (ANALYTICS_DESIGN §5.6d). */
+const probed = (scene: GameScene): GameScene => { setBattleProbe(() => scene.battleSnapshot()); return scene; };
 
 /**
  * The PIXI implementation of AppViews: each show*() runs the same
@@ -343,7 +347,7 @@ export class PixiAppViews implements AppViews {
     void enterBattle(
       { app: this.app, manager: this.manager, input: this.input },
       opts,
-      () => this.mounts.timedBuild('GameScene', () => new GameScene(this.layout, this.input, withGameplayPause(this.platform, cb), opts)),
+      () => probed(this.mounts.timedBuild('GameScene', () => new GameScene(this.layout, this.input, withGameplayPause(this.platform, cb), opts))),
     );
   }
 
@@ -476,7 +480,7 @@ export class PixiAppViews implements AppViews {
     void enterBattle(
       { app: this.app, manager: this.manager, input: this.input },
       opts,
-      () => this.mounts.timedBuild('GameScene', () => new GameScene(netLayout, this.input, withGameplayPause(this.platform, cb), opts)),
+      () => probed(this.mounts.timedBuild('GameScene', () => new GameScene(netLayout, this.input, withGameplayPause(this.platform, cb), opts))),
     ).then((s) => deferred.resolve(s));
     return {
       applyNetState:  (s) => deferred.call((sc) => sc.applyNetState(s)),

@@ -147,7 +147,7 @@ function overlapArea(a: Rect, b: Rect): number {
  * covers less of `avoid` (target cells, the guided card, the meteor ring, the Skip button). Returns
  * the strip's rect.
  */
-export function drawStrip(host: PanelHost, title: string | null, body: string | null, avoid: readonly Rect[]): Rect {
+export function drawStrip(host: Pick<PanelHost, 'layout' | 'strip'>, title: string | null, body: string | null, avoid: readonly Rect[]): Rect {
   clearStrip(host);
   const L = host.layout;
   const W = L.designWidth;
@@ -204,7 +204,7 @@ export function drawStrip(host: PanelHost, title: string | null, body: string | 
   return best;
 }
 
-export function clearStrip(host: PanelHost): void {
+export function clearStrip(host: Pick<PanelHost, 'strip'>): void {
   // tearDownChildren frees each Text's baseTexture (texture:true) — the strip is redrawn every beat.
   tearDownChildren(host.strip);
 }

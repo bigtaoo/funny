@@ -28,6 +28,8 @@ import type { GameProfiles } from './GameRenderer/core';
 import { EventsPanel } from './GameRenderer/events';
 import { InputPanel } from './GameRenderer/input';
 import type { InkHintGate } from './GameRenderer/inkHint';
+import { BuildHint, type BuildHintConfig } from './GameRenderer/buildHint';
+import { FirstBuildWatch, battleSnapshot, type BattleSnapshot } from './GameRenderer/battleSnapshot';
 
 export type { GameProfiles } from './GameRenderer/core';
 
@@ -41,6 +43,8 @@ export class GameRenderer {
   private readonly core: GameRendererCore;
   private readonly events: EventsPanel;
   private readonly input: InputPanel;
+  private readonly firstBuild = new FirstBuildWatch();
+  private buildHint: BuildHint | null = null;
 
   constructor(
     engine: IGameEngine,
@@ -91,6 +95,23 @@ export class GameRenderer {
 
   setCampaignMode(v: boolean): void { this.core.setCampaignMode(v); }
   setInkHint(gate: InkHintGate | null): void { this.input.setInkHint(gate); }
+  /** The campaign's "build a defense first" nudge (ONBOARDING_DESIGN §12); null = none. */
+  setBuildHint(cfg: BuildHintConfig | null): void {
+    this.buildHint?.destroy();
+    const core = this.core;
+    const input = this.input;
+    this.buildHint = cfg ? new BuildHint({
+      container: core.container,
+      layout: core.layout,
+      localBuildRow: core.localBuildRow,
+      state: () => core.engine.state,
+      firstBuildTick: () => this.firstBuild.tick,
+      isPaused: () => core.hudView.isPaused,
+      isHoldingCard: () => !!(input.pendingCardDown || input.drag || input.tapSelect),
+      handSlotCenter: (i) => core.handView.slotCenter(i),
+      buildCardGhost: (i) => input.buildCardGhost(i),
+    }, cfg) : null;
+  }
   setReconnecting(v: boolean): void { this.core.setReconnecting(v); }
   setPeerDisconnected(v: boolean): void { this.core.setPeerDisconnected(v); }
   setDisconnected(v: boolean): void { this.core.setDisconnected(v); }
@@ -98,6 +119,10 @@ export class GameRenderer {
   isGameOver(): boolean { return this.core.isGameOver(); }
   get currentTick(): number { return this.core.currentTick; }
   snapshotStats(): [PlayerStats, PlayerStats] { return this.core.snapshotStats(); }
+  /** The local player's battle right now — for analytics on a mid-battle exit (ANALYTICS_DESIGN §5.6d). */
+  battleSnapshot(): BattleSnapshot {
+    return battleSnapshot(this.core.engine.state, this.core.localOwner, this.firstBuild.tick);
+  }
   get controlledOwner(): OwnerId { return this.core.controlledOwner; }
 
   init(): void { this.core.init(); }
@@ -105,7 +130,9 @@ export class GameRenderer {
   update(dt: number): void {
     this.core.update(dt);
     this.input.update(dt);
+    this.firstBuild.observe(this.core.engine.state, this.core.localOwner);
+    this.buildHint?.update(dt);
   }
 
-  destroy(): void { this.core.destroy(); }
+  destroy(): void { this.buildHint?.destroy(); this.buildHint = null; this.core.destroy(); }
 }

@@ -3,6 +3,7 @@
 // and logger without importing createAppCore (which would be circular).
 import { netLog } from '../net/log';
 import type { InkHintGate } from '../render/GameRenderer/inkHint';
+import type { BuildHintConfig, BuildHintOutcome } from '../render/GameRenderer/buildHint';
 
 export const log = netLog('app');
 
@@ -26,6 +27,20 @@ export function inkHintGate(save: { getFlag(key: string): boolean; setFlag(key: 
       return true;
     },
   };
+}
+/**
+ * Campaign levels that carry the "build a defense first" nudge, and the tick it may appear at
+ * (ONBOARDING_DESIGN §12). ch1_lv1 only: it follows the tutorial directly, and half of its first
+ * attempts on CrazyGames' first day were lost by players who never built (2026-10-09). 180 = 6 s,
+ * two seconds after the first wave spawns.
+ */
+export const BUILD_HINT_TICKS: Readonly<Record<string, number>> = { ch1_lv1: 180 };
+
+/** The hint's config for `levelId`, or undefined when it doesn't carry one or has been cleared already. */
+export function buildHintFor(levelId: string, starsSoFar: number, onEvent: (outcome: BuildHintOutcome, tick: number) => void): BuildHintConfig | undefined {
+  const atTick = BUILD_HINT_TICKS[levelId];
+  if (atTick === undefined || starsSoFar > 0) return undefined;
+  return { atTick, onEvent };
 }
 /** flags key — set after the player accepts the GDPR / privacy consent (C5-c, L1-1). Mirrors server `flags.gdprConsent`. */
 export const GDPR_CONSENT_FLAG = 'gdprConsent';

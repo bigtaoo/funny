@@ -118,6 +118,8 @@ export const DEFAULT_CONFIG: AnalyticsConfig = {
     // Per-beat detail for the tutorial step funnel (ONBOARDING_DESIGN §11.9): idle time, whether the
     // ghost-hand demo had to play, wrong drops — i.e. *why* a beat is slow, not only that it is.
     tutorial_beat_done: { sample: 1.0 },
+    // ch1_lv1's "build a defense first" nudge (ONBOARDING_DESIGN §12): shown, then built / expired.
+    build_hint:     { sample: 1.0 },
     nav_checkpoint: { sample: 1.0 },
     login_gate_hit: { sample: 1.0 },
     churn_signal:   { sample: 1.0 },

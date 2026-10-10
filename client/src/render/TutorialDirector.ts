@@ -7,10 +7,11 @@ import type { Phase, TutorialConfig } from './TutorialDirector/types';
 import { buildLayers, drawStrip, clearStrip, drawGradCard, type PanelHost } from './TutorialDirector/panels';
 import { BEATS, BEAT_STEP_KEY, beatText, type BeatSpec } from './TutorialDirector/beats';
 import {
-  IDLE_GHOST_SEC, GHOST_MOVE_SEC, GHOST_HOLD_SEC, BASE_LABEL_HOLD_SEC, BASE_LABEL_FADE_SEC, FEEDBACK_SEC, STRIP_FADE_SEC, FINALE_MAX_SEC, FINALE_PAUSE_SEC, GRAD_CARD_DELAY_SEC, GRAD_POP_SEC, SHAKE_SEC, SHAKE_AMP, LANE_SNAP_COLS, METEOR_SNAP_CELLS,
+  IDLE_GHOST_SEC, BASE_LABEL_HOLD_SEC, BASE_LABEL_FADE_SEC, FEEDBACK_SEC, STRIP_FADE_SEC, FINALE_MAX_SEC, FINALE_PAUSE_SEC, GRAD_CARD_DELAY_SEC, GRAD_POP_SEC, SHAKE_SEC, SHAKE_AMP, LANE_SNAP_COLS, METEOR_SNAP_CELLS,
 } from './TutorialDirector/beats';
 import { enemyUnits, bestMeteorAnchor, beatTargetPoint, meteorAnchorCenter } from './TutorialDirector/geometry';
 import { dispatchHit } from '../ui/hits';
+import { drawSlotRing, fillGhostLayer, poseGhost, GHOST_LOOP_SEC } from './TutorialDirector/ghostDemo';
 
 export type { TutorialConfig, TutorialBeatDone } from './TutorialDirector/types';
 
@@ -395,19 +396,13 @@ export class TutorialDirector {
 
   /** Breathing frame around the guided card + the meteor target ring. */
   private animateRings(beat: BeatSpec): void {
-    const a = 0.45 + 0.35 * (0.5 + 0.5 * Math.sin(this.time * 5));
     if (this.slotIndex >= 0) {
-      const c = this.host.handSlotCenter(this.slotIndex);
-      const w = this.layout.cardWidth + 10;
-      const h = this.layout.cardHeight + 10;
-      this.slotRing.clear();
-      this.slotRing.lineStyle(4, C_BLUE, a);
-      this.slotRing.drawRoundedRect(c.x - w / 2, c.y - h / 2, w, h, 8);
-      this.slotRing.visible = true;
+      drawSlotRing(this.slotRing, this.layout, this.host.handSlotCenter(this.slotIndex), this.time);
     } else {
       this.slotRing.visible = false;
     }
     if (beat.kind === 'spell' && this.meteorAnchor) {
+      const a = 0.45 + 0.35 * (0.5 + 0.5 * Math.sin(this.time * 5));
       const p = this.anchorCenter(this.meteorAnchor);
       const r = this.layout.cellSize * (1.25 + 0.15 * Math.sin(this.time * 5));
       this.clusterRing.clear();
@@ -435,31 +430,12 @@ export class TutorialDirector {
   private animateGhost(dt: number, beat: BeatSpec): void {
     if (this.slotIndex < 0) { this.ghost.visible = false; return; }
     if (this.ghostSlot !== this.slotIndex || !this.ghostCard) {
-      this.ghost.removeChildren().forEach((c) => c.destroy({ children: true }));
       this.ghostCard = this.host.buildCardGhost(this.slotIndex);
       this.ghostSlot = this.slotIndex;
-      if (this.ghostCard) {
-        this.ghostCard.alpha = 0.85;
-        this.ghostCard.scale.set(1.4); // the drag ghost is small; the demo has to be noticed
-        this.ghost.addChild(this.ghostCard);
-      }
-      const tip = new PIXI.Graphics();
-      const r = this.layout.cellSize * 0.22;
-      tip.lineStyle(3, 0xffffff, 0.95).beginFill(C_BLUE, 0.85).drawCircle(0, 0, r).endFill();
-      this.ghost.addChild(tip);
+      fillGhostLayer(this.ghost, this.layout, this.ghostCard);
     }
-    this.ghost.visible = true;
-    this.ghostT = (this.ghostT + dt) % (GHOST_MOVE_SEC + GHOST_HOLD_SEC);
-    const from = this.host.handSlotCenter(this.slotIndex);
-    const to = this.targetPoint(beat);
-    const k = Math.min(1, this.ghostT / GHOST_MOVE_SEC);
-    const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2; // easeInOutQuad
-    const x = from.x + (to.x - from.x) * e;
-    const y = from.y + (to.y - from.y) * e;
-    for (const c of this.ghost.children) c.position.set(x, y);
-    // Fade in at the start of each pass, out at the end of the hold.
-    const holdLeft = GHOST_MOVE_SEC + GHOST_HOLD_SEC - this.ghostT;
-    this.ghost.alpha = Math.max(0, Math.min(1, this.ghostT / 0.15, holdLeft / 0.2));
+    this.ghostT = (this.ghostT + dt) % GHOST_LOOP_SEC;
+    poseGhost(this.ghost, this.ghostT, this.host.handSlotCenter(this.slotIndex), this.targetPoint(beat));
   }
 
   // ── Geometry ────────────────────────────────────────────────────────────────────────────────────

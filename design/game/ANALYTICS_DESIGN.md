@@ -476,10 +476,10 @@ scene 取值：`IntroScene / LobbyScene / LoginScene / CampaignMapScene / LevelP
 | 事件 | 必填属性 | 可选属性 | 说明 |
 |---|---|---|---|
 | `game_start` | `mode` | `level_id, opponent_type` | mode: campaign/pvp_ai/pvp_net/siege |
-| `game_end` | `mode, result, duration_ticks` | `level_id, winner_side, elo_delta` | result: win/loss/draw/abandon |
+| `game_end` | `mode, result, duration_ticks` | `level_id, winner_side, elo_delta, battle` | result: win/loss/draw/abandon；`battle` 只在练习局 abandon 时带（§5.6d） |
 | `level_attempt` | `level_id` | `stars_before` | 点击进入关卡 |
 | `level_complete` | `level_id, stars` | `duration_ticks, materials_gained{}` | 通关 |
-| `level_abandon` | `level_id, phase` | `tick` | phase: prep/in_game |
+| `level_abandon` | `level_id, phase` | `tick, battle` | phase: prep/in_game；`in_game` 时带 `battle` 快照（§5.6d） |
 
 ### 5.4 经济层（Economy）
 
@@ -519,10 +519,11 @@ scene 取值：`IntroScene / LobbyScene / LoginScene / CampaignMapScene / LevelP
 
 | 事件 | 必填属性 | 说明 |
 |---|---|---|
-| `churn_signal` | `reason, scene` | reason: background/explicit_exit/idle_10min（后者 2026-09-20 接线，见下） |
+| `churn_signal` | `reason, scene` | reason: background/explicit_exit/idle_10min（后者 2026-09-20 接线，见下）。战斗画面上发生时另带 `battle` 快照（§5.6d） |
 | `tutorial_start` / `tutorial_complete` | `level_id` | 开始/完成新手引导（§9.6 引导漏斗用） |
 | `tutorial_skip` | `step` | 跳过引导（`step:'tutorial'`，来自 `game.ts`；`step:'intro'` 已改用专属 `intro_skip`，见下） |
 | `tutorial_step` | `level_id, phase, step_key, step_index` | 教程内部小步骤（§9.7 教程步骤漏斗用），`step_key` 见 `TUTORIAL_ORDERED_KEYS` |
+| `build_hint` | `level_id, outcome, tick` | 战役「先造建筑」提示的一生：`shown` 一次，然后 `built` 或 `expired` 二选一；造在提示之前则什么都不发（[`ONBOARDING_DESIGN.md` §12](ONBOARDING_DESIGN.md)）。100% 采样 |
 | `nav_checkpoint` | `scene` | 场景级漏斗用（§9.7），100% 采样，仅在 `screen_view` 命中场景白名单时自动补发 |
 | `login_gate_hit` | `scene` | 离线功能门控弹「需要登录」 |
 | `login_submit` | `mode` | 提交登录/注册表单（mode: login/register/crazygames）。2026-09-20 补——此前 `LoginScene` 除 `screen_view` 外零埋点，**新客第一道硬墙有多少人过去了、剩下的被哪个错误挡住，全不可知**。`mode:'crazygames'` 2026-09-23 补（RETENTION_LAUNCH_PLAN.md §3.1），走 LoginScene 的「Sign in with CrazyGames」按钮，复用 `doAuth()` 同一条埋点/持久化路径 |
@@ -605,6 +606,35 @@ Grafana 上值得先看的两张：按 `platform` 切的 `fpsP50` 分布（iOS/�
 再往埋点发一条 `prev_session_crash{prev_sid, alive_ms}`。因为「闪退的设备第二天还回来吗」
 是个**留存问题**，只能在存留存数据的那边问；`prev_sid` 保证需要时还能跟 Loki 那半拼回去。
 和 crash 报告同一道闸：dev 构建（`buildVersion '0.0.0'`）不报，热重载不是闪退。
+
+### 5.6d 战斗中途离开的快照（2026-10-10）
+
+**起因**：CrazyGames 第一天外部流量（2026-10-09）里，30 个第一次打 `ch1_lv1` 的人有 **13 个打到一半就走了**（10 个关页、3 个退回大厅）。打完的局有 `match_badges` 报战斗数字，中途走的一个数字都没有，于是分不清这些人是快输了还是玩腻了。
+
+**做法**：战斗画面在的时候，分析模块挂一个「战斗探针」（`analytics.setBattleProbe`，由 `PixiAppViews.showGame/showGameNet` 在建好 `GameScene` 时挂上）。下面三处事件会把探针的结果作为 `battle` 带上：
+
+- `churn_signal`（三种 reason 都带，包括 idle_10min）；
+- `level_abandon{phase:'in_game'}`；
+- 练习局（PvP 对 AI）中途退出时的 `game_end{result:'abandon'}`。
+
+`battle` 的字段和 `match_badges` 同名，两边可以并排看：
+
+| 字段 | 含义 |
+|---|---|
+| `mode` / `level_id` | campaign/pvp/pvp_net/siege…；战役局才有 `level_id` |
+| `tick` | 离开时的引擎 tick（30 Hz） |
+| `base_hp` / `base_hp_max` | 己方基地血量 |
+| `buildings` | 此刻还立着的己方建筑数 |
+| `ink` | 此刻的墨 |
+| `kills` / `gold_spent` / `units_sent` / `build_ticks` / `dmg_taken` | 同 `match_badges`（截至此刻） |
+| `first_build_tick` | 己方第一座建筑落下的 tick，没造过为 null |
+
+**约束**：
+
+- 场景销毁后探针回 null，不带 `battle`。旧探针不必显式摘掉，下一场战斗建好时会被替换。
+- 探针在卸载路径上跑，抛错时吞掉，只丢快照，不丢事件。
+- 不新增事件名，所以采样表不用改。`battle` 是嵌套对象，服务端原样落库（`ingest.ts` 不校验 props）。
+- 查法：`events.find({event:'churn_signal','props.battle':{$exists:true}})`。
 
 ### 5.7 成就漏斗（Achievement，S9-8）
 
