@@ -1001,6 +1001,8 @@ export const de: Record<TranslationKey, string> = {
   'world.err.cardTroopCap': 'Die Truppenkapazität dieser Karte ist voll',
   'world.err.noInk': 'Nicht genug Tinte',
   'hint.ink': 'Noch nicht genug Tinte — sie füllt sich mit der Zeit auf.',
+  'hint.build.title': 'Zuerst eine Verteidigung bauen',
+  'hint.build.body': 'Zieh das markierte Gebäude auf deine Seite – es hält diese Bahn für dich.',
   // Nationen / Saison / Shop (C5)
   'world.info': 'Welt',
   'world.tabNations': 'Nationen',

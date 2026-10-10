@@ -1027,6 +1027,8 @@ export const zh = {
   'world.err.cardTroopCap': '这张卡的带兵上限已满',
   'world.err.noInk': '墨水不足',
   'hint.ink': '墨还不够——它会随时间自动回满。',
+  'hint.build.title': '先造一座建筑',
+  'hint.build.body': '把高亮的建筑拖到己方一侧——它会替你守住这一路。',
   // ── Nations / season / shop panel (C5) ───────────────────────────────────
   'world.info': '世界',
   'world.tabNations': '国家',

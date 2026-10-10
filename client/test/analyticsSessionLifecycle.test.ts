@@ -128,3 +128,43 @@ describe('analytics session lifecycle — churn_signal / session_end', () => {
     expect(state.flushSyncCalls).toBe(1);
   });
 });
+
+// ANALYTICS_DESIGN §5.6d: a mid-battle exit carries the battle's state. 13 of the first 30 CrazyGames
+// ch1_lv1 attempts (2026-10-09) ended in a churn_signal from GameScene with nothing else to go on.
+describe('analytics battle probe — `battle` on churn_signal', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('a live battle rides along on churn_signal', async () => {
+    const dom = stubDom();
+    const analytics = await initAnalytics();
+    analytics.setBattleProbe(() => ({ mode: 'campaign', level_id: 'ch1_lv1', tick: 1500, buildings: 0 }));
+
+    dom.hide();
+
+    expect(state.pushed[0]).toMatchObject({
+      event: 'churn_signal',
+      props: { reason: 'background', battle: { mode: 'campaign', level_id: 'ch1_lv1', tick: 1500, buildings: 0 } },
+    });
+  });
+
+  it('a probe that answers null (scene destroyed) or throws adds nothing — and never costs the event', async () => {
+    const dom = stubDom();
+    const analytics = await initAnalytics();
+
+    analytics.setBattleProbe(() => null);
+    dom.hide();
+    dom.show();
+    analytics.setBattleProbe(() => { throw new Error('renderer gone'); });
+    dom.hide();
+
+    const churn = state.pushed.filter((e) => e.event === 'churn_signal');
+    expect(churn).toHaveLength(2);
+    for (const e of churn) expect(e.props).not.toHaveProperty('battle');
+  });
+
+  it('battleProps() is empty with no probe set', async () => {
+    stubDom();
+    const analytics = await initAnalytics();
+    expect(analytics.battleProps()).toEqual({});
+  });
+});

@@ -1001,6 +1001,8 @@ export const en: Record<TranslationKey, string> = {
   'world.err.cardTroopCap': "This card's troop capacity is full",
   'world.err.noInk': 'Not enough ink',
   'hint.ink': 'Not enough ink yet — it refills over time.',
+  'hint.build.title': 'Build a defense first',
+  'hint.build.body': 'Drag the highlighted building onto your side — it holds that lane for you.',
   // Nations / season / shop panel (C5)
   'world.info': 'World',
   'world.tabNations': 'Nations',
