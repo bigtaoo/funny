@@ -110,7 +110,24 @@ export async function registerAndEnterLobby(page: Page, loginId: string, display
   );
   if (await page.evaluate(() => window.__nwE2E!.state.screen === 'game')) {
     // Fresh account landed in the FTUE tutorial level — skip it, same as a player tapping "skip".
-    await page.evaluate(() => window.__nwE2E!.state.gameCb.onExitToLobby());
+    // On a fresh account the skip goes straight into ch1_lv1 (ONBOARDING_DESIGN §13), i.e. a second
+    // showGame with a new callback bag — leave that one too, as HeadlessAppViews' leaveLevelAfterSkip does.
+    await page.evaluate(() => {
+      const st = window.__nwE2E!.state;
+      st.skippedGameCb = st.gameCb;
+      st.gameCb.onExitToLobby();
+    });
+    await page.waitForFunction(
+      () => {
+        const st = window.__nwE2E?.state;
+        return st?.screen === 'lobby' || (st?.screen === 'game' && st.gameCb !== st.skippedGameCb);
+      },
+      null,
+      { timeout: 20_000 },
+    );
+    if (await page.evaluate(() => window.__nwE2E!.state.screen === 'game')) {
+      await page.evaluate(() => window.__nwE2E!.state.gameCb.onExitToLobby());
+    }
   }
   await screenIs(page, 'lobby');
 }
