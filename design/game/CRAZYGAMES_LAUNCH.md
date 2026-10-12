@@ -120,6 +120,14 @@
     **2026-10-05 已修**（`render/TutorialDirector/panels.ts::drawSkipButton`：先排字、底板宽度跟字走、从右缘向左长，
     封顶 `W*0.34`，超了用 `fitFont` 缩字号、不低于可读下限）；英/德 × 横/竖四种组合实测字都在底板内。
     **随下一次「Submit new version」上线**，已审核中的 `64c620eb` 不含此修复。
+- **2026-10-12 版本更新记录**（gameId 136102 已过审后的第一次换包）：
+  - 构建：在 main `4248bfcd0` 的干净 detached worktree 里 `npm run build:crazygames`，dist 拷出仓库（`D:\cg-builds\crazygames-main-4248bfcd0`，388 文件 / 23 MB）后
+    把文件夹**里的文件**拖进门户（不收 zip）。内容 = 10-10 的 ch1_lv1 造塔提示 + 10-12 的自动继续（A/B/C，ONBOARDING_DESIGN §13）+ 按设备的 `open_*`/`loaded_*` 计数。
+  - 上传前先确认服务端已部署同一提交（analyticsvc 的匿名步骤白名单要含 `open_*`/`loaded_*`，否则计数被静默丢弃）：
+    `api.gamestao.com/health` 200、`nivara.gamestao.com/version.json` = 短 SHA。
+  - QA 预览里实测：SDK 事件顺序完整、Warnings 为空、首包 2.1 MB；面板上的 Load time 是「到第一次 `gameplayStart`」，在大厅停留会把它拉长，不是真实加载耗时。
+    新账号流程（Skip→ch1_lv1、毕业卡自动继续、赢后自动下一关、点空白取消倒计时）由用户在无痕窗口实测通过——Claude in Chrome 扩展接管不了用户自开的无痕窗口。
+  - Update Notes（仅管理员可见）写英文改动摘要，并注明不涉及广告/SDK/登录。**换包没有重新审核，提交后新 build `7aea0eda` 直接 Active**，旧 build 变 Accepted。
 - **`NW_CRAZYGAMES_GAME_ID` 的值是 `133101`**（2026-10-05 核）：取自预览页 `__NEXT_DATA__` 的 `props.pageProps.game.id`。
   门户 URL 里的 `8f3d95b1-c884-4175-bb28-08728dae174d` 是 **`submission.id`**，不是 token 里的 `gameId`——
   官方 User 文档的 token 示例就是数字（`"gameId": "20267"`）。配错不会卡人（服务端拒 token → §2 回退设备访客），但等于没配。
