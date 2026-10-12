@@ -11,6 +11,10 @@ import { TUTORIAL_DONE_FLAG } from '../../appConstants';
 
 type TutorialNav = Pick<Nav, 'goTutorial'>;
 
+/** Graduation card auto-continue (ONBOARDING_DESIGN §13): players who went on tapped within 2 s, p90 4 s. */
+const GRAD_AUTO_SEC = 4;
+const GRAD_AUTO_NOTICE_SEC = 6;
+
 export function createTutorialNav(ctx: AppCtx): TutorialNav {
   const { saveManager, platform, state, views, nav } = ctx;
 
@@ -24,7 +28,8 @@ export function createTutorialNav(ctx: AppCtx): TutorialNav {
    * the hand is warm, instead of a lobby whose primary button is ranked PvP. The card also announces
    * the author's welcome-mail coins, which the server pays on the first-ever clear (pve/clear.ts), so
    * the promise is only shown while it is still true. A replay from settings, or an account that has
-   * already cleared a level, just returns to the lobby. Skip always returns to the lobby.
+   * already cleared a level, just returns to the lobby. Skip goes the same way: into ch1_lv1 on a fresh
+   * account, otherwise back to the lobby (§13).
    *
    * Every step also ticks the anonymous first-session funnel counter, which counts every player
    * whatever their analytics answer — the one funnel that also covers unconsented players
@@ -52,13 +57,19 @@ export function createTutorialNav(ctx: AppCtx): TutorialNav {
         saveManager.setFlag(TUTORIAL_DONE_FLAG, true);
         analytics.track('tutorial_skip', { step: 'tutorial' });
         analytics.countAnonymousFunnelStep('tutorial_skip');
-        nav.goLobby({ fade: true }); // exiting a match — one of the transitions that cross-fade
+        // A fresh account skips into the same first fight graduation leads to (ONBOARDING_DESIGN
+        // §13): in the first CrazyGames week, most skippers who landed in the lobby closed the tab.
+        if (nextLevelId) startLevelFromTutorial(nextLevelId);
+        else nav.goLobby({ fade: true }); // exiting a match — one of the transitions that cross-fade
       },
     }, {
       level,
       tutorial: {
         ctaLabel: t(nextLevelId ? 'tutorial.grad.cta' : 'tutorial.grad.ctaReplay'),
         ...(nextLevelId ? { teaser: t('tutorial.grad.teaser', { coins: WELCOME_MAIL_COINS.toLocaleString() }) } : {}),
+        // Only where the button leads on into ch1_lv1 (ONBOARDING_DESIGN §13); longer while the
+        // analytics notice rides on the card, so it stays up long enough to be read.
+        ...(nextLevelId ? { autoContinueSec: ctx.statsNoticePending?.() ? GRAD_AUTO_NOTICE_SEC : GRAD_AUTO_SEC } : {}),
         // Notice-only build, outside the EEA: the analytics notice rides on the card, so a player who
         // plays straight on into level 1 has seen it within the first minute (COMPLIANCE_GLOBAL §3.3b).
         ...(ctx.statsNoticePending?.() ? {

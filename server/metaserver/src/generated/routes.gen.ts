@@ -1631,6 +1631,10 @@ const QUERY_SCHEMAS: Record<string, unknown> = {
       "t": {
         "type": "string",
         "enum": [
+          "open_desktop",
+          "open_mobile",
+          "loaded_desktop",
+          "loaded_mobile",
           "tutorial_start",
           "beat_unit",
           "beat_building",

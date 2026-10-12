@@ -101,10 +101,13 @@ export interface BootFunnelRow {
  * funnel order. A fixed allow-list for the same reason `?p=` has one: the value becomes part of a
  * document `_id` on an endpoint with no auth, so anything else is dropped rather than stored.
  * Mirrors the client's `ANONYMOUS_FUNNEL_STEPS` (client/src/analytics/index.ts): the v2 tutorial
- * sequence (ONBOARDING_DESIGN §11.9), its Skip, and the first attempt / first clear of campaign
- * levels 1–3.
+ * sequence (ONBOARDING_DESIGN §11.9), its Skip, the first attempt / first clear of campaign
+ * levels 1–3, and the two load checkpoints split by input class (ANALYTICS_DESIGN §3.6f):
+ * `open_*` from an inline script in the HTML before the bundle downloads, `loaded_*` once the first
+ * screen is up — their ratio is the share of launches abandoned while loading.
  */
 export const ANON_FUNNEL_STEPS = [
+  'open_desktop', 'open_mobile', 'loaded_desktop', 'loaded_mobile',
   'tutorial_start', 'beat_unit', 'beat_building', 'beat_spell', 'graduate', 'tutorial_complete', 'tutorial_skip',
   'lv1_start', 'lv1_clear', 'lv2_start', 'lv2_clear', 'lv3_start', 'lv3_clear',
 ] as const;

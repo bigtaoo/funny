@@ -168,6 +168,7 @@ export const zh = {
   'result.playAgain': '再来一局',
   'result.playAgainWin': '再战一场',
   'result.backToMap': '返回地图',
+  'result.nextLevel': '下一关',
   'result.retry': '再试一次',
   'result.watchReplay': '观看回放',
   'result.eloDelta': 'ELO {delta} → {after}　段位 {rank}',

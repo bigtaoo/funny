@@ -311,6 +311,7 @@ Art 7(1) 的举证留痕，不是遥测。
 完全一样：只有日期、平台、步骤键、计数；没有 device id、token、session id。
 - `step` 白名单 = v2 教学序列 `tutorial_start / beat_unit / beat_building / beat_spell / graduate / tutorial_complete`
   + `tutorial_skip` + 前三关 `lv1_start / lv1_clear / lv2_start / lv2_clear / lv3_start / lv3_clear`
+  + 2026-10-12 起前面再加四个加载检查点 `open_desktop / open_mobile / loaded_desktop / loaded_mobile`（§3.6f）
   （客户端 `ANONYMOUS_FUNNEL_STEPS`、服务端 `ANON_FUNNEL_STEPS`、OpenAPI `t` 枚举三处一致）；白名单外的值**什么都不记**。
 - `lvN_*` 只在该关**还没通过**时计（`campaignRoster.ts` `anonLevelStep`），所以它表示「新玩家走到这里」，不是「有人重刷第一关」。
   `lvN_start` 按启动去重：同一次启动里重试不重复计，分两次启动各失败一次会计两次——读的时候跟 `lvN_clear` 对着看。
@@ -367,6 +368,25 @@ Art 7(1) 的举证留痕，不是遥测。
 **覆盖**：`server/metaserver/test/activity-days-unit.test.ts`（偏移、去重、资格过滤、不匹配退避一天、不抛、LRU 上限、`onAuthenticated` 钩子）、
 `retention-report.e2e.test.ts`（真 Mongo 写入、分组、排除、未关窗口为空、`days` 夹取、401）、`auth-credential-unit.test.ts`（关掉统计即清 `activeDays`）、
 `account-purge.e2e.test.ts`（清除）、admin 路由与 client 测试、`tools/ops/test/serverRetention.test.ts`。
+
+### 3.6f 加载流失：按设备分的两个匿名加载检查点（2026-10-12）
+
+**为什么要有**：CG 首周（10-09..10-11）手机端「游戏转化率」只有 27%（桌面 57%），而我们自己的数据里，**加载完成的**手机会话
+有 83% 能玩到 60 秒——手机流失在加载完成之前，现有埋点一条都看不到：`boots_daily` 是 `createAppCore` 拉配置时才记的（资源已加载完），
+§3.6 的 `boot` 事件又在缓冲里基本没发出来（432 个会话里只到了 22 条）。要回答「手机玩家是不是死在加载条上」，需要
+**加载前**和**加载后**各一个、不靠同意、按设备分开的计数。
+
+**做法**：沿用 §3.6d 的匿名漏斗通道（`GET /analytics/config?p=<平台>&t=<step>` → `funnel_anon_daily` `$inc`），白名单前面加四个键：
+- `open_desktop` / `open_mobile`——**bundle 还没下载**就打：`client/public/crazygames/index.html` 里 CG SDK 之后的一小段内联脚本，
+  `fetch(..., { mode: 'no-cors', keepalive: true })`，API 地址由 webpack 构建时注入（`HtmlWebpackPlugin` 的 `analyticsBase`，
+  即 `apiBase` 去掉 `/api`；为空就不发）。只有 CG 模板有这一段。
+- `loaded_desktop` / `loaded_mobile`——第一屏上来时打：`app.ts` 在 `markBoot('ready')` 之后调 `analytics.countLoadedLaunch()`。所有平台都发。
+- 设备划分：`matchMedia('(pointer: coarse)')`——触屏为 `mobile`（含平板），否则 `desktop`。两处用同一个判断。
+- 立场与 §3.6d 完全相同：只有日期、平台、步骤键、计数；每次启动各至多一次。
+- 读法：同平台同日 `loaded_x / open_x` 就是该设备类别的**加载完成率**；`open_x` 跟 CG 后台的页面访问数对比，可以看出有多少人
+  点进来了却连 HTML 都没跑完。ops「Launch funnel」卡的匿名列会显示为 `Opened (desktop)` / `Opened (touch)` / `Loaded (desktop)` / `Loaded (touch)`。
+- 三处白名单（客户端 `ANONYMOUS_FUNNEL_STEPS`、服务端 `ANON_FUNNEL_STEPS`、OpenAPI `t` 枚举）一起改；**服务端没部署前新键会被丢**，
+  所以 analyticsvc 要先于（或同时于）CG 新包上线。
 
 ---
 

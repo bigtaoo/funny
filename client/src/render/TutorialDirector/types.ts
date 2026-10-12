@@ -27,6 +27,14 @@ export interface TutorialConfig {
    */
   footnote?: string;
   onFootnoteShown?(): void;
+  /**
+   * Seconds after the graduation card has landed before it presses its own button, with a bar
+   * filling along the button's foot meanwhile (ONBOARDING_DESIGN §13). Absent = wait for the tap.
+   * Set only on the fresh-account path, where the button leads into ch1_lv1: in the first week on
+   * CrazyGames 11% of sessions ended on this card, idle 5–20 s, while players who went on tapped it
+   * within 2 s (p90 4 s) — a WIN stamp read as "the game is over".
+   */
+  autoContinueSec?: number;
   /** Step-level analytics (A9-9); keys match analyticsvc's TUTORIAL_ORDERED_KEYS. */
   onStep?(stepKey: string): void;
   onBeatDone?(info: TutorialBeatDone): void;
