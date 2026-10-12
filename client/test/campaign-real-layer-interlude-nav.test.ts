@@ -71,7 +71,7 @@ describe('campaign real-layer interlude — nav wiring around a real win', () =>
     }
   }, 30_000);
 
-  it('a plain win (no realLayerKey on the level) goes straight from the result to the map', async () => {
+  it('a plain win (no realLayerKey on the level) offers the next level, with the map one tap aside', async () => {
     // ch1_lv1 unmodified — no splice this time, proving the interlude path above is opt-in.
     const views = await enterLevel('ch1_lv1');
     const ai = new BaselinePlayer(DEFAULT_AI);
@@ -83,8 +83,13 @@ describe('campaign real-layer interlude — nav wiring around a real win', () =>
     expect(result.winner).toBe(0);
     expect(views.screen).toBe('result');
 
-    views.result!.cb.onPlayAgain();
+    // ONBOARDING_DESIGN §13: a first clear's primary leads on (and presses itself after a few
+    // seconds); the map moved to the secondary button.
+    expect(views.result!.cb.autoContinueSec).toBeGreaterThan(0);
+    views.result!.cb.secondaryAction!.onTap();
     expect(views.screen).toBe('campaignMap');
+    views.result!.cb.onPlayAgain();
+    expect(views.screen).toBe('levelPrep');
     expect(views.realLayerInterlude).toBeUndefined();
   }, 30_000);
 });

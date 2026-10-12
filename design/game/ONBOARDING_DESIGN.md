@@ -126,9 +126,9 @@
 - 陨石放行后，等场上敌人清空（最多 2 s）再停 0.5 s → `forceVictory()`：HUD 的 WIN 印章 + 结算音效，**不**自动退场。
 - 再 0.5 s 毕业卡以「盖章」的弹性动画弹出：一句目标（*Protect your notebook. Break theirs.*）、一行奖励预告、一个按钮。按钮之外的点击都吃掉，避免误触跳过这一刻。
 - **CG 包、非 EU 地区、还没告知过统计的玩家**：按钮下面多一行 ≥14 CSS px 的小字「我们会收集游玩数据用于改进游戏，可随时在设置里关闭」。卡弹出那一刻才放行同意前缓冲里的埋点——「先告知再上传」（COMPLIANCE_GLOBAL §3.3b）。EU 玩家不加这行：他们在大厅被问。
-- **新账号**（没写过 `tutorial_done`、`progress.cleared` 为空）：预告「First win: +1,000 coins」，按钮 **Next battle »**，一键进 `ch1_lv1`（记 `level_attempt`、扣入场体力，体力不够就退回准备页）。这 1000 金币就是服务器在首次通关时寄出的作者信（§5.1），数值读同一个常量 `@nw/shared/onboarding` 的 `WELCOME_MAIL_COINS`，不新开金币口子。
-- **重看教学 / 已通关的账号**：不预告，按钮 **Continue**，回大厅。
-- Skip 任何时候都回大厅（写 `tutorial_done`）。
+- **新账号**（没写过 `tutorial_done`、`progress.cleared` 为空）：预告「First win: +1,000 coins」，按钮 **Next battle »**，一键进 `ch1_lv1`（记 `level_attempt`、扣入场体力，体力不够就退回准备页）。这 1000 金币就是服务器在首次通关时寄出的作者信（§5.1），数值读同一个常量 `@nw/shared/onboarding` 的 `WELCOME_MAIL_COINS`，不新开金币口子。**2026-10-12 起**按钮底部有一条进度条，4 s（卡上带统计说明小字时 6 s）后自己按下（§13.2）。
+- **重看教学 / 已通关的账号**：不预告，按钮 **Continue**，回大厅；不自动继续。
+- Skip（写 `tutorial_done`）：新账号**直接进 `ch1_lv1`**（2026-10-12 起，§13.2 C），其它情况回大厅。
 
 ---
 
@@ -444,4 +444,39 @@ CrazyGames 第一天外部流量（2026-10-09）里，30 个第一次打 `ch1_lv
 - 中途离开的局现在会带 `battle` 快照，含 `first_build_tick`（同上 §5.6d）。
 - **评估**：比较上线前后 `funnel_anon_daily` 里 `lv1_clear/lv1_start` 的比值（10-09 是 21/41 ≈ 51%）；用 `build_hint` 的 `built` 占 `shown` 的比例，看提示有没有被听进去；用 `battle.first_build_tick` 看中途走的人是不是仍然没造建筑。
 - **没做的**：断崖本身（`ch1_lv1` 前半段降血量）留着，等这一版有数据、并给难度模拟器加上「只出兵」策略之后再定。
+
+## 13. 会话不在停顿处断掉：自动继续（2026-10-12）
+
+### 13.1 为什么做
+
+CrazyGames 首周（10-09..10-11）后台：平均单次游玩 2 分 53 秒（2 分要到桌面 6 分 26 秒、手机 5 分 05 秒）。CG 的「游玩时长」按单次游玩算、不含离开游戏的时间，所以要拉长的是**一次坐下来连续玩多久**。把 435 个已同意会话按「最后到达的里程碑」分组，会话结束的位置：
+
+| 停在哪里 | 会话数 | 说明 |
+|---|---|---|
+| `ch1_lv1` 进行中 / 输了 / 中途退出 | 151 | §12 的建筑提示管这一块 |
+| **胜利后的结算页** | 约 100 | 其中 54 个是 `ch1_lv1` 赢了之后。主按钮是「回地图」，下一场要点三下（地图 → 关卡 → 开打） |
+| **教学毕业卡** | 50 | 卡上空等 5–20 s 后关页；继续的人中位 1.8 s 就点了（p90 4.2 s） |
+| 跳过教学后的大厅 | 28 | Skip 回大厅，大厅里没有一个明确的「下一步」 |
+| 教学之前 | 20 | |
+
+共同点：**每一个停顿都要玩家主动点一下才有下一场**，而在网页门户上，停下来的人很大一部分就关页了。教学本身只有 32 s（中位数），缩短它够不到时长指标；要做的是把停顿处接上。
+
+### 13.2 做法
+
+- **A：胜利后「下一关」做主按钮 + 倒计时**（`app/nav/game/nextLevel.ts` `nextLevelAfterWin`，`campaignRoster.ts` 胜利分支）。
+  - 赢了且拿到星（通关）、该关没有章末插画（插画按设计回地图）、后面还有关卡时：主按钮改成 **NEXT LEVEL**（进下一关的准备页），「回地图」降为次按钮。
+  - **第一次通关**时主按钮底部出一条进度条，5 s（`NEXT_LEVEL_AUTO_SEC`）后自己按下；重刷老关卡不自动（来重刷的人可能就是要回地图）。
+  - 倒计时期间**任何触摸**都停止倒计时（包括点空白处），进度条消失，之后全靠玩家自己点。实现上是结算页最底层一块全屏透明捕获层（`ResultScene` 的 `autoContinue`）；不能把场景容器本身设成 `static`——那会让 PIXI 把每个子节点都当可交互来测，按钮上叠的文字会吃掉按钮的点击。
+- **A'：通关剧情（outro）自动翻页**（`ResultScene.buildOutroOverlay`）：每页停留 `min(10, 2.5 + 字数 × 0.045)` 秒后自己翻，点一下仍然立刻翻。全屏文字页「等点击」在门户上读起来像游戏结束了。
+- **B：毕业卡自动继续**（`TutorialConfig.autoContinueSec`，`TutorialDirector.tickAutoContinue`）：只在按钮通往 `ch1_lv1` 时（新账号）。卡弹完后按钮底部进度条 4 s 填满即进第一关；卡上带统计说明小字（COMPLIANCE §3.3b）时放宽到 6 s，保证那行字有时间读。按钮仍可提前点。
+- **C：新账号 Skip 进 `ch1_lv1`**（`app/nav/game/tutorial.ts` 的 `onExitToLobby`）：和毕业按钮去同一个地方（同样记 `level_attempt`、扣体力）。重看教学 / 已通关账号的 Skip 仍回大厅。
+
+### 13.3 埋点与评估
+
+- 不加新事件：`level_attempt` / `level_complete` / `tutorial_skip` 已经够用；加载流失另见 [`ANALYTICS_DESIGN.md` §3.6f](ANALYTICS_DESIGN.md)（同一批上线）。
+- **评估**（CG 新包上线后一周对比首周）：
+  - CG 后台的平均游玩时长、D1；
+  - `funnel_anon_daily` 里 `lv2_start / lv1_clear`（A 的直接效果；首周 lv1_clear 161 个启动里只有少数进了第二关）、`lv1_start / graduate`（B）、`tutorial_skip` 之后的 `lv1_start`（C）；
+  - 按「最后到达的里程碑」重做一次 §13.1 那张表，看结算页和毕业卡两行是否明显变小。
+- **覆盖**：`client/test/nextLevelAfterWin.test.ts`、`client/test/ui/resultAutoContinue.ui.ts`（真实 `EventBoundary` hit-test：空白处能命中捕获层、按钮仍命中按钮；去掉捕获层时该用例失败）、`campaign-real-layer-interlude-nav.test.ts`（普通胜利：主按钮进准备页、次按钮回地图）、`entryNoticeOnly.test.ts`（无头 harness 跳过教学后再离开 `ch1_lv1` 才回大厅）。
 

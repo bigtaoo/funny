@@ -76,11 +76,13 @@ export function countDeclinedLaunch(): void {
 
 /**
  * The first-session steps {@link countAnonymousFunnelStep} accepts: the v2 tutorial sequence
- * (ONBOARDING_DESIGN §11.9), its Skip, and the first attempt / first clear of the first three
- * campaign levels. Must match analyticsvc's `ANON_FUNNEL_STEPS` (service/defs.ts) and the `t` enum on
+ * (ONBOARDING_DESIGN §11.9), its Skip, the first attempt / first clear of the first three
+ * campaign levels, and the load checkpoints (`open_*` is sent by the CrazyGames HTML before the
+ * bundle exists, `loaded_*` by {@link countLoadedLaunch}; ANALYTICS_DESIGN §3.6f). Must match analyticsvc's `ANON_FUNNEL_STEPS` (service/defs.ts) and the `t` enum on
  * `GET /analytics/config`; the server drops anything else.
  */
 export const ANONYMOUS_FUNNEL_STEPS = [
+  'open_desktop', 'open_mobile', 'loaded_desktop', 'loaded_mobile',
   'tutorial_start', 'beat_unit', 'beat_building', 'beat_spell', 'graduate', 'tutorial_complete', 'tutorial_skip',
   'lv1_start', 'lv1_clear', 'lv2_start', 'lv2_clear', 'lv3_start', 'lv3_clear',
 ] as const;
@@ -109,6 +111,18 @@ export function countAnonymousFunnelStep(step: AnonymousFunnelStep): void {
   if (anonFunnelSent.has(step)) return;
   anonFunnelSent.add(step);
   pingAnonymousFunnelStep(bootCounterBase, getPlatformName(), step);
+}
+
+/**
+ * The second load checkpoint (ANALYTICS_DESIGN §3.6f): the first screen is up. Paired with the
+ * `open_*` tick the CrazyGames HTML sends before the bundle downloads — the gap between the two is
+ * the launches abandoned while loading, which no event can describe (nothing is sent before init).
+ * The input-class test must stay identical to the one in public/crazygames/index.html, or the two
+ * halves of each pair count different populations.
+ */
+export function countLoadedLaunch(): void {
+  const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+  countAnonymousFunnelStep(coarse ? 'loaded_mobile' : 'loaded_desktop');
 }
 
 /**

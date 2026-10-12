@@ -291,6 +291,7 @@ export function createResultNav(ctx: AppCtx): ResultNav {
     playAgainLabel?: string,
     onReturnToLobby?: () => void,
     secondaryAction?: ResultSceneCallbacks['secondaryAction'],
+    autoContinueSec?: number,
   ): Promise<void> {
     state.inLobby = false;
     platform.onGameplayStop();
@@ -324,6 +325,7 @@ export function createResultNav(ctx: AppCtx): ResultNav {
         ...(api ? { onShare: () => void doShareReplay({ winner: winner ?? -1 }) } : {}),
         ...(playAgainLabel ? { playAgainLabel } : {}),
         ...(secondaryAction ? { secondaryAction } : {}),
+        ...(autoContinueSec ? { autoContinueSec } : {}),
         ...(worldApi ? { getProfileExtra: (publicId: string) => worldApi.getProfileExtra(publicId) } : {}),
       },
     });

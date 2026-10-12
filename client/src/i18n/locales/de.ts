@@ -163,6 +163,7 @@ export const de: Record<TranslationKey, string> = {
   'result.playAgain': 'NOCHMAL SPIELEN',
   'result.playAgainWin': 'NOCHMAL KÄMPFEN',
   'result.backToMap': 'ZURÜCK ZUR KARTE',
+  'result.nextLevel': 'NÄCHSTES LEVEL',
   'result.retry': 'NOCHMAL',
   'result.watchReplay': 'WIEDERHOLUNG ANSEHEN',
   'result.eloDelta': 'ELO {delta} → {after}　{rank}',

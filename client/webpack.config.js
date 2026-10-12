@@ -248,7 +248,12 @@ module.exports = (env, argv) => {
     },
     plugins: [
       // WeChat has no HTML host (game.js requires pixigame.js); HtmlWebpackPlugin / version.json / _headers are Web-only.
-      ...(isWechat ? [] : [new HtmlWebpackPlugin({ template: `./public/${targetPlatform}/index.html` })]),
+      // `analyticsBase` feeds the CrazyGames template's pre-bundle load tick (ANALYTICS_DESIGN §3.6f) —
+      // the same origin analytics/index.ts derives from NW_API_BASE; empty (no tick) when unbaked.
+      ...(isWechat ? [] : [new HtmlWebpackPlugin({
+        template: `./public/${targetPlatform}/index.html`,
+        analyticsBase: apiBase.replace(/\/api$/, ''),
+      })]),
       // <link rel="preload"> for the boot-tier assets, so the browser starts fetching them
       // during the bundle download instead of after startApp() runs (ASSET_PACKAGING §11).
       // Needs HtmlWebpackPlugin's hooks, hence WeChat (no HTML host) is excluded.

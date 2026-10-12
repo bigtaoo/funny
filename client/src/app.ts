@@ -434,6 +434,9 @@ export async function startApp(
   // Boot timeline, phase ⑤: the first real screen is built — the end of "loading" as a player would
   // describe it. This emits `load_time` with the whole per-phase breakdown.
   markBoot('ready');
+  // Its anonymous twin (ANALYTICS_DESIGN §3.6f): counts every launch whatever its consent answer,
+  // so it pairs with the `open_*` tick the HTML sent before the bundle existed.
+  analytics.countLoadedLaunch();
 
   // churn_signal{reason:'idle_10min'} (ANALYTICS_DESIGN §5.6). The probe is injected from here
   // because this file is the only one that may touch both sides: renderPolicy already timestamps

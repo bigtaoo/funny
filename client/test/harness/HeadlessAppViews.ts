@@ -123,6 +123,9 @@ export class HeadlessAppViews implements AppViews {
   /** The entry notice strip the core last put on the lobby (IPlatform.entryNoticeOnly), if any. */
   lastEntryNotice?: EntryNoticeSpec;
   onTutorial?: (cfg: NonNullable<GameSceneOptions['tutorial']>) => void;
+  /** Set by the tutorial skip below: a fresh account's skip now starts ch1_lv1 (ONBOARDING_DESIGN §13),
+   *  and the harness leaves that level too, so "skip the FTUE" still ends in the lobby. */
+  private leaveLevelAfterSkip = false;
   /** Last events-available flag the core pushed into the lobby handle. */
   lastEventsAvailable?: boolean;
   replay?: ReplaySceneCallbacks;
@@ -208,6 +211,7 @@ export class HeadlessAppViews implements AppViews {
   showReconnectPrompt(cb: ReconnectPromptCallbacks): void { this.screen = 'reconnectPrompt'; this.reconnectPrompt = cb; }
   showLobby(cb: LobbySceneCallbacks): LobbyView {
     this.screen = 'lobby';
+    this.leaveLevelAfterSkip = false; // a skip that went straight to the lobby (not a fresh account)
     this.lobby = cb;
     this.lastSocialBadge = undefined;
     this.lastMailBadge = undefined;
@@ -300,7 +304,13 @@ export class HeadlessAppViews implements AppViews {
     // survive the first cloud sync, so goTutorial() would otherwise fire on every fresh account.
     // `onTutorial` lets a test look at (or act on) the director config first — e.g. the graduation
     // card's footnote, as if the card had been reached.
-    if (opts.tutorial) { this.onTutorial?.(opts.tutorial); cb.onExitToLobby?.(); return; }
+    if (opts.tutorial) {
+      this.onTutorial?.(opts.tutorial);
+      this.leaveLevelAfterSkip = true;
+      cb.onExitToLobby?.();
+      return;
+    }
+    if (this.leaveLevelAfterSkip) { this.leaveLevelAfterSkip = false; cb.onExitToLobby?.(); return; }
     const { engine, buildReplay } = createLocalMatch({
       ...(opts.level ? { level: opts.level } : {}),
       ...(opts.cardInstances ? { cardInstances: opts.cardInstances } : {}),

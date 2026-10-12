@@ -120,6 +120,8 @@ export class TutorialDirector {
   private ghost!: PIXI.Container;
   private strip!: PIXI.Container;
   private gradCard!: PIXI.Container;
+  /** Auto-continue progress along the graduation button's foot (lazily added to gradCard). */
+  private gradBar: PIXI.Graphics | null = null;
   private skipBtn!: PIXI.Container;
   private skipBtnRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   private ctaRect: Rect | null = null;
@@ -392,6 +394,26 @@ export class TutorialDirector {
     const c = 1.70158;
     const s = 1 + (c + 1) * Math.pow(k - 1, 3) + c * Math.pow(k - 1, 2);
     this.gradCard.scale.set(k >= 1 ? 1 : s);
+    if (k >= 1) this.tickAutoContinue();
+  }
+
+  /** {@link TutorialConfig.autoContinueSec}: fill the bar, then press the button. */
+  private tickAutoContinue(): void {
+    const sec = this.host.config.autoContinueSec;
+    const r = this.ctaRect;
+    if (!sec || !r) return;
+    const p = Math.min(1, (this.time - this.gradAt - GRAD_POP_SEC) / sec);
+    if (!this.gradBar || this.gradBar.destroyed || this.gradBar.parent !== this.gradCard) {
+      this.gradBar = new PIXI.Graphics();
+      this.gradCard.addChild(this.gradBar);
+    }
+    const inset = r.h * 0.3; // clear of the button's rounded corners
+    const barH = Math.max(3, Math.round(r.h * 0.08));
+    this.gradBar.clear();
+    this.gradBar.beginFill(0xffffff, 0.75);
+    this.gradBar.drawRect(r.x + inset, r.y + r.h - barH * 2, (r.w - inset * 2) * p, barH);
+    this.gradBar.endFill();
+    if (p >= 1) this.leave();
   }
 
   /** Breathing frame around the guided card + the meteor target ring. */
