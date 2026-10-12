@@ -163,6 +163,7 @@ export const en: Record<TranslationKey, string> = {
   'result.playAgain': 'PLAY AGAIN',
   'result.playAgainWin': 'FIGHT AGAIN',
   'result.backToMap': 'BACK TO MAP',
+  'result.nextLevel': 'NEXT LEVEL',
   'result.retry': 'RETRY',
   'result.watchReplay': 'WATCH REPLAY',
   'result.eloDelta': 'ELO {delta} → {after}　{rank}',

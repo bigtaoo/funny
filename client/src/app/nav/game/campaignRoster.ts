@@ -23,6 +23,7 @@ import type { IconKind } from '../../../render/icons';
 import { matchBadgeTelemetry } from '../../../scenes/ResultScene/badges';
 import { buildEquipmentActions } from './equipmentActions';
 import { createStaminaAd } from './staminaAd';
+import { nextLevelAfterWin, NEXT_LEVEL_AUTO_SEC } from './nextLevel';
 import type { MountOpts } from '../../AppViews';
 import type { AppCtx, Nav } from '../../appCtx';
 import { TOKEN_KEY, SEEN_INTRO_FLAG, inkHintGate, buildHintFor } from '../../appConstants';
@@ -404,6 +405,8 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
         // potential L1 spot-check re-evaluation (§8.6).
         const kept = keepReplay(replay);
         const durationSec = Math.round((Date.now() - campaignStartTs) / 1000);
+        const firstClear = !saveManager.get().progress.cleared.includes(levelId); // before recordClear
+        let stars = 0;
         if (winner === 0) {
           // Composite star scoring (STAR_SCORING.md): build the same ctx the judge recomputes from.
           const ctx = buildStarContext(level, {
@@ -413,7 +416,7 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
             escortMinHpPct: summary?.escortMinHpPct ?? null,
             unitsKilled: stats[0].unitsKilled,
           });
-          const stars = computeStars(level.rewards?.starThresholds, ctx);
+          stars = computeStars(level.rewards?.starThresholds, ctx);
           analytics.track('level_complete', {
             level_id: levelId,
             stars,
@@ -465,7 +468,12 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
             { label: t('result.backToMap'), icon: 'mapPin', onTap: proceedToMap });
           return;
         }
-        void nav.goResult(winner, stats, 0, kept, undefined, undefined, outroTexts, proceedToMap, t('result.backToMap'));
+        // A clear offers the next level first and keeps the map one tap away (ONBOARDING_DESIGN §13).
+        const nextId = nextLevelAfterWin(levelId, stars > 0 || !firstClear, !!interlude);
+        if (!nextId) { void nav.goResult(winner, stats, 0, kept, undefined, undefined, outroTexts, proceedToMap, t('result.backToMap')); return; }
+        void nav.goResult(winner, stats, 0, kept, undefined, undefined, outroTexts,
+          () => goLevelPrep(nextId), t('result.nextLevel'), undefined,
+          { label: t('result.backToMap'), icon: 'mapPin', onTap: proceedToMap }, firstClear ? NEXT_LEVEL_AUTO_SEC : undefined);
       },
       onExitToLobby() {
         analytics.track('level_abandon', { level_id: levelId, phase: 'in_game', ...analytics.battleProps() });

@@ -37,11 +37,13 @@ const SRC = join(__dirname, '..', 'src');
  * to a tap is a button to the player no matter what the code calls it.
  */
 const UNWRAPPED_TAP_ALLOWLIST: Record<string, string> = {
-  "scenes/ResultScene.ts::this.container.once('pointerdown'":
-    'The outro story overlay full-screen "tap to continue" — an advance, not a control. No button ' +
-    'chrome, covers the whole screen, fires once per paragraph, so a tap cue there would read as ' +
+  "scenes/ResultScene.ts::this.container.on('pointerdown'":
+    'Two full-screen listeners, neither a control. (1) The outro story overlay "tap to continue" — ' +
+    'an advance with no button chrome, fires once per paragraph, so a tap cue there would read as ' +
     'the story itself clicking. IntroScene has the same surface and is silent for the same reason ' +
-    '(it routes through InputManager, so this scan does not even see it).',
+    '(it routes through InputManager, so this scan does not even see it). (2) The next-level ' +
+    'auto-continue cancel (ONBOARDING_DESIGN §13): any touch anywhere stops the countdown; the tap ' +
+    'that lands on a real button still makes that button\'s own sound.',
 };
 
 /**

@@ -127,6 +127,7 @@ export interface Nav {
     playAgainLabel?: string,
     onReturnToLobby?: () => void,
     secondaryAction?: ResultSceneCallbacks['secondaryAction'],
+    autoContinueSec?: number,
   ): Promise<void>;
 }
 

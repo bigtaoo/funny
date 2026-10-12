@@ -116,6 +116,8 @@ export const TUTORIAL_LABELS: Record<string, string> = {
  * ANON_FUNNEL_STEPS in analyticsvc: the tutorial steps, its Skip, and levels 1–3 first try / first clear.
  */
 export const ANON_FUNNEL_LABELS: Record<string, string> = {
+  open_desktop: 'Opened (desktop)', open_mobile: 'Opened (touch)',
+  loaded_desktop: 'Loaded (desktop)', loaded_mobile: 'Loaded (touch)',
   ...TUTORIAL_LABELS,
   tutorial_skip: 'Skipped tutorial',
   lv1_start: 'Lv1 tried', lv1_clear: 'Lv1 cleared',

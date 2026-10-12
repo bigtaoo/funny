@@ -55,7 +55,19 @@ export interface ResultSceneCallbacks {
   secondaryAction?: { label: string; icon: IconKind; onTap(): void };
   /** Unified profile-popup extras (rank/ELO + family/sect) — see ProfilePopup's `fetchExtra`. Omitted offline/AI. */
   getProfileExtra?(publicId: string): Promise<ProfileExtra>;
+  /**
+   * Seconds before the primary button presses itself, a bar filling along its foot meanwhile
+   * (ONBOARDING_DESIGN §13 — campaign's first clear of a level, where the primary is "next level").
+   * Counts from when the result itself is on screen, never during the outro; any tap on the screen's
+   * other controls cancels it.
+   */
+  autoContinueSec?: number;
 }
+
+/** Outro screens advance on their own after this long plus {@link OUTRO_SEC_PER_CHAR} per character. */
+const OUTRO_BASE_SEC = 2.5;
+const OUTRO_SEC_PER_CHAR = 0.045;
+const OUTRO_MAX_SEC = 10;
 
 export class ResultScene implements Scene {
   readonly container: PIXI.Container;
@@ -70,6 +82,15 @@ export class ResultScene implements Scene {
   private readonly profiles?: ResultProfiles;
   private readonly retentionPreview?: ResultRetentionPreview;
   private readonly popup: ProfilePopup;
+
+  /** Seconds since construction — the clock for both timers below. */
+  private time = 0;
+  /** The outro screen on display: when it advances on its own, and how (same path as a tap). */
+  private outroAuto: { at: number; advance: () => void } | null = null;
+  /** The primary button's auto-press: when it started, how long it runs, the bar, the press. */
+  private autoContinue: {
+    from: number; sec: number; bar: PIXI.Graphics; rect: { x: number; y: number; w: number; h: number }; press: () => void;
+  } | null = null;
 
   constructor(
     w: number,
@@ -104,7 +125,20 @@ export class ResultScene implements Scene {
     }
   }
 
-  update(_dt: number): void { /* static scene */ }
+  update(dt: number): void {
+    this.time += dt;
+    if (this.outroAuto && this.time >= this.outroAuto.at) this.outroAuto.advance();
+    const ac = this.autoContinue;
+    if (!ac) return;
+    const p = Math.min(1, (this.time - ac.from) / ac.sec);
+    const inset = ac.rect.h * 0.3; // clear of the panel's rounded corners
+    const barH = Math.max(3, Math.round(ac.rect.h * 0.07));
+    ac.bar.clear();
+    ac.bar.beginFill(0xffffff, 0.8);
+    ac.bar.drawRect(ac.rect.x + inset, ac.rect.y + ac.rect.h - barH * 2, (ac.rect.w - inset * 2) * p, barH);
+    ac.bar.endFill();
+    if (p >= 1) { this.autoContinue = null; ac.press(); }
+  }
 
   destroy(): void {
     this.popup.destroy();
@@ -149,8 +183,12 @@ export class ResultScene implements Scene {
     hint.y = h - Math.round(h * 0.06);
     this.container.addChild(hint);
 
-    this.container.eventMode = 'static';
-    this.container.once('pointerdown', () => {
+    // A tap advances; so does time (ONBOARDING_DESIGN §13) — a full-screen text page after a win
+    // that waits for a tap read as the end of the game, and the first CrazyGames week lost players
+    // on exactly this screen after ch1_lv1.
+    const advance = (): void => {
+      this.container.off('pointerdown', advance);
+      this.outroAuto = null;
       // Restore the container's default eventMode ('passive') rather than 'none' — PIXI's
       // EventBoundary prunes the *entire* subtree under an eventMode:'none' node (see
       // EventBoundary._interactivePrune), so leaving it 'none' after this tap permanently
@@ -162,7 +200,11 @@ export class ResultScene implements Scene {
       } else {
         onDone();
       }
-    });
+    };
+    this.container.eventMode = 'static';
+    this.container.on('pointerdown', advance);
+    const dwell = Math.min(OUTRO_MAX_SEC, OUTRO_BASE_SEC + texts[index]!.length * OUTRO_SEC_PER_CHAR);
+    this.outroAuto = { at: this.time + dwell, advance };
   }
 
   // ─── Build ────────────────────────────────────────────────────────────────
@@ -388,8 +430,34 @@ export class ResultScene implements Scene {
     const primaryLabel = cb.playAgainLabel ?? (isWin ? t('result.playAgainWin') : t('result.playAgain'));
     addPrimaryButton(
       this.container, primaryX, primaryY, primaryW, primaryH,
-      primaryLabel, 'swords', () => cb.onPlayAgain(),
+      primaryLabel, 'swords', () => { this.autoContinue = null; cb.onPlayAgain(); },
     );
+    if (cb.autoContinueSec) {
+      const bar = new PIXI.Graphics();
+      this.container.addChild(bar);
+      this.autoContinue = {
+        from: this.time, sec: cb.autoContinueSec, bar,
+        rect: { x: primaryX, y: primaryY, w: primaryW, h: primaryH },
+        press: () => cb.onPlayAgain(),
+      };
+      // Any touch means the player is here and will choose: another control (back, replay, share, a
+      // profile) or just a tap on the page. A passive container only hears taps that land on an
+      // interactive child, so a full-screen catcher sits at the bottom for the countdown's lifetime.
+      // Not `container.eventMode = 'static'` + hitArea: that makes PIXI hit-test every child as
+      // interactive, and the label drawn over each button then swallows the button's own tap.
+      const catcher = new PIXI.Container();
+      catcher.eventMode = 'static';
+      catcher.hitArea = new PIXI.Rectangle(0, 0, w, h);
+      this.container.addChildAt(catcher, 0);
+      const cancel = (): void => {
+        this.container.off('pointerdown', cancel);
+        catcher.destroy();
+        if (!this.autoContinue) return;
+        this.autoContinue = null;
+        bar.clear();
+      };
+      this.container.on('pointerdown', cancel);
+    }
 
     const secs: { label: string; icon: IconKind; tap: () => void }[] = [];
     if (cb.secondaryAction) secs.push({ label: cb.secondaryAction.label, icon: cb.secondaryAction.icon, tap: () => cb.secondaryAction!.onTap() });
