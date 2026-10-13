@@ -9,6 +9,7 @@ import { protectedGamesLeftToday } from '../../game/meta/eloProtect';
 import { WorldApiClient } from '../../net/WorldApiClient';
 import { getWorldBaseUrl } from '../../net/config';
 import { serverNow } from '../../net/serverClock';
+import { runRewardLoop } from './firstRewardLoop';
 import type { LobbyView } from '../AppViews';
 import type { AppCtx, Nav } from '../appCtx';
 import type { AIDifficulty } from '../../game';
@@ -279,6 +280,20 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
     // §3.3): non-blocking, and here rather than at boot because the first lobby is the first screen
     // a new player reaches that is not the tutorial battle. A no-op on every other build.
     ctx.offerEntryNotice?.(lobby);
+
+    // First-session reward loop (ONBOARDING_DESIGN §14.2): welcome coins → one gacha pull, then the
+    // daily check-in on the next arrival. Needs the server (mail, gacha, check-in are all online).
+    if (online && api && !opts?.fromResize) {
+      const client = api;
+      runRewardLoop({
+        saveManager,
+        client,
+        showGuide: (titleKey, bodyKey, onDismiss) => lobby.showFeatureGuide(titleKey, bodyKey, onDismiss),
+        goGacha: () => nav.goGacha({ shopBack: () => goLobby() }),
+        goDaily: () => nav.goDaily(),
+        stillInLobby: () => state.inLobby,
+      });
+    }
 
     // Paint the cached social total immediately so the dot survives a resize
     // rebuild without flicker; then refresh from the server (skip on resize).

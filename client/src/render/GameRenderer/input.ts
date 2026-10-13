@@ -9,7 +9,7 @@
 // call `super.update(dt)` then run the highlight-refresh accumulator is now a plain `update(dt)`
 // method the outer assembly calls AFTER `core.update(dt)` — same order, no `super` needed.
 import * as PIXI from 'pixi.js-legacy';
-import { ATTACK_LANES } from '@nw/engine/config';
+import { ATTACK_LANES, INK_CAP } from '@nw/engine/config';
 import type { CardDefinition } from '@nw/engine/types';
 import { CardType, SpellType } from '../../game';
 import { t, type TranslationKey } from '../../i18n';
@@ -51,6 +51,8 @@ const DRAG_THRESHOLD = 8; // px in design space before a press becomes a drag
 // display-only staleness fix (occupancy can change while the pointer holds still), not
 // something that needs per-frame precision, so recompute at ~10Hz instead of every tick.
 const HIGHLIGHT_REFRESH_INTERVAL = 0.1;
+/** Seconds at full ink (with a spell in hand) before the spend-it nudge is offered. */
+const INK_FULL_HINT_S = 2;
 
 export class InputPanel {
   drag:      DragState | null = null;
@@ -75,6 +77,8 @@ export class InputPanel {
 
   /** One-time "not enough ink" bubble; inert until the scene hands it a gate (see setInkHint). */
   private inkHint: InkHintBubble | null = null;
+  /** Seconds ink has sat at the cap while a spell was playable (drives the "ink is full" nudge). */
+  private inkFullFor = 0;
 
   constructor(private readonly core: GameRendererCore) {}
 
@@ -94,9 +98,25 @@ export class InputPanel {
       this.refreshPlacementHighlights();
     }
     this.inkHint?.update(dt);
+    this.checkInkFull(dt);
     // Tutorial idle escalation (§11.4): a card in the player's hand (pressed, dragged or
     // tap-selected) pauses the ghost-hand demo and its idle clock.
     this.core.tutorial?.setHoldingCard(!!(this.pendingCardDown || this.drag || this.tapSelect));
+  }
+
+  /**
+   * "Ink is full — cast a spell" (ONBOARDING_DESIGN §14.1). Offered once ink has stayed at the cap
+   * for INK_FULL_HINT_S with a spell card in hand; the gate decides whether it is still owed.
+   */
+  private checkInkFull(dt: number): void {
+    if (!this.inkHint || this.core.tutorial || this.core.gameEnded || this.core.hudView.isPaused) return;
+    const player = this.core.localPlayer(this.core.engine.state);
+    const spellInHand = player.hand.slots.some((s) => !!s && s.card.cardType === CardType.Spell);
+    if (player.ink < INK_CAP || !spellInHand || this.drag || this.tapSelect) { this.inkFullFor = 0; return; }
+    this.inkFullFor += dt;
+    if (this.inkFullFor < INK_FULL_HINT_S) return;
+    this.inkFullFor = 0;
+    this.inkHint.offerFull(this.core.layout.handRect);
   }
 
   // ── Input handling (design-space coords) ─────────────────────────────────

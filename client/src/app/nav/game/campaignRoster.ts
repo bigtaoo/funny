@@ -24,6 +24,7 @@ import { matchBadgeTelemetry } from '../../../scenes/ResultScene/badges';
 import { buildEquipmentActions } from './equipmentActions';
 import { createStaminaAd } from './staminaAd';
 import { nextLevelAfterWin, NEXT_LEVEL_AUTO_SEC } from './nextLevel';
+import { rewardLoopDetour } from '../firstRewardLoop';
 import type { MountOpts } from '../../AppViews';
 import type { AppCtx, Nav } from '../../appCtx';
 import { TOKEN_KEY, SEEN_INTRO_FLAG, inkHintGate, buildHintFor } from '../../appConstants';
@@ -471,6 +472,15 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
         // A clear offers the next level first and keeps the map one tap away (ONBOARDING_DESIGN §13).
         const nextId = nextLevelAfterWin(levelId, stars > 0 || !firstClear, !!interlude);
         if (!nextId) { void nav.goResult(winner, stats, 0, kept, undefined, undefined, outroTexts, proceedToMap, t('result.backToMap')); return; }
+        // The first ch1_lv2 clear detours to the lobby once, where the reward loop hands out the
+        // welcome coins and the first gacha pull (ONBOARDING_DESIGN §14.2). Online only — offline
+        // the lobby has no mail or gacha to show.
+        if (api && stars > 0 && rewardLoopDetour(saveManager, levelId, firstClear)) {
+          void nav.goResult(winner, stats, 0, kept, undefined, undefined, outroTexts,
+            () => nav.goLobby(), t('result.claimGift'), undefined,
+            { label: t('result.nextLevel'), icon: 'play', onTap: () => goLevelPrep(nextId) }, NEXT_LEVEL_AUTO_SEC);
+          return;
+        }
         void nav.goResult(winner, stats, 0, kept, undefined, undefined, outroTexts,
           () => goLevelPrep(nextId), t('result.nextLevel'), undefined,
           { label: t('result.backToMap'), icon: 'mapPin', onTap: proceedToMap }, firstClear ? NEXT_LEVEL_AUTO_SEC : undefined);

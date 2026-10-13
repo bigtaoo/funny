@@ -36,6 +36,20 @@ module.exports = (env, argv) => {
   // ('' = same-origin) base, and nothing that belongs to the web payment channel may travel with
   // the package. A property of the target, so it holds in either mode.
   const isOffOrigin = isMobile || isCrazyGames;
+  // Build version baked into version.json and __NW_BUILD_VERSION__. CI sets NW_BUILD_VERSION for
+  // web / iOS / OTA; the CrazyGames bundle is built and uploaded by hand, and the 2026-10-12 upload
+  // shipped as '0.0.0' — which silences crashSentinel and tags every analytics event 0.0.0. So a
+  // production CrazyGames build without the env var falls back to the short commit hash (the same
+  // format client-deploy.yml uses). Never for mobile/OTA: those compare versions numerically.
+  const buildVersion = (() => {
+    if (process.env.NW_BUILD_VERSION) return process.env.NW_BUILD_VERSION;
+    if (!(isProd && isCrazyGames)) return '0.0.0';
+    try {
+      return require('child_process').execSync('git rev-parse --short HEAD', { cwd: __dirname }).toString().trim() || '0.0.0';
+    } catch {
+      return '0.0.0';
+    }
+  })();
   // …but the *address baking* has one mode exception: `npm run start:crazygames` is
   // webpack-dev-server on localhost, exactly like `start:web`, and must keep the localhost dev
   // defaults below. Only the bundle actually uploaded to the portal needs absolute addresses.
@@ -315,7 +329,7 @@ module.exports = (env, argv) => {
       // Emit version.json at build time (for client version polling) and _headers (CF Workers / nginx cache policy).
       ...(isProd && !isWechat ? [{
         apply(compiler) {
-          const version = process.env.NW_BUILD_VERSION || '0.0.0';
+          const version = buildVersion;
           compiler.hooks.thisCompilation.tap('StaticMetaPlugin', (compilation) => {
             compilation.hooks.processAssets.tap(
               { name: 'StaticMetaPlugin', stage: webpack.Compilation.PROCESS_ASSETS_STAGE_ADDITIONAL },
@@ -424,7 +438,7 @@ module.exports = (env, argv) => {
         'globalThis.TARGET': JSON.stringify(targetPlatform),
         'globalThis.__NW_API_BASE__': JSON.stringify(apiBase),
         'globalThis.__NW_GATEWAY_WS__': JSON.stringify(gatewayWs),
-        'globalThis.__NW_BUILD_VERSION__': JSON.stringify(process.env.NW_BUILD_VERSION || '0.0.0'),
+        'globalThis.__NW_BUILD_VERSION__': JSON.stringify(buildVersion),
         'globalThis.__NW_WORLD_BASE__': JSON.stringify(worldBase),
         'globalThis.__NW_SOCIAL_BASE__': JSON.stringify(socialBase),
         'globalThis.__NW_AUCTION_BASE__': JSON.stringify(auctionBase),

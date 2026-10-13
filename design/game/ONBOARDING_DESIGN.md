@@ -350,7 +350,7 @@ CrazyGames 2026-10-07 以「overall quality does not yet meet the expectations o
 | 压到 3 秒、放在首启 | 仍然是「玩之前先看」，只是看得短一些 |
 | **往后放 + 压缩（推荐）** | 首启所有平台都像 CG 一样不播 `IntroScene`；故事挪到**第一次打开战役地图**时，压成 1 张插画 + 1 行字，≤ 3 s，点一下就过；完整的 7 行版放进「重看故事」入口 |
 
-另外，`ch1_lv1` 准备页去掉大段叙事，只留关卡名和「开始」；开打前的黑屏 intro 改到赢之后再放（并进 outro）。文案本身的权威仍在 [`CAMPAIGN_STORY.md`](CAMPAIGN_STORY.md)，本文只管放在哪、放多长。
+另外，`ch1_lv1` 准备页去掉大段叙事，只留关卡名和「开始」；开打前的黑屏 intro 改到赢之后再放（并进 outro）——**2026-10-13 起整段删除**，见 §14.1。文案本身的权威仍在 [`CAMPAIGN_STORY.md`](CAMPAIGN_STORY.md)，本文只管放在哪、放多长。
 
 **已实现（2026-10-07）：**
 
@@ -358,7 +358,7 @@ CrazyGames 2026-10-07 以「overall quality does not yet meet the expectations o
 - **压缩版**：第一次打开战役地图时，`CampaignMapScene` 在地图上盖一张卡（`scenes/CampaignMapScene/storyCard.ts`）：插画复用 `assets/story/intro_notebook.png`，文字一行 `story.card`（zh/en/de）。0.35 s 淡入，2.65 s 起自动淡出，3.0 s 消失；点任意处立即淡出，这一下点击被卡吃掉，不会穿透去选关。是否出卡由 `goCampaignMap` 的 `getStoryCard()` 按 `flags.seen_intro`（`SEEN_INTRO_FLAG`）决定，在场景构造时问，所以关掉之后 resize 重建不会再出。旗子沿用旧的 `seen_intro`：看过旧版首启故事的老存档不会再看到卡。新玩家多半是打完 `ch1_lv1` 回地图时才第一次看到，所以文案写成「你在打的是谁画的世界」，不写成「故事开始了」。
 - **埋点**：`intro_complete`（自动消失）/ `intro_skip`（点掉）改由这张卡发出，「重看开场故事」不发。analyticsvc `ONBOARDING_STEPS` 的 `intro_seen` 从第 2 步挪到最后一步（`first_clear` 之后），否则它会在漏斗第 2 步造成一个假的断崖。
 - **重看**：设置 → 帮助 →「重看开场故事」（`settings.replayStory`）播完整 7 行 `IntroScene`，结束或跳过后回到设置页。`nav.goIntro(onDone)` 只剩这一个调用方。
-- **`ch1_lv1`**：只改关卡 JSON，代码不针对关卡 id 做特判。删 `briefKey`，准备页就没有那段散文；`story.introKey: campaign.ch1.intro` 改成 `story.outroKey`，开战前不再有黑屏，赢了之后在结算页的 outro 里播。`LevelPrepScene` 的通用 brief 和 intro 逻辑原样保留，其它关卡的简报不受影响。`client/test/levelSchema.test.ts` 把这两条例外写死。
+- **`ch1_lv1`**：只改关卡 JSON，代码不针对关卡 id 做特判。删 `briefKey`，准备页就没有那段散文；`story.introKey: campaign.ch1.intro` 改成 `story.outroKey`，开战前不再有黑屏，赢了之后在结算页的 outro 里播（2026-10-13 起连 outro 也删了，§14.1）。`LevelPrepScene` 的通用 brief 和 intro 逻辑原样保留，其它关卡的简报不受影响。`client/test/levelSchema.test.ts` 把这两条例外写死。
 
 ### 11.8 同意页（权威不在本文，列为同一批）
 
@@ -480,3 +480,34 @@ CrazyGames 首周（10-09..10-11）后台：平均单次游玩 2 分 53 秒（2 
   - 按「最后到达的里程碑」重做一次 §13.1 那张表，看结算页和毕业卡两行是否明显变小。
 - **覆盖**：`client/test/nextLevelAfterWin.test.ts`、`client/test/ui/resultAutoContinue.ui.ts`（真实 `EventBoundary` hit-test：空白处能命中捕获层、按钮仍命中按钮；去掉捕获层时该用例失败）、`campaign-real-layer-interlude-nav.test.ts`（普通胜利：主按钮进准备页、次按钮回地图）、`entryNoticeOnly.test.ts`（无头 harness 跳过教学后再离开 `ch1_lv1` 才回大厅）。
 
+
+## 14. 第一局缩短 + 首次会话奖励闭环（2026-10-13）
+
+起因：CG 首周数据里过场动画成了最大的停顿点——`ch1_lv1` 赢了之后先播 4 行 outro，再进 §13 的 5 s 倒计时，很多玩家在 outro 上就关页了；第一局本身也偏长。另一头，外围系统（邮件、抽卡、签到）在首次会话里一个都没被碰到。用户拍板：「直接把前两版做了……过场动画先尽量后置，或者第一章先去掉都行。」
+
+### 14.1 第一版：`ch1_lv1` 节奏
+
+- **删掉第一章开场**：`ch1_lv1` 不再有 `story`（§11.7 里挪到 outro 的 `campaign.ch1.intro` 整条删除，三种语言的文案一并删）。第一章现在没有开场过场，只保留章末 `campaign.ch1.outro`。
+- **缩短**：波次时间压到 120 / 264 / 444 / 624 tick，Lena 首领 840 tick（原 1320，且删掉第二个 Lena 和末尾两个杂兵）；`enemyScale` 从 1.027 / 1.017 降到 0.8 / 0.8。实机手打约 1:16–1:20 游戏时间赢；难度模拟器基线 `ch1_lv1` 仍 100% 胜率。
+- **星级阈值** `starThresholds` 改为 `[1, 60, 82]`（基线里一档从 3★ 变 2★，`client/test/difficulty/baseline.json` 同步）。
+- **「墨水满了」提示**（`InputPanel.checkInkFull` → `InkHintBubble.offerFull`）：手里有法术、墨水停在上限 2 s 后，墨水提示气泡改说「墨满了，把陨石之类的法术拖到敌人身上」，显示 4.5 s；每账号一次（`flags["hint.inkFull"]`）。教学局、暂停、对局结束时不出。
+- **CG 包版本号**：CG 包手工构建上传，10-12 那次版本是 `0.0.0`，`crashSentinel` 静音、埋点全部记 0.0.0。现在 `production` + `crazygames` 且没有 `NW_BUILD_VERSION` 时用短 commit hash（`webpack.config.js` `buildVersion`）。移动端 / OTA 仍要求数字版本，不走这条。
+- `pve-judge.test.ts` 的样例关改用 `ch1_lv2`（`ch1_lv1` 现在太容易，原用例的「输」构造不出来）。
+
+### 14.2 第二版：首次会话奖励闭环（`app/nav/firstRewardLoop.ts`）
+
+每账号只走一次，三步：
+
+1. **第一次通关 `ch1_lv2`**：结算页主按钮改为「领取礼物」（`result.claimGift`）回大厅，「下一关」降为次按钮，§13 的 5 s 倒计时挂在主按钮上。只在在线（有 `api`）且尚未走过第 2 步时改道（`rewardLoopDetour`）。
+2. **随后进大厅**：替玩家领取作者欢迎邮件（1000 金币，`mail.welcome.author.subject`），弹引导卡「作者送你的礼物」，点「知道了」直接进抽卡页。记 `featSeen["onboard.firstGacha"]`，同时把 `shop` 记为已看（这张卡顶替商店按钮自己的首访引导）。
+3. **下一次进大厅**：弹「明天再来」卡，点了进每月签到页（日历上已高亮明天）。记 `featSeen["onboard.firstDaily"]` 和 `daily`。
+
+注意：
+- **静默消耗**：第 2 步一开始就记 featSeen。邮件拉取失败、玩家已离开大厅、或金币 < 150（一抽的价格）时，这一步什么都不显示，**也不会再补**。这是有意的——宁可漏一次也不在别的场景上弹卡。
+- **依赖 socialsvc**：邮件走 metaserver `/mail` → socialsvc。没配 `NW_SOCIALSVC_INTERNAL_URL` 时 `/mail` 返回 503，第 2 步只剩金币检查。正式服（`docker-compose.prod.yml`）已配；本地验证要把 socialsvc 也起起来。
+- 埋点复用 `feature_guide_shown`：`feature` 为 `onboard.welcomeMailClaimed` / `onboard.firstGacha` / `onboard.firstDaily`。
+- 覆盖：`client/test/firstRewardLoop.test.ts`（5 例：只在首通改道、未通关不动、两步依次走完后不再触发、离开大厅 / 没钱时不弹、拉邮件失败仍按金币判断）。
+
+### 14.3 评估
+
+CG 新包上线后对比 10-12 版：`lv2_start / lv1_clear`（outro 删除后的直接效果）、`ch1_lv1` 的中途退出率、`feature_guide_shown{feature: onboard.firstGacha}` 之后的抽卡数、D1。

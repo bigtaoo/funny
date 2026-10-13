@@ -17,6 +17,8 @@ export const SEEN_INTRO_FLAG = 'seen_intro';
 export const TUTORIAL_DONE_FLAG = 'tutorial_done';
 /** flags key — the one-time "not enough ink" bubble has been shown (ONBOARDING_DESIGN §9 item 9). */
 export const INK_HINT_FLAG = 'hint.ink';
+/** flags key — the one-time "ink is full, cast a spell" bubble has been shown (ONBOARDING_DESIGN §14.1). */
+export const INK_FULL_HINT_FLAG = 'hint.inkFull';
 
 /** The battle renderer's gate for that bubble: owed until the flag is set, and claiming it sets it. */
 export function inkHintGate(save: { getFlag(key: string): boolean; setFlag(key: string, value: boolean): void }): InkHintGate {
@@ -24,6 +26,11 @@ export function inkHintGate(save: { getFlag(key: string): boolean; setFlag(key: 
     claim(): boolean {
       if (save.getFlag(INK_HINT_FLAG)) return false;
       save.setFlag(INK_HINT_FLAG, true);
+      return true;
+    },
+    claimFull(): boolean {
+      if (save.getFlag(INK_FULL_HINT_FLAG)) return false;
+      save.setFlag(INK_FULL_HINT_FLAG, true);
       return true;
     },
   };

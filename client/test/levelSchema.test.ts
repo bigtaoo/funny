@@ -118,13 +118,12 @@ describe('parseLevelDefinition', () => {
     // Complements the realLayerKey exclusivity check above: the other end of the product ask
     // ("只有特殊关卡在结束时有故事") is that ResultScene's outro overlay never fires outside the
     // six chapter finales.
-    // The one non-finale exception: ch1_lv1, whose chapter intro plays after the win instead of
-    // before the fight (ONBOARDING_DESIGN §11.7).
+    // ch1_lv1 used to be the one exception (its chapter intro played after the win); that outro
+    // held new players on the result page long enough for them to leave, so it was dropped
+    // (ONBOARDING_DESIGN §14.1) and ch1_lv1 is now an ordinary story-less level.
     const lastLevels = new Set(['ch1_lv10', 'ch2_lv10', 'ch3_lv10', 'ch4_lv10', 'ch5_lv10', 'ch6_lv10']);
     for (const id of CAMPAIGN_LEVEL_ORDER) {
-      if (id === 'ch1_lv1') {
-        expect(CAMPAIGN_LEVELS[id]!.story?.outroKey).toBe('campaign.ch1.intro');
-      } else if (lastLevels.has(id)) {
+      if (lastLevels.has(id)) {
         expect(CAMPAIGN_LEVELS[id]!.story?.outroKey, `${id} should carry an outroKey`).toBeDefined();
       } else {
         expect(CAMPAIGN_LEVELS[id]!.story?.outroKey).toBeUndefined();
