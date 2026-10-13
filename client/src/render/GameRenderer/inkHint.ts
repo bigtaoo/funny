@@ -5,6 +5,10 @@
 // needed: the first time a real match rejects a card for cost, a single line floats above the
 // hand for a few seconds. It never pauses and never blocks a tap. Whether it is still owed is the
 // save's business (flag `hint.ink`), so the renderer only asks through {@link InkHintGate}.
+//
+// The same bubble carries the "ink is full, spend it" nudge (ONBOARDING_DESIGN §14.1): CrazyGames
+// battle snapshots showed most ch1_lv1 leavers sitting on a full 100 ink with a Meteor in hand,
+// so the first time ink stays capped while a spell is playable, one line points at the spell.
 import * as PIXI from 'pixi.js-legacy';
 import { makeText } from '../pixiText';
 import { FS } from '../fontScale';
@@ -14,9 +18,12 @@ import type { Rect } from '../../layout/ILayout';
 /** Supplied by the nav layer: `claim()` answers "show it now?" and marks it shown when it says yes. */
 export interface InkHintGate {
   claim(): boolean;
+  /** Same contract for the "ink is full" nudge; absent = never shown. */
+  claimFull?(): boolean;
 }
 
 const SHOW_S = 3;
+const SHOW_FULL_S = 4.5;
 const FADE_S = 0.5;
 
 export class InkHintBubble {
@@ -28,9 +35,19 @@ export class InkHintBubble {
   /** A card was refused for cost. Shows the bubble when the gate still owes it. */
   offer(handRect: Rect): void {
     if (this.node || !this.gate || !this.gate.claim()) return;
+    this.show(handRect, t('hint.ink'), SHOW_S);
+  }
+
+  /** Ink has sat at the cap with a spell in hand. Shows the spend-it line when the gate still owes it. */
+  offerFull(handRect: Rect): void {
+    if (this.node || !this.gate?.claimFull || !this.gate.claimFull()) return;
+    this.show(handRect, t('hint.inkFull'), SHOW_FULL_S);
+  }
+
+  private show(handRect: Rect, text: string, seconds: number): void {
     const c = new PIXI.Container();
     c.name = 'inkHint';
-    const label = makeText(t('hint.ink'), {
+    const label = makeText(text, {
       fontSize: FS.body, fill: 0xfdf8ec, fontWeight: 'bold',
       wordWrap: true, wordWrapWidth: Math.round(handRect.w * 0.8), align: 'center',
     });
@@ -45,7 +62,7 @@ export class InkHintBubble {
     c.y = handRect.y - label.height / 2 - padY - 8;
     this.parent.addChild(c);
     this.node = c;
-    this.left = SHOW_S;
+    this.left = seconds;
   }
 
   update(dt: number): void {
