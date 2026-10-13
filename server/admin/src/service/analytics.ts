@@ -10,7 +10,9 @@ import {
   type MetricKey,
   type TrendPoint,
 } from '@nw/shared';
-import type { AnalyticsQueryResult, AntiCheatReviewRow, PlayerProfile, PlayerSummary, RetentionCohortRow } from '../clients';
+import type {
+  AnalyticsQueryResult, AntiCheatReviewRow, PlayerProfile, PlayerSummary, RetentionCohortRow, RetentionPlatform,
+} from '../clients';
 import type { Actor, AdminCore } from './base';
 import { AdminError } from './errors';
 
@@ -33,7 +35,7 @@ export interface AnalyticsHandlers {
     tickets: Record<CompTicketStatus, number>;
   }>;
   analyticsQuery(type: string, days: number, platform?: string, newCohort?: boolean, dimension?: string): Promise<AnalyticsQueryResult & { available: boolean }>;
-  serverRetention(days: number): Promise<{ available: boolean; cohorts: RetentionCohortRow[] }>;
+  serverRetention(days: number, platform?: RetentionPlatform): Promise<{ available: boolean; cohorts: RetentionCohortRow[] }>;
   lookupPlayer(publicId: string): Promise<PlayerProfile>;
   lookupPlayerByAccountId(accountId: string): Promise<PlayerProfile>;
   searchPlayers(actor: string, q: string): Promise<PlayerSummary[]>;
@@ -165,12 +167,16 @@ export class AnalyticsService {
     /**
      * Consent-free server retention report (metaserver /internal/retention): signup cohorts with tutorial /
      * ch1 clear counts and D1..D30 activity, excluding players who turned analytics off. `days` is clamped
-     * by the route (1..90). Unconfigured → available:false; a failed call → 502, so ops can tell
+     * by the route (1..90); `platform` (validated by the route) narrows to one signup platform, or 'unknown'
+     * for accounts with none recorded. Unconfigured → available:false; a failed call → 502, so ops can tell
      * "nothing to show" from "could not ask".
      */
-    async serverRetention(days: number): Promise<{ available: boolean; cohorts: RetentionCohortRow[] }> {
+    async serverRetention(
+      days: number,
+      platform?: RetentionPlatform,
+    ): Promise<{ available: boolean; cohorts: RetentionCohortRow[] }> {
       if (!this.core.retention.available) return { available: false, cohorts: [] };
-      const cohorts = await this.core.retention.getRetention(days);
+      const cohorts = await this.core.retention.getRetention(days, platform);
       if (cohorts === null) throw new AdminError(502, 'upstream_error', 'retention report backend failed');
       return { available: true, cohorts };
     }

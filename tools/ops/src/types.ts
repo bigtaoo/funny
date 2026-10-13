@@ -471,3 +471,6 @@ export interface ServerRetentionCohort {
   cleared: { ch1_lv1: number; ch1_lv2: number; ch1_lv3: number };
   retained: { d1: number | null; d3: number | null; d7: number | null; d14: number | null; d30: number | null };
 }
+
+/** `?platform=` filter of that report: the account's signup platform, or 'unknown' = none recorded. */
+export type ServerRetentionPlatform = 'crazygames' | 'web' | 'wechat' | 'ios' | 'android' | 'unknown';

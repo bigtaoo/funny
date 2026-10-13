@@ -9,7 +9,7 @@
 // call `super.update(dt)` then run the highlight-refresh accumulator is now a plain `update(dt)`
 // method the outer assembly calls AFTER `core.update(dt)` — same order, no `super` needed.
 import * as PIXI from 'pixi.js-legacy';
-import { ATTACK_LANES } from '@nw/engine/config';
+import { ATTACK_LANES, INK_CAP } from '@nw/engine/config';
 import type { CardDefinition } from '@nw/engine/types';
 import { CardType, SpellType } from '../../game';
 import { t, type TranslationKey } from '../../i18n';
@@ -94,9 +94,19 @@ export class InputPanel {
       this.refreshPlacementHighlights();
     }
     this.inkHint?.update(dt);
+    this.checkInkFull(dt);
     // Tutorial idle escalation (§11.4): a card in the player's hand (pressed, dragged or
     // tap-selected) pauses the ghost-hand demo and its idle clock.
     this.core.tutorial?.setHoldingCard(!!(this.pendingCardDown || this.drag || this.tapSelect));
+  }
+
+  /** "Ink is full — cast a spell" (ONBOARDING_DESIGN §14.1); the bubble times it, the gate decides. */
+  private checkInkFull(dt: number): void {
+    if (!this.inkHint) return;
+    const c = this.core, player = c.localPlayer(c.engine.state);
+    const full = !c.tutorial && !c.gameEnded && !c.hudView.isPaused && !this.drag && !this.tapSelect
+      && player.ink >= INK_CAP && player.hand.slots.some((s) => !!s && s.card.cardType === CardType.Spell);
+    this.inkHint.tickFull(dt, full, c.layout.handRect);
   }
 
   // ── Input handling (design-space coords) ─────────────────────────────────

@@ -164,6 +164,7 @@ export const de: Record<TranslationKey, string> = {
   'result.playAgainWin': 'NOCHMAL KÄMPFEN',
   'result.backToMap': 'ZURÜCK ZUR KARTE',
   'result.nextLevel': 'NÄCHSTES LEVEL',
+  'result.claimGift': 'GESCHENK ABHOLEN',
   'result.retry': 'NOCHMAL',
   'result.watchReplay': 'WIEDERHOLUNG ANSEHEN',
   'result.eloDelta': 'ELO {delta} → {after}　{rank}',
@@ -245,6 +246,10 @@ export const de: Record<TranslationKey, string> = {
   'guide.auction.body': 'Ausrüstung und Material listen und bieten — das höchste Gebot gewinnt.',
   'guide.daily.title': 'Täglich einloggen',
   'guide.daily.body': 'Täglich einloggen für Belohnungen; Serien zahlen mehr. Tagesaufgaben bringen extra.',
+  'onboard.gift.title': 'Ein Geschenk vom Autor',
+  'onboard.gift.body': '1.000 Münzen sind gerade in deiner Börse gelandet. Gib sie im Gacha für deine ersten Heldenkarten aus!',
+  'onboard.daily.title': 'Komm morgen wieder',
+  'onboard.daily.body': 'Hol dir heute deine Belohnung und komm morgen wieder — der markierte Tag zeigt, was dich erwartet.',
   'guide.world.title': 'Die Große Welt',
   'guide.world.body': 'Eine offene Welt: Tippe zuerst auf deine Hauptstadt auf der Karte, um mit dem Bauen zu beginnen, dann Land beanspruchen, Klan bauen, belagern. Der schwerste Modus — lass dir Zeit.',
   // ── SLG opening guide chain (ONBOARDING_DESIGN §4.2) — spotlight bubbles, no title, body-only ──
@@ -1002,6 +1007,7 @@ export const de: Record<TranslationKey, string> = {
   'world.err.cardTroopCap': 'Die Truppenkapazität dieser Karte ist voll',
   'world.err.noInk': 'Nicht genug Tinte',
   'hint.ink': 'Noch nicht genug Tinte — sie füllt sich mit der Zeit auf.',
+  'hint.inkFull': 'Deine Tinte ist voll — nutze sie! Zieh einen Zauber wie Meteoreinschlag auf die Gegner.',
   'hint.build.title': 'Zuerst eine Verteidigung bauen',
   'hint.build.body': 'Zieh das markierte Gebäude auf deine Seite – es hält diese Bahn für dich.',
   // Nationen / Saison / Shop (C5)
@@ -1359,7 +1365,6 @@ export const de: Record<TranslationKey, string> = {
   'campaign.ch6.lv10.brief': 'Die beiden Teams treffen zum zweiten Mal aufeinander, und es ist zugleich der beste Kampf – keiner hält zurück, jeder Schritt wird aufgefangen, jede Lücke wird durchschaut. Hartmann verliert, verliert mit Respekt. Nach dem Kampf geht Mara auf Su Yuan zu, die beiden stehen eine Weile da, keiner sagt etwas. Schließlich sagt Mara: „Es ist Vertrauen." Su Yuan sieht sie an, nickt, sagt nicht mehr. Mara sagt noch: „Wir haben es auch, nur auf andere Weise." Su Yuan sagt: „Ich weiß." Die beiden Teams werden ihre jeweiligen Sekten auf eine größere Bühne vertreten. Wo diese Bühne liegt, dahin hat Tao noch nicht gezeichnet, und Anna auch nicht.',
 
   // Kapitel-Geschichte Intro / Outro
-  'campaign.ch1.intro': 'Ein Winterübungsplatz – drei Fremde stehen beieinander.\nNiemand sagte, dass wir eine Gruppe werden.\nDoch auf der Liste des Lehrers stehen drei Namen in einer Zeile.\nDen nächsten Weg können sie nur gemeinsam gehen.',
   'campaign.ch1.outro': 'Der Lehrer umkreiste die Namen, ohne ein Wort.\nDie drei traten hinaus in die Kälte. Der Ofen des Brötchenladens fing gerade an zu glühen.\nSu Yuan beschleunigte seinen Schritt und stellte sich neben sie.\nEr wusste es jetzt – sie waren eine Gruppe.',
   'campaign.ch2.intro': 'Der Hartmann-Übungsplatz – alles tadellos gepflegt.\nDrei der Stärksten stehen zusammen, aber noch keine Gruppe.\nMara fragt sich: Wofür ist man stark?\nSie haben noch keine Antwort.',
   'campaign.ch2.outro': 'Der Lehrer schrieb eine Zeile ins Protokoll und las sie nicht vor.\nMara sah sie: „Sie haben es gefunden."\nSie fragte nicht, was sie gefunden hatten.\nWeil sie es bereits wusste.',

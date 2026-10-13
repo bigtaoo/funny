@@ -104,10 +104,12 @@ export interface BootDailyDoc {
  * same reason too: a handful of numbers a day whose value is the trend.
  */
 export interface FunnelAnonDailyDoc {
-  _id: string; // `${date}|${platform}|${step}`
+  _id: string; // `${date}|${platform}|${step}`, plus `|${version}` when the tick carried one
   date: string;
   platform: string;
   step: string;
+  /** Client build version (`?v=`); absent on ticks from clients that predate it. */
+  version?: string;
   count: number;
   updated_at: Date;
 }

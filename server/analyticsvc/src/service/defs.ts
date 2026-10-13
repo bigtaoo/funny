@@ -104,17 +104,32 @@ export interface BootFunnelRow {
  * sequence (ONBOARDING_DESIGN §11.9), its Skip, the first attempt / first clear of campaign
  * levels 1–3, and the two load checkpoints split by input class (ANALYTICS_DESIGN §3.6f):
  * `open_*` from an inline script in the HTML before the bundle downloads, `loaded_*` once the first
- * screen is up — their ratio is the share of launches abandoned while loading.
+ * screen is up — their ratio is the share of launches abandoned while loading. Then the ink-full
+ * nudge, the first-session reward loop (gift card → gacha → first pull, daily card → check-in;
+ * ONBOARDING_DESIGN §14.3), and `return_launch`: a launch whose save had ch1_lv1 cleared before it
+ * started — a coarse returning-player count that, unlike the consented D1, covers everyone.
  */
 export const ANON_FUNNEL_STEPS = [
   'open_desktop', 'open_mobile', 'loaded_desktop', 'loaded_mobile',
   'tutorial_start', 'beat_unit', 'beat_building', 'beat_spell', 'graduate', 'tutorial_complete', 'tutorial_skip',
   'lv1_start', 'lv1_clear', 'lv2_start', 'lv2_clear', 'lv3_start', 'lv3_clear',
+  'ink_full_hint', 'gift_shown', 'gift_gacha', 'gacha_pull', 'daily_shown', 'daily_open', 'daily_claim',
+  'return_launch',
 ] as const;
 export type AnonFunnelStep = (typeof ANON_FUNNEL_STEPS)[number];
 
 export function isAnonFunnelStep(s: string): s is AnonFunnelStep {
   return (ANON_FUNNEL_STEPS as readonly string[]).includes(s);
+}
+
+/**
+ * The `?v=` build version an anonymous tick may carry (the client's `__NW_BUILD_VERSION__`: a short
+ * commit hash or a semver string). It becomes part of a document `_id` too, so it is clamped to a
+ * short charset rather than stored verbatim; anything else is dropped and the tick is counted
+ * without a version.
+ */
+export function anonFunnelVersion(v: string | null): string | null {
+  return v && /^[0-9A-Za-z._-]{1,40}$/.test(v) ? v : null;
 }
 
 /**

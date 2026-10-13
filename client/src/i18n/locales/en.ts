@@ -164,6 +164,7 @@ export const en: Record<TranslationKey, string> = {
   'result.playAgainWin': 'FIGHT AGAIN',
   'result.backToMap': 'BACK TO MAP',
   'result.nextLevel': 'NEXT LEVEL',
+  'result.claimGift': 'CLAIM YOUR GIFT',
   'result.retry': 'RETRY',
   'result.watchReplay': 'WATCH REPLAY',
   'result.eloDelta': 'ELO {delta} → {after}　{rank}',
@@ -245,6 +246,10 @@ export const en: Record<TranslationKey, string> = {
   'guide.auction.body': 'List and bid on gear and materials — highest bid wins.',
   'guide.daily.title': 'Daily check-in',
   'guide.daily.body': 'Log in daily for rewards; streaks pay more. Finish daily tasks for an extra batch.',
+  'onboard.gift.title': 'A gift from the author',
+  'onboard.gift.body': '1,000 coins just landed in your wallet. Spend them on your first hero cards in the Gacha!',
+  'onboard.daily.title': 'Come back tomorrow',
+  'onboard.daily.body': 'Check in today, then come back tomorrow — the highlighted day shows what is waiting for you.',
   'guide.world.title': 'The Great World',
   'guide.world.body': 'An open world: tap your main city on the map to start building, then claim land, build a clan, lay sieges. The heaviest mode — take your time.',
   // ── SLG opening guide chain (ONBOARDING_DESIGN §4.2) — spotlight bubbles, no title, body-only ──
@@ -1002,6 +1007,7 @@ export const en: Record<TranslationKey, string> = {
   'world.err.cardTroopCap': "This card's troop capacity is full",
   'world.err.noInk': 'Not enough ink',
   'hint.ink': 'Not enough ink yet — it refills over time.',
+  'hint.inkFull': 'Your ink is full — spend it! Drag a spell like Meteor Strike onto the enemies.',
   'hint.build.title': 'Build a defense first',
   'hint.build.body': 'Drag the highlighted building onto your side — it holds that lane for you.',
   // Nations / season / shop panel (C5)
@@ -1352,7 +1358,6 @@ export const en: Record<TranslationKey, string> = {
   'campaign.ch6.lv10.brief': 'The two squads meet for the second time, and it\'s the best match either has played — no one holds back, every move is met, every gap is seen through. Hartmann loses. Loses, and accepts it. After the match, Mara walks up to Su Yuan. The two of them stand there a while, neither speaking. Finally, Mara says: "It\'s trust." Su Yuan looks at her, nods, says no more. Mara adds: "We have it too. Just a different shape." Su Yuan says: "I know." The two squads will go on to represent their sects on a bigger stage. Where that stage is, Tao hasn\'t drawn that page yet. Neither has Anna.',
 
   // Chapter story intros & outros
-  'campaign.ch1.intro': 'A winter training ground — three strangers standing together.\nNo one said we would become a squad.\nBut on the instructor\'s roster, three names share one line.\nThe only way forward is together.',
   'campaign.ch1.outro': 'The instructor circled the names without a word.\nThe three walked out into the cold. The bun shop\'s stove was just starting to warm up.\nSu Yuan quickened his pace and stood beside them.\nHe knew now — they were a squad.',
   'campaign.ch2.intro': 'The Hartmann training ground — everything perfectly kept.\nThree of the strongest stand together, but not yet as a squad.\nMara wonders: what is being strong for?\nThey don\'t have an answer yet.',
   'campaign.ch2.outro': 'The instructor wrote a line in the record book and didn\'t read it aloud.\nMara saw it: "They found it."\nShe didn\'t ask what they had found.\nBecause she already knew.',

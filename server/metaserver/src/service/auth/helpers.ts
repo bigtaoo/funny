@@ -1,7 +1,7 @@
 // Deps-only helpers shared by every auth/*.ts handler module (2026-08-11 split of service/auth.ts,
 // same "独立函数模块" form as pve/helpers.ts — these two never touch a protected MetaServiceBase
 // method, only `deps`, so no ctx-binding is needed at all.
-import { CARD_DEFS } from '@nw/shared';
+import { CARD_DEFS, asSignupPlatform } from '@nw/shared';
 import { getOrCreateSave } from '../../save.js';
 import { grantCards } from '../../cards.js';
 import type { ServiceDeps } from '../base.js';
@@ -45,4 +45,30 @@ export async function maybeGrantStarterCards(deps: ServiceDeps, accountId: strin
     CARD_DEFS['chenshou']!,
     CARD_DEFS['suyuan']!,
   ], 'starter');
+}
+
+/**
+ * Stamp a brand-new account with the platform it signed up from (AccountDoc.signupPlatform), so the
+ * consent-free retention report (retentionReport.ts) can split cohorts by acquisition channel. Called
+ * next to maybeGrantStarterCards in every auth handler with `clientPlatformOf(req)`. Only allow-listed
+ * values are stored; the `$exists: false` guard means a racing second "new" login never overwrites the
+ * first value. Best-effort: a write failure must never fail the login, so it is swallowed.
+ */
+export async function recordSignupPlatform(
+  deps: ServiceDeps,
+  accountId: string,
+  isNew: boolean,
+  rawPlatform: string | undefined,
+): Promise<void> {
+  if (!isNew) return;
+  const signupPlatform = asSignupPlatform(rawPlatform);
+  if (!signupPlatform) return;
+  try {
+    await deps.cols.accounts.updateOne(
+      { _id: accountId, signupPlatform: { $exists: false } },
+      { $set: { signupPlatform } },
+    );
+  } catch {
+    // Analytics-only field; the account itself is fine without it (reported as platform "unknown").
+  }
 }

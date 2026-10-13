@@ -169,6 +169,7 @@ export const zh = {
   'result.playAgainWin': '再战一场',
   'result.backToMap': '返回地图',
   'result.nextLevel': '下一关',
+  'result.claimGift': '领取礼物',
   'result.retry': '再试一次',
   'result.watchReplay': '观看回放',
   'result.eloDelta': 'ELO {delta} → {after}　段位 {rank}',
@@ -250,6 +251,10 @@ export const zh = {
   'guide.auction.body': '挂单买卖装备与材料，价高者得。',
   'guide.daily.title': '每日签到',
   'guide.daily.body': '每天登录领奖励，连续签到更划算。完成每日任务再拿一份。',
+  'onboard.gift.title': '作者的见面礼',
+  'onboard.gift.body': '1000 金币已经到账，去扭蛋抽你的第一批英雄卡吧！',
+  'onboard.daily.title': '明天再来',
+  'onboard.daily.body': '今天先签到，明天再来——高亮的那一格就是明天等着你的奖励。',
   'guide.world.title': '大世界',
   'guide.world.body': '开放大世界：先点击地图上你的主城开始建设，再占地、建宗门、围攻。最重的玩法，慢慢来。',
   // ── SLG opening guide chain (ONBOARDING_DESIGN §4.2) — spotlight bubbles, no title, body-only ──
@@ -1028,6 +1033,7 @@ export const zh = {
   'world.err.cardTroopCap': '这张卡的带兵上限已满',
   'world.err.noInk': '墨水不足',
   'hint.ink': '墨还不够——它会随时间自动回满。',
+  'hint.inkFull': '墨已经满了——快用掉！把「陨石打击」这类法术拖到敌人身上。',
   'hint.build.title': '先造一座建筑',
   'hint.build.body': '把高亮的建筑拖到己方一侧——它会替你守住这一路。',
   // ── Nations / season / shop panel (C5) ───────────────────────────────────
@@ -1377,7 +1383,6 @@ export const zh = {
   'campaign.ch6.lv10.brief': '两支队伍第二次相遇，也是打得最好的一场——谁都没留手，每一步都被接住，每个空隙都被看穿。Hartmann 输了，输得心服。赛后，Mara 走向苏远，两人站了一会儿，谁都没开口。末了，Mara 说：「是信任。」苏远看着她，点了头，没多说。Mara 又说：「我们也有，只是方式不一样。」苏远说：「我知道。」两支队伍，将代表各自的宗门走向更大的舞台。那个舞台在哪里，涛还没画到那一页，Anna 也没有。',
 
   // ── Chapter story intro / outro (fade in line by line, lines separated by \n) ─
-  'campaign.ch1.intro': '冬日的演武场，三个陌生人站在一起。\n没有人说我们会成为一支队。\n但教官的名单上，三个名字写在了同一行。\n接下来的路，只能一起走。',
   'campaign.ch1.outro': '教官在名单上画了圈，没有说话。\n三个人走出演武场，包子铺的炉子刚开始生火。\n苏远走快了几步，站到了他们旁边。\n他知道了，他们是一支队。',
   'campaign.ch2.intro': 'Hartmann 的训练场，一切都是打理过的样子。\n三个最强的人站在一起，却不像一支队。\nMara 在想：最强是为了什么？\n这个问题，他们还没有答案。',
   'campaign.ch2.outro': '教官在记录本上写了一行字，没有念出来。\nMara 看见了：「他们找到了。」\n她没有问找到的是什么。\n因为她知道。',

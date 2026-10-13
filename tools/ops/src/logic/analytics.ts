@@ -113,7 +113,8 @@ export const TUTORIAL_LABELS: Record<string, string> = {
 
 /**
  * Labels for the anonymous first-session funnel (`anon_funnel`), in funnel order — must match
- * ANON_FUNNEL_STEPS in analyticsvc: the tutorial steps, its Skip, and levels 1–3 first try / first clear.
+ * ANON_FUNNEL_STEPS in analyticsvc: the tutorial steps, its Skip, levels 1–3 first try / first clear,
+ * the ink-full hint, the first-session reward loop, and returning launches.
  */
 export const ANON_FUNNEL_LABELS: Record<string, string> = {
   open_desktop: 'Opened (desktop)', open_mobile: 'Opened (touch)',
@@ -123,6 +124,10 @@ export const ANON_FUNNEL_LABELS: Record<string, string> = {
   lv1_start: 'Lv1 tried', lv1_clear: 'Lv1 cleared',
   lv2_start: 'Lv2 tried', lv2_clear: 'Lv2 cleared',
   lv3_start: 'Lv3 tried', lv3_clear: 'Lv3 cleared',
+  ink_full_hint: 'Ink-full hint shown',
+  gift_shown: 'Gift card shown', gift_gacha: 'Gift → gacha', gacha_pull: 'Gacha pulled',
+  daily_shown: 'Daily card shown', daily_open: 'Daily → check-in', daily_claim: 'Checked in',
+  return_launch: 'Returning launch',
 };
 
 /** The scene funnel passes no label map on purpose — its step keys are already scene names. */

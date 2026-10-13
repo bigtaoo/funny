@@ -1647,8 +1647,20 @@ const QUERY_SCHEMAS: Record<string, unknown> = {
           "lv2_start",
           "lv2_clear",
           "lv3_start",
-          "lv3_clear"
+          "lv3_clear",
+          "ink_full_hint",
+          "gift_shown",
+          "gift_gacha",
+          "gacha_pull",
+          "daily_shown",
+          "daily_open",
+          "daily_claim",
+          "return_launch"
         ]
+      },
+      "v": {
+        "type": "string",
+        "pattern": "^[0-9A-Za-z._-]{1,40}$"
       }
     }
   },

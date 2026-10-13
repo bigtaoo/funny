@@ -143,6 +143,23 @@ describe.skipIf(!mongo)('launch counter + load time', () => {
       expect(Object.keys(start).sort()).toEqual(['_id', 'count', 'date', 'platform', 'step', 'updated_at']);
     });
 
+    it('keeps one document per build version, and the boot funnel row sums them', async () => {
+      await mongo!.collections.boots_daily.deleteMany({});
+      await mongo!.collections.funnel_anon_daily.deleteMany({});
+      await svc.countBoot('crazygames');
+      await svc.countAnonymousFunnelStep('crazygames', 'return_launch', 'aaa1111');
+      await svc.countAnonymousFunnelStep('crazygames', 'return_launch', 'bbb2222');
+      await svc.countAnonymousFunnelStep('crazygames', 'return_launch', 'bbb2222');
+      await svc.countAnonymousFunnelStep('crazygames', 'return_launch');
+
+      const docs = await mongo!.collections.funnel_anon_daily.find({}).toArray();
+      expect(docs).toHaveLength(3);
+      expect(docs.find((d) => d.version === 'bbb2222')!.count).toBe(2);
+      const rows = await svc.queryBootFunnel(7);
+      expect(rows.find((r) => r.platform === 'crazygames')!.anon_funnel).toEqual({ return_launch: 4 });
+      await mongo!.collections.funnel_anon_daily.deleteMany({});
+    });
+
     it('runs concurrently without losing counts', async () => {
       await mongo!.collections.funnel_anon_daily.deleteMany({});
       await Promise.all(Array.from({ length: 25 }, () => svc.countAnonymousFunnelStep('web', 'graduate')));

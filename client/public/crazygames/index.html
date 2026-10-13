@@ -14,21 +14,24 @@
     <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png" />
     <meta name="theme-color" content="#1b3a6b" />
-    <!-- CrazyGames SDK — must be loaded before game bundle -->
-    <script src="https://sdk.crazygames.com/crazygames-sdk-v3.js"></script>
     <!-- Load checkpoint 1 of 2 (ANALYTICS_DESIGN §3.6f): one anonymous tick before the bundle
          downloads, split only by input class; analytics.countLoadedLaunch() sends the other half once
          the first screen is up. Same no-identity endpoint as the tutorial funnel: platform + step
-         only. Keep the input-class test identical to countLoadedLaunch's. -->
+         only, plus the build version. Keep the input-class test identical to countLoadedLaunch's.
+         It runs BEFORE the SDK tag on purpose: that tag is synchronous, so a tick placed after it
+         missed every launch abandoned while the SDK itself was downloading. -->
     <script>
       (function () {
         var base = '<%= htmlWebpackPlugin.options.analyticsBase %>';
         if (!base || typeof fetch !== 'function') return;
         var coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
-        fetch(base + '/analytics/config?p=crazygames&t=' + (coarse ? 'open_mobile' : 'open_desktop'),
+        fetch(base + '/analytics/config?p=crazygames&t=' + (coarse ? 'open_mobile' : 'open_desktop')
+          + '&v=' + encodeURIComponent('<%= htmlWebpackPlugin.options.buildVersion %>'),
           { mode: 'no-cors', keepalive: true }).catch(function () {});
       })();
     </script>
+    <!-- CrazyGames SDK — must be loaded before game bundle -->
+    <script src="https://sdk.crazygames.com/crazygames-sdk-v3.js"></script>
     <style>
       * { margin: 0; padding: 0; box-sizing: border-box; }
       html, body { width: 100%; height: 100%; overflow: hidden; background: #f5f0e8; }

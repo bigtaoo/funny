@@ -274,6 +274,8 @@ const CASES: EndpointCase[] = [
     path: '/admin/analytics/events?type=funnel&days=30&platform=web', reply: { available: true } },
   { name: 'serverRetention', call: (a) => a.serverRetention(60), method: 'GET', path: '/admin/analytics/retention?days=60',
     reply: { available: true, days: 60, cohorts: [] } },
+  { name: 'serverRetention with a signup platform', call: (a) => a.serverRetention(30, 'crazygames'), method: 'GET',
+    path: '/admin/analytics/retention?days=30&platform=crazygames', reply: { available: true, days: 30, platform: 'crazygames', cohorts: [] } },
 
   // Players
   { name: 'player escapes the publicId', call: (a) => a.player('12 3/4'), method: 'GET', path: '/admin/player/12%203%2F4',

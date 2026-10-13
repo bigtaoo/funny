@@ -77,14 +77,19 @@ export function countDeclinedLaunch(): void {
 /**
  * The first-session steps {@link countAnonymousFunnelStep} accepts: the v2 tutorial sequence
  * (ONBOARDING_DESIGN §11.9), its Skip, the first attempt / first clear of the first three
- * campaign levels, and the load checkpoints (`open_*` is sent by the CrazyGames HTML before the
- * bundle exists, `loaded_*` by {@link countLoadedLaunch}; ANALYTICS_DESIGN §3.6f). Must match analyticsvc's `ANON_FUNNEL_STEPS` (service/defs.ts) and the `t` enum on
+ * campaign levels, the load checkpoints (`open_*` is sent by the CrazyGames HTML before the
+ * bundle exists, `loaded_*` by {@link countLoadedLaunch}; ANALYTICS_DESIGN §3.6f), the ink-full
+ * nudge and the first-session reward loop (gift → gacha → daily, ONBOARDING_DESIGN §14.2/§14.3), and
+ * `return_launch` — a launch whose save had cleared ch1_lv1 before it started, the one retention
+ * signal that also counts players who never consented ({@link countReturnLaunch}). Must match analyticsvc's `ANON_FUNNEL_STEPS` (service/defs.ts) and the `t` enum on
  * `GET /analytics/config`; the server drops anything else.
  */
 export const ANONYMOUS_FUNNEL_STEPS = [
   'open_desktop', 'open_mobile', 'loaded_desktop', 'loaded_mobile',
   'tutorial_start', 'beat_unit', 'beat_building', 'beat_spell', 'graduate', 'tutorial_complete', 'tutorial_skip',
   'lv1_start', 'lv1_clear', 'lv2_start', 'lv2_clear', 'lv3_start', 'lv3_clear',
+  'ink_full_hint', 'gift_shown', 'gift_gacha', 'gacha_pull', 'daily_shown', 'daily_open', 'daily_claim',
+  'return_launch',
 ] as const;
 export type AnonymousFunnelStep = (typeof ANONYMOUS_FUNNEL_STEPS)[number];
 
@@ -110,7 +115,18 @@ export function countAnonymousFunnelStep(step: AnonymousFunnelStep): void {
   if (!(ANONYMOUS_FUNNEL_STEPS as readonly string[]).includes(step)) return; // JS callers / stale keys
   if (anonFunnelSent.has(step)) return;
   anonFunnelSent.add(step);
-  pingAnonymousFunnelStep(bootCounterBase, getPlatformName(), step);
+  pingAnonymousFunnelStep(bootCounterBase, getPlatformName(), step, getGameVersion());
+}
+
+/**
+ * Tick `return_launch` on the first lobby arrival of a launch when the save shows ch1_lv1 cleared and
+ * this launch did not clear it — i.e. a player who came back. Reads only the save the game already
+ * keeps (COMPLIANCE_GLOBAL §3.3b), so like every other step it needs no consent; per day and build
+ * version it is a coarse retention trend that, unlike the consented D1, also covers the EEA players
+ * who never said yes. A same-day second launch counts too: read it as "launches by returners".
+ */
+export function countReturnLaunch(cleared: readonly string[]): void {
+  if (cleared.includes('ch1_lv1') && !anonFunnelSent.has('lv1_clear')) countAnonymousFunnelStep('return_launch');
 }
 
 /**

@@ -116,13 +116,19 @@ export class TrafficService {
    * target, allow-listed step key, a number. Nothing else.
    *
    * `step` must already be validated against `ANON_FUNNEL_STEPS` by the caller (it becomes part
-   * of the `_id`). Fire-and-forget by contract, like {@link countBoot}.
+   * of the `_id`), and so must `version` (`anonFunnelVersion`). A tick with a version gets its own
+   * document per build, so a release can be read against the one before it on a day both are live;
+   * one without (older clients) keeps the original versionless `_id`. Fire-and-forget by contract,
+   * like {@link countBoot}.
    */
-  async countAnonymousFunnelStep(platform: string, step: AnonFunnelStep): Promise<void> {
+  async countAnonymousFunnelStep(platform: string, step: AnonFunnelStep, version: string | null = null): Promise<void> {
     const date = toDateStr(this.now());
     await this.cols.funnel_anon_daily.updateOne(
-      { _id: `${date}|${platform}|${step}` },
-      { $inc: { count: 1 }, $set: { date, platform, step, updated_at: new Date(this.now()) } },
+      { _id: version ? `${date}|${platform}|${step}|${version}` : `${date}|${platform}|${step}` },
+      {
+        $inc: { count: 1 },
+        $set: { date, platform, step, ...(version ? { version } : {}), updated_at: new Date(this.now()) },
+      },
       { upsert: true },
     );
   }
@@ -213,8 +219,9 @@ export class TrafficService {
     const anonFunnel = await this.cols.funnel_anon_daily.find({ date: { $gte: sinceDate } }).toArray();
     for (const t of anonFunnel) {
       if (!isAnonFunnelStep(t.step)) continue;
+      // Summed: since the `?v=` split one (date, platform, step) can span several build documents.
       const row = rowFor(t.date, t.platform);
-      row.anon_funnel = { ...row.anon_funnel, [t.step]: t.count };
+      row.anon_funnel = { ...row.anon_funnel, [t.step]: (row.anon_funnel?.[t.step] ?? 0) + t.count };
     }
 
     return [...rows.values()]

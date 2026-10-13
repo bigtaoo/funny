@@ -127,6 +127,14 @@ describe('HttpRetentionClient', () => {
     expect(fetchMock.mock.calls[0]![1]).toMatchObject({ caller: 'admin', key: 'k' });
   });
 
+  it('getRetention forwards the signup-platform filter as ?platform=', async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 200, body: { ok: true, days: 7, cohorts: [] } });
+    expect(await new HttpRetentionClient('http://meta', 'k').getRetention(7, 'crazygames')).toEqual([]);
+    expect(fetchMock.mock.calls.at(-1)?.[0]).toBe('http://meta/internal/retention?days=7&platform=crazygames');
+    await new HttpRetentionClient('http://meta', 'k').getRetention(7, 'unknown');
+    expect(fetchMock.mock.calls.at(-1)?.[0]).toBe('http://meta/internal/retention?days=7&platform=unknown');
+  });
+
   it('getRetention reports null (not []) unconfigured or on failure, so the caller can tell them apart', async () => {
     const off = new HttpRetentionClient(null, 'k');
     expect(off.available).toBe(false);

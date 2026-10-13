@@ -1,12 +1,12 @@
 // Consent-free server retention report e2e (real Mongo): activityDays.ts's write filter + pipeline, the
 // bearerAuth → recorder wiring in buildApp, and GET /internal/retention's aggregation (cohort grouping,
 // tutorial / cleared counts, dK = K in activeDays, null for windows still open, and the exclusions:
-// objected (gdprConsent false), soft-deleted, purged, bot accounts).
+// objected (gdprConsent false), soft-deleted, purged, bot accounts) plus the ?platform= signup-platform split.
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createMongo, makeNewSave, signToken, type AccountDoc, type MongoHandle } from '@nw/shared';
 import { buildApp } from '../src/app.js';
 import { ActivityRecorder, DAY_MS } from '../src/activityDays.js';
-import { clampRetentionDays, retentionReport, retentionWindowClosed } from '../src/retentionReport.js';
+import { clampRetentionDays, parseRetentionPlatform, retentionReport, retentionWindowClosed } from '../src/retentionReport.js';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_meta_retention_report_test';
@@ -40,6 +40,15 @@ describe('clampRetentionDays / retentionWindowClosed', () => {
     const day = Math.floor(dayStart(2) / DAY_MS);
     expect(retentionWindowClosed(day, 1, dayStart(2) + 3 * DAY_MS - 1)).toBe(false);
     expect(retentionWindowClosed(day, 1, dayStart(2) + 3 * DAY_MS)).toBe(true);
+  });
+
+  it('platform: allow-listed signup platforms and unknown pass, anything else → undefined (all)', () => {
+    expect(parseRetentionPlatform('crazygames')).toBe('crazygames');
+    expect(parseRetentionPlatform('wechat')).toBe('wechat');
+    expect(parseRetentionPlatform('unknown')).toBe('unknown');
+    expect(parseRetentionPlatform('steam')).toBeUndefined();
+    expect(parseRetentionPlatform(undefined)).toBeUndefined();
+    expect(parseRetentionPlatform(['web'])).toBeUndefined();
   });
 });
 
@@ -196,6 +205,32 @@ describe.skipIf(!mongo)('consent-free retention e2e', () => {
           retained: { d1: 0, d3: 0, d7: 0, d14: 0, d30: null },
         });
         expect(cohorts.reduce((n, c) => n + c.signups, 0)).toBe(7);
+      } finally {
+        await app.close();
+      }
+    });
+
+    it('?platform= narrows cohorts to one signupPlatform; unknown = accounts without the field', async () => {
+      const c10 = dayStart(10);
+      await seed('cg1', c10 + 1000, { signupPlatform: 'crazygames', activeDays: [0, 1] });
+      await seed('cg2', c10 + 2000, { signupPlatform: 'crazygames', activeDays: [0] });
+      await seed('web1', c10 + 3000, { signupPlatform: 'web', activeDays: [0, 1, 3] });
+      await seed('legacy', c10 + 4000, { activeDays: [0, 1] });
+      const app = await buildApp({ cols: m.collections, jwt: { secret: 's' }, internalKey: 'k', commercialUrl: null, gatewayUrl: null, now: () => NOW, activity: null });
+      try {
+        const ask = async (q: string) => {
+          const res = await app.inject({ method: 'GET', url: `/internal/retention?days=14${q}`, headers: { 'x-internal-key': 'k' } });
+          expect(res.statusCode).toBe(200);
+          const body = res.json() as { platform?: string; cohorts: { signups: number; retained: Record<string, number | null> }[] };
+          return { platform: body.platform, c: body.cohorts[10]! };
+        };
+        expect(await ask('&platform=crazygames')).toMatchObject({ platform: 'crazygames', c: { signups: 2, retained: { d1: 1, d3: 0 } } });
+        expect(await ask('&platform=web')).toMatchObject({ platform: 'web', c: { signups: 1, retained: { d1: 1, d3: 1 } } });
+        expect(await ask('&platform=unknown')).toMatchObject({ platform: 'unknown', c: { signups: 1, retained: { d1: 1 } } });
+        expect((await ask('&platform=wechat')).c.signups).toBe(0);
+        // Unrecognized value is ignored → every platform, and nothing is echoed.
+        expect(await ask('&platform=steam')).toMatchObject({ platform: undefined, c: { signups: 4, retained: { d1: 3 } } });
+        expect((await ask('')).c.signups).toBe(4);
       } finally {
         await app.close();
       }

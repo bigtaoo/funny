@@ -1,9 +1,13 @@
-import { fetchInternalJson } from '@nw/shared';
+import { fetchInternalJson, SIGNUP_PLATFORMS, type SignupPlatform } from '@nw/shared';
 import { log } from './shared';
 
 // ── Consent-free server retention report (meta /internal/retention) ─────────────
 // Built by metaserver from data it keeps to run the game (signup time, save progress, activity windows);
 // players who turned analytics off, deleted accounts and bots are excluded there (metaserver retentionReport.ts).
+
+/** Signup-platform filter of the report: one platform, or 'unknown' = accounts with none recorded. */
+export type RetentionPlatform = SignupPlatform | 'unknown';
+export const RETENTION_PLATFORMS: readonly RetentionPlatform[] = [...SIGNUP_PLATFORMS, 'unknown'];
 
 /** One signup cohort (UTC day of account creation). Mirror of metaserver's RetentionCohort. */
 export interface RetentionCohortRow {
@@ -17,8 +21,8 @@ export interface RetentionCohortRow {
 
 export interface RetentionClient {
   readonly available: boolean;
-  /** Newest cohort first. null = the call failed (network / non-2xx). */
-  getRetention(days: number): Promise<RetentionCohortRow[] | null>;
+  /** Newest cohort first; `platform` narrows to one signup platform. null = the call failed (network / non-2xx). */
+  getRetention(days: number, platform?: RetentionPlatform): Promise<RetentionCohortRow[] | null>;
 }
 
 /** Stand-in for deployments/tests without metaserver: reports unavailable. */
@@ -37,10 +41,11 @@ export class HttpRetentionClient implements RetentionClient {
     return this.metaBaseUrl !== null;
   }
 
-  async getRetention(days: number): Promise<RetentionCohortRow[] | null> {
+  async getRetention(days: number, platform?: RetentionPlatform): Promise<RetentionCohortRow[] | null> {
     if (!this.metaBaseUrl) return null;
+    const q = `days=${encodeURIComponent(String(days))}${platform ? `&platform=${encodeURIComponent(platform)}` : ''}`;
     const r = await fetchInternalJson<{ cohorts?: RetentionCohortRow[] }>(
-      `${this.metaBaseUrl}/internal/retention?days=${encodeURIComponent(String(days))}`,
+      `${this.metaBaseUrl}/internal/retention?${q}`,
       {
         caller: 'admin',
         key: this.internalKey,

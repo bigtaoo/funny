@@ -10,8 +10,8 @@ import { regionFromAcceptLanguage } from '@nw/shared';
 import { validateLoginId, validatePassword } from '@nw/shared';
 import { bindOAuth, bindPassword, ensurePublicId, resolveByOAuth } from '../../accounts.js';
 import { OAuthError, type OAuthProvider, type OAuthService } from '../../oauth.js';
-import { accountIdOf, type MetaCore } from '../base.js';
-import { restoreIfWithinGrace, maybeGrantStarterCards } from './helpers.js';
+import { accountIdOf, clientPlatformOf, type MetaCore } from '../base.js';
+import { restoreIfWithinGrace, maybeGrantStarterCards, recordSignupPlatform } from './helpers.js';
 
 export interface OAuthCtx {
   core: MetaCore;
@@ -58,6 +58,7 @@ export async function authOAuthHandler(ctx: OAuthCtx, req: FastifyRequest, reply
   const token = signToken(accountId, ctx.core.deps.jwt);
   const publicId = await ensurePublicId(ctx.core.deps.cols, accountId);
   await maybeGrantStarterCards(ctx.core.deps, accountId, isNew);
+  await recordSignupPlatform(ctx.core.deps, accountId, isNew, clientPlatformOf(req));
   return ok({
     token,
     accountId,

@@ -377,7 +377,7 @@ Art 7(1) 的举证留痕，不是遥测。
 **加载前**和**加载后**各一个、不靠同意、按设备分开的计数。
 
 **做法**：沿用 §3.6d 的匿名漏斗通道（`GET /analytics/config?p=<平台>&t=<step>` → `funnel_anon_daily` `$inc`），白名单前面加四个键：
-- `open_desktop` / `open_mobile`——**bundle 还没下载**就打：`client/public/crazygames/index.html` 里 CG SDK 之后的一小段内联脚本，
+- `open_desktop` / `open_mobile`——**bundle 还没下载**就打：`client/public/crazygames/index.html` 里的一小段内联脚本（2026-10-13 起挪到 CG SDK `<script>` **之前**，见 §3.6g），
   `fetch(..., { mode: 'no-cors', keepalive: true })`，API 地址由 webpack 构建时注入（`HtmlWebpackPlugin` 的 `analyticsBase`，
   即 `apiBase` 去掉 `/api`；为空就不发）。只有 CG 模板有这一段。
 - `loaded_desktop` / `loaded_mobile`——第一屏上来时打：`app.ts` 在 `markBoot('ready')` 之后调 `analytics.countLoadedLaunch()`。所有平台都发。
@@ -387,6 +387,45 @@ Art 7(1) 的举证留痕，不是遥测。
   点进来了却连 HTML 都没跑完。ops「Launch funnel」卡的匿名列会显示为 `Opened (desktop)` / `Opened (touch)` / `Loaded (desktop)` / `Loaded (touch)`。
 - 三处白名单（客户端 `ANONYMOUS_FUNNEL_STEPS`、服务端 `ANON_FUNNEL_STEPS`、OpenAPI `t` 枚举）一起改；**服务端没部署前新键会被丢**，
   所以 analyticsvc 要先于（或同时于）CG 新包上线。
+
+### 3.6g 补齐首次会话之后的数据：奖励闭环、回访、版本、注册平台（2026-10-13）
+
+**为什么要有**：§14 的两版改动（`ch1_lv1` 缩短、首次会话奖励闭环）上线后要能回答三件事——闭环每一步掉了多少人、
+玩家第二天回没回来、这些数字是哪一版带来的。原来的匿名漏斗只到 `lv3_clear`；回访只有服务端留存表（§3.6e），
+但它分不出 CG 和网页；匿名计数没有版本号，CG 新旧包同一天都在线时混在一起。
+
+**1. 匿名漏斗新键**（同 §3.6d 的通道和立场，三处白名单一起改）：
+| 键 | 什么时候打 | 位置 |
+|---|---|---|
+| `ink_full_hint` | 「墨满了」气泡真的弹出（每账号一次） | `appConstants.ts` `inkHintGate.claimFull` |
+| `gift_shown` / `gift_gacha` | 礼物卡弹出 / 关卡后进抽卡页 | `firstRewardLoop.ts` `giftStep` |
+| `gacha_pull` | 抽卡成功（任何池子，每次启动至多一次） | `shop/nav.ts` `draw` |
+| `daily_shown` / `daily_open` | 「明天再来」卡弹出 / 关卡后进签到页 | `firstRewardLoop.ts` `runRewardLoop` |
+| `daily_claim` | 签到成功（每次启动至多一次） | `shop/nav.ts` `onCheckin` |
+| `return_launch` | 本次启动第一次进大厅时，存档里 `ch1_lv1` **在本次启动之前**就已通过 | `lobby.ts` → `analytics.countReturnLaunch` |
+
+- `gacha_pull` / `daily_claim` 不限新玩家：老玩家抽卡、签到也算。CG 测试期几乎全是新玩家，可以直接读；以后要按 `gift_gacha` 对照着看。
+- `return_launch` 是**不靠同意**的回访信号：只读游戏本来就有的存档（COMPLIANCE §3.3b），所以 EU 没同意的玩家也在里面。
+  按启动计不按人：同一天先玩后又回来也算一次。读法：某日 `return_launch` 对前一日的 `lv1_clear`，是一个粗的「次日回访率」上界。
+- ops「Launch funnel」卡匿名列的标签：`Ink-full hint shown`、`Gift card shown`、`Gift → gacha`、`Gacha pulled`、`Daily card shown`、
+  `Daily → check-in`、`Checked in`、`Returning launch`。
+
+**2. 匿名计数带版本号**：客户端每次 `?t=` 都带 `&v=<__NW_BUILD_VERSION__>`（CG HTML 里的 `open_*` 也带，webpack 往模板注入 `buildVersion`）。
+服务端 `anonFunnelVersion` 只收 `[0-9A-Za-z._-]{1,40}`（它也进 `_id`），不合格就当没带。带版本的写到
+`${date}|${platform}|${step}|${version}`，并多存一个 `version` 字段；不带版本的（旧客户端）保持原 `_id`。
+`boot_funnel` 读的时候把同一 (日, 平台, 步) 的各版本**相加**，ops 看到的数和以前口径一样。
+按版本拆的数目前没有 ops 界面，直接查库：`funnel_anon_daily` 上 `{ date, platform: 'crazygames' }` 按 `version, step` 分组求和。
+
+**3. `open_*` 挪到 SDK 之前**：CG SDK 的 `<script>` 是同步加载的，原来写在它后面的 `open_*` 要等 SDK 下载完才发，
+SDK 下载期间就关页的玩家一个都没计——正好是「加载流失」想量的那部分（手机网络差时尤其多）。现在内联脚本在 SDK 标签前面。
+**所以 10-13 之后的 `open_*` 会比之前偏高**，跟之前的天比时要注意这个断点。
+
+**4. 注册平台 + 服务端留存按平台拆**：账号新建时把请求头 `X-NW-Platform`（白名单 `ios / android / web / wechat / crazygames`）
+写进 `accounts.signupPlatform`（`$setOnInsert` 之后一次 `updateOne`，只在新号、只写一次，失败不影响登录；
+CG 登录接口新建的号即使没带头也记 `crazygames`）。§3.6e 的留存表加 `?platform=` 参数（`unknown` = 没有这个字段的老账号），
+metaserver → admin → ops「Server retention」卡上加了平台选择。**10-13 之前注册的账号都是 `unknown`**，CG 的 D1 要从新包上线那天的队列开始看。
+
+**上线顺序**：analyticsvc 和 metaserver 先部署，再传 CG 新包——服务端没部署前，新键会被白名单丢掉，`signupPlatform` 也不会写。
 
 ---
 
