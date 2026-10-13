@@ -24,11 +24,15 @@ export interface InkHintGate {
 
 const SHOW_S = 3;
 const SHOW_FULL_S = 4.5;
+/** Seconds ink must sit at the cap (with a spell playable) before the full nudge is offered. */
+const FULL_AFTER_S = 2;
 const FADE_S = 0.5;
 
 export class InkHintBubble {
   private node: PIXI.Container | null = null;
   private left = 0;
+  /** How long the "ink is full" condition has held without a break. */
+  private fullFor = 0;
 
   constructor(private readonly parent: PIXI.Container, private readonly gate: InkHintGate | null) {}
 
@@ -38,8 +42,15 @@ export class InkHintBubble {
     this.show(handRect, t('hint.ink'), SHOW_S);
   }
 
-  /** Ink has sat at the cap with a spell in hand. Shows the spend-it line when the gate still owes it. */
-  offerFull(handRect: Rect): void {
+  /**
+   * Called every frame with whether ink is capped while a spell is playable. Once that has held for
+   * FULL_AFTER_S, shows the spend-it line when the gate still owes it.
+   */
+  tickFull(dt: number, full: boolean, handRect: Rect): void {
+    if (!full) { this.fullFor = 0; return; }
+    this.fullFor += dt;
+    if (this.fullFor < FULL_AFTER_S) return;
+    this.fullFor = 0;
     if (this.node || !this.gate?.claimFull || !this.gate.claimFull()) return;
     this.show(handRect, t('hint.inkFull'), SHOW_FULL_S);
   }

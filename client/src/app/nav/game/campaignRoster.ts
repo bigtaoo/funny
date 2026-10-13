@@ -443,12 +443,7 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
         // Post-match badge/title distribution (ANALYTICS_DESIGN §5.8), both win and loss — same
         // computeBadges the ResultScene renders. Local player is owner 0 in campaign.
         const outcome = winner === 0 ? 'win' : winner === 1 ? 'loss' : 'draw';
-        analytics.track('match_badges', {
-          mode: 'campaign',
-          result: outcome,
-          level_id: levelId,
-          ...matchBadgeTelemetry(stats[0], outcome),
-        });
+        analytics.track('match_badges', { mode: 'campaign', result: outcome, level_id: levelId, ...matchBadgeTelemetry(stats[0], outcome) });
         const outroTexts = winner === 0 && level.story?.outroKey ? [t(level.story.outroKey as TranslationKey)] : undefined;
         // Each chapter's last level (chN_lv10.json) carries a `realLayerKey` — the Tao/Anna
         // "real layer" beat for that chapter (world.md「章末真实层」). Shown as its own
@@ -457,9 +452,7 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
         // `goCampaignMap` (see resolveRealLayerInterlude's own unit tests for the branching).
         const interlude = resolveRealLayerInterlude(level, winner);
         const proceedToMap = interlude
-          ? () => views.showRealLayerInterlude(interlude.illustrationUrl, interlude.textKey, {
-              onFinish: () => goCampaignMap(),
-            })
+          ? () => views.showRealLayerInterlude(interlude.illustrationUrl, interlude.textKey, { onFinish: () => goCampaignMap() })
           : goCampaignMap;
         // A lost level offers the retry first (through level prep, which charges the stamina) and
         // keeps the map one tap away — before, a defeat only had "back to map".
@@ -472,18 +465,14 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
         // A clear offers the next level first and keeps the map one tap away (ONBOARDING_DESIGN §13).
         const nextId = nextLevelAfterWin(levelId, stars > 0 || !firstClear, !!interlude);
         if (!nextId) { void nav.goResult(winner, stats, 0, kept, undefined, undefined, outroTexts, proceedToMap, t('result.backToMap')); return; }
-        // The first ch1_lv2 clear detours to the lobby once, where the reward loop hands out the
-        // welcome coins and the first gacha pull (ONBOARDING_DESIGN §14.2). Online only — offline
-        // the lobby has no mail or gacha to show.
-        if (api && stars > 0 && rewardLoopDetour(saveManager, levelId, firstClear)) {
-          void nav.goResult(winner, stats, 0, kept, undefined, undefined, outroTexts,
-            () => nav.goLobby(), t('result.claimGift'), undefined,
-            { label: t('result.nextLevel'), icon: 'play', onTap: () => goLevelPrep(nextId) }, NEXT_LEVEL_AUTO_SEC);
-          return;
-        }
+        // The first ch1_lv2 clear (online: the lobby holds the mail and gacha) detours to the lobby
+        // for the reward loop, NEXT LEVEL one tap aside (ONBOARDING_DESIGN §14.2).
+        const gift = !!api && stars > 0 && rewardLoopDetour(saveManager, levelId, firstClear);
+        const next = { label: t('result.nextLevel'), icon: 'play' as const, onTap: () => goLevelPrep(nextId) };
         void nav.goResult(winner, stats, 0, kept, undefined, undefined, outroTexts,
-          () => goLevelPrep(nextId), t('result.nextLevel'), undefined,
-          { label: t('result.backToMap'), icon: 'mapPin', onTap: proceedToMap }, firstClear ? NEXT_LEVEL_AUTO_SEC : undefined);
+          gift ? () => nav.goLobby() : next.onTap, gift ? t('result.claimGift') : next.label, undefined,
+          gift ? next : { label: t('result.backToMap'), icon: 'mapPin', onTap: proceedToMap },
+          firstClear ? NEXT_LEVEL_AUTO_SEC : undefined);
       },
       onExitToLobby() {
         analytics.track('level_abandon', { level_id: levelId, phase: 'in_game', ...analytics.battleProps() });
