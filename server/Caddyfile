@@ -43,7 +43,7 @@
 		reverse_proxy worldsvc:18084
 	}
 
-	# SLG overworld REST (S8, fourth public face: map/territory/auction, preserve path)
+	# SLG overworld REST (S8, fourth public face: map/territory, preserve path)
 	handle /world* {
 		reverse_proxy worldsvc:18084
 	}
