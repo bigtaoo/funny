@@ -139,10 +139,16 @@
   - QA 预览里实测：SDK 事件顺序完整、Warnings 为空、首包 2.1 MB；面板上的 Load time 是「到第一次 `gameplayStart`」，在大厅停留会把它拉长，不是真实加载耗时。
     新账号流程（Skip→ch1_lv1、毕业卡自动继续、赢后自动下一关、点空白取消倒计时）由用户在无痕窗口实测通过——Claude in Chrome 扩展接管不了用户自开的无痕窗口。
   - Update Notes（仅管理员可见）写英文改动摘要，并注明不涉及广告/SDK/登录。**换包没有重新审核，提交后新 build `7aea0eda` 直接 Active**，旧 build 变 Accepted。
-- **2026-10-13 版本更新（待用户上传）**：内容 = `ch1_lv1` 缩短、删第一章开场、「墨水满了」提示 + `ch1_lv2` 首通后的首次会话奖励闭环（欢迎金币 → 抽卡 → 次日签到），见 ONBOARDING_DESIGN §14。
+- **2026-10-13 版本更新（build `73be6bba`，09:40 上传，已 Active；旧 `7aea0eda` 变 Accepted，同样没有重新审核）**：内容 = `ch1_lv1` 缩短、删第一章开场、「墨水满了」提示 + `ch1_lv2` 首通后的首次会话奖励闭环（欢迎金币 → 抽卡 → 次日签到），见 ONBOARDING_DESIGN §14。
   - 版本号：10-12 那次包内版本是 `0.0.0`（手工构建没设 `NW_BUILD_VERSION`），`crashSentinel` 静音、埋点版本全记 0.0.0。现在 CG 生产构建缺这个变量时自动用短 commit hash，
     上传后 `version.json` 和埋点里的版本就是构建时的提交，可以直接按版本切数据。
   - 闭环依赖服务端 socialsvc 发欢迎邮件；正式服已配，不需要先部署服务端（本版只改客户端和关卡 JSON，关卡 JSON 也随 engine 进服务端的 PvE 判定——上传前确认服务端已部署同一提交，否则服务端按旧 `ch1_lv1` 判星）。
+  - 包：main `1a818acc7` 干净 detached worktree 构建，拷出到 `D:\cg-builds\crazygames-main-1a818acc7`（388 文件 / 24 MB），首包 2.2 MB。
+    同一提交同时带上了补埋点（ANALYTICS_DESIGN §3.6g）：先部署 analyticsvc + metaserver（CI），确认容器里有 `return_launch` / `signupPlatform` 再上传。
+  - 预览实测（用户自己的 CG 号，非新号）：`funnel_anon_daily` 当天收到 `open_desktop` / `loaded_desktop` / `lv1_start`，`_id` 尾部都是 `|1a818acc7`；
+    点 Battle 直接开打、无第一章开场。**新号流程（奖励闭环、缩短后的 lv1、墨满提示）没在预览里测到**——CG 登录跟着用户账号走，开不出新号；
+    该号没出墨满提示属预期（需手里有可打法术，且每号一次）。
+  - **从这天起 `open_*` 在 SDK 脚本之前发**，与 10-12 及以前的 `open_*` 不可直接比（之前偏低）。
 - **`NW_CRAZYGAMES_GAME_ID` 的值曾是 `133101`**（2026-10-05 核，旧条目；现为 `136102`，见上）：取自预览页 `__NEXT_DATA__` 的 `props.pageProps.game.id`。
   门户 URL 里的 `8f3d95b1-c884-4175-bb28-08728dae174d` 是 **`submission.id`**，不是 token 里的 `gameId`——
   官方 User 文档的 token 示例就是数字（`"gameId": "20267"`）。配错不会卡人（服务端拒 token → §2 回退设备访客），但等于没配。
