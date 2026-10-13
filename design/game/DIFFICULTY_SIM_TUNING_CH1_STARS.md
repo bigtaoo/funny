@@ -66,6 +66,10 @@ ch1_lv3…lv10                        全部 ✗0%（各档均不过）         
 lv1 已是轻松上手的 on-ramp（对保守 AI 都偏易 → 人类更轻松）。若想更有挑战，用
 `experiment.test.ts` 把 startInk/inkRegenMult 调小一点，目标「fresh 中位 1–2★」。
 
+### lv1 再压缩（2026-10-13，ONBOARDING_DESIGN §14.1）
+
+CG 首周第一局偏长、中途离开多：波次压到 120/264/444/624 tick，Lena 首领 840 tick（原 1320，删第二个 Lena 和收尾两个杂兵），`enemyScale` hp/dmg 降到 0.8，`starThresholds` [1, 60, 82]。基线仍 100% 通关，一档从 3★ 变 2★（`baseline.json` 已更新）；实机手打约 1:16–1:20 游戏时间。
+
 ## ch1 整章重调（✅ 已应用 2026-06-24）
 
 **原状**：从 lv3 起即硬核曲线——enemyScale 线性涨到 hp×1.63/dmg×1.45、敌人数到 134、

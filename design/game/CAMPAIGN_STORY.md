@@ -27,7 +27,7 @@
 
 每关开战前都有一段开场文案（`briefKey`）；结局文案（`outroKey`/`realLayerKey`）只保留在每章 Lv10（章末决赛，即「特殊关卡」）。
 
-**唯一例外：Ch1 Lv1**（2026-10-07，[`ONBOARDING_DESIGN.md` §11.7](ONBOARDING_DESIGN.md)）。它是新手教学关毕业后直接进入的第一场正式关卡，第一分钟只玩不读：不设 `briefKey`（原简报 `campaign.ch1.lv1.brief` 已删，旧文见 git 历史），章开场 `campaign.ch1.intro` 从开战前的 `story.introKey` 挪到 `story.outroKey`，赢了之后再放。`client/test/levelSchema.test.ts` 把这两条例外钉住。开场故事（涛与笔记本）也不再在首启播放，改为第一次打开战役地图时的一张插画 + 一行字（`story.card`），完整 7 行版在设置「重看开场故事」里。
+**唯一例外：Ch1 Lv1**（2026-10-07，[`ONBOARDING_DESIGN.md` §11.7](ONBOARDING_DESIGN.md)）。它是新手教学关毕业后直接进入的第一场正式关卡，第一分钟只玩不读：不设 `briefKey`（原简报 `campaign.ch1.lv1.brief` 已删，旧文见 git 历史），章开场 `campaign.ch1.intro` 从开战前的 `story.introKey` 挪到 `story.outroKey`，赢了之后再放。2026-10-13 起这段章开场**整条删除**（[`ONBOARDING_DESIGN.md` §14.1](ONBOARDING_DESIGN.md)）：放在赢之后反而成了玩家关页的停顿点，第一章因此没有开场过场，只保留章末 `campaign.ch1.outro`。`client/test/levelSchema.test.ts` 把这两条例外钉住。开场故事（涛与笔记本）也不再在首启播放，改为第一次打开战役地图时的一张插画 + 一行字（`story.card`），完整 7 行版在设置「重看开场故事」里。
 
 ### 想象层文案修订（2026-08-04）
 
