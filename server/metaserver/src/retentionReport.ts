@@ -10,7 +10,11 @@
 // Caveat: accounts created before activityDays.ts shipped have no activeDays at all, so cohorts from
 // before that date (and the first ~30 days after it, for the later D-columns) under-report retention.
 // The signup / tutorial / cleared columns are unaffected.
-import type { Collections } from '@nw/shared';
+//
+// Platform split (`platform`): cohorts can be narrowed to accounts whose `signupPlatform` (recorded at
+// account creation, auth/helpers.ts recordSignupPlatform) is one platform, or to 'unknown' — accounts
+// without the field (created before it shipped, or by a client that sent no / an unrecognized header).
+import { SIGNUP_PLATFORMS, type Collections, type SignupPlatform } from '@nw/shared';
 import { DAY_MS, eligibleAccountFilter } from './activityDays.js';
 
 export const RETENTION_DAYS_DEFAULT = 30;
@@ -40,6 +44,21 @@ interface GroupRow {
   [k: string]: number;
 }
 
+/** `?platform=` filter: one signup platform, or 'unknown' for accounts that have none recorded. */
+export type RetentionPlatform = SignupPlatform | 'unknown';
+export const RETENTION_PLATFORMS: readonly RetentionPlatform[] = [...SIGNUP_PLATFORMS, 'unknown'];
+
+/** Validate the `?platform=` query parameter; anything not on the list → undefined (= all platforms). */
+export function parseRetentionPlatform(raw: unknown): RetentionPlatform | undefined {
+  return (RETENTION_PLATFORMS as readonly unknown[]).includes(raw) ? (raw as RetentionPlatform) : undefined;
+}
+
+/** $match fragment for the platform filter (empty = all platforms). */
+function platformFilter(platform: RetentionPlatform | undefined): Record<string, unknown> {
+  if (!platform) return {};
+  return { signupPlatform: platform === 'unknown' ? { $exists: false } : platform };
+}
+
 /** Clamp the `?days=` query parameter: default 30, 1..90. */
 export function clampRetentionDays(raw: unknown): number {
   const n = Math.floor(Number(raw));
@@ -61,12 +80,13 @@ const countIf = (cond: unknown) => ({ $sum: { $cond: [cond, 1, 0] } });
 /**
  * Signup cohorts for the last `days` UTC days (today included, newest first; days without signups are
  * returned with zeros). One aggregation bounded by the createdAt index; the save lookup projects only the
- * two fields it needs.
+ * two fields it needs. `platform` narrows the cohorts to one signup platform (see the header).
  */
 export async function retentionReport(
   cols: Pick<Collections, 'accounts' | 'saves'>,
   now: number,
   days: number,
+  platform?: RetentionPlatform,
 ): Promise<RetentionCohort[]> {
   const today = Math.floor(now / DAY_MS);
   const firstDay = today - days + 1;
@@ -80,7 +100,13 @@ export async function retentionReport(
 
   const rows = await cols.accounts
     .aggregate<GroupRow>([
-      { $match: { createdAt: { $gte: firstDay * DAY_MS, $lt: (today + 1) * DAY_MS }, ...eligibleAccountFilter() } },
+      {
+        $match: {
+          createdAt: { $gte: firstDay * DAY_MS, $lt: (today + 1) * DAY_MS },
+          ...eligibleAccountFilter(),
+          ...platformFilter(platform),
+        },
+      },
       {
         $lookup: {
           from: cols.saves.collectionName,

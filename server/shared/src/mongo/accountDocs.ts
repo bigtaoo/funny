@@ -100,6 +100,23 @@ export interface AccountDoc {
    * purge tombstone. Unordered (maintained with $setUnion) — read with `$in`, never by position.
    */
   activeDays?: number[];
+  /**
+   * Client platform the account was created from (the `X-NW-Platform` header of the creating auth request,
+   * metaserver auth/helpers.ts recordSignupPlatform; one of SIGNUP_PLATFORMS). Lets the consent-free
+   * retention report split cohorts by acquisition channel (e.g. the CrazyGames portal test vs web /
+   * wechat). Written once, only on creation and only for an allow-listed value; never overwritten.
+   * Absent on accounts created before it shipped or by a client that sent no / an unknown header.
+   */
+  signupPlatform?: SignupPlatform;
+}
+
+/** Allow-list for AccountDoc.signupPlatform — the values clients send in `X-NW-Platform`. */
+export const SIGNUP_PLATFORMS = ['ios', 'android', 'web', 'wechat', 'crazygames'] as const;
+export type SignupPlatform = (typeof SIGNUP_PLATFORMS)[number];
+
+/** `raw` narrowed to a SignupPlatform, or undefined for anything not on the allow-list. */
+export function asSignupPlatform(raw: unknown): SignupPlatform | undefined {
+  return (SIGNUP_PLATFORMS as readonly unknown[]).includes(raw) ? (raw as SignupPlatform) : undefined;
 }
 
 /**

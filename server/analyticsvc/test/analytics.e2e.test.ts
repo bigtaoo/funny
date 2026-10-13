@@ -191,6 +191,22 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
     ]);
   });
 
+  it('GET /analytics/config?t=<step>&v=<build> splits the tick by build, and drops a malformed version', async () => {
+    await mongo!.collections.funnel_anon_daily.deleteMany({});
+    await fetch(`${base}/analytics/config?p=crazygames&t=gift_shown&v=a9d7a6d`);
+    await fetch(`${base}/analytics/config?p=crazygames&t=gift_shown&v=a9d7a6d`);
+    await fetch(`${base}/analytics/config?p=crazygames&t=gift_shown&v=6bfc1a8`);
+    await fetch(`${base}/analytics/config?p=crazygames&t=gift_shown&v=${encodeURIComponent('x|y')}`);
+
+    await new Promise((r) => setTimeout(r, 150));
+    const docs = await mongo!.collections.funnel_anon_daily.find({}).toArray();
+    expect(docs.map((d) => [d.version ?? '-', d.count]).sort()).toEqual([
+      ['-', 1], // `x|y` would have split the `_id` — counted, but without a version
+      ['6bfc1a8', 1],
+      ['a9d7a6d', 2],
+    ]);
+  });
+
   // ─── Event ingestion ────────────────────────────────────────────────────────────
 
   it('POST /analytics/events ingests event batch → 200', async () => {

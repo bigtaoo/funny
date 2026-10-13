@@ -150,6 +150,7 @@ export function createShopNav(ctx: AppCtx): ShopNav {
           // adoptServer, or the null would wipe the locally-held inventory (see adoptServerPartial doc).
           saveManager.adoptServerPartial(save, { cardUpsert: cardGrants, upsert: equipmentGrants });
           analytics.track('gacha_draw', { pool_id: poolId, count });
+          analytics.countAnonymousFunnelStep('gacha_pull');
           return { ok: true, results, overflow };
         } catch (e) {
           return {
@@ -194,6 +195,7 @@ export function createShopNav(ctx: AppCtx): ShopNav {
         const { save, day, reward } = await client.claimCheckin();
         saveManager.adoptServer(save);
         analytics.track('daily_checkin', { day });
+        analytics.countAnonymousFunnelStep('daily_claim');
         return { day, reward };
       },
       async onClaimDaily() {

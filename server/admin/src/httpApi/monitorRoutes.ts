@@ -1,5 +1,6 @@
 // admin httpApi split — monitoring + analytics + PvP balance reporting (see ../httpApi.ts for the module
 // overview). No behavior change — copied verbatim from the original httpApi.ts.
+import { RETENTION_PLATFORMS } from '../clients';
 import { send, requireCap, numOpt, type RouteCtx } from './helpers';
 
 /** Returns true once matched + a response was sent; false lets the next handler in the chain try. */
@@ -39,11 +40,14 @@ export async function handleMonitorRoutes(ctx: RouteCtx): Promise<boolean> {
     send(res, 200, { ok: true, ...(await svc.analyticsQuery(type, days, platform, newCohort, dimension)) });
     return true;
   }
-  // Consent-free server retention report (metaserver /internal/retention): days 1..90, default 30.
+  // Consent-free server retention report (metaserver /internal/retention): days 1..90, default 30;
+  // platform = one signup platform or 'unknown' (an unrecognized value is ignored → all platforms).
   if (method === 'GET' && path === '/admin/analytics/retention') {
     requireCap(actor, 'analytics.view');
     const days = Math.min(90, Math.max(1, Math.floor(Number(url.searchParams.get('days') ?? '30')) || 30));
-    send(res, 200, { ok: true, days, ...(await svc.serverRetention(days)) });
+    const rawPlatform = url.searchParams.get('platform');
+    const platform = RETENTION_PLATFORMS.find((p) => p === rawPlatform);
+    send(res, 200, { ok: true, days, ...(platform ? { platform } : {}), ...(await svc.serverRetention(days, platform)) });
     return true;
   }
 

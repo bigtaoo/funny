@@ -4,7 +4,7 @@
 // and therefore only see players who consented. This one is metaserver's own report over account / save
 // data (signup time, tutorial flag, cleared levels, active 24h windows), which needs no consent; players
 // who turned analytics off are excluded server-side. Every percentage is of the cohort's signups.
-import type { ServerRetentionCohort } from '../types';
+import type { ServerRetentionCohort, ServerRetentionPlatform } from '../types';
 import { pct } from './shared';
 
 /** Retention columns, in table order, with the key each one reads from `retained`. */
@@ -13,6 +13,14 @@ export const SERVER_RETENTION_OFFSETS = [1, 3, 7, 14, 30] as const;
 export const SERVER_RETENTION_LEVELS = ['ch1_lv1', 'ch1_lv2', 'ch1_lv3'] as const;
 /** The `?days=` choices the card offers (server caps at 90). */
 export const SERVER_RETENTION_DAY_CHOICES = [30, 60, 90] as const;
+/**
+ * The `?platform=` choices: the account's signup platform (metaserver AccountDoc.signupPlatform, from the
+ * X-NW-Platform header of the request that created it). '' = all; 'unknown' = accounts with none recorded
+ * (created before the field shipped, or by a client that sent no / an unrecognized header).
+ */
+export const SERVER_RETENTION_PLATFORMS: readonly ('' | ServerRetentionPlatform)[] = [
+  '', 'crazygames', 'web', 'wechat', 'ios', 'android', 'unknown',
+];
 
 export interface ServerRetentionCell {
   /** Percentage of signups, or '—' when there is nothing to divide by / the cohort is too young for it. */

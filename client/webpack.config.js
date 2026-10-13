@@ -267,6 +267,7 @@ module.exports = (env, argv) => {
       ...(isWechat ? [] : [new HtmlWebpackPlugin({
         template: `./public/${targetPlatform}/index.html`,
         analyticsBase: apiBase.replace(/\/api$/, ''),
+        buildVersion,
       })]),
       // <link rel="preload"> for the boot-tier assets, so the browser starts fetching them
       // during the bundle download instead of after startApp() runs (ASSET_PACKAGING §11).

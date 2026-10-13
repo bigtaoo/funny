@@ -10,7 +10,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { IStorage } from '../src/platform/IPlatform';
 
-const state = vi.hoisted(() => ({ ticks: [] as Array<{ base: string; platform: string; step: string }> }));
+const state = vi.hoisted(() => ({ ticks: [] as Array<{ base: string; platform: string; step: string }>, versions: [] as string[] }));
 
 class FakeQueue {
   start(): void { /* no-op */ }
@@ -25,7 +25,10 @@ vi.mock('../src/analytics/config', () => ({
   fetchAnalyticsConfig: vi.fn(async () => {}),
   shouldTrack: vi.fn(() => true),
   pingDeclinedLaunch: vi.fn(),
-  pingAnonymousFunnelStep: vi.fn((base: string, platform: string, step: string) => { state.ticks.push({ base, platform, step }); }),
+  pingAnonymousFunnelStep: vi.fn((base: string, platform: string, step: string, version: string) => {
+    state.ticks.push({ base, platform, step });
+    state.versions.push(version);
+  }),
 }));
 
 function fakeStorage(): IStorage {
@@ -74,6 +77,28 @@ describe('anonymous first-session funnel tick', () => {
     analytics.countAnonymousFunnelStep('lv1_start');
     analytics.countAnonymousFunnelStep('lv3_clear');
     expect(state.ticks.map((t) => t.step)).toEqual(['tutorial_skip', 'lv1_start', 'lv3_clear']);
+  });
+
+  it('carries the build version, so a funnel change can be read against its release', async () => {
+    vi.stubGlobal('__NW_BUILD_VERSION__', 'a9d7a6d');
+    const analytics = await launch();
+    state.versions.length = 0;
+    analytics.countAnonymousFunnelStep('gift_shown');
+    expect(state.versions).toEqual(['a9d7a6d']);
+    vi.unstubAllGlobals();
+  });
+
+  it('counts a returning launch only when ch1_lv1 was cleared before this launch', async () => {
+    let analytics = await launch();
+    analytics.countReturnLaunch([]);
+    analytics.countAnonymousFunnelStep('lv1_clear');
+    analytics.countReturnLaunch(['ch1_lv1']); // cleared in this very launch: a new player, not a returner
+    expect(state.ticks.map((t) => t.step)).toEqual(['lv1_clear']);
+
+    analytics = await launch();
+    analytics.countReturnLaunch(['ch1_lv1', 'ch1_lv2']);
+    analytics.countReturnLaunch(['ch1_lv1', 'ch1_lv2']); // a second lobby arrival in the same launch
+    expect(state.ticks.map((t) => t.step)).toEqual(['return_launch']);
   });
 
   it('drops a step outside the allow-list instead of sending it', async () => {

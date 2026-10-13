@@ -5,6 +5,8 @@
 //   1. clearing ch1_lv2 for the first time routes the win to the lobby (campaignRoster.goCampaign);
 //   2. that lobby arrival claims the welcome mail for the player and walks them into one gacha pull;
 //   3. the next lobby arrival opens the daily check-in, whose calendar already highlights tomorrow.
+// Each step also ticks the anonymous funnel (gift_shown → gift_gacha, daily_shown → daily_open;
+// ONBOARDING_DESIGN §14.3), which counts players who never consented to analytics as well.
 import * as analytics from '../../analytics';
 import type { TranslationKey } from '../../i18n';
 import type { SaveManager } from '../../game/meta/SaveManager';
@@ -48,7 +50,11 @@ export function runRewardLoop(deps: RewardLoopDeps): void {
     saveManager.markFeatSeen(FIRST_DAILY_FEAT);
     saveManager.markFeatSeen('daily'); // this card replaces the lobby button's own first-time guide
     analytics.track('feature_guide_shown', { feature: FIRST_DAILY_FEAT });
-    deps.showGuide('onboard.daily.title', 'onboard.daily.body', () => deps.goDaily());
+    analytics.countAnonymousFunnelStep('daily_shown');
+    deps.showGuide('onboard.daily.title', 'onboard.daily.body', () => {
+      analytics.countAnonymousFunnelStep('daily_open');
+      deps.goDaily();
+    });
   }
 }
 
@@ -66,5 +72,9 @@ async function giftStep(deps: RewardLoopDeps): Promise<void> {
   if (!deps.stillInLobby() || saveManager.get().wallet.coins < FIRST_PULL_COINS) return;
   saveManager.markFeatSeen('shop'); // the gift card stands in for the shop button's first-time guide
   analytics.track('feature_guide_shown', { feature: FIRST_GACHA_FEAT });
-  deps.showGuide('onboard.gift.title', 'onboard.gift.body', () => deps.goGacha());
+  analytics.countAnonymousFunnelStep('gift_shown');
+  deps.showGuide('onboard.gift.title', 'onboard.gift.body', () => {
+    analytics.countAnonymousFunnelStep('gift_gacha');
+    deps.goGacha();
+  });
 }

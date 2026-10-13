@@ -76,13 +76,16 @@ export function pingDeclinedLaunch(analyticsBaseUrl: string, platform: string): 
  * thrown away. Same position as {@link pingDeclinedLaunch} — the server bumps a (date, platform,
  * step) number and stores nothing else; no device id, no token, no session id is sent.
  *
+ * `version` (`&v=`, the baked build version) splits the count by release, so a funnel change can be
+ * read against the build that caused it on days when two builds are live side by side.
+ *
  * Fire-and-forget: a failure costs one tick in a trend and must never be visible to the player.
  */
-export function pingAnonymousFunnelStep(analyticsBaseUrl: string, platform: string, step: string): void {
+export function pingAnonymousFunnelStep(analyticsBaseUrl: string, platform: string, step: string, version: string): void {
   void netTransport()
     .request({
       method: 'GET',
-      url: `${analyticsBaseUrl}/analytics/config?p=${encodeURIComponent(platform)}&t=${encodeURIComponent(step)}`,
+      url: `${analyticsBaseUrl}/analytics/config?p=${encodeURIComponent(platform)}&t=${encodeURIComponent(step)}&v=${encodeURIComponent(version)}`,
       headers: { Accept: 'application/json' },
     })
     .catch(() => { /* network failure → the tick is simply missing */ });

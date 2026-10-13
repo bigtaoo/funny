@@ -2,6 +2,7 @@
 // Extracted so the domain nav modules under app/nav/ can share the same storage keys
 // and logger without importing createAppCore (which would be circular).
 import { netLog } from '../net/log';
+import * as analytics from '../analytics';
 import type { InkHintGate } from '../render/GameRenderer/inkHint';
 import type { BuildHintConfig, BuildHintOutcome } from '../render/GameRenderer/buildHint';
 
@@ -31,6 +32,7 @@ export function inkHintGate(save: { getFlag(key: string): boolean; setFlag(key: 
     claimFull(): boolean {
       if (save.getFlag(INK_FULL_HINT_FLAG)) return false;
       save.setFlag(INK_FULL_HINT_FLAG, true);
+      analytics.countAnonymousFunnelStep('ink_full_hint');
       return true;
     },
   };

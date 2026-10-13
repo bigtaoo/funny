@@ -20,8 +20,8 @@ import {
   resolveByDevice,
   resolveByOpenid,
 } from '../../accounts.js';
-import { accountIdOf, type ServiceDeps, type MetaCore } from '../base.js';
-import { restoreIfWithinGrace, maybeGrantStarterCards } from './helpers.js';
+import { accountIdOf, clientPlatformOf, type ServiceDeps, type MetaCore } from '../base.js';
+import { restoreIfWithinGrace, maybeGrantStarterCards, recordSignupPlatform } from './helpers.js';
 
 export interface CredentialCtx {
   core: MetaCore;
@@ -43,6 +43,7 @@ export async function authWxHandler(ctx: CredentialCtx, req: FastifyRequest, rep
   const token = signToken(accountId, ctx.core.deps.jwt);
   const publicId = await ensurePublicId(ctx.core.deps.cols, accountId);
   await maybeGrantStarterCards(ctx.core.deps, accountId, isNew);
+  await recordSignupPlatform(ctx.core.deps, accountId, isNew, clientPlatformOf(req));
   return ok({ token, accountId, isNew, isAnonymous, publicId, ...(displayName ? { displayName } : {}), ...ctx.core.gatewayField });
 }
 
@@ -60,6 +61,7 @@ export async function authDeviceHandler(ctx: CredentialCtx, req: FastifyRequest,
   const token = signToken(accountId, ctx.core.deps.jwt);
   const publicId = await ensurePublicId(ctx.core.deps.cols, accountId);
   await maybeGrantStarterCards(ctx.core.deps, accountId, isNew);
+  await recordSignupPlatform(ctx.core.deps, accountId, isNew, clientPlatformOf(req));
   return ok({ token, accountId, isNew, isAnonymous, publicId, ...(displayName ? { displayName } : {}), ...ctx.core.gatewayField });
 }
 
@@ -106,6 +108,7 @@ export async function authRegisterHandler(ctx: CredentialCtx, req: FastifyReques
   const token = signToken(accountId, ctx.core.deps.jwt);
   const publicId = await ensurePublicId(ctx.core.deps.cols, accountId);
   await maybeGrantStarterCards(ctx.core.deps, accountId, isNew);
+  await recordSignupPlatform(ctx.core.deps, accountId, isNew, clientPlatformOf(req));
   return ok({ token, accountId, isNew, isAnonymous, publicId, ...(displayName ? { displayName } : {}), ...ctx.core.gatewayField });
 }
 
@@ -125,6 +128,7 @@ export async function authLoginHandler(ctx: CredentialCtx, req: FastifyRequest, 
   const token = signToken(accountId, ctx.core.deps.jwt);
   const publicId = await ensurePublicId(ctx.core.deps.cols, accountId);
   await maybeGrantStarterCards(ctx.core.deps, accountId, isNew);
+  await recordSignupPlatform(ctx.core.deps, accountId, isNew, clientPlatformOf(req));
   return ok({ token, accountId, isNew, isAnonymous, publicId, ...(displayName ? { displayName } : {}), ...ctx.core.gatewayField });
 }
 

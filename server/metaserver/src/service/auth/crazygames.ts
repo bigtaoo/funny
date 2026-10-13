@@ -13,7 +13,7 @@ import { regionFromAcceptLanguage } from '@nw/shared';
 import { resolveByOAuth, ensurePublicId, bindOAuth } from '../../accounts.js';
 import { CrazyGamesAuthError, type CrazyGamesAuthConfig, type CrazyGamesTokenPayload } from '../../crazygamesAuth.js';
 import type { MetaCore } from '../base.js';
-import { restoreIfWithinGrace, maybeGrantStarterCards } from './helpers.js';
+import { restoreIfWithinGrace, maybeGrantStarterCards, recordSignupPlatform } from './helpers.js';
 
 /** `'crazygames'` is not in `OAuthProvider` (google-only, oauth.ts) on purpose — this is a distinct
  *  verification mechanism (a portal-issued JWT, not an authorization-code exchange), so it does not
@@ -65,6 +65,9 @@ export async function authCrazyGamesHandler(ctx: CrazyGamesCtx, req: FastifyRequ
   const signedToken = signToken(accountId, ctx.core.deps.jwt);
   const publicId = await ensurePublicId(ctx.core.deps.cols, accountId);
   await maybeGrantStarterCards(ctx.core.deps, accountId, isNew);
+  // An account this portal login created is a CrazyGames signup by definition, whatever X-NW-Platform
+  // header (if any) the client build sent. A guest linked above is not new: it keeps its original platform.
+  await recordSignupPlatform(ctx.core.deps, accountId, isNew, CRAZYGAMES_PROVIDER);
   return ok({
     token: signedToken,
     accountId,

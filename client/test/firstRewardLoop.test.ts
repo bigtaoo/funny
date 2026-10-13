@@ -4,6 +4,12 @@ import {
   type RewardLoopDeps,
 } from '../src/app/nav/firstRewardLoop';
 
+const anon = vi.hoisted(() => [] as string[]);
+vi.mock('../src/analytics', () => ({
+  track: vi.fn(),
+  countAnonymousFunnelStep: vi.fn((step: string) => { anon.push(step); }),
+}));
+
 /** Minimal SaveManager stand-in: just the fields the loop reads/writes. */
 function fakeSave(cleared: string[], coins: number) {
   const seen = new Set<string>();
@@ -78,6 +84,8 @@ describe('first-session reward loop (ONBOARDING_DESIGN §14.2)', () => {
     runRewardLoop(d);
     await flush();
     expect(d.showGuide).toHaveBeenCalledTimes(2);
+    // ONBOARDING_DESIGN §14.3: each card and each tap-through ticks the anonymous funnel.
+    expect(anon).toEqual(['gift_shown', 'gift_gacha', 'daily_shown', 'daily_open']);
   });
 
   it('skips the gift card when the player already left the lobby, or cannot afford a pull', async () => {

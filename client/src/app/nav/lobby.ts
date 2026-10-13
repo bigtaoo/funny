@@ -281,6 +281,9 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
     // a new player reaches that is not the tutorial battle. A no-op on every other build.
     ctx.offerEntryNotice?.(lobby);
 
+    // A player back for another launch (ANALYTICS_DESIGN §3.6d) — once per launch, deduped inside.
+    if (!opts?.fromResize) analytics.countReturnLaunch(saveManager.get().progress.cleared);
+
     // First-session reward loop (ONBOARDING_DESIGN §14.2): welcome coins → one gacha pull, then the
     // daily check-in on the next arrival. Needs the server (mail, gacha, check-in are all online).
     if (online && api && !opts?.fromResize) {

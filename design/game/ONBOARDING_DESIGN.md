@@ -490,7 +490,7 @@ CrazyGames 首周（10-09..10-11）后台：平均单次游玩 2 分 53 秒（2 
 - **删掉第一章开场**：`ch1_lv1` 不再有 `story`（§11.7 里挪到 outro 的 `campaign.ch1.intro` 整条删除，三种语言的文案一并删）。第一章现在没有开场过场，只保留章末 `campaign.ch1.outro`。
 - **缩短**：波次时间压到 120 / 264 / 444 / 624 tick，Lena 首领 840 tick（原 1320，且删掉第二个 Lena 和末尾两个杂兵）；`enemyScale` 从 1.027 / 1.017 降到 0.8 / 0.8。实机手打约 1:16–1:20 游戏时间赢；难度模拟器基线 `ch1_lv1` 仍 100% 胜率。
 - **星级阈值** `starThresholds` 改为 `[1, 60, 82]`（基线里一档从 3★ 变 2★，`client/test/difficulty/baseline.json` 同步）。
-- **「墨水满了」提示**（`InputPanel.checkInkFull` → `InkHintBubble.offerFull`）：手里有法术、墨水停在上限 2 s 后，墨水提示气泡改说「墨满了，把陨石之类的法术拖到敌人身上」，显示 4.5 s；每账号一次（`flags["hint.inkFull"]`）。教学局、暂停、对局结束时不出。
+- **「墨水满了」提示**（`InputPanel.checkInkFull` → `InkHintBubble.tickFull`，计时在气泡里）：手里有法术、墨水停在上限 2 s 后，墨水提示气泡改说「墨满了，把陨石之类的法术拖到敌人身上」，显示 4.5 s；每账号一次（`flags["hint.inkFull"]`）。教学局、暂停、对局结束时不出。
 - **CG 包版本号**：CG 包手工构建上传，10-12 那次版本是 `0.0.0`，`crashSentinel` 静音、埋点全部记 0.0.0。现在 `production` + `crazygames` 且没有 `NW_BUILD_VERSION` 时用短 commit hash（`webpack.config.js` `buildVersion`）。移动端 / OTA 仍要求数字版本，不走这条。
 - `pve-judge.test.ts` 的样例关改用 `ch1_lv2`（`ch1_lv1` 现在太容易，原用例的「输」构造不出来）。
 
@@ -506,8 +506,17 @@ CrazyGames 首周（10-09..10-11）后台：平均单次游玩 2 分 53 秒（2 
 - **静默消耗**：第 2 步一开始就记 featSeen。邮件拉取失败、玩家已离开大厅、或金币 < 150（一抽的价格）时，这一步什么都不显示，**也不会再补**。这是有意的——宁可漏一次也不在别的场景上弹卡。
 - **依赖 socialsvc**：邮件走 metaserver `/mail` → socialsvc。没配 `NW_SOCIALSVC_INTERNAL_URL` 时 `/mail` 返回 503，第 2 步只剩金币检查。正式服（`docker-compose.prod.yml`）已配；本地验证要把 socialsvc 也起起来。
 - 埋点复用 `feature_guide_shown`：`feature` 为 `onboard.welcomeMailClaimed` / `onboard.firstGacha` / `onboard.firstDaily`。
+  这些只有同意了统计的玩家才发；不靠同意的匿名计数见 §14.3。
 - 覆盖：`client/test/firstRewardLoop.test.ts`（5 例：只在首通改道、未通关不动、两步依次走完后不再触发、离开大厅 / 没钱时不弹、拉邮件失败仍按金币判断）。
 
 ### 14.3 评估
 
-CG 新包上线后对比 10-12 版：`lv2_start / lv1_clear`（outro 删除后的直接效果）、`ch1_lv1` 的中途退出率、`feature_guide_shown{feature: onboard.firstGacha}` 之后的抽卡数、D1。
+CG 新包上线后对比 10-12 版。所有数都能按版本拆（匿名计数带 `v`，见 ANALYTICS_DESIGN §3.6g）：
+
+| 问题 | 看什么 |
+|---|---|
+| outro 删除后有没有更多人进第二关 | 匿名漏斗 `lv2_start / lv1_clear` |
+| `ch1_lv1` 还有多少人中途走 | `lv1_start` 对 `lv1_clear`；`ink_full_hint` 弹出数 |
+| 礼物卡有没有把人带进抽卡 | `gift_shown → gift_gacha → gacha_pull` |
+| 「明天再来」卡有没有用 | `daily_shown → daily_open → daily_claim` |
+| 第二天回没回来 | 匿名 `return_launch`（所有人，按启动）；服务端留存表选 `crazygames` 看 D1（按人，10-13 之后注册的） |

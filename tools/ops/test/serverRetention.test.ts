@@ -1,7 +1,7 @@
 // src/logic/serverRetention.ts — the consent-free server retention card's percentages and empty cells.
 import { describe, expect, it } from 'vitest';
 import {
-  SERVER_RETENTION_DAY_CHOICES, SERVER_RETENTION_HEADERS, serverRetentionRows,
+  SERVER_RETENTION_DAY_CHOICES, SERVER_RETENTION_HEADERS, SERVER_RETENTION_PLATFORMS, serverRetentionRows,
 } from '../src/logic/serverRetention';
 import type { ServerRetentionCohort } from '../src/types';
 
@@ -44,5 +44,8 @@ describe('serverRetentionRows', () => {
   it('headers and day choices', () => {
     expect(SERVER_RETENTION_HEADERS).toEqual(['Tutorial', 'ch1_lv1', 'ch1_lv2', 'ch1_lv3', 'D1', 'D3', 'D7', 'D14', 'D30']);
     expect(Math.max(...SERVER_RETENTION_DAY_CHOICES)).toBeLessThanOrEqual(90);
+    expect(SERVER_RETENTION_PLATFORMS[0]).toBe('');
+    expect(SERVER_RETENTION_PLATFORMS).toContain('crazygames');
+    expect(SERVER_RETENTION_PLATFORMS).toContain('unknown');
   });
 });

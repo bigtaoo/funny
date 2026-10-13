@@ -39,7 +39,7 @@ import type {
   PlayerClient, PlayerProfile,
   PvpCardStatsClient,
   ReportsClient, ReportRow,
-  RetentionClient, RetentionCohortRow,
+  RetentionClient, RetentionCohortRow, RetentionPlatform,
   StatsClient,
   SuspiciousPveClient,
   WorldClient, SlgWorldSummary, SlgAllocateResult,
@@ -129,8 +129,11 @@ class FakeRetention implements RetentionClient {
   available = true;
   /** Days each call asked for — proves the route clamps `?days=` before it reaches the client. */
   asked: number[] = [];
-  async getRetention(days: number): Promise<RetentionCohortRow[] | null> {
+  /** Platform filter each call passed (undefined = all platforms). */
+  platforms: (RetentionPlatform | undefined)[] = [];
+  async getRetention(days: number, platform?: RetentionPlatform): Promise<RetentionCohortRow[] | null> {
     this.asked.push(days);
+    this.platforms.push(platform);
     return [{
       date: '2026-10-01', signups: 10, tutorialDone: 8,
       cleared: { ch1_lv1: 7, ch1_lv2: 5, ch1_lv3: 4 },
@@ -449,6 +452,15 @@ describe.skipIf(!mongo)('admin ops HTTP routes e2e', () => {
       expect((await call(opsToken, 'GET', '/admin/analytics/retention?days=7')).json.days).toBe(7);
       expect((await call(opsToken, 'GET', '/admin/analytics/retention?days=abc')).json.days).toBe(30);
       expect(retention.asked).toEqual([30, 90, 7, 30]);
+    });
+    it('GET /admin/analytics/retention?platform= passes a known platform (or unknown) through and echoes it', async () => {
+      retention.platforms = [];
+      const r = await call(opsToken, 'GET', '/admin/analytics/retention?days=7&platform=crazygames');
+      expect(r.json).toMatchObject({ ok: true, days: 7, platform: 'crazygames' });
+      expect((await call(opsToken, 'GET', '/admin/analytics/retention?platform=unknown')).json.platform).toBe('unknown');
+      const bogus = await call(opsToken, 'GET', '/admin/analytics/retention?platform=steam');
+      expect(bogus.json.platform).toBeUndefined();
+      expect(retention.platforms).toEqual(['crazygames', 'unknown', undefined]);
     });
     it('GET /admin/analytics/retention needs analytics.view, which support lacks → 403', async () => {
       const r = await call(csToken, 'GET', '/admin/analytics/retention');
