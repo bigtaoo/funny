@@ -614,7 +614,7 @@ scene 取值：`IntroScene / LobbyScene / LoginScene / CampaignMapScene / LevelP
 > **CrazyGames 静默自动登录不发 `login_submit`**：玩家已在门户登录过时，`resolveEntry()` 走 `bootstrap()` 静默换 token（与 `wx` 同路，见 `ONBOARDING_DESIGN.md`/`app/nav/auth.ts`），跳过 LoginScene，因此也跳过这三个事件——这条路径的转化只能从 §9.9 启动漏斗的 `reach_rate` 侧面看，不在这张登录漏斗里。`mode:'crazygames'` 三个事件只覆盖**主动点按钮**那条路。
 
 > **成功/失败为什么是两个事件名而不是一个带 `ok` 的事件**：§9.6 的首会话 `actions` 分布按**事件名**统计去重设备数、不看 props。合成一个名字，在唯一已经把新客 cohort 隔离出来的那张报表里两者就分不开了。
-| `intro_complete` / `intro_skip` | — | 开场故事卡自动消失/被点掉。2026-10-07 起故事不在首启播放，改为第一次打开战役地图时出的单行卡，事件在 `app/nav/game/campaignRoster.ts` `goCampaignMap` 的 `getStoryCard().onDone(skipped)` 里发；设置里「重看开场故事」不发（[`ONBOARDING_DESIGN.md` §11.7](ONBOARDING_DESIGN.md)）。这一步最早由 design-doc-audit-2026-07 补上，此前完全没有埋点。100% 采样，计入 §9.6 `ONBOARDING_STEPS` 的 `intro_seen` 步骤（现为最后一步） |
+| ~~`intro_complete` / `intro_skip`~~ | — | **2026-10-14 已删除**：故事卡整体移除（[`ONBOARDING_DESIGN.md` §16](ONBOARDING_DESIGN.md)），事件与 `intro_seen` 漏斗步一并删掉。以下为历史记录：开场故事卡自动消失/被点掉。2026-10-07 起故事不在首启播放，改为第一次打开战役地图时出的单行卡，事件在 `app/nav/game/campaignRoster.ts` `goCampaignMap` 的 `getStoryCard().onDone(skipped)` 里发；设置里「重看开场故事」不发（[`ONBOARDING_DESIGN.md` §11.7](ONBOARDING_DESIGN.md)）。这一步最早由 design-doc-audit-2026-07 补上，此前完全没有埋点。100% 采样，计入 §9.6 `ONBOARDING_STEPS` 的 `intro_seen` 步骤（现为最后一步） |
 
 ### 5.6a `idle_10min`：人还在屏幕前，手已经停了（2026-09-20）
 

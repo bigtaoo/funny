@@ -982,7 +982,6 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
       // N1 — full graduation: reaches every funnel step, plus a shop_open action.
       ev('fs-n1', 'fs-N1', 'session_start', 3600_000),
       ev('fs-n1', 'fs-N1', 'screen_view', 3600_100, 'IntroScene'),
-      ev('fs-n1', 'fs-N1', 'intro_complete', 3600_150),
       ev('fs-n1', 'fs-N1', 'tutorial_start', 3600_200),
       ev('fs-n1', 'fs-N1', 'tutorial_complete', 3600_300),
       ev('fs-n1', 'fs-N1', 'screen_view', 3600_400, 'LobbyScene'),
@@ -1006,14 +1005,12 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
     // Only N1 + N2 are new in-window; V1 is a returning veteran.
     expect(res.cohort_size).toBe(2);
 
-    // Funnel is built from 100%-sampled events only (no screen_view-derived steps) — intro_seen is
-    // the exception, reading dedicated intro_complete/intro_skip events (design-doc-audit-2026-07).
+    // Funnel is built from 100%-sampled events only (no screen_view-derived steps).
     const step = (k: string) => res.funnel.find((f) => f.step === k);
     expect(res.funnel.map((f) => f.step)).toEqual([
-      'session_start', 'tutorial_start', 'tutorial_complete', 'first_battle', 'first_clear', 'intro_seen',
+      'session_start', 'tutorial_start', 'tutorial_complete', 'first_battle', 'first_clear',
     ]);
     expect(step('session_start')?.count).toBe(2);
-    expect(step('intro_seen')?.count).toBe(1); // only N1 emitted intro_complete
     expect(step('tutorial_start')?.count).toBe(2);
     expect(step('tutorial_complete')?.count).toBe(1); // only N1 finished
     expect(step('first_battle')?.count).toBe(1);

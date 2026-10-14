@@ -204,16 +204,14 @@ export interface OnboardingStep {
 }
 
 /**
- * Ordered onboarding funnel: open → tutorial start → tutorial finished → first real battle → first clear →
- * story seen. Drop-off between adjacent steps localises where day-1 players quit; tutorial_complete ÷
+ * Ordered onboarding funnel: open → tutorial start → tutorial finished → first real battle → first clear. Drop-off between adjacent steps localises where day-1 players quit; tutorial_complete ÷
  * tutorial_start is the tutorial completion rate.
  *
  * Every step here is derived from a 100%-sampled event (see DEFAULT_CONFIG) so the counts are directly
  * comparable. Deliberately excludes screen_view-derived milestones (e.g. lobby arrival) — screen_view is
- * sampled at 5%, so folding it in would show sampling-driven cliffs rather than real drop-off. `intro_seen`
- * is the exception: it reads dedicated 100%-sampled `intro_complete`/`intro_skip` events (not screen_view),
- * added design-doc-audit-2026-07 — this funnel previously had no data for the intro step at all. Scenes
- * still appear (sample-affected) in the action breakdown below.
+ * sampled at 5%, so folding it in would show sampling-driven cliffs rather than real drop-off. Scenes
+ * still appear (sample-affected) in the action breakdown below. The last step used to be `intro_seen`
+ * (the opening-story card on the first campaign-map open); the card is gone since ONBOARDING_DESIGN §16.
  */
 export const ONBOARDING_STEPS: OnboardingStep[] = [
   { key: 'session_start', reached: () => true }, // baseline = whole cohort (all had a first session_start)
@@ -221,11 +219,6 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
   { key: 'tutorial_complete', reached: (e) => e.has('tutorial_complete') },
   { key: 'first_battle', reached: (e) => e.has('game_start') }, // first non-tutorial battle
   { key: 'first_clear', reached: (e) => e.has('level_complete') }, // first real level clear
-  // intro_complete/intro_skip (design-doc-audit-2026-07) are 100%-sampled like the rest of this funnel —
-  // unlike screen_view (5%), they belong here instead of being excluded per the comment above. Last, not
-  // second: since ONBOARDING_DESIGN §11.7 the story is no longer a first-launch scene but a one-line card
-  // on the first campaign-map open, which a new player reaches after the tutorial and (usually) ch1_lv1.
-  { key: 'intro_seen', reached: (e) => e.has('intro_complete') || e.has('intro_skip') },
 ];
 
 // Lifecycle/plumbing events excluded from the "which action did they take" breakdown (screen_view is

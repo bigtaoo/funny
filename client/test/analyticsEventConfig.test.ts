@@ -52,7 +52,7 @@ function emittedEvents(): Set<string> {
   for (const file of walk(SRC)) {
     const text = fs.readFileSync(file, 'utf8');
     for (const m of text.matchAll(/\btrack\(\s*'([a-z0-9_]+)'/g)) found.add(m[1]!);
-    // The one ternary call site: track(skipped ? 'intro_skip' : 'intro_complete', {}). Anchored to
+    // Ternary call sites: track(cond ? 'a_event' : 'b_event', {}). Anchored to
     // the FIRST argument — a loose pattern also matches ternaries in the props object
     // (`result: won ? 'win' : 'loss'`) and reports the prop values as event names.
     for (const m of text.matchAll(/\btrack\(\s*[A-Za-z0-9_.!]+\s*\?\s*'([a-z0-9_]+)'\s*:\s*'([a-z0-9_]+)'/g)) {
@@ -98,7 +98,7 @@ describe('analytics event names and the analyticsvc sampling table agree', () =>
     const text = fs.readFileSync(DEFS, 'utf8');
     for (const event of [
       'session_start', 'session_end', 'churn_signal', 'nav_checkpoint',
-      'intro_complete', 'intro_skip', 'tutorial_start', 'tutorial_complete', 'tutorial_step',
+      'tutorial_start', 'tutorial_complete', 'tutorial_step',
       'game_start', 'level_attempt', 'level_complete', 'level_abandon',
       'shop_open', 'shop_buy', 'shop_close', 'iap_purchase',
       'login_submit', 'login_ok', 'login_fail', 'login_skip',

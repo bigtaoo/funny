@@ -215,8 +215,6 @@ export const zh = {
   'story.line.7': '那是一整个世界——最要紧的不是谁更聪明，而是有没有人懂你的下一步。',
   'story.tapToContinue': '点击继续',
   'story.skip': '跳过 »',
-  // One-line story card, first campaign-map open (ONBOARDING_DESIGN §11.7) — the 7 story.line.* condensed.
-  'story.card': '生日那天，涛收到一个笔记本。这整个世界，都是他画在里面的。',
 
   // ── Dedicated tutorial level ch0_tutorial (ONBOARDING_DESIGN §3) ─────────────
   'campaign.tutorial.name': '新手教学',

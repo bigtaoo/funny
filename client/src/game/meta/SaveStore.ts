@@ -4,18 +4,10 @@
 // pull/push (cloud side) are not part of this interface — they depend on account + network
 // and live in ApiClient + CloudSync (S0-5); SaveManager composes both. This keeps local
 // persistence network-free and easy to unit-test (in-memory IStorage round-trip).
-//
-// Legacy key absorption: historically nw_seen_intro was stored as a standalone key.
-// loadLocal absorbs it into flags.seen_intro (the old key is still readable for
-// compatibility but not deleted). nw_locale is a string managed by i18n (flags holds
-// booleans only) and is not absorbed.
 
 import type { IStorage } from '../../platform/IPlatform';
 import { migrate } from './migrate';
 import { SAVE_STORAGE_KEY, type SaveData } from './SaveData';
-
-/** Legacy key — absorbed into SaveData.flags on first load. */
-const LEGACY_SEEN_INTRO_KEY = 'nw_seen_intro';
 
 /** Local key for the offline pending-settlement clear queue (PVE_INTEGRITY_PLAN §8.4, non-sync segment, not uploaded to cloud). */
 const PENDING_CLEARS_KEY = 'nw_pending_clears_v1';
@@ -83,9 +75,7 @@ export class LocalSaveStore implements SaveStore {
         raw = null; // corrupted save → treat as absent, migrate to a fresh save
       }
     }
-    const save = migrate(raw);
-    this.absorbLegacy(save);
-    return save;
+    return migrate(raw);
   }
 
   saveLocal(save: SaveData): void {
@@ -164,13 +154,5 @@ export class LocalSaveStore implements SaveStore {
   savePendingFlags(map: Record<string, boolean>): void {
     if (Object.keys(map).length === 0) this.storage.removeItem(PENDING_FLAGS_KEY);
     else this.storage.setItem(PENDING_FLAGS_KEY, JSON.stringify(map));
-  }
-
-  /** Absorb legacy standalone keys into flags (only when the flag is not already set). */
-  private absorbLegacy(save: SaveData): void {
-    if (save.flags.seen_intro === undefined) {
-      const legacy = this.storage.getItem(LEGACY_SEEN_INTRO_KEY);
-      if (legacy) save.flags.seen_intro = true;
-    }
   }
 }

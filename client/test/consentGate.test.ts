@@ -13,7 +13,7 @@
 //     drawn and then ignored.
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { createAppCore } from '../src/app/createAppCore';
-import { AGE_DECLARED_FLAG, SEEN_INTRO_FLAG, GDPR_CONSENT_FLAG, TERMS_ACCEPTED_FLAG, TOKEN_KEY } from '../src/app/appConstants';
+import { AGE_DECLARED_FLAG, GDPR_CONSENT_FLAG, TERMS_ACCEPTED_FLAG, TOKEN_KEY } from '../src/app/appConstants';
 import { needsConsentChoice } from '../src/platform/consentRegion';
 import { HeadlessPlatform } from './harness/HeadlessPlatform';
 import { HeadlessAppViews } from './harness/HeadlessAppViews';
@@ -24,7 +24,7 @@ function launch(flags: Record<string, boolean> = {}, storage: Record<string, str
   const platform = new HeadlessPlatform({
     storage: {
       nw_save_v1: JSON.stringify({
-        flags: { tutorial_done: true, [SEEN_INTRO_FLAG]: true, [AGE_DECLARED_FLAG]: true, ...flags },
+        flags: { tutorial_done: true, [AGE_DECLARED_FLAG]: true, ...flags },
       }),
       ...storage,
     },

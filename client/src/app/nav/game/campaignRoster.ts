@@ -26,10 +26,9 @@ import { createStaminaAd } from './staminaAd';
 import { nextLevelAfterWin, NEXT_LEVEL_AUTO_SEC } from './nextLevel';
 import type { MountOpts } from '../../AppViews';
 import type { AppCtx, Nav } from '../../appCtx';
-import { TOKEN_KEY, SEEN_INTRO_FLAG, SEEN_INTRO_LOCAL_KEY, inkHintGate, buildHintFor } from '../../appConstants';
+import { TOKEN_KEY, inkHintGate, buildHintFor } from '../../appConstants';
 import { pickPracticeDifficulty } from '../lobby';
 import { resolveRealLayerInterlude } from '../../../scenes/realLayerInterludeArt';
-import openingStoryArtUrl from '../../../assets/story/intro_notebook.png';
 
 type CampaignRosterNav = Pick<Nav,
   'goGame' | 'goCampaignMap' | 'goLevelPrep' | 'goCardRoster' | 'goEquipment' | 'goCampaign'>;
@@ -133,25 +132,6 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
       // PvE is server-authoritative: clearing / unlocking new levels requires an online connection (§8 decision 4). Offline, only previously unlocked levels can be replayed; new unlocks are gated.
       isOnline: () => saveManager.online(),
       getPendingLevels: () => saveManager.getPendingClears().map((p) => p.levelId),
-      // The opening story, compressed to one card, the first time the map opens
-      // (ONBOARDING_DESIGN §11.7) — no longer a 7-line scene in front of the first screen.
-      // SEEN_INTRO_FLAG is shared with the old first-launch intro on purpose: a save that already
-      // sat through that has been told the story and doesn't get the card. The funnel's
-      // `intro_seen` step reads these two events (analyticsvc ONBOARDING_STEPS).
-      // Marked seen the moment it is handed out, not when its fade-out ends (ONBOARDING_DESIGN §15.2):
-      // a map left or rebuilt within those ~3 s never ran onDone, and the card came back on the next
-      // visit. A device-local copy of the mark backs up the server flag, which a cloud reconcile can
-      // replace wholesale before a queued write lands.
-      getStoryCard: () => {
-        if (saveManager.getFlag(SEEN_INTRO_FLAG) || platform.storage.getItem(SEEN_INTRO_LOCAL_KEY) === '1') return null;
-        saveManager.setFlag(SEEN_INTRO_FLAG, true);
-        platform.storage.setItem(SEEN_INTRO_LOCAL_KEY, '1');
-        return {
-          illustrationUrl: openingStoryArtUrl,
-          text: t('story.card'),
-          onDone(skipped: boolean) { analytics.track(skipped ? 'intro_skip' : 'intro_complete', {}); },
-        };
-      },
     });
   }
 

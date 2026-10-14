@@ -210,8 +210,6 @@ export const en: Record<TranslationKey, string> = {
   'story.line.7': 'It became a whole world — where what mattered most wasn\'t who was smartest, but whether someone understood your next move.',
   'story.tapToContinue': 'Tap to continue',
   'story.skip': 'Skip »',
-  // One-line story card, first campaign-map open (ONBOARDING_DESIGN §11.7) — the 7 story.line.* condensed.
-  'story.card': 'On his birthday, Tao got a notebook. He drew this whole world in it.',
 
   // ── Tutorial level ch0_tutorial (ONBOARDING_DESIGN §3) ────────────────────────
   'campaign.tutorial.name': 'Tutorial',
