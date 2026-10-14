@@ -64,7 +64,10 @@ export function drawSocialTabRail(
   activeTappable = false,
 ): SocialTabRailHit[] {
   // The world tab is nothing but chat, so the platform's "chat off" setting removes it (ui/chatPolicy.ts).
-  const defs = TAB_DEFS.filter((tabDef) => !hidden.includes(tabDef.id) && !(tabDef.id === 'world' && isChatDisabled()));
+  // `hidden` never removes the active tab: the page on screen must keep its own cell, otherwise
+  // the bar shrinks under the player (no-family player on the Sect page saw only 4 tabs).
+  const defs = TAB_DEFS.filter((tabDef) =>
+    (tabDef.id === active || !hidden.includes(tabDef.id)) && !(tabDef.id === 'world' && isChatDisabled()));
   const tabs: HubTab[] = defs.map((tabDef) => ({
     label: t(tabDef.key),
     active: active === tabDef.id,
