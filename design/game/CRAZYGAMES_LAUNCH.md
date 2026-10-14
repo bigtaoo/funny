@@ -149,6 +149,10 @@
     点 Battle 直接开打、无第一章开场。**新号流程（奖励闭环、缩短后的 lv1、墨满提示）没在预览里测到**——CG 登录跟着用户账号走，开不出新号；
     该号没出墨满提示属预期（需手里有可打法术，且每号一次）。
   - **从这天起 `open_*` 在 SDK 脚本之前发**，与 10-12 及以前的 `open_*` 不可直接比（之前偏低）。
+- **2026-10-14 版本更新（build `a27a66ba`，main `73847e183`）**：内容 = ONBOARDING_DESIGN §15（奖励闭环挪到 `ch1_lv1` 且不再改道、第一关空闲提示、前 5 关首胜紧凑结算 + 不放插屏、D1 明日签到预告、教学节奏加快、匿名漏斗按设备拆 + `alive_60s`/lv4–5）+ §16（删第一章开场故事卡）。
+  - 部署顺序：PR #180 合入 main → CI → server-deploy（含 analyticsvc 新步骤白名单）与 client-deploy 都在 `73847e183` 上成功，`version.json` = `73847e1`，之后才上传。
+  - 包：干净 detached worktree 构建，拷出到 `D:cg-buildscrazygames-main-73847e183`（388 文件 / 24 MB）。
+  - 预览核查（用户自己的 CG 号，进大厅）：SDK Log 顺序完整（sdkInit → gameLoaded → loading start/stop → requestUserToken → gameplayStop → addAuthListener）、Warnings 为空；`funnel_anon_daily` 当天收到 `open_desktop` / `loaded_desktop` / `alive_60s`，`_id` 尾部为 `|73847e183|desktop`——新版本号与按设备拆分都已生效。新号流程同样没法在预览里测（CG 登录跟着用户账号走）。
 - **`NW_CRAZYGAMES_GAME_ID` 的值曾是 `133101`**（2026-10-05 核，旧条目；现为 `136102`，见上）：取自预览页 `__NEXT_DATA__` 的 `props.pageProps.game.id`。
   门户 URL 里的 `8f3d95b1-c884-4175-bb28-08728dae174d` 是 **`submission.id`**，不是 token 里的 `gameId`——
   官方 User 文档的 token 示例就是数字（`"gameId": "20267"`）。配错不会卡人（服务端拒 token → §2 回退设备访客），但等于没配。
