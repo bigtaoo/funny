@@ -218,6 +218,35 @@ async function ensureSect(main, worldId) {
   step(`sect: created ${sect.sectId} (5000 coins)`);
 }
 
+/**
+ * The main account starts with 0 coins (store-assets-checklist §1.2b), so the coins for the paid
+ * steps arrive as admin compensation mail (OPS_DESIGN §3, capped per ticket). Claim any such
+ * system mail still waiting, then report the balance.
+ */
+async function claimCoinMail(acct) {
+  const inbox = await call('GET', '/api/mail', acct.token);
+  for (const m of inbox.mail) {
+    if (m.from !== 'system' || m.claimed || !m.attachments?.some((a) => a.kind === 'coins')) continue;
+    await call('POST', `/api/mail/${encodeURIComponent(m.mailId)}/claim`, acct.token, {});
+    step(`claimed system mail "${m.subject}"`);
+  }
+  const { save } = await call('GET', '/api/save', acct.token);
+  step(`main account coins: ${save?.wallet?.coins ?? '?'}`);
+}
+
+/** Runs a coin-spending step; on INSUFFICIENT_FUNDS logs it and lets the rest of the seed continue. */
+async function paid(label, fn, skipped) {
+  try {
+    await fn();
+    return true;
+  } catch (e) {
+    if (!(e instanceof ApiError) || e.code !== 'INSUFFICIENT_FUNDS') throw e;
+    console.warn(`! ${label}: not enough coins on the main account, skipped`);
+    skipped.push(label);
+    return false;
+  }
+}
+
 async function ensureMail(who) {
   for (const [speaker, subject, body] of MAIL) {
     const from = who[speaker];
@@ -253,15 +282,22 @@ async function main() {
   if (secondWorld !== worldId) console.warn(`! second account resolved to ${secondWorld}, main to ${worldId}`);
   step(`world: ${worldId}`);
 
-  await ensureSect(mainAcct, worldId);
-  await fillChannel('sect chat', SECT_CHAT, who,
-    async () => bodiesOf(await call('GET', `/sect/channel?worldId=${encodeURIComponent(worldId)}&limit=50`, mainAcct.token)),
-    (acct, body) => call('POST', '/sect/message', acct.token, { worldId, body, senderName: acct.name }));
-  await fillChannel('world chat', WORLD_CHAT, who,
+  await claimCoinMail(mainAcct);
+  const skipped = [];
+  if (await paid('sect', () => ensureSect(mainAcct, worldId), skipped)) {
+    await fillChannel('sect chat', SECT_CHAT, who,
+      async () => bodiesOf(await call('GET', `/sect/channel?worldId=${encodeURIComponent(worldId)}&limit=50`, mainAcct.token)),
+      (acct, body) => call('POST', '/sect/message', acct.token, { worldId, body, senderName: acct.name }));
+  }
+  await paid('world chat', () => fillChannel('world chat', WORLD_CHAT, who,
     async () => bodiesOf(await call('GET', `/nation/channel?worldId=${encodeURIComponent(worldId)}&limit=50`, mainAcct.token)),
-    (acct, body) => call('POST', '/nation/message', acct.token, { worldId, body, senderName: acct.name }));
+    (acct, body) => call('POST', '/nation/message', acct.token, { worldId, body, senderName: acct.name })), skipped);
 
   await ensureMail(who);
+  if (skipped.length) {
+    console.log(`done, except: ${skipped.join(', ')} — send the main account coins (sect 5000 + 50 per world post) and re-run`);
+    process.exit(3);
+  }
   console.log('done');
 }
 
