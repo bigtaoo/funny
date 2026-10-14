@@ -5,7 +5,7 @@
 // pages/analytics.ts (rather than folded into logic/analytics.ts) because these build DOM, not data.
 import { h } from '../dom';
 import {
-  anonFunnelCell, badgeModes, badgePivot, barWidthPx, type BadgeRow, type BootFunnelDisplayRow,
+  anonFunnelCell, anonFunnelDeviceLines, badgeModes, badgePivot, barWidthPx, type BadgeRow, type BootFunnelDisplayRow,
   LOAD_TIME_PHASE_LABELS, type LoadTimeDisplayRow, type ShareRow, type StepFunnelRow,
 } from '../logic/analytics';
 import { pct } from '../logic/shared';
@@ -97,7 +97,7 @@ export function launchFunnelCard(launches: BootFunnelDisplayRow[], days: number)
       h('td', { style: 'text-align:right' }, String(r.lost)),
       h('td', { style: 'text-align:right' }, String(r.consents)),
       h('td', {}, bar(r.reachRate)),
-      h('td', { class: 'muted' }, anonFunnelCell(r) || '—'),
+      h('td', { class: 'muted' }, anonFunnelCell(r) || '—', ...anonFunnelDeviceLines(r).map((l) => h('div', {}, l))),
     ));
   }
   return h('div', { class: 'card' },

@@ -427,6 +427,27 @@ metaserver → admin → ops「Server retention」卡上加了平台选择。**1
 
 **上线顺序**：analyticsvc 和 metaserver 先部署，再传 CG 新包——服务端没部署前，新键会被白名单丢掉，`signupPlatform` 也不会写。
 
+### 3.6h 每一步都按设备拆 + 「活过 60 秒」+ 平台语言（2026-10-14）
+
+**为什么要有**：CG 后台手机「gameplay conversion」27%、桌面 55%，而手机点击率反而更高——差距在进游戏后的头一两分钟。§3.6f 只把 `open_*` / `loaded_*` 按设备分开，加载之后的每一步都是手机桌面混在一起，定位不到掉在哪一拍。设计侧见 [`ONBOARDING_DESIGN.md` §15](ONBOARDING_DESIGN.md)。
+
+**1. 设备参数 `c`**：客户端每次 `?t=` 都带 `&c=m|d`（`isCoarsePointer()`，与 §3.6f 同一个 `(pointer: coarse)` 判断；CG HTML 里的 `open_*` 也带）。服务端只收 `m` / `d`，其它值当没带。带设备的写到 `${date}|${platform}|${step}[|${version}]|${device}`，并多存 `device` 字段。`boot_funnel` 照旧把所有版本、设备相加给出总数，另外按设备求和成 `anon_funnel_by_device: { m: {...}, d: {...} }`；ops「Launch funnel」卡匿名列在总数下多两行 `Touch: …` / `Desktop: …`。
+
+**2. 新键**（三 + 一处白名单一起改：客户端 `ANONYMOUS_FUNNEL_STEPS`、服务端 `ANON_FUNNEL_STEPS`、OpenAPI `t` 枚举、ops `ANON_FUNNEL_LABELS`）：
+| 键 | 什么时候打 | 位置 |
+|---|---|---|
+| `alive_60s` | `loaded_*` 之后 60 s 页面仍开着（关页则永远不发） | `analytics/index.ts` `countLoadedLaunch` |
+| `lv1_first_play` | `ch1_lv1`（未通关）本局第一次出牌 | `appConstants.ts` `buildHintFor` → `BuildHint` |
+| `lv1_play_hint` | `ch1_lv1` 本局第一次空闲提示弹出 | 同上 |
+| `lv4_start` / `lv4_clear` / `lv5_start` / `lv5_clear` | 同 `lv1–3`：该关未通关时的开打 / 通关 | `campaignRoster.ts` `anonLevelStep` |
+
+- `alive_60s / loaded_x`（按 `c` 拆）就是我们这边能跟 CG「gameplay conversion」对照的数；两边口径不完全一致（CG 按「还在玩」，我们按「页面还开着」），看趋势不看绝对值。
+- **`loaded_* → tutorial_start` 的落差不是流失**：`loaded_*` 每次启动都发，`tutorial_start` 只在存档没有 `tutorial_done` 时发，差额主要是回访启动。读教学漏斗从 `tutorial_start` 起算。
+
+**3. `session_start.platform_locale`**：平台原始语言标签（CG SDK / `navigator.language`，`initI18n` 时记下，截 35 字符），走正常同意通道，只在同意统计的会话里有。UI 语言只有 en / de / zh，其余回落 en，原来看不出 CG 玩家实际说什么语言，无从判断要不要加语言。
+
+**上线顺序**同 §3.6g：analyticsvc 先部署，再传 CG 新包；否则 `c` 被丢、新键被白名单丢。
+
 ---
 
 ## §4 采集配置（服务端控制开关）
@@ -593,7 +614,7 @@ scene 取值：`IntroScene / LobbyScene / LoginScene / CampaignMapScene / LevelP
 > **CrazyGames 静默自动登录不发 `login_submit`**：玩家已在门户登录过时，`resolveEntry()` 走 `bootstrap()` 静默换 token（与 `wx` 同路，见 `ONBOARDING_DESIGN.md`/`app/nav/auth.ts`），跳过 LoginScene，因此也跳过这三个事件——这条路径的转化只能从 §9.9 启动漏斗的 `reach_rate` 侧面看，不在这张登录漏斗里。`mode:'crazygames'` 三个事件只覆盖**主动点按钮**那条路。
 
 > **成功/失败为什么是两个事件名而不是一个带 `ok` 的事件**：§9.6 的首会话 `actions` 分布按**事件名**统计去重设备数、不看 props。合成一个名字，在唯一已经把新客 cohort 隔离出来的那张报表里两者就分不开了。
-| `intro_complete` / `intro_skip` | — | 开场故事卡自动消失/被点掉。2026-10-07 起故事不在首启播放，改为第一次打开战役地图时出的单行卡，事件在 `app/nav/game/campaignRoster.ts` `goCampaignMap` 的 `getStoryCard().onDone(skipped)` 里发；设置里「重看开场故事」不发（[`ONBOARDING_DESIGN.md` §11.7](ONBOARDING_DESIGN.md)）。这一步最早由 design-doc-audit-2026-07 补上，此前完全没有埋点。100% 采样，计入 §9.6 `ONBOARDING_STEPS` 的 `intro_seen` 步骤（现为最后一步） |
+| ~~`intro_complete` / `intro_skip`~~ | — | **2026-10-14 已删除**：故事卡整体移除（[`ONBOARDING_DESIGN.md` §16](ONBOARDING_DESIGN.md)），事件与 `intro_seen` 漏斗步一并删掉。以下为历史记录：开场故事卡自动消失/被点掉。2026-10-07 起故事不在首启播放，改为第一次打开战役地图时出的单行卡，事件在 `app/nav/game/campaignRoster.ts` `goCampaignMap` 的 `getStoryCard().onDone(skipped)` 里发；设置里「重看开场故事」不发（[`ONBOARDING_DESIGN.md` §11.7](ONBOARDING_DESIGN.md)）。这一步最早由 design-doc-audit-2026-07 补上，此前完全没有埋点。100% 采样，计入 §9.6 `ONBOARDING_STEPS` 的 `intro_seen` 步骤（现为最后一步） |
 
 ### 5.6a `idle_10min`：人还在屏幕前，手已经停了（2026-09-20）
 

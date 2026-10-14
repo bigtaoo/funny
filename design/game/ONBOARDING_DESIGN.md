@@ -35,11 +35,11 @@
       ④ 登录门控 resolveEntry（含「单机试玩」入口）          [已有 SA-3]
       ⑤ ★ 教学关 ch0_tutorial（首次必经，可跳过，§3）       [2026-10-07 重做]
       ⑥ 毕业卡 → 直接进 ch1_lv1（首胜 = 作者信 1000 金币）   [§3.6]
-      ⑦ 回战役地图：一行字故事卡（≤3 s，§11.7）
+      ⑦ 回战役地图（2026-10-14 起不再出故事卡，§16）
       ⑧ 进大厅：功能首启即开 / 首次使用引导（§4）
 ```
 
-- **④已实现**：SA-3 登录门控。**故事不再放在首启**：所有平台冷启动直接到合规层 + 登录门控，故事压成战役地图首开时的一张卡，完整 7 行版在设置「重看开场故事」里（§11.7）。
+- **④已实现**：SA-3 登录门控。**故事不再放在首启**：所有平台冷启动直接到合规层 + 登录门控，故事压成战役地图首开时的一张卡，完整 7 行版在设置「重看开场故事」里（§11.7）；2026-10-14 起这张卡也删了，故事只剩设置里的重看入口（§16）。
 - **⑤**：不复用 `ch1_lv1`，用**专属教学关**（`ch1_lv1` 是正常 survive 关、会失败、波次为平衡服务，承载不了「卡点教学 + 必胜 + 脚本特效」）。完成/跳过后写 `flags.tutorial_done`，再进不弹；设置/帮助里「重看教学」可再进一次。
 - **⑥**：新账号毕业后一键进 `ch1_lv1`，不经大厅（大厅主按钮是天梯，新号首局约 50 秒输掉）。重看教学 / 已通关过的账号毕业后回大厅。
 - **教学关不计入战役章节进度**：它是独立 id `ch0_tutorial`，不占 ch1 的关卡序号，不影响 `progress`、星数、SLG 解锁判定（§4）。
@@ -220,7 +220,7 @@
 
 > **逐节点核实（design-doc-audit-2026-07，对照代码）**：
 > - ✅ **首启/合规通过**：`session_start`（标准）、`gdpr_consent`（`createAppCore.ts`）。
-> - ✅ **intro 完成/跳过**：`intro_complete`/`intro_skip`（`app/nav/auth.ts` `goIntro()` 的 `onFinish(skipped)`），100% 采样，已纳入 `ANALYTICS_DESIGN.md` §9.6 `ONBOARDING_STEPS` 的 `intro_seen` 步骤——**本行此前记「`IntroScene.ts` 无埋点」已补齐（同一批次修复）**。
+> - ❌（2026-10-14 随故事卡删除，§16）~~**intro 完成/跳过**~~：`intro_complete`/`intro_skip`（`app/nav/auth.ts` `goIntro()` 的 `onFinish(skipped)`），100% 采样，已纳入 `ANALYTICS_DESIGN.md` §9.6 `ONBOARDING_STEPS` 的 `intro_seen` 步骤——**本行此前记「`IntroScene.ts` 无埋点」已补齐（同一批次修复）**。
 > - ❌ **登录方式（试玩/匿名/正式）**：未找到区分登录方式的专属事件；`login_gate_hit` 只在已登录会话触发游客态跳转时打点（`nav/social.ts`/`nav/world.ts`），不是登录方式选择本身。优先级较低，暂不强制。
 > - ✅ **教学关开始/教学各 beat/教学毕业**：`tutorial_start`/`tutorial_step`（`step_key`=`beat_unit`/`beat_building`/`beat_spell`/`graduate`，2026-10-07 前还有 `orientation_1..7`/`freeplay`）/`tutorial_beat_done`（每拍的空闲时长、是否放过幽灵卡、拖错次数）/`tutorial_complete`/`tutorial_skip` 全部已接（A9-9，`TutorialDirector.ts`→`GameRenderer`→`game.ts#goTutorial()`），100% 采样，`GET /internal/query?type=tutorial_funnel` 可查——**此前 §8/§9 把这条记成"待补"是过期记录，已订正**。
 > - 🟡 **首胜领奖**：无独立事件，靠 `tutorial_complete`（毕业=首胜）代打，够用但没有单独区分"完成教学"与"实际领到奖励"两个时刻。
@@ -235,7 +235,7 @@
 
 | 项 | 现状 |
 |---|---|
-| 开场故事 | ✅ 2026-10-07 移出首启：战役地图首开一行字卡 + 设置「重看开场故事」（§11.7） |
+| 开场故事 | ✅ 2026-10-07 移出首启（§11.7）；2026-10-14 起战役地图首开的故事卡也删除，只留设置「重看开场故事」（§16） |
 | 登录门控 + 单机试玩 | ✅ 已有（SA-3） |
 | 关卡数据结构 / WaveDirector（脚本波次、固定种子） | ✅ 已有（`@nw/engine campaign/`），教学关复用，无需改 schema |
 | **教学关 `ch0_tutorial` JSON**（满 loadout） | ✅ 已建。`server/engine/src/campaign/levels/ch0_tutorial.json`（2026-09-26 前在 `client/src/game/campaign/levels/`），仅入 `CAMPAIGN_LEVELS` 不入 `CAMPAIGN_LEVEL_ORDER`（不计进度） |
@@ -357,6 +357,7 @@ CrazyGames 2026-10-07 以「overall quality does not yet meet the expectations o
 - **首启**：`createAppCore.start()` 不再分支，所有平台直接 `gateConsent(() => resolveEntry())`。`IPlatform.skipStoryIntro` 随之删除。
 - **压缩版**：第一次打开战役地图时，`CampaignMapScene` 在地图上盖一张卡（`scenes/CampaignMapScene/storyCard.ts`）：插画复用 `assets/story/intro_notebook.png`，文字一行 `story.card`（zh/en/de）。0.35 s 淡入，2.65 s 起自动淡出，3.0 s 消失；点任意处立即淡出，这一下点击被卡吃掉，不会穿透去选关。是否出卡由 `goCampaignMap` 的 `getStoryCard()` 按 `flags.seen_intro`（`SEEN_INTRO_FLAG`）决定，在场景构造时问，所以关掉之后 resize 重建不会再出。旗子沿用旧的 `seen_intro`：看过旧版首启故事的老存档不会再看到卡。新玩家多半是打完 `ch1_lv1` 回地图时才第一次看到，所以文案写成「你在打的是谁画的世界」，不写成「故事开始了」。
 - **埋点**：`intro_complete`（自动消失）/ `intro_skip`（点掉）改由这张卡发出，「重看开场故事」不发。analyticsvc `ONBOARDING_STEPS` 的 `intro_seen` 从第 2 步挪到最后一步（`first_clear` 之后），否则它会在漏斗第 2 步造成一个假的断崖。
+- **2026-10-14 更新**：上面的故事卡和它的两个埋点已整体删除，见 §16；「重看」与 `ch1_lv1` 两条仍有效。
 - **重看**：设置 → 帮助 →「重看开场故事」（`settings.replayStory`）播完整 7 行 `IntroScene`，结束或跳过后回到设置页。`nav.goIntro(onDone)` 只剩这一个调用方。
 - **`ch1_lv1`**：只改关卡 JSON，代码不针对关卡 id 做特判。删 `briefKey`，准备页就没有那段散文；`story.introKey: campaign.ch1.intro` 改成 `story.outroKey`，开战前不再有黑屏，赢了之后在结算页的 outro 里播（2026-10-13 起连 outro 也删了，§14.1）。`LevelPrepScene` 的通用 brief 和 intro 逻辑原样保留，其它关卡的简报不受影响。`client/test/levelSchema.test.ts` 把这两条例外写死。
 
@@ -496,6 +497,8 @@ CrazyGames 首周（10-09..10-11）后台：平均单次游玩 2 分 53 秒（2 
 
 ### 14.2 第二版：首次会话奖励闭环（`app/nav/firstRewardLoop.ts`）
 
+> **2026-10-14 已改**：第 1 步的「首通 `ch1_lv2` 改道回大厅」造成第 3 关断崖，已撤掉，见 §15.2。下面保留原设计作记录。
+
 每账号只走一次，三步：
 
 1. **第一次通关 `ch1_lv2`**：结算页主按钮改为「领取礼物」（`result.claimGift`）回大厅，「下一关」降为次按钮，§13 的 5 s 倒计时挂在主按钮上。只在在线（有 `api`）且尚未走过第 2 步时改道（`rewardLoopDetour`）。
@@ -520,3 +523,60 @@ CG 新包上线后对比 10-12 版。所有数都能按版本拆（匿名计数�
 | 礼物卡有没有把人带进抽卡 | `gift_shown → gift_gacha → gacha_pull` |
 | 「明天再来」卡有没有用 | `daily_shown → daily_open → daily_claim` |
 | 第二天回没回来 | 匿名 `return_launch`（所有人，按启动）；服务端留存表选 `crazygames` 看 D1（按人，10-13 之后注册的） |
+
+## 15. 第二轮首次会话修补：第 3 关断崖、手机端转化（2026-10-14）
+
+起因：CG 后台 Basic Launch 评分出来后，用户提出两件事——「第 3 关断崖肯定要修」，以及「移动端转化率只有桌面的一半（27% 对 55%），但移动端点击率反而更高」。CG 的「转化」= 进游戏一分钟后还在玩的人占比，所以问题在进游戏后的头一两分钟。我们的匿名漏斗加载之后不分设备，定位不到。用户拍板「按长期规划全部都做了」，于是一次做完下面七项。
+
+### 15.1 埋点：每一步都按设备拆
+
+- 匿名计数（`/analytics/config?t=`）每一跳都带 `c=m|d`（与 `open_*` / `loaded_*` 同一个 `(pointer: coarse)` 判断，`analytics/index.ts` `isCoarsePointer`）；服务端 `_id` 变为 `date|platform|step[|version][|device]`，运维后台在原漏斗行下多两行「Touch / Desktop」。字段权威见 [`ANALYTICS_DESIGN.md` §3.6h](ANALYTICS_DESIGN.md)。
+- 新增步：`alive_60s`（加载后 60 s 页面还开着——我们这边对得上 CG「gameplay conversion」的那一刀）、`lv1_first_play`（第一关第一次出牌）、`lv1_play_hint`（第一关空闲提示弹出）、`lv4_start/clear`、`lv5_start/clear`（跟踪范围从前 3 关扩到前 5 关）。
+- `session_start` 加 `platform_locale`（平台给的原始语言标签，截 35 字符）：UI 语言只认 en/de/zh，其余回落 en，原来看不出 CG 玩家实际是哪国语言。
+- **`loaded → tutorial_start` 的落差不是流失**：`loaded_*` 每次启动都发，`tutorial_start` 只在没有 `tutorial_done` 时发，差的那部分是回访玩家。
+
+### 15.2 奖励闭环不再打断战役 + 开场故事卡不重复
+
+- **问题**：§14.2 把第一次通关 `ch1_lv2` 改道回大厅领礼物。CG 数据：`lv3_start / lv2_clear` 从改道前的 72% 掉到 19%——这就是「第 3 关断崖」，断在第 2 关结算页，不是第 3 关难度。
+- **改**：`REWARD_LOOP_LEVEL` 改为 `ch1_lv1`（首通时发欢迎邮件），**不再改道**：玩家哪天自己回大厅，才走「领礼物 → 抽一次」；抽卡页的返回改去战役地图（`lobby.ts`），闭环是途经站不是终点。`rewardLoopDetour` 与 `result.claimGift` 删除。
+- **故事卡**：原来在淡出动画结束（约 3 s）的 `onDone` 里才记 `seen_intro`，这期间离开 / 重建地图就会下次再弹；云存档对账还可能整份覆盖掉排队中的写入。现在交出卡片的那一刻就记，并在本机 `platform.storage` 另存一份 `nw_seen_intro`。（同日稍后整张卡删除，这条修补随之作废，见 §16。）
+
+### 15.3 第一关空闲提示（ghost hand）
+
+- CG 上 `ch1_lv1` 中途离开的人，中位数在约 22 s 时离开、一张牌都没出。
+- `BuildHint` 加空闲模式（`IDLE_NUDGE_SEC = 4`，第一波 4 s 出兵）：手里有买得起的牌、且从开局或上一次出牌起 4 s 没出牌 → 圈住该牌 + 幽灵卡滑向压力最大的车道；优先建筑，否则任一单位牌（法术不选，目标不是建造格）。拿起牌即让开，出牌即结束；每局最多 4 次。§12 的「先造建筑」提示条出现时空闲提示让位。
+- 只在 `BUILD_HINT_TICKS` 里的关（现为 `ch1_lv1`）且未通关时；埋点 `lv1_play_hint` / `lv1_first_play`。
+
+### 15.4 前 5 关首胜：紧凑结算 + 「下一关」预告
+
+- 前 5 关（`EARLY_LEVEL_COUNT`）**第一次通关**时，结算页不显示统计徽章（medallion），只留胜利标题和一枚主徽章，下面加一行绿色「下一关：{关名}」（`result.upNext`），配合 §13 的 5 s 自动继续。数字密集的结算页对新玩家只是一道要读的墙。
+- 实现：`ResultSceneCallbacks.firstWin`，经 `goResult` 新增的 `extras` 参数传入（`appCtx.ResultExtras`）。
+
+### 15.5 前 5 关不放插屏广告
+
+- `goResult` 的 `extras.skipAd`：前 5 关的胜负结算都不调 `platform.showMidgameAd()`。CG 的插屏在头几分钟出现，等于在转化窗口里把玩家送出游戏。
+
+### 15.6 D1 钩子：结算页显示「明天的签到」
+
+- 原来结算页的签到预告在今天已签时消失。现在今天签了第 1 天（本月第一次签）时，改为预告**明天**那格（`retention.tomorrowCheckinDay`：月末最后一天返回 1，否则 `已签天数 + 1`，上限 30）。已签多于一天的老玩家不显示。
+
+### 15.7 教学节奏：建造拍更早示范、更宽吸附、毕业更短
+
+- 建造拍空闲示范 4 s → **2 s**（`IDLE_GHOST_SEC = [2, 2, 4]`）：CG 上三拍里它掉人最多。
+- 建造拍吸附 `BUILDING_SNAP_COLS = 2`：偏两列以内放下也落在目标格（手机上手指挡住格子，偏一列很常见）。
+- 毕业卡自动继续 4 s → **2.5 s**（带统计说明小字时 6 s → 4 s）。
+
+### 15.8 没做的 / 验证
+
+- **`ch1_lv1` 波次没动**：关卡 JSON 与服务端回放校验共用，改了要两边同步部署；先看 15.1–15.3 的数据。
+- 竖屏 390×844 实机走查（Chrome，localhost）：教学三拍、建造吸附、毕业、第一关「先造建筑」提示、失败页（无广告）、首胜紧凑结算 +「Up next」均正常，无需改布局。
+- **评估**（新包上线一周后，按 `v` 与 `c` 拆）：`alive_60s / loaded_*`（手机 vs 桌面，对照 CG 的 27% / 55%）；`lv1_first_play / lv1_start`、`lv1_play_hint` 后有没有出牌；`lv3_start / lv2_clear` 回到 70% 上下；`lv4_*`、`lv5_*` 是否接得住。
+
+## 16. 去掉第一章开场故事卡（2026-10-14）
+
+起因：用户判断 CG 玩家并不在意故事情节，第一章的开场先去掉。§11.7 之后第一章开场只剩「第一次打开战役地图时的一行字故事卡」（`ch1_lv1` 的开战前黑屏 intro 已在 §14.1 删除），本次把它整体删掉。
+
+- **删除**：`scenes/CampaignMapScene/storyCard.ts` 及其 UI 测试；`CampaignMapScene` 的 `getStoryCard` 回调、构造 / 更新 / 销毁 / 点击吞噬；`goCampaignMap` 里出卡判断；i18n `story.card`（zh/en/de）；`SEEN_INTRO_FLAG` / `SEEN_INTRO_LOCAL_KEY` 常量；`LocalSaveStore` 收编旧 `nw_seen_intro` 键的逻辑（§15.2 的本机副本随之作废）。老存档里残留的 `flags.seen_intro` 不再有人读，无害，不迁移。
+- **埋点**：`intro_complete` / `intro_skip` 不再发出，从 analyticsvc `DEFAULT_CONFIG` 删除；`ONBOARDING_STEPS` 去掉 `intro_seen` 一步，运维后台 `ONBOARDING_LABELS` 同步删除。**analyticsvc 要和新客户端包一起部署**，否则旧服务端的漏斗会多出一个恒 0 的末步。
+- **保留**：设置 → 帮助 →「重看开场故事」仍播完整 7 行 `IntroScene`（`nav.goIntro` 唯一调用方，插画 `intro_notebook.png` 仍被它引用）；各章结尾的插画过场（`IllustratedInterludeScene`）不动。
+- **验证**：Chrome 新 origin 走一遍 年龄/同意 → 单机试玩 → 跳过教学进 `ch1_lv1` → 退出 → 大厅 → 战役地图，地图上无卡片。

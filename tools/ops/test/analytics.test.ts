@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import {
   analyticsUnavailable, badgeModes, badgePivot, barRatio, barWidthPx, distribution, eventCountGrid,
   FUNNEL_STEPS, funnelPivot, funnelPlatforms, LEVEL_FUNNEL_LIMIT, levelFunnelRows, loginHourRows,
-  ANON_FUNNEL_LABELS, anonFunnelCell, bootFunnelRows, churnSceneRows, loadTimeRows, metricRows, ms, ONBOARDING_LABELS, retentionCell,
+  ANON_FUNNEL_LABELS, anonFunnelCell, anonFunnelDeviceLines, bootFunnelRows, churnSceneRows, loadTimeRows, metricRows, ms, ONBOARDING_LABELS, retentionCell,
   RETENTION_OFFSETS, retentionRows, sec, sectionRows, sectionValue, stepFunnelRows, TUTORIAL_LABELS,
   type BadgeRow, type FunnelRow, type RetentionByRow, type RetentionRow,
 } from '../src/logic/analytics';
@@ -295,6 +295,22 @@ describe('anonFunnelCell', () => {
 
   it('is empty for a row without any', () => {
     expect(anonFunnelCell({ date: '2026-10-07', platform: 'web', boots: 10, sessions: 4, consents: 4 })).toBe('');
+  });
+});
+
+describe('anonFunnelDeviceLines', () => {
+  it('puts touch before desktop, each in funnel order', () => {
+    expect(anonFunnelDeviceLines({
+      date: '2026-10-14', platform: 'crazygames', boots: 10, sessions: 4, consents: 4,
+      anon_funnel_by_device: { desktop: { alive_60s: 3 }, mobile: { lv1_first_play: 1, alive_60s: 2 } },
+    })).toEqual([
+      `Touch: ${ANON_FUNNEL_LABELS.alive_60s} 2 · ${ANON_FUNNEL_LABELS.lv1_first_play} 1`,
+      `Desktop: ${ANON_FUNNEL_LABELS.alive_60s} 3`,
+    ]);
+  });
+
+  it('is empty for a row from before the split', () => {
+    expect(anonFunnelDeviceLines({ date: '2026-10-07', platform: 'web', boots: 10, sessions: 4, consents: 4 })).toEqual([]);
   });
 });
 

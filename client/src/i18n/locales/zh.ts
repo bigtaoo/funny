@@ -169,13 +169,13 @@ export const zh = {
   'result.playAgainWin': '再战一场',
   'result.backToMap': '返回地图',
   'result.nextLevel': '下一关',
-  'result.claimGift': '领取礼物',
   'result.retry': '再试一次',
   'result.watchReplay': '观看回放',
   'result.eloDelta': 'ELO {delta} → {after}　段位 {rank}',
   'result.newbieProtect': '新手保护（{n}/{total}）· 输了不扣积分',
   'result.dailyProtect': '每日保护（{n}/{total}）· 输了不扣积分',
   'result.tomorrowReward': '明天回来签到领第 {day} 天奖励',
+  'result.upNext': '下一关：{name}',
   'rank.unranked': '未定级',
   'rank.bronze': '青铜',
   'rank.silver': '白银',
@@ -215,8 +215,6 @@ export const zh = {
   'story.line.7': '那是一整个世界——最要紧的不是谁更聪明，而是有没有人懂你的下一步。',
   'story.tapToContinue': '点击继续',
   'story.skip': '跳过 »',
-  // One-line story card, first campaign-map open (ONBOARDING_DESIGN §11.7) — the 7 story.line.* condensed.
-  'story.card': '生日那天，涛收到一个笔记本。这整个世界，都是他画在里面的。',
 
   // ── Dedicated tutorial level ch0_tutorial (ONBOARDING_DESIGN §3) ─────────────
   'campaign.tutorial.name': '新手教学',

@@ -43,8 +43,11 @@ export function beatText(kind: BeatKind): { title: string; body: string; done: s
 
 // ── Director timing (seconds unless noted) ──
 
-/** Seconds of no card touch before the ghost-hand demo starts, per beat (§11.4). */
-export const IDLE_GHOST_SEC = [2, 4, 4];
+/**
+ * Seconds of no card touch before the ghost-hand demo starts, per beat (§11.4). The building beat
+ * went 4 → 2 s (§15.7): on CrazyGames it lost the most players of the three.
+ */
+export const IDLE_GHOST_SEC = [2, 2, 4];
 /** Ghost-hand loop: glide, then hold on the target. */
 export const GHOST_MOVE_SEC = 1.2;
 export const GHOST_HOLD_SEC = 0.6;
@@ -65,4 +68,6 @@ export const SHAKE_SEC = 0.35;
 export const SHAKE_AMP = 9;
 /** A drop this many cells off the guided target still counts (and is snapped onto it). */
 export const LANE_SNAP_COLS = 1;
+/** The building beat's wider drop zone (§15.7): a tower dropped two lanes off still lands on the target. */
+export const BUILDING_SNAP_COLS = 2;
 export const METEOR_SNAP_CELLS = 2;

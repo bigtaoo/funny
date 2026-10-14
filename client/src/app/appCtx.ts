@@ -128,7 +128,16 @@ export interface Nav {
     onReturnToLobby?: () => void,
     secondaryAction?: ResultSceneCallbacks['secondaryAction'],
     autoContinueSec?: number,
+    extras?: ResultExtras,
   ): Promise<void>;
+}
+
+/** goResult's per-call extras (ONBOARDING_DESIGN §15.4 / §15.5). */
+export interface ResultExtras {
+  /** No midgame ad before this result — the tutorial-adjacent early campaign levels. */
+  skipAd?: boolean;
+  /** Show the compact first-win screen with this "up next" teaser. */
+  firstWin?: ResultSceneCallbacks['firstWin'];
 }
 
 /** The dependency + state bag handed to every nav module. */

@@ -22,6 +22,7 @@ const zeroStats = (owner: 0 | 1): PlayerStats => ({
 
 function buildCtx(opts: {
   claimedDays?: number[];
+  lastClaimedDayKey?: string;
   online?: boolean;
   disableRetentionPreview?: boolean;
 }): { ctx: AppCtx; getResult: () => ResultViewProps | null } {
@@ -30,10 +31,10 @@ function buildCtx(opts: {
 
   // Current month, so nav/result.ts's makeMonthKey(Date.now()) matches this fixture.
   const monthKey = new Date().toISOString().slice(0, 7);
-  const save = { retention: { checkin: { monthKey, claimedDays: opts.claimedDays ?? [] } } };
+  const save = { retention: { checkin: { monthKey, claimedDays: opts.claimedDays ?? [], lastClaimedDayKey: opts.lastClaimedDayKey } } };
   const api = opts.online === false ? undefined : ({
     getRetention: async () => ({
-      defs: { rewards: [{ kind: 'material', count: 3, id: 'scrap' }] },
+      defs: { rewards: [{ kind: 'material', count: 3, id: 'scrap' }, { kind: 'coins', count: 50 }] },
     }),
   } as unknown as AppCtx['api']);
 
@@ -74,12 +75,24 @@ describe('nav/result — come back tomorrow check-in hook', () => {
     expect(getResult()?.retentionPreview).toEqual({ day: 1, reward: { kind: 'material', count: 3, id: 'scrap' } });
   });
 
-  it('shows nothing once a check-in day has already been claimed this month', async () => {
+  it('shows nothing once a check-in day was claimed on an earlier day this month', async () => {
     const { ctx, getResult } = buildCtx({ claimedDays: [1] });
     const { goResult } = createResultNav(ctx);
 
     await goResult(0, [zeroStats(0), zeroStats(1)]);
     expect(getResult()?.retentionPreview).toBeUndefined();
+  });
+
+  it('after the first claim today, shows the slot open tomorrow (the D1 hook, ONBOARDING_DESIGN §15.6)', async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const endOfMonth = new Date(Date.now() + 86_400_000).toISOString().slice(0, 7) !== today.slice(0, 7);
+    const { ctx, getResult } = buildCtx({ claimedDays: [1], lastClaimedDayKey: today });
+    const { goResult } = createResultNav(ctx);
+
+    await goResult(0, [zeroStats(0), zeroStats(1)]);
+    expect(getResult()?.retentionPreview).toEqual(endOfMonth
+      ? { day: 1, reward: { kind: 'material', count: 3, id: 'scrap' } }
+      : { day: 2, reward: { kind: 'coins', count: 50 } });
   });
 
   it('shows nothing on a loss, even with nothing claimed yet', async () => {

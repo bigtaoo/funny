@@ -17,7 +17,7 @@ import {
   err,
   type InternalAuthVerifier,
 } from '@nw/shared';
-import { RETENTION_BY_DIMENSIONS, anonFunnelVersion, isAnonFunnelStep, type AnalyticsService, type EventBatch, type ResolvedGeo, type RetentionByDimension } from './service';
+import { RETENTION_BY_DIMENSIONS, anonFunnelDevice, anonFunnelVersion, type AnonFunnelDevice, isAnonFunnelStep, type AnalyticsService, type EventBatch, type ResolvedGeo, type RetentionByDimension } from './service';
 
 /** Client IP from the Caddy-injected X-Forwarded-For (first hop) or the raw socket as a fallback. */
 function clientIp(req: IncomingMessage): string | undefined {
@@ -54,7 +54,7 @@ const BOOT_PLATFORMS = new Set(['web', 'wechat', 'crazygames']);
  * no cardinality at all — it is one bit choosing which counter on an existing document to bump.
  */
 function bootTick(rawUrl: string | undefined): {
-  platform: string; declined: boolean; funnelStep: string | null; version: string | null;
+  platform: string; declined: boolean; funnelStep: string | null; version: string | null; device: AnonFunnelDevice | null;
 } {
   const q = new URL(rawUrl ?? '/', 'http://x').searchParams;
   const p = q.get('p') ?? '';
@@ -63,6 +63,7 @@ function bootTick(rawUrl: string | undefined): {
     declined: q.get('d') === '1',
     funnelStep: q.get('t'),
     version: anonFunnelVersion(q.get('v')),
+    device: anonFunnelDevice(q.get('c')),
   };
 }
 
@@ -178,7 +179,7 @@ export function startHttpApi(
         // (the key becomes part of a document `_id` on an endpoint with no auth).
         const tick = bootTick(req.url);
         const counted = tick.funnelStep !== null
-          ? (isAnonFunnelStep(tick.funnelStep) ? svc.countAnonymousFunnelStep(tick.platform, tick.funnelStep, tick.version) : Promise.resolve())
+          ? (isAnonFunnelStep(tick.funnelStep) ? svc.countAnonymousFunnelStep(tick.platform, tick.funnelStep, tick.version, tick.device) : Promise.resolve())
           : tick.declined ? svc.countDeclinedLaunch(tick.platform) : svc.countBoot(tick.platform);
         void counted.catch(() => {/* silent */});
         return send(res, 200, ok(svc.getConfig()));

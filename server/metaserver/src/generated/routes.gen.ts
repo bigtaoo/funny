@@ -1635,6 +1635,7 @@ const QUERY_SCHEMAS: Record<string, unknown> = {
           "open_mobile",
           "loaded_desktop",
           "loaded_mobile",
+          "alive_60s",
           "tutorial_start",
           "beat_unit",
           "beat_building",
@@ -1643,11 +1644,17 @@ const QUERY_SCHEMAS: Record<string, unknown> = {
           "tutorial_complete",
           "tutorial_skip",
           "lv1_start",
+          "lv1_first_play",
+          "lv1_play_hint",
           "lv1_clear",
           "lv2_start",
           "lv2_clear",
           "lv3_start",
           "lv3_clear",
+          "lv4_start",
+          "lv4_clear",
+          "lv5_start",
+          "lv5_clear",
           "ink_full_hint",
           "gift_shown",
           "gift_gacha",
@@ -1661,6 +1668,13 @@ const QUERY_SCHEMAS: Record<string, unknown> = {
       "v": {
         "type": "string",
         "pattern": "^[0-9A-Za-z._-]{1,40}$"
+      },
+      "c": {
+        "type": "string",
+        "enum": [
+          "m",
+          "d"
+        ]
       }
     }
   },

@@ -1,10 +1,13 @@
-// First-session reward loop (ONBOARDING_DESIGN §14.2). New players used to clear the first levels
-// and leave without ever touching the meta game: the author welcome mail (1000 coins) sat unclaimed,
-// the gacha was never opened, and nothing asked them to come back tomorrow. This drives one short
-// pass through all three, once per account:
-//   1. clearing ch1_lv2 for the first time routes the win to the lobby (campaignRoster.goCampaign);
-//   2. that lobby arrival claims the welcome mail for the player and walks them into one gacha pull;
-//   3. the next lobby arrival opens the daily check-in, whose calendar already highlights tomorrow.
+// First-session reward loop (ONBOARDING_DESIGN §14.2, reworked in §15.2). New players used to clear
+// the first levels and leave without ever touching the meta game: the author welcome mail (1000
+// coins) sat unclaimed, the gacha was never opened, and nothing asked them to come back tomorrow.
+// This drives one short pass through all three, once per account:
+//   1. the first lobby arrival after ch1_lv1 is cleared — whenever the player goes there of their own
+//      accord; no win is routed there any more — claims the welcome mail and walks them into one
+//      gacha pull, whose Back leads to the campaign map rather than the lobby (lobby.ts);
+//   2. the next lobby arrival opens the daily check-in, whose calendar already highlights tomorrow.
+// (Until 2026-10-14 the first ch1_lv2 clear was routed to the lobby for step 1; level-3 starts fell
+// from 72% to 19% of lv2 clears on CrazyGames, so the campaign is no longer interrupted.)
 // Each step also ticks the anonymous funnel (gift_shown → gift_gacha, daily_shown → daily_open;
 // ONBOARDING_DESIGN §14.3), which counts players who never consented to analytics as well.
 import * as analytics from '../../analytics';
@@ -12,8 +15,8 @@ import type { TranslationKey } from '../../i18n';
 import type { SaveManager } from '../../game/meta/SaveManager';
 import type { ApiClient } from '../../net/ApiClient';
 
-/** The level whose first clear opens the loop. */
-export const REWARD_LOOP_LEVEL = 'ch1_lv2';
+/** The level whose first clear opens the loop (it pays the welcome mail the gift step claims). */
+export const REWARD_LOOP_LEVEL = 'ch1_lv1';
 /** featSeen ids (SaveManager.featSeen) — one per step, so a step that already ran never repeats. */
 export const FIRST_GACHA_FEAT = 'onboard.firstGacha';
 export const FIRST_DAILY_FEAT = 'onboard.firstDaily';
@@ -30,11 +33,6 @@ export interface RewardLoopDeps {
   goDaily(): void;
   /** False once the player has left the lobby — an async step must not draw over another scene. */
   stillInLobby(): boolean;
-}
-
-/** Whether the win on `levelId` should detour to the lobby to start the loop. */
-export function rewardLoopDetour(saveManager: SaveManager, levelId: string, firstClear: boolean): boolean {
-  return levelId === REWARD_LOOP_LEVEL && firstClear && !saveManager.featSeen(FIRST_GACHA_FEAT);
 }
 
 /** Run whichever step of the loop is due on this lobby arrival (no-op once both have run). */

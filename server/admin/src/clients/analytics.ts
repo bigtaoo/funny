@@ -57,6 +57,8 @@ export interface AnalyticsBootFunnelRow {
   reach_rate?: number;
   /** Tutorial steps reached by launches without analytics consent (anonymous counter, COMPLIANCE_GLOBAL §3.3). */
   anon_funnel?: Record<string, number>;
+  /** The same counts split by input class (`?c=`), from ticks that carried one. */
+  anon_funnel_by_device?: { mobile?: Record<string, number>; desktop?: Record<string, number> };
 }
 export interface AnalyticsLoadTimeRow {
   platform: string;

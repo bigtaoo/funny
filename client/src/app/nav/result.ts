@@ -12,12 +12,12 @@ import { t } from '../../i18n';
 import { showToastMessage } from '../../net/log';
 import { matchBadgeTelemetry } from '../../scenes/ResultScene/badges';
 import type { EloResult, ResultRetentionPreview, ResultSceneCallbacks } from '../../scenes/ResultScene';
-import { checkinClaimedCount, nextCheckinDay } from '../../game/meta/retention';
+import { checkinClaimedCount, nextCheckinDay, tomorrowCheckinDay } from '../../game/meta/retention';
 import type { ProfileData } from '../../ui/dialogs/ProfilePopup';
 import { WorldApiClient } from '../../net/WorldApiClient';
 import { allEquippedSkins } from '../../game/meta/skinDefs';
 import type { NetGameView } from '../AppViews';
-import type { AppCtx, Nav } from '../appCtx';
+import type { AppCtx, Nav, ResultExtras } from '../appCtx';
 import { log, PLAYER_PUBLIC_ID_KEY, inkHintGate } from '../appConstants';
 
 type ResultNav = Pick<Nav, 'goResult' | 'goReplay' | 'goStatePlayer' | 'goGameNet'>;
@@ -254,8 +254,13 @@ export function createResultNav(ctx: AppCtx): ResultNav {
   function retentionPreviewDay(winner: OwnerId | null, localOwner: OwnerId): number | null {
     if (!api || winner !== localOwner) return null;
     if (featureFlags?.isOn('disable_retention_preview')) return null;
-    if (checkinClaimedCount(saveManager.get(), Date.now()) > 0) return null;
-    return nextCheckinDay(saveManager.get(), Date.now());
+    const now = Date.now();
+    const claimed = checkinClaimedCount(saveManager.get(), now);
+    // The first session's own claim (the reward loop's daily card) turns the hook into tomorrow's
+    // slot — the D1 reason to return (ONBOARDING_DESIGN §15.6). Later in the streak it stays quiet.
+    if (claimed === 1) return tomorrowCheckinDay(saveManager.get(), now);
+    if (claimed > 0) return null;
+    return nextCheckinDay(saveManager.get(), now);
   }
 
   /**
@@ -292,11 +297,14 @@ export function createResultNav(ctx: AppCtx): ResultNav {
     onReturnToLobby?: () => void,
     secondaryAction?: ResultSceneCallbacks['secondaryAction'],
     autoContinueSec?: number,
+    extras?: ResultExtras,
   ): Promise<void> {
     state.inLobby = false;
     platform.onGameplayStop();
     analytics.track('screen_view', { scene: 'ResultScene' });
-    await platform.showMidgameAd();
+    // No ad between the tutorial-adjacent early levels (ONBOARDING_DESIGN §15.5): the first minutes
+    // decide whether a portal player stays, and an interstitial there costs more than it earns.
+    if (!extras?.skipAd) await platform.showMidgameAd();
     // Cheap/stateless (just wraps platform.storage) — the opponent/local profile popups fetch
     // rank/ELO/family/sect straight from socialsvc by publicId, same as the social surfaces.
     const worldApi = api ? new WorldApiClient(platform.storage) : null;
@@ -326,6 +334,7 @@ export function createResultNav(ctx: AppCtx): ResultNav {
         ...(playAgainLabel ? { playAgainLabel } : {}),
         ...(secondaryAction ? { secondaryAction } : {}),
         ...(autoContinueSec ? { autoContinueSec } : {}),
+        ...(extras?.firstWin ? { firstWin: extras.firstWin } : {}),
         ...(worldApi ? { getProfileExtra: (publicId: string) => worldApi.getProfileExtra(publicId) } : {}),
       },
     });

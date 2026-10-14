@@ -100,7 +100,6 @@ export const ONBOARDING_LABELS: Record<string, string> = {
   tutorial_complete: 'Finished tutorial',
   first_battle: 'Started first battle',
   first_clear: 'Cleared first level',
-  intro_seen: 'Saw the story card',
 };
 
 /** Human-readable labels for tutorial step-funnel keys (must match TUTORIAL_ORDERED_KEYS in analyticsvc). */
@@ -113,17 +112,21 @@ export const TUTORIAL_LABELS: Record<string, string> = {
 
 /**
  * Labels for the anonymous first-session funnel (`anon_funnel`), in funnel order — must match
- * ANON_FUNNEL_STEPS in analyticsvc: the tutorial steps, its Skip, levels 1–3 first try / first clear,
- * the ink-full hint, the first-session reward loop, and returning launches.
+ * ANON_FUNNEL_STEPS in analyticsvc: the tutorial steps, its Skip, levels 1–5 first try / first clear
+ * (with level 1's first card played and its idle-card hint), the one-minute-alive tick, the ink-full
+ * hint, the first-session reward loop, and returning launches.
  */
 export const ANON_FUNNEL_LABELS: Record<string, string> = {
   open_desktop: 'Opened (desktop)', open_mobile: 'Opened (touch)',
   loaded_desktop: 'Loaded (desktop)', loaded_mobile: 'Loaded (touch)',
+  alive_60s: 'Still open at 60 s',
   ...TUTORIAL_LABELS,
   tutorial_skip: 'Skipped tutorial',
-  lv1_start: 'Lv1 tried', lv1_clear: 'Lv1 cleared',
+  lv1_start: 'Lv1 tried', lv1_play_hint: 'Lv1 idle-card hint', lv1_first_play: 'Lv1 first card played', lv1_clear: 'Lv1 cleared',
   lv2_start: 'Lv2 tried', lv2_clear: 'Lv2 cleared',
   lv3_start: 'Lv3 tried', lv3_clear: 'Lv3 cleared',
+  lv4_start: 'Lv4 tried', lv4_clear: 'Lv4 cleared',
+  lv5_start: 'Lv5 tried', lv5_clear: 'Lv5 cleared',
   ink_full_hint: 'Ink-full hint shown',
   gift_shown: 'Gift card shown', gift_gacha: 'Gift → gacha', gacha_pull: 'Gacha pulled',
   daily_shown: 'Daily card shown', daily_open: 'Daily → check-in', daily_claim: 'Checked in',
@@ -225,6 +228,15 @@ export interface BootFunnelRow {
    * who never consented. Absent when nothing ticked.
    */
   anon_funnel?: Record<string, number>;
+  /** The same counts split by input class, from ticks that carried one (`?c=`, since 2026-10-14). */
+  anon_funnel_by_device?: { mobile?: Record<string, number>; desktop?: Record<string, number> };
+}
+
+function funnelLine(counts: Record<string, number>): string {
+  return Object.keys(ANON_FUNNEL_LABELS)
+    .filter((k) => (counts[k] ?? 0) > 0)
+    .map((k) => `${ANON_FUNNEL_LABELS[k]} ${counts[k]}`)
+    .join(' · ');
 }
 
 /**
@@ -232,12 +244,17 @@ export interface BootFunnelRow {
  * Empty when the row has none (offline builds, days before it shipped).
  */
 export function anonFunnelCell(row: BootFunnelRow): string {
-  const counts = row.anon_funnel;
-  if (!counts) return '';
-  return Object.keys(ANON_FUNNEL_LABELS)
-    .filter((k) => (counts[k] ?? 0) > 0)
-    .map((k) => `${ANON_FUNNEL_LABELS[k]} ${counts[k]}`)
-    .join(' · ');
+  return row.anon_funnel ? funnelLine(row.anon_funnel) : '';
+}
+
+/** The by-device split as "Touch: … / Desktop: …" lines; empty for rows from before it shipped. */
+export function anonFunnelDeviceLines(row: BootFunnelRow): string[] {
+  const by = row.anon_funnel_by_device;
+  if (!by) return [];
+  const out: string[] = [];
+  if (by.mobile) out.push(`Touch: ${funnelLine(by.mobile)}`);
+  if (by.desktop) out.push(`Desktop: ${funnelLine(by.desktop)}`);
+  return out;
 }
 
 export interface BootFunnelDisplayRow extends BootFunnelRow {

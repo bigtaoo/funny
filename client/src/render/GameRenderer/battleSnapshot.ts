@@ -24,15 +24,26 @@ export interface BattleSnapshot {
   first_build_tick: number | null;
 }
 
-/** Watches the event stream for the local player's first building — the one number the stats don't keep. */
+/**
+ * Watches the event stream for the local player's first building — the one number the stats don't
+ * keep — and for their card plays (first and latest), which the in-battle idle nudge reads
+ * (ONBOARDING_DESIGN §15.3).
+ */
 export class FirstBuildWatch {
   tick: number | null = null;
+  /** Tick of the local player's first card play, null while they have played none. */
+  firstPlayTick: number | null = null;
+  /** Tick of the local player's most recent card play, null while they have played none. */
+  lastPlayTick: number | null = null;
 
   /** Call once per frame, after the engine has ticked (its events are the frame's events). */
   observe(state: GameState, owner: OwnerId): void {
-    if (this.tick !== null) return;
     for (const e of state.events) {
-      if (e.type === 'building_placed' && e.owner === owner) { this.tick = state.elapsedTicks; return; }
+      if (e.type === 'building_placed' && e.owner === owner && this.tick === null) this.tick = state.elapsedTicks;
+      if (e.type === 'card_played' && e.owner === owner) {
+        this.firstPlayTick ??= state.elapsedTicks;
+        this.lastPlayTick = state.elapsedTicks;
+      }
     }
   }
 }

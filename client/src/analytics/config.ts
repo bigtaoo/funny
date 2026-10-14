@@ -81,11 +81,13 @@ export function pingDeclinedLaunch(analyticsBaseUrl: string, platform: string): 
  *
  * Fire-and-forget: a failure costs one tick in a trend and must never be visible to the player.
  */
-export function pingAnonymousFunnelStep(analyticsBaseUrl: string, platform: string, step: string, version: string): void {
+export function pingAnonymousFunnelStep(
+  analyticsBaseUrl: string, platform: string, step: string, version: string, device: 'm' | 'd',
+): void {
   void netTransport()
     .request({
       method: 'GET',
-      url: `${analyticsBaseUrl}/analytics/config?p=${encodeURIComponent(platform)}&t=${encodeURIComponent(step)}&v=${encodeURIComponent(version)}`,
+      url: `${analyticsBaseUrl}/analytics/config?p=${encodeURIComponent(platform)}&t=${encodeURIComponent(step)}&v=${encodeURIComponent(version)}&c=${device}`,
       headers: { Accept: 'application/json' },
     })
     .catch(() => { /* network failure → the tick is simply missing */ });

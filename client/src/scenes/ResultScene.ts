@@ -3,66 +3,20 @@ import { makeText } from '../render/pixiText';
 import { Scene } from './SceneManager';
 import { OwnerId, PlayerStats } from '@nw/engine/types';
 import { t, TranslationKey } from '../i18n';
-import { ProfilePopup, type ProfileData, type ProfileExtra } from '../ui/dialogs/ProfilePopup';
+import { ProfilePopup } from '../ui/dialogs/ProfilePopup';
 import { ui, buildPaperBackground, tearDownChildren } from '../render/sketchUi';
 import { buildIcon, IconKind } from '../render/icons';
 import { computeBadges } from './ResultScene/badges';
-import { buildRewardIcon, preloadRewardIconArt, type RewardLike } from '../render/rewardIcon';
+import { buildRewardIcon, preloadRewardIconArt } from '../render/rewardIcon';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { FS } from '../render/fontScale';
 import {
   buildMarginDeco, buildBadgeMedallion, addMoodDeco, addProfileLine, addVersusLine,
-  addPrimaryButton, addSecondaryButton, addHeader, addEloProtectLine, type EloProtectFields,
+  addPrimaryButton, addSecondaryButton, addHeader, addEloProtectLine,
 } from './ResultScene/builders';
 import { UI_FONT_FAMILY } from '../render/theme';
-
-/** Optional player identities for the result screen's tap-to-view profile popup. */
-export interface ResultProfiles {
-  opponent?: ProfileData;
-  local?: ProfileData;
-}
-
-/** Server-authoritative ELO result (ranked only, from match_over.elo). */
-export interface EloResult extends EloProtectFields {
-  delta: number;
-  after: number;
-  rankAfter: string;
-}
-
-/** The "come back tomorrow" check-in hook (RETENTION_LAUNCH_PLAN.md §3.3) — see AppViews.ts's doc. */
-export interface ResultRetentionPreview {
-  /** 1-based check-in calendar slot (server/shared/src/retention.ts CHECKIN_REWARDS index + 1). */
-  day: number;
-  reward: RewardLike;
-}
-
-// ─── ResultScene ──────────────────────────────────────────────────────────────
-
-export interface ResultSceneCallbacks {
-  onPlayAgain(): void;
-  /** Top-left back chip — always shown, always exits straight to the lobby regardless of what onPlayAgain does. */
-  onBack(): void;
-  /** When set, a "watch replay" button is shown (locally-recorded matches, S1-RP). */
-  onWatchReplay?(): void;
-  /** When set, a "share this match" button is shown (state-stream sharing, REPLAY_SHARE_DESIGN §4.3). */
-  onShare?(): void;
-  /** Override the "play again" button label (e.g. campaign uses 'Back to Map'). */
-  playAgainLabel?: string;
-  /**
-   * An extra entry at the head of the secondary row — campaign's "back to map" once a defeat turns
-   * the primary CTA into "retry".
-   */
-  secondaryAction?: { label: string; icon: IconKind; onTap(): void };
-  /** Unified profile-popup extras (rank/ELO + family/sect) — see ProfilePopup's `fetchExtra`. Omitted offline/AI. */
-  getProfileExtra?(publicId: string): Promise<ProfileExtra>;
-  /**
-   * Seconds before the primary button presses itself, a bar filling along its foot meanwhile
-   * (ONBOARDING_DESIGN §13 — campaign's first clear of a level, where the primary is "next level").
-   * Counts from when the result itself is on screen, never during the outro; any tap on the screen's
-   * other controls cancels it.
-   */
-  autoContinueSec?: number;
-}
+import type { ResultProfiles, EloResult, ResultRetentionPreview, ResultSceneCallbacks } from './ResultScene/types';
+export type { ResultProfiles, EloResult, ResultRetentionPreview, ResultSceneCallbacks } from './ResultScene/types';
 
 /** Outro screens advance on their own after this long plus {@link OUTRO_SEC_PER_CHAR} per character. */
 const OUTRO_BASE_SEC = 2.5;
@@ -337,7 +291,8 @@ export class ResultScene implements Scene {
       badgeBlock.push(heroDetail);
 
       // Secondary badges — a centred row of small icon medallions (no text list).
-      const rest = badges.slice(1);
+      // The compact first-win screen keeps only the hero badge (§15.4).
+      const rest = cb.firstWin ? [] : badges.slice(1);
       if (rest.length > 0) {
         const cellW = Math.round(w * 0.24);
         const gap   = Math.round(w * 0.04);
@@ -379,6 +334,22 @@ export class ResultScene implements Scene {
       no.y = headerBottom + h * 0.06;
       this.container.addChild(no);
       badgeBlock.push(no);
+    }
+
+    // "Up next" teaser on the compact first-win screen — the last line of the block, so it shrinks
+    // with the badges if the phone type boost pushes the block into the CTA.
+    if (cb.firstWin) {
+      const last = badgeBlock[badgeBlock.length - 1];
+      const lastBottom = last ? last.getBounds().bottom : headerBottom;
+      const teaser = makeText(t('result.upNext', { name: cb.firstWin.nextName }), {
+        fontSize: FS.headline, fill: 0x226622, fontWeight: 'bold', fontFamily: UI_FONT_FAMILY,
+      });
+      teaser.anchor.set(0.5, 0);
+      teaser.x = w / 2;
+      teaser.y = lastBottom + h * 0.035;
+      teaser.name = 'resultUpNext';
+      this.container.addChild(teaser);
+      badgeBlock.push(teaser);
     }
 
     // ── Action buttons: one primary CTA + a row of low-key secondary entries ──

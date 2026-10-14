@@ -165,7 +165,7 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
 
   /**
    * The anonymous first-session funnel tick (COMPLIANCE_GLOBAL §3.3b). `?t=<step>` is sent by every
-   * launch as it passes a tutorial step or a first try / first clear of levels 1–3. It is not a
+   * launch as it passes a tutorial step or a first try / first clear of levels 1–5. It is not a
    * launch — counting it as one would inflate the funnel's denominator — and a step outside the
    * allow-list mints nothing.
    */
@@ -204,6 +204,24 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
       ['-', 1], // `x|y` would have split the `_id` — counted, but without a version
       ['6bfc1a8', 1],
       ['a9d7a6d', 2],
+    ]);
+  });
+
+  it('GET /analytics/config?t=<step>&c=m|d splits the tick by input class, and drops an unknown one', async () => {
+    await mongo!.collections.funnel_anon_daily.deleteMany({});
+    await fetch(`${base}/analytics/config?p=crazygames&t=alive_60s&v=a9d7a6d&c=m`);
+    await fetch(`${base}/analytics/config?p=crazygames&t=alive_60s&v=a9d7a6d&c=m`);
+    await fetch(`${base}/analytics/config?p=crazygames&t=alive_60s&v=a9d7a6d&c=d`);
+    await fetch(`${base}/analytics/config?p=crazygames&t=alive_60s&c=d`);
+    await fetch(`${base}/analytics/config?p=crazygames&t=alive_60s&c=tablet`);
+
+    await new Promise((r) => setTimeout(r, 150));
+    const docs = await mongo!.collections.funnel_anon_daily.find({}).toArray();
+    expect(docs.map((d) => [d.version ?? '-', d.device ?? '-', d.count]).sort()).toEqual([
+      ['-', '-', 1], // `tablet` is not an input class — counted, but without one
+      ['-', 'desktop', 1],
+      ['a9d7a6d', 'desktop', 1],
+      ['a9d7a6d', 'mobile', 2],
     ]);
   });
 
@@ -964,7 +982,6 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
       // N1 — full graduation: reaches every funnel step, plus a shop_open action.
       ev('fs-n1', 'fs-N1', 'session_start', 3600_000),
       ev('fs-n1', 'fs-N1', 'screen_view', 3600_100, 'IntroScene'),
-      ev('fs-n1', 'fs-N1', 'intro_complete', 3600_150),
       ev('fs-n1', 'fs-N1', 'tutorial_start', 3600_200),
       ev('fs-n1', 'fs-N1', 'tutorial_complete', 3600_300),
       ev('fs-n1', 'fs-N1', 'screen_view', 3600_400, 'LobbyScene'),
@@ -988,14 +1005,12 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
     // Only N1 + N2 are new in-window; V1 is a returning veteran.
     expect(res.cohort_size).toBe(2);
 
-    // Funnel is built from 100%-sampled events only (no screen_view-derived steps) — intro_seen is
-    // the exception, reading dedicated intro_complete/intro_skip events (design-doc-audit-2026-07).
+    // Funnel is built from 100%-sampled events only (no screen_view-derived steps).
     const step = (k: string) => res.funnel.find((f) => f.step === k);
     expect(res.funnel.map((f) => f.step)).toEqual([
-      'session_start', 'tutorial_start', 'tutorial_complete', 'first_battle', 'first_clear', 'intro_seen',
+      'session_start', 'tutorial_start', 'tutorial_complete', 'first_battle', 'first_clear',
     ]);
     expect(step('session_start')?.count).toBe(2);
-    expect(step('intro_seen')?.count).toBe(1); // only N1 emitted intro_complete
     expect(step('tutorial_start')?.count).toBe(2);
     expect(step('tutorial_complete')?.count).toBe(1); // only N1 finished
     expect(step('first_battle')?.count).toBe(1);

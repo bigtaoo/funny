@@ -8,7 +8,7 @@ import type { IPlatform } from '../platform/IPlatform';
 import type { ApiClient } from '../net/ApiClient';
 import { getOrCreateDeviceId } from '../platform/uuid';
 import { onAppLifecycleChange } from '../platform/appLifecycle';
-import { getLocale } from '../i18n';
+import { getLocale, getPlatformLanguage } from '../i18n';
 import { fetchAnalyticsConfig, pingAnonymousFunnelStep, pingDeclinedLaunch, shouldTrack } from './config';
 import { EventQueue, type AnalyticsEvent, type BatchMeta } from './queue';
 import { telemetrySessionId } from './session';
@@ -81,13 +81,17 @@ export function countDeclinedLaunch(): void {
  * bundle exists, `loaded_*` by {@link countLoadedLaunch}; ANALYTICS_DESIGN §3.6f), the ink-full
  * nudge and the first-session reward loop (gift → gacha → daily, ONBOARDING_DESIGN §14.2/§14.3), and
  * `return_launch` — a launch whose save had cleared ch1_lv1 before it started, the one retention
- * signal that also counts players who never consented ({@link countReturnLaunch}). Must match analyticsvc's `ANON_FUNNEL_STEPS` (service/defs.ts) and the `t` enum on
+ * signal that also counts players who never consented ({@link countReturnLaunch}). Since 2026-10-14
+ * (ONBOARDING_DESIGN §15): `alive_60s` — the launch is still open a minute after its first screen,
+ * our side of CrazyGames' "gameplay conversion" ({@link countLoadedLaunch}) — the first card played in
+ * ch1_lv1 and its idle-card hint, and the first attempt / clear of levels 4–5. Must match analyticsvc's `ANON_FUNNEL_STEPS` (service/defs.ts) and the `t` enum on
  * `GET /analytics/config`; the server drops anything else.
  */
 export const ANONYMOUS_FUNNEL_STEPS = [
-  'open_desktop', 'open_mobile', 'loaded_desktop', 'loaded_mobile',
+  'open_desktop', 'open_mobile', 'loaded_desktop', 'loaded_mobile', 'alive_60s',
   'tutorial_start', 'beat_unit', 'beat_building', 'beat_spell', 'graduate', 'tutorial_complete', 'tutorial_skip',
-  'lv1_start', 'lv1_clear', 'lv2_start', 'lv2_clear', 'lv3_start', 'lv3_clear',
+  'lv1_start', 'lv1_first_play', 'lv1_play_hint', 'lv1_clear', 'lv2_start', 'lv2_clear', 'lv3_start', 'lv3_clear',
+  'lv4_start', 'lv4_clear', 'lv5_start', 'lv5_clear',
   'ink_full_hint', 'gift_shown', 'gift_gacha', 'gacha_pull', 'daily_shown', 'daily_open', 'daily_claim',
   'return_launch',
 ] as const;
@@ -103,7 +107,8 @@ let anonFunnelSent = new Set<string>();
  * platform, step) count and nothing else. Being neither personal data nor device access, it needs no
  * consent, so it counts **every** player whatever their analytics answer: it is the one funnel that
  * covers the EEA players who never said yes, and the one consented and unconsented players can be
- * compared on.
+ * compared on. Every tick also carries the build version and the input class (`c=m|d`, the same
+ * `(pointer: coarse)` test as the `open_*` / `loaded_*` pair), so each step splits mobile vs desktop.
  *
  * Once per step per launch: a settings "replay tutorial", or a second try at a level in the same
  * launch, is not a second player reaching the step. (A level failed in two separate launches does
@@ -115,8 +120,16 @@ export function countAnonymousFunnelStep(step: AnonymousFunnelStep): void {
   if (!(ANONYMOUS_FUNNEL_STEPS as readonly string[]).includes(step)) return; // JS callers / stale keys
   if (anonFunnelSent.has(step)) return;
   anonFunnelSent.add(step);
-  pingAnonymousFunnelStep(bootCounterBase, getPlatformName(), step, getGameVersion());
+  pingAnonymousFunnelStep(bootCounterBase, getPlatformName(), step, getGameVersion(), isCoarsePointer() ? 'm' : 'd');
 }
+
+/** The input-class test shared by every anonymous tick; keep it identical to public/crazygames/index.html's. */
+function isCoarsePointer(): boolean {
+  return typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+}
+
+/** `alive_60s` fires this long after the first screen (ONBOARDING_DESIGN §15.1). */
+export const ALIVE_TICK_MS = 60_000;
 
 /**
  * Tick `return_launch` on the first lobby arrival of a launch when the save shows ch1_lv1 cleared and
@@ -135,10 +148,15 @@ export function countReturnLaunch(cleared: readonly string[]): void {
  * the launches abandoned while loading, which no event can describe (nothing is sent before init).
  * The input-class test must stay identical to the one in public/crazygames/index.html, or the two
  * halves of each pair count different populations.
+ *
+ * It also arms `alive_60s`: a launch whose page is still open a minute later. CrazyGames grades
+ * "gameplay conversion" as the share of players still playing after one minute; that number is
+ * computed on their side with no breakdown, and this is the same cut taken on ours — split by device
+ * and build, and readable against every other step. A closed tab never fires it.
  */
 export function countLoadedLaunch(): void {
-  const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
-  countAnonymousFunnelStep(coarse ? 'loaded_mobile' : 'loaded_desktop');
+  countAnonymousFunnelStep(isCoarsePointer() ? 'loaded_mobile' : 'loaded_desktop');
+  setTimeout(() => countAnonymousFunnelStep('alive_60s'), ALIVE_TICK_MS);
 }
 
 /**
@@ -283,7 +301,8 @@ export async function init(
   flushPreConsent();
   // Emit session_start (sample=1.0 by default). Before consent it lands in the pre-consent buffer
   // like every other event and is replayed on accept.
-  track('session_start', { platform: platformName, os, locale: getLocale() });
+  // `locale` is the UI language the game picked; `platform_locale` is what the platform asked for.
+  track('session_start', { platform: platformName, os, locale: getLocale(), platform_locale: getPlatformLanguage() });
 }
 
 // ── Session lifecycle → churn_signal + session_end ───────────────────────────

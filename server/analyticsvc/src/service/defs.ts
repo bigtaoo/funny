@@ -94,6 +94,8 @@ export interface BootFunnelRow {
    * said yes. Launch counts per step, not devices; only steps that ticked are present.
    */
   anon_funnel?: Partial<Record<AnonFunnelStep, number>>;
+  /** The same counts restricted to ticks that carried an input class (`?c=`, since 2026-10-14). */
+  anon_funnel_by_device?: Partial<Record<AnonFunnelDevice, Partial<Record<AnonFunnelStep, number>>>>;
 }
 
 /**
@@ -108,11 +110,15 @@ export interface BootFunnelRow {
  * nudge, the first-session reward loop (gift card → gacha → first pull, daily card → check-in;
  * ONBOARDING_DESIGN §14.3), and `return_launch`: a launch whose save had ch1_lv1 cleared before it
  * started — a coarse returning-player count that, unlike the consented D1, covers everyone.
+ * Since 2026-10-14 (ONBOARDING_DESIGN §15): `alive_60s` (the launch is still open 60 s after the
+ * first screen — CrazyGames' "gameplay conversion" seen from our side), `lv1_first_play` (first card
+ * played in ch1_lv1), `lv1_play_hint` (the idle-card hint fired there), and levels 4–5.
  */
 export const ANON_FUNNEL_STEPS = [
-  'open_desktop', 'open_mobile', 'loaded_desktop', 'loaded_mobile',
+  'open_desktop', 'open_mobile', 'loaded_desktop', 'loaded_mobile', 'alive_60s',
   'tutorial_start', 'beat_unit', 'beat_building', 'beat_spell', 'graduate', 'tutorial_complete', 'tutorial_skip',
-  'lv1_start', 'lv1_clear', 'lv2_start', 'lv2_clear', 'lv3_start', 'lv3_clear',
+  'lv1_start', 'lv1_first_play', 'lv1_play_hint', 'lv1_clear', 'lv2_start', 'lv2_clear', 'lv3_start', 'lv3_clear',
+  'lv4_start', 'lv4_clear', 'lv5_start', 'lv5_clear',
   'ink_full_hint', 'gift_shown', 'gift_gacha', 'gacha_pull', 'daily_shown', 'daily_open', 'daily_claim',
   'return_launch',
 ] as const;
@@ -130,6 +136,15 @@ export function isAnonFunnelStep(s: string): s is AnonFunnelStep {
  */
 export function anonFunnelVersion(v: string | null): string | null {
   return v && /^[0-9A-Za-z._-]{1,40}$/.test(v) ? v : null;
+}
+
+/** Input class an anonymous tick may carry (`?c=`): the same `(pointer: coarse)` test the `open_*` /
+ * `loaded_*` steps encode in their names, so every later step can be split by it too. */
+export type AnonFunnelDevice = 'mobile' | 'desktop';
+
+/** `?c=m` / `?c=d` → the input class; anything else is dropped and the tick is counted without one. */
+export function anonFunnelDevice(c: string | null): AnonFunnelDevice | null {
+  return c === 'm' ? 'mobile' : c === 'd' ? 'desktop' : null;
 }
 
 /**
@@ -189,16 +204,14 @@ export interface OnboardingStep {
 }
 
 /**
- * Ordered onboarding funnel: open → tutorial start → tutorial finished → first real battle → first clear →
- * story seen. Drop-off between adjacent steps localises where day-1 players quit; tutorial_complete ÷
+ * Ordered onboarding funnel: open → tutorial start → tutorial finished → first real battle → first clear. Drop-off between adjacent steps localises where day-1 players quit; tutorial_complete ÷
  * tutorial_start is the tutorial completion rate.
  *
  * Every step here is derived from a 100%-sampled event (see DEFAULT_CONFIG) so the counts are directly
  * comparable. Deliberately excludes screen_view-derived milestones (e.g. lobby arrival) — screen_view is
- * sampled at 5%, so folding it in would show sampling-driven cliffs rather than real drop-off. `intro_seen`
- * is the exception: it reads dedicated 100%-sampled `intro_complete`/`intro_skip` events (not screen_view),
- * added design-doc-audit-2026-07 — this funnel previously had no data for the intro step at all. Scenes
- * still appear (sample-affected) in the action breakdown below.
+ * sampled at 5%, so folding it in would show sampling-driven cliffs rather than real drop-off. Scenes
+ * still appear (sample-affected) in the action breakdown below. The last step used to be `intro_seen`
+ * (the opening-story card on the first campaign-map open); the card is gone since ONBOARDING_DESIGN §16.
  */
 export const ONBOARDING_STEPS: OnboardingStep[] = [
   { key: 'session_start', reached: () => true }, // baseline = whole cohort (all had a first session_start)
@@ -206,11 +219,6 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
   { key: 'tutorial_complete', reached: (e) => e.has('tutorial_complete') },
   { key: 'first_battle', reached: (e) => e.has('game_start') }, // first non-tutorial battle
   { key: 'first_clear', reached: (e) => e.has('level_complete') }, // first real level clear
-  // intro_complete/intro_skip (design-doc-audit-2026-07) are 100%-sampled like the rest of this funnel —
-  // unlike screen_view (5%), they belong here instead of being excluded per the comment above. Last, not
-  // second: since ONBOARDING_DESIGN §11.7 the story is no longer a first-launch scene but a one-line card
-  // on the first campaign-map open, which a new player reaches after the tutorial and (usually) ch1_lv1.
-  { key: 'intro_seen', reached: (e) => e.has('intro_complete') || e.has('intro_skip') },
 ];
 
 // Lifecycle/plumbing events excluded from the "which action did they take" breakdown (screen_view is

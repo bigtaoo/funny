@@ -164,13 +164,13 @@ export const de: Record<TranslationKey, string> = {
   'result.playAgainWin': 'NOCHMAL KÄMPFEN',
   'result.backToMap': 'ZURÜCK ZUR KARTE',
   'result.nextLevel': 'NÄCHSTES LEVEL',
-  'result.claimGift': 'GESCHENK ABHOLEN',
   'result.retry': 'NOCHMAL',
   'result.watchReplay': 'WIEDERHOLUNG ANSEHEN',
   'result.eloDelta': 'ELO {delta} → {after}　{rank}',
   'result.newbieProtect': 'Neulingsschutz ({n}/{total}) · Niederlagen kosten kein ELO',
   'result.dailyProtect': 'Tagesschutz ({n}/{total}) · Niederlagen kosten kein ELO',
   'result.tomorrowReward': 'Komm morgen zurück — Tag {day} Check-in',
+  'result.upNext': 'Als Nächstes: {name}',
   'rank.unranked': 'Unplatziert',
   'rank.bronze': 'Bronze',
   'rank.silver': 'Silber',
@@ -210,8 +210,6 @@ export const de: Record<TranslationKey, string> = {
   'story.line.7': 'Daraus wurde eine ganze Welt – in der nicht zählte, wer am klügsten war, sondern ob jemand deinen nächsten Schritt verstand.',
   'story.tapToContinue': 'Zum Fortfahren tippen',
   'story.skip': 'Überspringen »',
-  // One-line story card, first campaign-map open (ONBOARDING_DESIGN §11.7) — the 7 story.line.* condensed.
-  'story.card': 'Zum Geburtstag bekam Tao ein Heft. Darin zeichnete er diese ganze Welt.',
 
   // ── Tutorial-Level ch0_tutorial (ONBOARDING_DESIGN §3) ────────────────────────
   'campaign.tutorial.name': 'Tutorial',

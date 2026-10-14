@@ -24,16 +24,24 @@ import { matchBadgeTelemetry } from '../../../scenes/ResultScene/badges';
 import { buildEquipmentActions } from './equipmentActions';
 import { createStaminaAd } from './staminaAd';
 import { nextLevelAfterWin, NEXT_LEVEL_AUTO_SEC } from './nextLevel';
-import { rewardLoopDetour } from '../firstRewardLoop';
 import type { MountOpts } from '../../AppViews';
 import type { AppCtx, Nav } from '../../appCtx';
-import { TOKEN_KEY, SEEN_INTRO_FLAG, inkHintGate, buildHintFor } from '../../appConstants';
+import { TOKEN_KEY, inkHintGate, buildHintFor } from '../../appConstants';
 import { pickPracticeDifficulty } from '../lobby';
 import { resolveRealLayerInterlude } from '../../../scenes/realLayerInterludeArt';
-import openingStoryArtUrl from '../../../assets/story/intro_notebook.png';
 
 type CampaignRosterNav = Pick<Nav,
   'goGame' | 'goCampaignMap' | 'goLevelPrep' | 'goCardRoster' | 'goEquipment' | 'goCampaign'>;
+
+/**
+ * The first five campaign levels — the stretch the anonymous funnel follows level by level, that
+ * shows no midgame ad, and whose first clears get the compact result (ONBOARDING_DESIGN §15).
+ */
+const EARLY_LEVEL_COUNT = 5;
+function isEarlyLevel(levelId: string): boolean {
+  const i = CAMPAIGN_LEVEL_ORDER.indexOf(levelId);
+  return i >= 0 && i < EARLY_LEVEL_COUNT;
+}
 
 /** See goCardRoster's SLG-fetch comment. */
 const CARD_ROSTER_SLG_BUDGET_MS = 2500;
@@ -124,19 +132,6 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
       // PvE is server-authoritative: clearing / unlocking new levels requires an online connection (§8 decision 4). Offline, only previously unlocked levels can be replayed; new unlocks are gated.
       isOnline: () => saveManager.online(),
       getPendingLevels: () => saveManager.getPendingClears().map((p) => p.levelId),
-      // The opening story, compressed to one card, the first time the map opens
-      // (ONBOARDING_DESIGN §11.7) — no longer a 7-line scene in front of the first screen.
-      // SEEN_INTRO_FLAG is shared with the old first-launch intro on purpose: a save that already
-      // sat through that has been told the story and doesn't get the card. The funnel's
-      // `intro_seen` step reads these two events (analyticsvc ONBOARDING_STEPS).
-      getStoryCard: () => saveManager.getFlag(SEEN_INTRO_FLAG) ? null : {
-        illustrationUrl: openingStoryArtUrl,
-        text: t('story.card'),
-        onDone(skipped: boolean) {
-          analytics.track(skipped ? 'intro_skip' : 'intro_complete', {});
-          saveManager.setFlag(SEEN_INTRO_FLAG, true);
-        },
-      },
     });
   }
 
@@ -382,12 +377,12 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
 
   /**
    * The anonymous first-session funnel step (ANALYTICS_DESIGN §3.6d) for starting / clearing one of
-   * the first three campaign levels — only while that level has never been cleared, so the row means
+   * the first five campaign levels — only while that level has never been cleared, so the row means
    * "a new player got this far", not "someone replayed level 1". Read before recordClear updates it.
    */
   function anonLevelStep(levelId: string, phase: 'start' | 'clear'): analytics.AnonymousFunnelStep | null {
     const n = CAMPAIGN_LEVEL_ORDER.indexOf(levelId) + 1;
-    if (n < 1 || n > 3 || saveManager.get().progress.cleared.includes(levelId)) return null;
+    if (!isEarlyLevel(levelId) || saveManager.get().progress.cleared.includes(levelId)) return null;
     return `lv${n}_${phase}` as analytics.AnonymousFunnelStep;
   }
 
@@ -456,23 +451,30 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
           : goCampaignMap;
         // A lost level offers the retry first (through level prep, which charges the stamina) and
         // keeps the map one tap away — before, a defeat only had "back to map".
+        // No midgame ad around the first five levels (ONBOARDING_DESIGN §15.5).
+        const early = isEarlyLevel(levelId);
         if (winner !== 0) {
           void nav.goResult(winner, stats, 0, kept, undefined, undefined, outroTexts,
             () => goLevelPrep(levelId), t('result.retry'), undefined,
-            { label: t('result.backToMap'), icon: 'mapPin', onTap: proceedToMap });
+            { label: t('result.backToMap'), icon: 'mapPin', onTap: proceedToMap }, undefined, { skipAd: early });
           return;
         }
         // A clear offers the next level first and keeps the map one tap away (ONBOARDING_DESIGN §13).
         const nextId = nextLevelAfterWin(levelId, stars > 0 || !firstClear, !!interlude);
-        if (!nextId) { void nav.goResult(winner, stats, 0, kept, undefined, undefined, outroTexts, proceedToMap, t('result.backToMap')); return; }
-        // The first ch1_lv2 clear (online: the lobby holds the mail and gacha) detours to the lobby
-        // for the reward loop, NEXT LEVEL one tap aside (ONBOARDING_DESIGN §14.2).
-        const gift = !!api && stars > 0 && rewardLoopDetour(saveManager, levelId, firstClear);
-        const next = { label: t('result.nextLevel'), icon: 'play' as const, onTap: () => goLevelPrep(nextId) };
+        if (!nextId) {
+          void nav.goResult(winner, stats, 0, kept, undefined, undefined, outroTexts, proceedToMap, t('result.backToMap'),
+            undefined, undefined, undefined, { skipAd: early });
+          return;
+        }
+        // The first clear of an early level gets the compact screen with an "up next" teaser (§15.4).
+        const nextKey = getLevel(nextId)?.nameKey;
+        const firstWin = early && firstClear && nextKey ? { nextName: t(nextKey as TranslationKey) } : undefined;
+        // No detour here any more (ONBOARDING_DESIGN §15.2): the reward loop waits for the player's own
+        // first trip to the lobby — routing the ch1_lv2 win there cut lv3 starts from 72% to 19%.
         void nav.goResult(winner, stats, 0, kept, undefined, undefined, outroTexts,
-          gift ? () => nav.goLobby() : next.onTap, gift ? t('result.claimGift') : next.label, undefined,
-          gift ? next : { label: t('result.backToMap'), icon: 'mapPin', onTap: proceedToMap },
-          firstClear ? NEXT_LEVEL_AUTO_SEC : undefined);
+          () => goLevelPrep(nextId), t('result.nextLevel'), undefined,
+          { label: t('result.backToMap'), icon: 'mapPin', onTap: proceedToMap },
+          firstClear ? NEXT_LEVEL_AUTO_SEC : undefined, { skipAd: early, ...(firstWin ? { firstWin } : {}) });
       },
       onExitToLobby() {
         analytics.track('level_abandon', { level_id: levelId, phase: 'in_game', ...analytics.battleProps() });

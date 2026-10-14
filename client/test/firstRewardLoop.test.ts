@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
-  runRewardLoop, rewardLoopDetour, REWARD_LOOP_LEVEL, FIRST_GACHA_FEAT, FIRST_DAILY_FEAT,
+  runRewardLoop, REWARD_LOOP_LEVEL, FIRST_GACHA_FEAT, FIRST_DAILY_FEAT,
   type RewardLoopDeps,
 } from '../src/app/nav/firstRewardLoop';
 
@@ -44,18 +44,12 @@ function deps(sm: ReturnType<typeof fakeSave>, mail: unknown[] = [welcomeMail], 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
 describe('first-session reward loop (ONBOARDING_DESIGN §14.2)', () => {
-  it('detours only the first clear of the loop level, and only until the gift step ran', () => {
-    const sm = fakeSave([], 0);
-    const save = sm as unknown as RewardLoopDeps['saveManager'];
-    expect(rewardLoopDetour(save, REWARD_LOOP_LEVEL, true)).toBe(true);
-    expect(rewardLoopDetour(save, REWARD_LOOP_LEVEL, false)).toBe(false);
-    expect(rewardLoopDetour(save, 'ch1_lv1', true)).toBe(false);
-    sm.markFeatSeen(FIRST_GACHA_FEAT);
-    expect(rewardLoopDetour(save, REWARD_LOOP_LEVEL, true)).toBe(false);
+  it('opens on the first level, so the campaign never has to detour for it (§15.2)', () => {
+    expect(REWARD_LOOP_LEVEL).toBe('ch1_lv1');
   });
 
   it('does nothing before the loop level is cleared', async () => {
-    const sm = fakeSave(['ch1_lv1'], 0);
+    const sm = fakeSave([], 0);
     const d = deps(sm);
     runRewardLoop(d);
     await flush();
@@ -64,7 +58,7 @@ describe('first-session reward loop (ONBOARDING_DESIGN §14.2)', () => {
   });
 
   it('first arrival claims the welcome mail and walks into the gacha; the next opens the daily; then nothing', async () => {
-    const sm = fakeSave(['ch1_lv1', REWARD_LOOP_LEVEL], 0);
+    const sm = fakeSave([REWARD_LOOP_LEVEL], 0);
     const d = deps(sm);
 
     runRewardLoop(d);

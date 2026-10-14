@@ -12,7 +12,7 @@
 //     lets in a whole birth year.
 import { describe, it, expect, afterEach } from 'vitest';
 import { createAppCore } from '../src/app/createAppCore';
-import { AGE_DECLARED_FLAG, MIN_AGE_YEARS, SEEN_INTRO_FLAG, GDPR_CONSENT_FLAG, TERMS_ACCEPTED_FLAG, TOKEN_KEY } from '../src/app/appConstants';
+import { AGE_DECLARED_FLAG, MIN_AGE_YEARS, GDPR_CONSENT_FLAG, TERMS_ACCEPTED_FLAG, TOKEN_KEY } from '../src/app/appConstants';
 import { HeadlessPlatform } from './harness/HeadlessPlatform';
 import { HeadlessAppViews } from './harness/HeadlessAppViews';
 import { fetchTransport, setNetTransport, type NetRequest } from '../src/net/transport';
@@ -23,7 +23,7 @@ const THIS_YEAR = new Date().getFullYear();
 function launch(flags: Record<string, boolean>, storage: Record<string, string> = {}) {
   const platform = new HeadlessPlatform({
     storage: {
-      nw_save_v1: JSON.stringify({ flags: { tutorial_done: true, [SEEN_INTRO_FLAG]: true, ...flags } }),
+      nw_save_v1: JSON.stringify({ flags: { tutorial_done: true, ...flags } }),
       ...storage,
     },
   });
