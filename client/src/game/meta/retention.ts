@@ -52,6 +52,19 @@ export function nextCheckinDay(save: SaveData, tsMs: number): number | null {
   return nextSlot;
 }
 
+/**
+ * The check-in slot a player who claimed today will find open tomorrow — the "come back tomorrow"
+ * hook's day once today's claim is in (ONBOARDING_DESIGN §15.6). Null if today has not been claimed,
+ * or the calendar is used up; a claim on a month's last day leaves slot 1 of the next month.
+ */
+export function tomorrowCheckinDay(save: SaveData, tsMs: number): number | null {
+  const checkin = save.retention?.checkin;
+  if (!checkin || checkin.monthKey !== makeMonthKey(tsMs) || checkin.lastClaimedDayKey !== makeDayKey(tsMs)) return null;
+  if (makeMonthKey(tsMs + 86_400_000) !== checkin.monthKey) return 1;
+  const slot = checkin.claimedDays.length + 1;
+  return slot > 30 ? null : slot;
+}
+
 export function dailyTaskPoints(save: SaveData, tsMs: number): number {
   const dayKey = makeDayKey(tsMs);
   const r = save.retention;

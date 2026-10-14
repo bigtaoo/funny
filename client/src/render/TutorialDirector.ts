@@ -7,7 +7,7 @@ import type { Phase, TutorialConfig } from './TutorialDirector/types';
 import { buildLayers, drawStrip, clearStrip, drawGradCard, type PanelHost } from './TutorialDirector/panels';
 import { BEATS, BEAT_STEP_KEY, beatText, type BeatSpec } from './TutorialDirector/beats';
 import {
-  IDLE_GHOST_SEC, BASE_LABEL_HOLD_SEC, BASE_LABEL_FADE_SEC, FEEDBACK_SEC, STRIP_FADE_SEC, FINALE_MAX_SEC, FINALE_PAUSE_SEC, GRAD_CARD_DELAY_SEC, GRAD_POP_SEC, SHAKE_SEC, SHAKE_AMP, LANE_SNAP_COLS, METEOR_SNAP_CELLS,
+  IDLE_GHOST_SEC, BASE_LABEL_HOLD_SEC, BASE_LABEL_FADE_SEC, FEEDBACK_SEC, STRIP_FADE_SEC, FINALE_MAX_SEC, FINALE_PAUSE_SEC, GRAD_CARD_DELAY_SEC, GRAD_POP_SEC, SHAKE_SEC, SHAKE_AMP, LANE_SNAP_COLS, BUILDING_SNAP_COLS, METEOR_SNAP_CELLS,
 } from './TutorialDirector/beats';
 import { enemyUnits, bestMeteorAnchor, beatTargetPoint, meteorAnchorCenter } from './TutorialDirector/geometry';
 import { dispatchHit } from '../ui/hits';
@@ -217,7 +217,8 @@ export class TutorialDirector {
       const a = this.meteorAnchor;
       return a && Math.abs(col - a.col) <= METEOR_SNAP_CELLS && Math.abs(row - a.row) <= METEOR_SNAP_CELLS ? a : null;
     }
-    return Math.abs(col - beat.col) <= LANE_SNAP_COLS ? { col: beat.col, row } : null;
+    const snap = beat.kind === 'building' ? BUILDING_SNAP_COLS : LANE_SNAP_COLS;
+    return Math.abs(col - beat.col) <= snap ? { col: beat.col, row } : null;
   }
 
   // ── Per-frame (end of GameRenderer.update): clock control, never-fail clamp, state machine, anims ──

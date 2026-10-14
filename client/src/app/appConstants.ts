@@ -14,6 +14,8 @@ export const log = netLog('app');
  * full first-launch IntroScene — so a save that saw the old intro already has it and skips the card.
  */
 export const SEEN_INTRO_FLAG = 'seen_intro';
+/** Device-local twin of SEEN_INTRO_FLAG (platform.storage), so a cloud reconcile can't bring the card back (ONBOARDING_DESIGN §15.2). */
+export const SEEN_INTRO_LOCAL_KEY = 'nw_seen_intro';
 /** Set after the tutorial is completed or skipped; prevents auto-entry afterwards. Clearing it via "replay tutorial" in settings allows re-entry (ONBOARDING_DESIGN §3.4). */
 export const TUTORIAL_DONE_FLAG = 'tutorial_done';
 /** flags key — the one-time "not enough ink" bubble has been shown (ONBOARDING_DESIGN §9 item 9). */
@@ -45,11 +47,27 @@ export function inkHintGate(save: { getFlag(key: string): boolean; setFlag(key: 
  */
 export const BUILD_HINT_TICKS: Readonly<Record<string, number>> = { ch1_lv1: 180 };
 
+/**
+ * Seconds of "affordable card, nothing played" before the idle nudge (ONBOARDING_DESIGN §15.3), on
+ * the same levels as the build hint. 4 s: the first wave spawns at 4 s, and the median ch1_lv1 exit on
+ * CrazyGames came ~22 s in with nothing built.
+ */
+export const IDLE_NUDGE_SEC = 4;
+
 /** The hint's config for `levelId`, or undefined when it doesn't carry one or has been cleared already. */
 export function buildHintFor(levelId: string, starsSoFar: number, onEvent: (outcome: BuildHintOutcome, tick: number) => void): BuildHintConfig | undefined {
   const atTick = BUILD_HINT_TICKS[levelId];
   if (atTick === undefined || starsSoFar > 0) return undefined;
-  return { atTick, onEvent };
+  const firstLevel = levelId === 'ch1_lv1';
+  return {
+    atTick,
+    onEvent,
+    idleNudgeSec: IDLE_NUDGE_SEC,
+    ...(firstLevel ? {
+      onIdleNudge: () => analytics.countAnonymousFunnelStep('lv1_play_hint'),
+      onFirstPlay: () => analytics.countAnonymousFunnelStep('lv1_first_play'),
+    } : {}),
+  };
 }
 /** flags key — set after the player accepts the GDPR / privacy consent (C5-c, L1-1). Mirrors server `flags.gdprConsent`. */
 export const GDPR_CONSENT_FLAG = 'gdprConsent';

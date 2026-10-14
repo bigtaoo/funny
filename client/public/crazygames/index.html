@@ -26,7 +26,7 @@
         if (!base || typeof fetch !== 'function') return;
         var coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
         fetch(base + '/analytics/config?p=crazygames&t=' + (coarse ? 'open_mobile' : 'open_desktop')
-          + '&v=' + encodeURIComponent('<%= htmlWebpackPlugin.options.buildVersion %>'),
+          + '&v=' + encodeURIComponent('<%= htmlWebpackPlugin.options.buildVersion %>') + '&c=' + (coarse ? 'm' : 'd'),
           { mode: 'no-cors', keepalive: true }).catch(function () {});
       })();
     </script>

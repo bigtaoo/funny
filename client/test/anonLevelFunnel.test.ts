@@ -1,5 +1,5 @@
 // The anonymous first-session funnel's level steps (ANALYTICS_DESIGN §3.6d, COMPLIANCE_GLOBAL §3.3b):
-// `lvN_start` / `lvN_clear` tick for the first three campaign levels only, and only while the level
+// `lvN_start` / `lvN_clear` tick for the first five campaign levels only, and only while the level
 // has never been cleared — the row has to mean "a new player got this far", not "someone replayed
 // level 1". Same hand-built-AppCtx style as scene-fade-scope.test.ts.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -50,7 +50,7 @@ function nav(cleared: string[]): { goCampaign: Nav['goCampaign']; lastGame: () =
   return { goCampaign, lastGame: () => { if (!cb) throw new Error('showGame not called'); return cb; } };
 }
 
-describe('anonymous funnel: first three campaign levels', () => {
+describe('anonymous funnel: first five campaign levels', () => {
   beforeEach(() => { ticks.length = 0; });
 
   it('ticks lv1_start on entry and lv1_clear on a starred win while level 1 is uncleared', () => {
@@ -75,9 +75,16 @@ describe('anonymous funnel: first three campaign levels', () => {
     expect(ticks).toEqual(['lv2_start']);
   });
 
-  it('stops after level 3', () => {
+  it('ticks levels 4 and 5 (ONBOARDING_DESIGN §15.1)', () => {
     const n = nav([]);
     n.goCampaign(CAMPAIGN_LEVEL_ORDER[3]);
+    n.goCampaign(CAMPAIGN_LEVEL_ORDER[4]);
+    expect(ticks).toEqual(['lv4_start', 'lv5_start']);
+  });
+
+  it('stops after level 5', () => {
+    const n = nav([]);
+    n.goCampaign(CAMPAIGN_LEVEL_ORDER[5]);
     expect(ticks).toEqual([]);
   });
 });

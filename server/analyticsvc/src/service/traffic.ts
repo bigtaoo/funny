@@ -7,7 +7,7 @@
 // composition in ../service.ts.
 
 import { AnalyticsCollections } from '../db';
-import { AnonFunnelStep, isAnonFunnelStep, BootFunnelRow, EventCountRow, DauRow, LoginHourRow, RETENTION_OFFSETS, RetentionOffset, RetentionRow, ONBOARDING_STEPS, ACTION_NOISE, EMPTY_STEP_KEYS, OnboardingStepRow, FirstSessionActionRow, FirstSessionResult, dayStart, toDateStr } from './defs';
+import { AnonFunnelDevice, AnonFunnelStep, isAnonFunnelStep, BootFunnelRow, EventCountRow, DauRow, LoginHourRow, RETENTION_OFFSETS, RetentionOffset, RetentionRow, ONBOARDING_STEPS, ACTION_NOISE, EMPTY_STEP_KEYS, OnboardingStepRow, FirstSessionActionRow, FirstSessionResult, dayStart, toDateStr } from './defs';
 
 export class TrafficService {
   constructor(
@@ -119,15 +119,21 @@ export class TrafficService {
    * of the `_id`), and so must `version` (`anonFunnelVersion`). A tick with a version gets its own
    * document per build, so a release can be read against the one before it on a day both are live;
    * one without (older clients) keeps the original versionless `_id`. Fire-and-forget by contract,
-   * like {@link countBoot}.
+   * like {@link countBoot}. A tick with an input class (`?c=`) gets one more trailing `_id` segment
+   * (empty version segment if it has none), so the documents written before it keep their `_id`.
    */
-  async countAnonymousFunnelStep(platform: string, step: AnonFunnelStep, version: string | null = null): Promise<void> {
+  async countAnonymousFunnelStep(
+    platform: string, step: AnonFunnelStep, version: string | null = null, device: AnonFunnelDevice | null = null,
+  ): Promise<void> {
     const date = toDateStr(this.now());
+    const id = [date, platform, step, ...(version || device ? [version ?? ''] : []), ...(device ? [device] : [])].join('|');
     await this.cols.funnel_anon_daily.updateOne(
-      { _id: version ? `${date}|${platform}|${step}|${version}` : `${date}|${platform}|${step}` },
+      { _id: id },
       {
         $inc: { count: 1 },
-        $set: { date, platform, step, ...(version ? { version } : {}), updated_at: new Date(this.now()) },
+        $set: {
+          date, platform, step, ...(version ? { version } : {}), ...(device ? { device } : {}), updated_at: new Date(this.now()),
+        },
       },
       { upsert: true },
     );
@@ -222,6 +228,10 @@ export class TrafficService {
       // Summed: since the `?v=` split one (date, platform, step) can span several build documents.
       const row = rowFor(t.date, t.platform);
       row.anon_funnel = { ...row.anon_funnel, [t.step]: (row.anon_funnel?.[t.step] ?? 0) + t.count };
+      if (t.device === 'mobile' || t.device === 'desktop') {
+        const counts = ((row.anon_funnel_by_device ??= {})[t.device] ??= {});
+        counts[t.step] = (counts[t.step] ?? 0) + t.count;
+      }
     }
 
     return [...rows.values()]

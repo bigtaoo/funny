@@ -5962,6 +5962,7 @@ paths:
               - open_mobile
               - loaded_desktop
               - loaded_mobile
+              - alive_60s
               - tutorial_start
               - beat_unit
               - beat_building
@@ -5970,11 +5971,17 @@ paths:
               - tutorial_complete
               - tutorial_skip
               - lv1_start
+              - lv1_first_play
+              - lv1_play_hint
               - lv1_clear
               - lv2_start
               - lv2_clear
               - lv3_start
               - lv3_clear
+              - lv4_start
+              - lv4_clear
+              - lv5_start
+              - lv5_clear
               - ink_full_hint
               - gift_shown
               - gift_gacha
@@ -5984,7 +5991,7 @@ paths:
               - daily_claim
               - return_launch
           description: |
-            A first-session funnel step (the two load checkpoints `open_*` / `loaded_*` split by input class, the tutorial, its Skip, the first attempt / first clear of campaign levels 1–3, the ink-full nudge, the first-session reward loop, and `return_launch` — a launch whose save had cleared ch1_lv1 before it started) reached by a launch, whatever its analytics answer (COMPLIANCE_GLOBAL §3.3b — the one funnel that also covers EEA players who never consented). Bumps a (date, platform, step) count in `funnel_anon_daily` instead of the launch counter — it is not a launch. Nothing identifying is sent or stored; a value outside the enum counts nothing. The response body is the ordinary config and is thrown away.
+            A first-session funnel step (the two load checkpoints `open_*` / `loaded_*` split by input class, `alive_60s` — the launch is still open 60 s after its first screen, the tutorial, its Skip, the first attempt / first clear of campaign levels 1–5, the first card played in level 1 and the idle-card hint there, the ink-full nudge, the first-session reward loop, and `return_launch` — a launch whose save had cleared ch1_lv1 before it started) reached by a launch, whatever its analytics answer (COMPLIANCE_GLOBAL §3.3b — the one funnel that also covers EEA players who never consented). Bumps a (date, platform, step) count in `funnel_anon_daily` instead of the launch counter — it is not a launch. Nothing identifying is sent or stored; a value outside the enum counts nothing. The response body is the ordinary config and is thrown away.
         - name: v
           in: query
           required: false
@@ -5993,6 +6000,16 @@ paths:
             pattern: ^[0-9A-Za-z._-]{1,40}$
           description: |
             Client build version (`__NW_BUILD_VERSION__`) on a `t` tick, so the anonymous funnel can be split by release (one `funnel_anon_daily` document per build). A value outside the pattern is dropped and the tick is counted without a version. Ignored without `t`.
+        - name: c
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - m
+              - d
+          description: |
+            Input class of the launch on a `t` tick — `m` when `(pointer: coarse)` matches, else `d` — so every funnel step, not only `open_*` / `loaded_*`, can be split mobile vs desktop. A value outside the enum is dropped and the tick is counted without one. Ignored without `t`.
       responses:
         '200':
           description: Collection config
