@@ -106,6 +106,8 @@ export class GameRenderer {
       localBuildRow: core.localBuildRow,
       state: () => core.engine.state,
       firstBuildTick: () => this.firstBuild.tick,
+      firstPlayTick: () => this.firstBuild.firstPlayTick,
+      lastPlayTick: () => this.firstBuild.lastPlayTick,
       isPaused: () => core.hudView.isPaused,
       isHoldingCard: () => !!(input.pendingCardDown || input.drag || input.tapSelect),
       handSlotCenter: (i) => core.handView.slotCenter(i),

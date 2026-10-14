@@ -160,6 +160,23 @@ describe.skipIf(!mongo)('launch counter + load time', () => {
       await mongo!.collections.funnel_anon_daily.deleteMany({});
     });
 
+    it('splits by input class on the boot funnel row, next to the summed total', async () => {
+      await mongo!.collections.boots_daily.deleteMany({});
+      await mongo!.collections.funnel_anon_daily.deleteMany({});
+      await svc.countBoot('crazygames');
+      await svc.countAnonymousFunnelStep('crazygames', 'alive_60s', 'aaa1111', 'mobile');
+      await svc.countAnonymousFunnelStep('crazygames', 'alive_60s', null, 'mobile');
+      await svc.countAnonymousFunnelStep('crazygames', 'alive_60s', 'aaa1111', 'desktop');
+      await svc.countAnonymousFunnelStep('crazygames', 'alive_60s');
+
+      const ids = (await mongo!.collections.funnel_anon_daily.find({}).toArray()).map((d) => String(d._id).split('|').slice(2)).sort();
+      expect(ids).toEqual([['alive_60s'], ['alive_60s', '', 'mobile'], ['alive_60s', 'aaa1111', 'desktop'], ['alive_60s', 'aaa1111', 'mobile']]);
+      const cg = (await svc.queryBootFunnel(7)).find((r) => r.platform === 'crazygames')!;
+      expect(cg.anon_funnel).toEqual({ alive_60s: 4 });
+      expect(cg.anon_funnel_by_device).toEqual({ mobile: { alive_60s: 2 }, desktop: { alive_60s: 1 } });
+      await mongo!.collections.funnel_anon_daily.deleteMany({});
+    });
+
     it('runs concurrently without losing counts', async () => {
       await mongo!.collections.funnel_anon_daily.deleteMany({});
       await Promise.all(Array.from({ length: 25 }, () => svc.countAnonymousFunnelStep('web', 'graduate')));

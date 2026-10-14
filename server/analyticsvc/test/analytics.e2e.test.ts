@@ -165,7 +165,7 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
 
   /**
    * The anonymous first-session funnel tick (COMPLIANCE_GLOBAL §3.3b). `?t=<step>` is sent by every
-   * launch as it passes a tutorial step or a first try / first clear of levels 1–3. It is not a
+   * launch as it passes a tutorial step or a first try / first clear of levels 1–5. It is not a
    * launch — counting it as one would inflate the funnel's denominator — and a step outside the
    * allow-list mints nothing.
    */
@@ -204,6 +204,24 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
       ['-', 1], // `x|y` would have split the `_id` — counted, but without a version
       ['6bfc1a8', 1],
       ['a9d7a6d', 2],
+    ]);
+  });
+
+  it('GET /analytics/config?t=<step>&c=m|d splits the tick by input class, and drops an unknown one', async () => {
+    await mongo!.collections.funnel_anon_daily.deleteMany({});
+    await fetch(`${base}/analytics/config?p=crazygames&t=alive_60s&v=a9d7a6d&c=m`);
+    await fetch(`${base}/analytics/config?p=crazygames&t=alive_60s&v=a9d7a6d&c=m`);
+    await fetch(`${base}/analytics/config?p=crazygames&t=alive_60s&v=a9d7a6d&c=d`);
+    await fetch(`${base}/analytics/config?p=crazygames&t=alive_60s&c=d`);
+    await fetch(`${base}/analytics/config?p=crazygames&t=alive_60s&c=tablet`);
+
+    await new Promise((r) => setTimeout(r, 150));
+    const docs = await mongo!.collections.funnel_anon_daily.find({}).toArray();
+    expect(docs.map((d) => [d.version ?? '-', d.device ?? '-', d.count]).sort()).toEqual([
+      ['-', '-', 1], // `tablet` is not an input class — counted, but without one
+      ['-', 'desktop', 1],
+      ['a9d7a6d', 'desktop', 1],
+      ['a9d7a6d', 'mobile', 2],
     ]);
   });
 

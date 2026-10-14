@@ -284,15 +284,16 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
     // A player back for another launch (ANALYTICS_DESIGN §3.6d) — once per launch, deduped inside.
     if (!opts?.fromResize) analytics.countReturnLaunch(saveManager.get().progress.cleared);
 
-    // First-session reward loop (ONBOARDING_DESIGN §14.2): welcome coins → one gacha pull, then the
-    // daily check-in on the next arrival. Needs the server (mail, gacha, check-in are all online).
+    // First-session reward loop (ONBOARDING_DESIGN §14.2/§15.2): welcome coins → one gacha pull, then
+    // the daily check-in on the next arrival. Needs the server (mail, gacha, check-in are all online).
+    // The pull's Back leads on to the campaign map: the loop is a stop on the way, not a destination.
     if (online && api && !opts?.fromResize) {
       const client = api;
       runRewardLoop({
         saveManager,
         client,
         showGuide: (titleKey, bodyKey, onDismiss) => lobby.showFeatureGuide(titleKey, bodyKey, onDismiss),
-        goGacha: () => nav.goGacha({ shopBack: () => goLobby() }),
+        goGacha: () => nav.goGacha({ shopBack: () => nav.goCampaignMap() }),
         goDaily: () => nav.goDaily(),
         stillInLobby: () => state.inLobby,
       });

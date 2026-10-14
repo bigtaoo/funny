@@ -496,6 +496,8 @@ CrazyGames 首周（10-09..10-11）后台：平均单次游玩 2 分 53 秒（2 
 
 ### 14.2 第二版：首次会话奖励闭环（`app/nav/firstRewardLoop.ts`）
 
+> **2026-10-14 已改**：第 1 步的「首通 `ch1_lv2` 改道回大厅」造成第 3 关断崖，已撤掉，见 §15.2。下面保留原设计作记录。
+
 每账号只走一次，三步：
 
 1. **第一次通关 `ch1_lv2`**：结算页主按钮改为「领取礼物」（`result.claimGift`）回大厅，「下一关」降为次按钮，§13 的 5 s 倒计时挂在主按钮上。只在在线（有 `api`）且尚未走过第 2 步时改道（`rewardLoopDetour`）。
@@ -520,3 +522,51 @@ CG 新包上线后对比 10-12 版。所有数都能按版本拆（匿名计数�
 | 礼物卡有没有把人带进抽卡 | `gift_shown → gift_gacha → gacha_pull` |
 | 「明天再来」卡有没有用 | `daily_shown → daily_open → daily_claim` |
 | 第二天回没回来 | 匿名 `return_launch`（所有人，按启动）；服务端留存表选 `crazygames` 看 D1（按人，10-13 之后注册的） |
+
+## 15. 第二轮首次会话修补：第 3 关断崖、手机端转化（2026-10-14）
+
+起因：CG 后台 Basic Launch 评分出来后，用户提出两件事——「第 3 关断崖肯定要修」，以及「移动端转化率只有桌面的一半（27% 对 55%），但移动端点击率反而更高」。CG 的「转化」= 进游戏一分钟后还在玩的人占比，所以问题在进游戏后的头一两分钟。我们的匿名漏斗加载之后不分设备，定位不到。用户拍板「按长期规划全部都做了」，于是一次做完下面七项。
+
+### 15.1 埋点：每一步都按设备拆
+
+- 匿名计数（`/analytics/config?t=`）每一跳都带 `c=m|d`（与 `open_*` / `loaded_*` 同一个 `(pointer: coarse)` 判断，`analytics/index.ts` `isCoarsePointer`）；服务端 `_id` 变为 `date|platform|step[|version][|device]`，运维后台在原漏斗行下多两行「Touch / Desktop」。字段权威见 [`ANALYTICS_DESIGN.md` §3.6h](ANALYTICS_DESIGN.md)。
+- 新增步：`alive_60s`（加载后 60 s 页面还开着——我们这边对得上 CG「gameplay conversion」的那一刀）、`lv1_first_play`（第一关第一次出牌）、`lv1_play_hint`（第一关空闲提示弹出）、`lv4_start/clear`、`lv5_start/clear`（跟踪范围从前 3 关扩到前 5 关）。
+- `session_start` 加 `platform_locale`（平台给的原始语言标签，截 35 字符）：UI 语言只认 en/de/zh，其余回落 en，原来看不出 CG 玩家实际是哪国语言。
+- **`loaded → tutorial_start` 的落差不是流失**：`loaded_*` 每次启动都发，`tutorial_start` 只在没有 `tutorial_done` 时发，差的那部分是回访玩家。
+
+### 15.2 奖励闭环不再打断战役 + 开场故事卡不重复
+
+- **问题**：§14.2 把第一次通关 `ch1_lv2` 改道回大厅领礼物。CG 数据：`lv3_start / lv2_clear` 从改道前的 72% 掉到 19%——这就是「第 3 关断崖」，断在第 2 关结算页，不是第 3 关难度。
+- **改**：`REWARD_LOOP_LEVEL` 改为 `ch1_lv1`（首通时发欢迎邮件），**不再改道**：玩家哪天自己回大厅，才走「领礼物 → 抽一次」；抽卡页的返回改去战役地图（`lobby.ts`），闭环是途经站不是终点。`rewardLoopDetour` 与 `result.claimGift` 删除。
+- **故事卡**：原来在淡出动画结束（约 3 s）的 `onDone` 里才记 `seen_intro`，这期间离开 / 重建地图就会下次再弹；云存档对账还可能整份覆盖掉排队中的写入。现在交出卡片的那一刻就记，并在本机 `platform.storage` 另存一份 `nw_seen_intro`。
+
+### 15.3 第一关空闲提示（ghost hand）
+
+- CG 上 `ch1_lv1` 中途离开的人，中位数在约 22 s 时离开、一张牌都没出。
+- `BuildHint` 加空闲模式（`IDLE_NUDGE_SEC = 4`，第一波 4 s 出兵）：手里有买得起的牌、且从开局或上一次出牌起 4 s 没出牌 → 圈住该牌 + 幽灵卡滑向压力最大的车道；优先建筑，否则任一单位牌（法术不选，目标不是建造格）。拿起牌即让开，出牌即结束；每局最多 4 次。§12 的「先造建筑」提示条出现时空闲提示让位。
+- 只在 `BUILD_HINT_TICKS` 里的关（现为 `ch1_lv1`）且未通关时；埋点 `lv1_play_hint` / `lv1_first_play`。
+
+### 15.4 前 5 关首胜：紧凑结算 + 「下一关」预告
+
+- 前 5 关（`EARLY_LEVEL_COUNT`）**第一次通关**时，结算页不显示统计徽章（medallion），只留胜利标题和一枚主徽章，下面加一行绿色「下一关：{关名}」（`result.upNext`），配合 §13 的 5 s 自动继续。数字密集的结算页对新玩家只是一道要读的墙。
+- 实现：`ResultSceneCallbacks.firstWin`，经 `goResult` 新增的 `extras` 参数传入（`appCtx.ResultExtras`）。
+
+### 15.5 前 5 关不放插屏广告
+
+- `goResult` 的 `extras.skipAd`：前 5 关的胜负结算都不调 `platform.showMidgameAd()`。CG 的插屏在头几分钟出现，等于在转化窗口里把玩家送出游戏。
+
+### 15.6 D1 钩子：结算页显示「明天的签到」
+
+- 原来结算页的签到预告在今天已签时消失。现在今天签了第 1 天（本月第一次签）时，改为预告**明天**那格（`retention.tomorrowCheckinDay`：月末最后一天返回 1，否则 `已签天数 + 1`，上限 30）。已签多于一天的老玩家不显示。
+
+### 15.7 教学节奏：建造拍更早示范、更宽吸附、毕业更短
+
+- 建造拍空闲示范 4 s → **2 s**（`IDLE_GHOST_SEC = [2, 2, 4]`）：CG 上三拍里它掉人最多。
+- 建造拍吸附 `BUILDING_SNAP_COLS = 2`：偏两列以内放下也落在目标格（手机上手指挡住格子，偏一列很常见）。
+- 毕业卡自动继续 4 s → **2.5 s**（带统计说明小字时 6 s → 4 s）。
+
+### 15.8 没做的 / 验证
+
+- **`ch1_lv1` 波次没动**：关卡 JSON 与服务端回放校验共用，改了要两边同步部署；先看 15.1–15.3 的数据。
+- 竖屏 390×844 实机走查（Chrome，localhost）：教学三拍、建造吸附、毕业、第一关「先造建筑」提示、失败页（无广告）、首胜紧凑结算 +「Up next」均正常，无需改布局。
+- **评估**（新包上线一周后，按 `v` 与 `c` 拆）：`alive_60s / loaded_*`（手机 vs 桌面，对照 CG 的 27% / 55%）；`lv1_first_play / lv1_start`、`lv1_play_hint` 后有没有出牌；`lv3_start / lv2_clear` 回到 70% 上下；`lv4_*`、`lv5_*` 是否接得住。

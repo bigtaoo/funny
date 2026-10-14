@@ -47,6 +47,7 @@ export function initI18n(
 ): void {
   storage   = store ?? null;
   supported = supportedLocales.length > 0 ? supportedLocales : ALL_LOCALES;
+  platformLang = (platformLanguage ?? '').slice(0, 35);
 
   const saved = storage?.getItem(STORAGE_KEY) as Locale | null;
   current = saved && supported.includes(saved)
@@ -56,6 +57,16 @@ export function initI18n(
 
 export function getLocale(): Locale {
   return current;
+}
+
+let platformLang = '';
+/**
+ * The language tag the platform reported at boot (e.g. "pt-BR"), before {@link detectLocale} folded it
+ * into a UI locale — every unsupported language comes out as the fallback, so the UI locale alone
+ * cannot say who the players are (ANALYTICS_DESIGN §3.6h). Capped at 35 chars (a BCP 47 tag's practical max).
+ */
+export function getPlatformLanguage(): string {
+  return platformLang;
 }
 
 /** Locales available for the player to switch between on this platform. */

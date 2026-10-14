@@ -427,6 +427,27 @@ metaserver → admin → ops「Server retention」卡上加了平台选择。**1
 
 **上线顺序**：analyticsvc 和 metaserver 先部署，再传 CG 新包——服务端没部署前，新键会被白名单丢掉，`signupPlatform` 也不会写。
 
+### 3.6h 每一步都按设备拆 + 「活过 60 秒」+ 平台语言（2026-10-14）
+
+**为什么要有**：CG 后台手机「gameplay conversion」27%、桌面 55%，而手机点击率反而更高——差距在进游戏后的头一两分钟。§3.6f 只把 `open_*` / `loaded_*` 按设备分开，加载之后的每一步都是手机桌面混在一起，定位不到掉在哪一拍。设计侧见 [`ONBOARDING_DESIGN.md` §15](ONBOARDING_DESIGN.md)。
+
+**1. 设备参数 `c`**：客户端每次 `?t=` 都带 `&c=m|d`（`isCoarsePointer()`，与 §3.6f 同一个 `(pointer: coarse)` 判断；CG HTML 里的 `open_*` 也带）。服务端只收 `m` / `d`，其它值当没带。带设备的写到 `${date}|${platform}|${step}[|${version}]|${device}`，并多存 `device` 字段。`boot_funnel` 照旧把所有版本、设备相加给出总数，另外按设备求和成 `anon_funnel_by_device: { m: {...}, d: {...} }`；ops「Launch funnel」卡匿名列在总数下多两行 `Touch: …` / `Desktop: …`。
+
+**2. 新键**（三 + 一处白名单一起改：客户端 `ANONYMOUS_FUNNEL_STEPS`、服务端 `ANON_FUNNEL_STEPS`、OpenAPI `t` 枚举、ops `ANON_FUNNEL_LABELS`）：
+| 键 | 什么时候打 | 位置 |
+|---|---|---|
+| `alive_60s` | `loaded_*` 之后 60 s 页面仍开着（关页则永远不发） | `analytics/index.ts` `countLoadedLaunch` |
+| `lv1_first_play` | `ch1_lv1`（未通关）本局第一次出牌 | `appConstants.ts` `buildHintFor` → `BuildHint` |
+| `lv1_play_hint` | `ch1_lv1` 本局第一次空闲提示弹出 | 同上 |
+| `lv4_start` / `lv4_clear` / `lv5_start` / `lv5_clear` | 同 `lv1–3`：该关未通关时的开打 / 通关 | `campaignRoster.ts` `anonLevelStep` |
+
+- `alive_60s / loaded_x`（按 `c` 拆）就是我们这边能跟 CG「gameplay conversion」对照的数；两边口径不完全一致（CG 按「还在玩」，我们按「页面还开着」），看趋势不看绝对值。
+- **`loaded_* → tutorial_start` 的落差不是流失**：`loaded_*` 每次启动都发，`tutorial_start` 只在存档没有 `tutorial_done` 时发，差额主要是回访启动。读教学漏斗从 `tutorial_start` 起算。
+
+**3. `session_start.platform_locale`**：平台原始语言标签（CG SDK / `navigator.language`，`initI18n` 时记下，截 35 字符），走正常同意通道，只在同意统计的会话里有。UI 语言只有 en / de / zh，其余回落 en，原来看不出 CG 玩家实际说什么语言，无从判断要不要加语言。
+
+**上线顺序**同 §3.6g：analyticsvc 先部署，再传 CG 新包；否则 `c` 被丢、新键被白名单丢。
+
 ---
 
 ## §4 采集配置（服务端控制开关）

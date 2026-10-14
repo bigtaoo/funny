@@ -62,6 +62,12 @@ export interface ResultSceneCallbacks {
    * other controls cancels it.
    */
   autoContinueSec?: number;
+  /**
+   * The compact first-win screen (ONBOARDING_DESIGN §15.4) — a first clear of an early campaign level:
+   * only the hero badge, no medallion row, and an "up next" teaser naming the level the primary CTA
+   * leads to, so the screen reads as one step of a run rather than a stats page.
+   */
+  firstWin?: { nextName: string };
 }
 
 /** Outro screens advance on their own after this long plus {@link OUTRO_SEC_PER_CHAR} per character. */
@@ -337,7 +343,8 @@ export class ResultScene implements Scene {
       badgeBlock.push(heroDetail);
 
       // Secondary badges — a centred row of small icon medallions (no text list).
-      const rest = badges.slice(1);
+      // The compact first-win screen keeps only the hero badge (§15.4).
+      const rest = cb.firstWin ? [] : badges.slice(1);
       if (rest.length > 0) {
         const cellW = Math.round(w * 0.24);
         const gap   = Math.round(w * 0.04);
@@ -379,6 +386,22 @@ export class ResultScene implements Scene {
       no.y = headerBottom + h * 0.06;
       this.container.addChild(no);
       badgeBlock.push(no);
+    }
+
+    // "Up next" teaser on the compact first-win screen — the last line of the block, so it shrinks
+    // with the badges if the phone type boost pushes the block into the CTA.
+    if (cb.firstWin) {
+      const last = badgeBlock[badgeBlock.length - 1];
+      const lastBottom = last ? last.getBounds().bottom : headerBottom;
+      const teaser = makeText(t('result.upNext', { name: cb.firstWin.nextName }), {
+        fontSize: FS.headline, fill: 0x226622, fontWeight: 'bold', fontFamily: UI_FONT_FAMILY,
+      });
+      teaser.anchor.set(0.5, 0);
+      teaser.x = w / 2;
+      teaser.y = lastBottom + h * 0.035;
+      teaser.name = 'resultUpNext';
+      this.container.addChild(teaser);
+      badgeBlock.push(teaser);
     }
 
     // ── Action buttons: one primary CTA + a row of low-key secondary entries ──

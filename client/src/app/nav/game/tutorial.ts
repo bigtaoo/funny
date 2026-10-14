@@ -11,9 +11,13 @@ import { TUTORIAL_DONE_FLAG } from '../../appConstants';
 
 type TutorialNav = Pick<Nav, 'goTutorial'>;
 
-/** Graduation card auto-continue (ONBOARDING_DESIGN §13): players who went on tapped within 2 s, p90 4 s. */
-const GRAD_AUTO_SEC = 4;
-const GRAD_AUTO_NOTICE_SEC = 6;
+/**
+ * Graduation card auto-continue (ONBOARDING_DESIGN §13): players who went on tapped within 2 s, p90 4 s.
+ * Shortened 4 → 2.5 s (6 → 4 s with the analytics notice) in §15.7 — the card is a pause between the
+ * tutorial and level 1, and every second there was a second some players spent leaving.
+ */
+const GRAD_AUTO_SEC = 2.5;
+const GRAD_AUTO_NOTICE_SEC = 4;
 
 export function createTutorialNav(ctx: AppCtx): TutorialNav {
   const { saveManager, platform, state, views, nav } = ctx;
