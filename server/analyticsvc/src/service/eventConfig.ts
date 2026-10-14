@@ -100,11 +100,6 @@ export const DEFAULT_CONFIG: AnalyticsConfig = {
     tutorial_start:    { sample: 1.0 },
     tutorial_complete: { sample: 1.0 },
     tutorial_skip:  { sample: 1.0 },
-    // Intro-story funnel node (ONBOARDING_DESIGN §7, design-doc-audit-2026-07): the only step in the
-    // funnel enumeration that previously had zero data — IntroScene wrote the local nw_seen_intro flag
-    // but never called analytics.track. 100% sampled like tutorial_start/complete, same rationale.
-    intro_complete: { sample: 1.0 },
-    intro_skip:     { sample: 1.0 },
     // First-time feature-guide funnel (ONBOARDING_DESIGN §4.1/§7): showFeatureGuide/withGuide
     // (client/src/app/nav/lobby.ts) previously had zero analytics.track calls. feature_guide_replay is
     // reserved for the per-page "?" re-open button, which is not wired yet (ONBOARDING_DESIGN §8/§10) —

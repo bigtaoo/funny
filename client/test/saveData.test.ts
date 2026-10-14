@@ -86,21 +86,4 @@ describe('LocalSaveStore round-trip (S0-3)', () => {
     const store = new LocalSaveStore(mem);
     expect(store.loadLocal()).toEqual(makeNewSave());
   });
-
-  it('absorbs legacy nw_seen_intro → flags.seen_intro', () => {
-    const mem = new MemStorage();
-    mem.setItem('nw_seen_intro', '1');
-    const store = new LocalSaveStore(mem);
-    expect(store.loadLocal().flags.seen_intro).toBe(true);
-  });
-
-  it('existing flags.seen_intro is not overwritten by the legacy key', () => {
-    const mem = new MemStorage();
-    mem.setItem('nw_seen_intro', '1');
-    const store = new LocalSaveStore(mem);
-    const s = makeNewSave();
-    s.flags.seen_intro = false;
-    store.saveLocal(s);
-    expect(store.loadLocal().flags.seen_intro).toBe(false);
-  });
 });

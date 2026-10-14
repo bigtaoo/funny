@@ -66,9 +66,8 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
   }
 
   /**
-   * The full story, on demand (settings "Replay story"). No funnel events here: `intro_complete` /
-   * `intro_skip` belong to the first-run story card on the campaign map (goCampaignMap), and a
-   * replay is not that step.
+   * The full story, on demand (settings "Replay story") — the only place the opening story is shown
+   * (ONBOARDING_DESIGN §16).
    */
   function goIntro(onDone: () => void): void {
     state.inLobby = false;
@@ -278,11 +277,11 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
       // Re-arm forceLogout's latch: this account's session is live again, so a *future* expiry
       // must be able to bounce the player back to the login screen (see sessionExpiredHandled).
       sessionExpiredHandled = false;
-      // Snapshot flags set before this account existed (intro dismissal, GDPR consent — both
+      // Snapshot flags set before this account existed (tutorial done, GDPR consent — both
       // `setFlag()` while `online()` is false, i.e. local-write-only, no server push) so they
       // can be replayed after adoptSession: the account's first-ever reconcile() takes `flags`
       // wholesale from the brand-new cloud save (`{}`, ADR-056), which would otherwise silently
-      // wipe them — and since they're never re-shown once SEEN_INTRO_FLAG/GDPR_CONSENT_FLAG look
+      // wipe them — and since they're never re-shown once TUTORIAL_DONE_FLAG/GDPR_CONSENT_FLAG look
       // set locally, a next app restart (a fresh SaveManager reading this account's persisted
       // save) would see them false again with nothing left to re-set them.
       const preLoginFlags = { ...saveManager.get().flags };

@@ -100,7 +100,6 @@ export const ONBOARDING_LABELS: Record<string, string> = {
   tutorial_complete: 'Finished tutorial',
   first_battle: 'Started first battle',
   first_clear: 'Cleared first level',
-  intro_seen: 'Saw the story card',
 };
 
 /** Human-readable labels for tutorial step-funnel keys (must match TUTORIAL_ORDERED_KEYS in analyticsvc). */

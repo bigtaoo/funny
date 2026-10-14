@@ -13,9 +13,9 @@ import { UI_FONT_FAMILY } from '../render/theme';
 
 // ── Opening story (full 7-line version) ───────────────────────────────────────
 //
-// No longer part of first launch (ONBOARDING_DESIGN §11.7): new players get a one-line card on
-// their first campaign-map open instead (scenes/CampaignMapScene/storyCard.ts), and this full
-// version is played from settings → "Replay story" (nav.goIntro), returning to settings after.
+// No longer part of first launch (ONBOARDING_DESIGN §11.7), and since §16 new players see no opening
+// story at all: this full version is played only from settings → "Replay story" (nav.goIntro),
+// returning to settings after.
 //
 // Current behavior: story lines fade in one by one; a tap reveals the next
 // line instantly (or completes the current fade). A line left untouched
