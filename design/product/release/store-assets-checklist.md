@@ -325,9 +325,64 @@ iOS/web 拿不到 token 就 `goLogin()`，落在 `LoginScene` 的三个按钮上
 知道旧口令时可用，2026-09-08 就是这么换的），彻底忘了则走 admin 的账号管理重设
 （`server/admin/src/service/accounts.ts`）。
 
-#### App Review Information → Notes（直接贴；2026-10-04 build 19 版，加了录屏与 1.2 / 3.1.1 两段）
+#### 第二审核账号 + 社交数据种子（2026-10-14，build 19 被 2.1(a) 打回后加）
+
+**为什么**：2026-10-14 Apple 以 **2.1(a) Information Needed** 打回 build 19——审核员在 iPad 上点开
+Friends（0 个好友）、Mail（无邮件）、World 聊天（空）、Sect（「先加入家族」），原话要求
+「demo accounts must include pre-populated content … such as chat, friends」，并明说录屏不够。
+一个只通了第一章、0 好友的账号**在社交页上什么都看不到**，举报 / 拉黑（1.2 的核心）也就没有对象可点。
+
+**做法**：第二个账号 + 一份幂等种子脚本，让两个账号互为好友、同一家族、同一宗门，各频道都有对话。
+
+| 项 | 值 |
+|---|---|
+| loginId | `appstore.review2@gamestao.com` |
+| 密码 | 同样短、小写、末尾两位数字；存 `D:\secrets` `secrets/infra/access.yaml` 键 `funny-appstore-review2`，**不进 git** |
+| displayName | `AppReview2`（注册时填；Notes 里按这个名字指路） |
+| 注册方式 | 网页版正常 Sign up（与主账号同一路径，口令散列 / `publicId` / 新手卡都是正常产出） |
+
+**种子脚本**：[`server/scripts/seedAppReviewAccounts.mjs`](../../../server/scripts/seedAppReviewAccounts.mjs)，
+纯 `fetch` 走公开玩家 API（和真客户端同一条路，不碰数据库）。每一步先读现状、缺什么补什么，可反复跑：
+
+| 步骤 | 内容 | 花费 |
+|---|---|---|
+| 好友 | 主号发请求，review2 接受 | 0 |
+| 私聊 | 两人来回 4 条（会话已存在则跳过） | 0 |
+| 家族 | 主号建 `Ink Squad` / `[APRV]`，review2 申请、主号批准；设家族公告 | 0 |
+| 家族聊天 | 双方共 3 条 | 0 |
+| 宗门 | 主号（族长）在当前赛季分片建 `Paper Pact` / `[APRV]` | **5000 金币，只一次** |
+| 宗门聊天 | 双方共 2 条 | 0 |
+| 世界聊天 | 主号 2 条 | 每条 50 金币 |
+| 邮件 | 双方各寄一封 | 0 |
+
+赛季分片在家族建好**之后**才解析（分片选择是「宗门 > 家族 > 独行」，先同族才能保证两人落在同一分片），
+两个号解析出的 `worldId` 不一致时脚本会打警告。主号的金币来自审核员在沙盒里的真实购买
+（2026-10-14 截图里是 26,955），够付宗门和世界聊天。
+
+**每次提审前重跑一次**：世界 / 家族 / 宗门聊天 7 天过期，私聊和邮件 30 天过期；已有内容不会重复发。
+
+```bash
+cd D:/secrets && sops exec-env secrets/infra/access.yaml 'node D:/funny/server/scripts/seedAppReviewAccounts.mjs'
+```
+
+（`access.yaml` 里的键名要和脚本读的环境变量对上：`NW_REVIEW_PASSWORD` / `NW_REVIEW2_PASSWORD`；
+键名不同时就先 `sops -d` 看，再手动 `export` 两个变量后跑脚本。）
+
+**ASC 两处要改**：「Sign-In Information」仍填主账号；第二账号写进 Notes 的 `DEMO ACCOUNTS` 段（下面那块）。
+
+#### App Review Information → Notes（直接贴；2026-10-14 版，加了 DEMO ACCOUNTS 段；`<…>` 换成 sops 里的口令再贴）
 
 ```
+DEMO ACCOUNTS
+Account 1 (use in "Sign-In Information"): appstore.review@gamestao.com
+Account 2: appstore.review2@gamestao.com / <password of account 2>
+Both are regular player accounts (there is only one account type). They are friends,
+members of the same family ("Ink Squad") and sect ("Paper Pact"), and already have
+private messages, family/sect/world chat, a family announcement and mail.
+To test chat and moderation live, sign in with account 1 on one device and account 2
+on another: Social tab -> Friends -> AppReview2 -> Chat; Family / Sect / World tabs for
+group chat; Mail tab for mail. Report and Block are on every message and player name.
+
 SCREEN RECORDING (physical device, build 19)
 https://nivara.gamestao.com/review/app-review-build19.mp4
 It shows the Terms of Use (EULA) before login, reporting a message, and blocking a user.
