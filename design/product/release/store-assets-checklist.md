@@ -337,9 +337,9 @@ Friends（0 个好友）、Mail（无邮件）、World 聊天（空）、Sect（
 | 项 | 值 |
 |---|---|
 | loginId | `appstore.review2@gamestao.com` |
-| 密码 | 同样短、小写、末尾两位数字；存 `D:\secrets` `secrets/infra/access.yaml` 键 `funny-appstore-review2`，**不进 git** |
+| 密码 | **与主账号相同**（用户 2026-10-14 定：审核员只需记一个口令），即 `access.yaml` 键 `funny-appstore-review`；**不进 git** |
 | displayName | `AppReview2`（注册时填；Notes 里按这个名字指路） |
-| 注册方式 | 网页版正常 Sign up（与主账号同一路径，口令散列 / `publicId` / 新手卡都是正常产出） |
+| 注册方式 | 种子脚本首跑时登录失败（`INVALID_CREDENTIALS`）就走公开 `POST /api/auth/register`——与游戏内 Sign up 同一路径，口令散列 / `publicId` / 新手卡都是正常产出 |
 
 **种子脚本**：[`server/scripts/seedAppReviewAccounts.mjs`](../../../server/scripts/seedAppReviewAccounts.mjs)，
 纯 `fetch` 走公开玩家 API（和真客户端同一条路，不碰数据库）。每一步先读现状、缺什么补什么，可反复跑：
@@ -362,20 +362,19 @@ Friends（0 个好友）、Mail（无邮件）、World 聊天（空）、Sect（
 **每次提审前重跑一次**：世界 / 家族 / 宗门聊天 7 天过期，私聊和邮件 30 天过期；已有内容不会重复发。
 
 ```bash
-cd D:/secrets && sops exec-env secrets/infra/access.yaml 'node D:/funny/server/scripts/seedAppReviewAccounts.mjs'
+NW_REVIEW_PASSWORD='<funny-appstore-review 的口令>' node D:/funny/server/scripts/seedAppReviewAccounts.mjs
 ```
 
-（`access.yaml` 里的键名要和脚本读的环境变量对上：`NW_REVIEW_PASSWORD` / `NW_REVIEW2_PASSWORD`；
-键名不同时就先 `sops -d` 看，再手动 `export` 两个变量后跑脚本。）
+（`NW_REVIEW2_PASSWORD` 不设就沿用 `NW_REVIEW_PASSWORD`。口令用 `sops -d secrets/infra/access.yaml` 查。）
 
 **ASC 两处要改**：「Sign-In Information」仍填主账号；第二账号写进 Notes 的 `DEMO ACCOUNTS` 段（下面那块）。
 
-#### App Review Information → Notes（直接贴；2026-10-14 版，加了 DEMO ACCOUNTS 段；`<…>` 换成 sops 里的口令再贴）
+#### App Review Information → Notes（直接贴；2026-10-14 版，加了 DEMO ACCOUNTS 段）
 
 ```
 DEMO ACCOUNTS
 Account 1 (use in "Sign-In Information"): appstore.review@gamestao.com
-Account 2: appstore.review2@gamestao.com / <password of account 2>
+Account 2: appstore.review2@gamestao.com (same password as account 1)
 Both are regular player accounts (there is only one account type). They are friends,
 members of the same family ("Ink Squad") and sect ("Paper Pact"), and already have
 private messages, family/sect/world chat, a family announcement and mail.

@@ -7,11 +7,13 @@
 // safe (and intended) to re-run before each submission — world/family/sect chat expire after 7 days,
 // DMs and mail after 30.
 //
-// Both accounts must already exist (registered through the normal Sign up flow). Passwords come
-// from the environment only, never from this file:
+// The main account must already exist. The second one is registered through the public
+// `/api/auth/register` (the same path as the in-game Sign up) if it cannot log in yet. Passwords
+// come from the environment only, never from this file:
 //
 //   NW_REVIEW_PASSWORD   password of appstore.review@gamestao.com  (the main demo account)
-//   NW_REVIEW2_PASSWORD  password of appstore.review2@gamestao.com (the second account)
+//   NW_REVIEW2_PASSWORD  password of appstore.review2@gamestao.com (defaults to NW_REVIEW_PASSWORD:
+//                        both accounts share one password so reviewers only have one to type)
 //
 // Optional: NW_API_ORIGIN (default https://api.gamestao.com), NW_REVIEW_LOGIN, NW_REVIEW2_LOGIN,
 // NW_REVIEW_FAMILY_TAG (default APRV), NW_REVIEW_SECT_TAG (default APRV).
@@ -26,6 +28,7 @@ const FAMILY_TAG = (process.env.NW_REVIEW_FAMILY_TAG ?? 'APRV').toUpperCase();
 const SECT_TAG = (process.env.NW_REVIEW_SECT_TAG ?? 'APRV').toUpperCase();
 const FAMILY_NAME = 'Ink Squad';
 const SECT_NAME = 'Paper Pact';
+const SECOND_DISPLAY_NAME = 'AppReview2';
 
 const FAMILY_ANNOUNCEMENT = 'Welcome to Ink Squad! Weekly goal: clear chapter 2 together. Be kind in chat.';
 
@@ -102,6 +105,18 @@ function bodiesOf(channel) {
 async function login(loginId, password) {
   const d = await call('POST', '/api/auth/login', undefined, { loginId, password });
   return { loginId, token: d.token, accountId: d.accountId, publicId: String(d.publicId), name: d.displayName ?? '' };
+}
+
+/** Logs in; on INVALID_CREDENTIALS registers the account instead (an existing account with a different password then fails on register with a clear error). */
+async function loginOrRegister(loginId, password, displayName) {
+  try {
+    return await login(loginId, password);
+  } catch (e) {
+    if (!(e instanceof ApiError) || e.code !== 'INVALID_CREDENTIALS') throw e;
+  }
+  await call('POST', '/api/auth/register', undefined, { loginId, password, displayName });
+  step(`registered ${loginId} as ${displayName}`);
+  return login(loginId, password);
 }
 
 function step(msg) {
@@ -219,7 +234,7 @@ async function ensureMail(who) {
 
 async function main() {
   const mainAcct = await login(MAIN_LOGIN, need('NW_REVIEW_PASSWORD'));
-  const second = await login(SECOND_LOGIN, need('NW_REVIEW2_PASSWORD'));
+  const second = await loginOrRegister(SECOND_LOGIN, process.env.NW_REVIEW2_PASSWORD || need('NW_REVIEW_PASSWORD'), SECOND_DISPLAY_NAME);
   const who = { main: mainAcct, second };
   console.log(`${ORIGIN}: main ${mainAcct.publicId}, second ${second.publicId}`);
 

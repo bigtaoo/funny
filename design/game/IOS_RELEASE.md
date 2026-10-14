@@ -816,7 +816,7 @@ OTA 管线**不需要 macOS runner**（无原生编译），`ubuntu-latest` 即�
       幂等种子脚本 `server/scripts/seedAppReviewAccounts.mjs`（好友、私聊、家族 + 公告 + 群聊、宗门 + 群聊、世界聊天、邮件），
       Notes 加 `DEMO ACCOUNTS` 段，见 `store-assets-checklist.md §1.2b`「第二审核账号 + 社交数据种子」。
       顺手修了截图里看到的 Sect 页底栏少了 Sect 自己那格（`socialTabRail.ts`，SOCIAL_DESIGN.md 已记）。
-      待办：注册 review2 → 口令进 sops → 跑脚本 → 改 ASC Notes → 回复 Apple → 用 build 19 重新提交
+      review2 与主号同口令，脚本首跑自动注册。待办：跑脚本 → 改 ASC Notes → 回复 Apple → 用 build 19 重新提交
 
 - [x] Apple Developer：建 App ID（勾 IAP）+ ASC App 记录
 - [x] 生成 Distribution 证书 `.p12` / App Store 描述文件 / ASC API Key `.p8`
