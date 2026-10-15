@@ -16,6 +16,7 @@
 // reimplementation of those operators).
 // (2026-09-09 — read the '../dist/...' above in the past tense: it is '../src/...' now, so that
 // suite does count toward src coverage. See claudedocs/server-testing-coverage.md.)
+import { CAMPAIGN_CONTENT_REV } from '@nw/engine';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CommercialClient } from '../src/commercialClient';
 import { createMongo, type JwtConfig, type MongoHandle, PVE_DAILY_CLEAR_REWARD_CAP } from '@nw/shared';
@@ -85,7 +86,7 @@ describe.skipIf(!mongo)('pve service handlers (src import, coverage backfill)', 
   const b = (r: { payload: string }) => JSON.parse(r.payload);
   const auth = () => ({ authorization: `Bearer ${token}` });
   const clear = (levelId: string, stars = 3, extra: Record<string, unknown> = {}) =>
-    app.inject({ method: 'POST', url: '/pve/clear', headers: auth(), payload: { levelId, stars, ...extra } });
+    app.inject({ method: 'POST', url: '/pve/clear', headers: auth(), payload: { levelId, stars, levelRev: CAMPAIGN_CONTENT_REV, ...extra } });
   const verify = (verifyId: string, endFrame = 100) =>
     app.inject({ method: 'POST', url: '/pve/verify', headers: auth(), payload: { verifyId, endFrame, frames: [] } });
   const enter = (levelId: string) => app.inject({ method: 'POST', url: '/pve/enter', headers: auth(), payload: { levelId } });

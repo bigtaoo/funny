@@ -350,6 +350,17 @@ export class ResultScene implements Scene {
       teaser.name = 'resultUpNext';
       this.container.addChild(teaser);
       badgeBlock.push(teaser);
+      if (cb.firstWin.giftLine) {
+        const gift = makeText(cb.firstWin.giftLine, {
+          fontSize: FS.bodyLg, fill: 0x8a5a00, fontWeight: 'bold', fontFamily: UI_FONT_FAMILY,
+        });
+        gift.anchor.set(0.5, 0);
+        gift.x = w / 2;
+        gift.y = teaser.getBounds().bottom + h * 0.02;
+        gift.name = 'resultHeroGift';
+        this.container.addChild(gift);
+        badgeBlock.push(gift);
+      }
     }
 
     // ── Action buttons: one primary CTA + a row of low-key secondary entries ──
@@ -432,12 +443,14 @@ export class ResultScene implements Scene {
 
     const secs: { label: string; icon: IconKind; tap: () => void }[] = [];
     if (cb.secondaryAction) secs.push({ label: cb.secondaryAction.label, icon: cb.secondaryAction.icon, tap: () => cb.secondaryAction!.onTap() });
+    if (cb.extraSecondary) secs.push({ label: cb.extraSecondary.label, icon: cb.extraSecondary.icon, tap: () => cb.extraSecondary!.onTap() });
     if (cb.onWatchReplay)  secs.push({ label: t('result.watchReplay'), icon: 'replay', tap: () => cb.onWatchReplay!() });
     if (cb.onShare)         secs.push({ label: t('share.button'),       icon: 'share',  tap: () => cb.onShare!() });
 
     if (secs.length > 0) {
       const gap   = Math.round(w * 0.018);
-      const rowW  = Math.round(w * 0.62);
+      // Four cells would squeeze each label below legibility at 0.62w; widen the row instead.
+      const rowW  = Math.round(w * (secs.length > 3 ? 0.84 : 0.62));
       const cellW = Math.round((rowW - gap * (secs.length - 1)) / secs.length);
       const cellH = Math.round(h * 0.06);
       const rowX  = (w - rowW) / 2;

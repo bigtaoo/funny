@@ -8,6 +8,7 @@
 // No behavior change.
 import { randomUUID } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { ASSIST_LEVEL_IDS, ASSIST_MAX_STARS, hasLevelContent } from '@nw/engine';
 import type { SaveData, EquipmentInstance } from '@nw/shared';
 import { ErrorCode, err, ok, findPveLevel, shouldSpotCheck, sanitizePvpReportedStats, accrueStats, levelCardReward, accrueRetentionTask, WELCOME_MAIL_COINS } from '@nw/shared';
 import { getOrCreateSave } from '../../save.js';
@@ -27,6 +28,7 @@ import {
   PVE_VERIFICATION_RETENTION_MS,
   WELCOME_MAIL_DISPATCH_KEY,
 } from './helpers.js';
+import { recordHeroGift } from './heroGift.js';
 
 /**
  * Write progress/stars (unlock + record stars, taking the max), without touching materials.
@@ -162,9 +164,13 @@ async function settleNormalClear(
 export async function pveClearHandler(core: MetaCore, req: FastifyRequest, reply: FastifyReply) {
   const accountId = accountIdOf(req);
   const { cols, now, gateway } = core.deps;
-  const { levelId, stars: starsRaw, pveUpgrades: clientUpgradesLegacy, unitLevels: clientUnitLevels, stats: clientStats } = req.body as {
+  const { levelId, stars: starsRaw, pveUpgrades: clientUpgradesLegacy, unitLevels: clientUnitLevels, stats: clientStats, levelRev, assist } = req.body as {
     levelId: string;
     stars: number;
+    /** Campaign content revision of the submitting build (engine CAMPAIGN_CONTENT_REV; absent = old build = 1). */
+    levelRev?: number;
+    /** Played as an "easier retry" (engine applyAssist, ONBOARDING_DESIGN §17.2). */
+    assist?: boolean;
     /** @deprecated S3-2, replaced by unitLevels from S12 onwards. */
     pveUpgrades?: Record<string, number>;
     /** S12 unit progression level snapshot (client snapshot at match start, used for L0 anomaly detection). */
@@ -174,11 +180,22 @@ export async function pveClearHandler(core: MetaCore, req: FastifyRequest, reply
   };
   const level = findPveLevel(levelId);
   if (!level) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'unknown level'));
-  const stars = Math.floor(starsRaw);
-  if (stars < 1 || stars > 3) {
+  const claimed = Math.floor(starsRaw);
+  if (claimed < 1 || claimed > 3) {
     // A clear requires at least 1 star; 0 stars does not count as cleared (consistent with the stars>0 gate in the client's applyCampaignClear).
     return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'stars must be 1..3'));
   }
+  // "Easier retry" (ONBOARDING_DESIGN §17.2): only the levels that opt in, and the clear settles for at most
+  // ASSIST_MAX_STARS, so the assist is a way past a wall, never a cheaper way to the stars.
+  const isAssist = assist === true;
+  if (isAssist && !ASSIST_LEVEL_IDS.includes(levelId)) {
+    return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'level has no assist'));
+  }
+  const stars = isAssist ? Math.min(claimed, ASSIST_MAX_STARS) : claimed;
+  // A build older than the level's current content played different data than any up-to-date judge holds,
+  // so its clear can't be re-simulated faithfully (§17.2 content revision) — settle it without a spot-check.
+  // Only reworked early-chapter levels are affected and only for the rollout window.
+  const staleContent = !hasLevelContent(typeof levelRev === 'number' ? levelRev : undefined, levelId);
 
   if (await core.rejectIfBanned(cols, accountId, reply)) return;
   const cur = await getOrCreateSave(cols, accountId, now());
@@ -216,7 +233,7 @@ export async function pveClearHandler(core: MetaCore, req: FastifyRequest, reply
     Object.keys(level.reward).length > 0 || Object.keys(levelCardReward(levelId)).length > 0;
 
   // L1 spot-check decision: only considered when "rewards are available + judge is available" (otherwise there is no exploitable reward to cheat).
-  if (hasReward && gateway.available) {
+  if (hasReward && gateway.available && !staleContent) {
     const isFirstClear = !cur.progress.cleared.includes(levelId);
     // L0 anomaly (§0 "combat power mismatch at match start → must be cheating"): S12 prefers comparing unitLevels; falls back to pveUpgrades if unavailable.
     const blueprintMismatch = clientUnitLevels !== undefined
@@ -237,12 +254,16 @@ export async function pveClearHandler(core: MetaCore, req: FastifyRequest, reply
         const s2 = await grantChapterClearCard(cols, now, core.deps.commercial, accountId, prog.newlyClearedChapter);
         if (s2) progSave = s2;
       }
+      // Next-day hero gift (ONBOARDING_DESIGN §17.4): one-time and non-farmable, so like the chapter card it
+      // is stamped with progress rather than deferred to /pve/verify.
+      progSave = (await recordHeroGift(core, accountId, levelId)) ?? progSave;
       const verifyId = randomUUID();
       await cols.pveVerifications.insertOne({
         _id: verifyId,
         accountId,
         levelId,
         claimedStars: stars,
+        ...(isAssist ? { assist: true } : {}),
         // CC-1 Hero Roster snapshot (2026-07-26 fix, PVE_INTEGRITY §9): server-authoritative, taken at settlement
         // time — feeds the L1 judge re-simulation blueprint so a legitimately progressed account isn't recomputed
         // with unleveled, gear-less units (previously pveUpgrades/unitLevels, both dead since the engine dropped
@@ -283,6 +304,7 @@ export async function pveClearHandler(core: MetaCore, req: FastifyRequest, reply
     const s2 = await grantChapterClearCard(cols, now, core.deps.commercial, accountId, granted.newlyClearedChapter);
     if (s2) latestSave = s2;
   }
+  latestSave = (await recordHeroGift(core, accountId, levelId)) ?? latestSave;
   // B6: record event task "pve.clear" (best-effort).
   accrueEventTask(cols, accountId, 'pve.clear', now()).catch(() => {});
   const saveWithSt = { ...latestSave, stamina: await core.readStaminaSnapshot(accountId, now()) };

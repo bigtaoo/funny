@@ -34,7 +34,7 @@ export type ClientMsg =
   | { case: 'duel_invite'; toPublicId: string; deck: string[] }
   | { case: 'duel_respond'; inviteId: string; accept: boolean; deck: string[] }
   | { case: 'ping' }
-  | { case: 'client_caps'; canJudge: boolean }
+  | { case: 'client_caps'; canJudge: boolean; levelRev: number }
   | {
       case: 'judge_verdict';
       requestId: string;
@@ -70,6 +70,7 @@ export type ServerMsg =
       endFrame: number;
       frames: FrameCmdsOut[];
       levelId: string;
+      assist: boolean;
       cardInstancesJson: string;
       equipmentInvJson: string;
       topDeck: string[];
@@ -152,7 +153,7 @@ export function decodeClient(buf: Uint8Array): ClientMsg {
       deck: client.duelRespond.deck,
     };
   }
-  if (client.clientCaps) return { case: 'client_caps', canJudge: client.clientCaps.canJudge };
+  if (client.clientCaps) return { case: 'client_caps', canJudge: client.clientCaps.canJudge, levelRev: client.clientCaps.levelRev ?? 0 };
   if (client.judgeVerdict) {
     const v = client.judgeVerdict;
     return {
@@ -207,6 +208,7 @@ export function encodeServer(msg: ServerMsg): Uint8Array {
             cmds: f.cmds.map((c) => ({ side: c.side, commands: c.commands })),
           })),
           levelId: msg.levelId,
+          assist: msg.assist,
           cardInstancesJson: msg.cardInstancesJson,
           equipmentInvJson: msg.equipmentInvJson,
           defenseJson: '',

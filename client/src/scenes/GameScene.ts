@@ -2,6 +2,7 @@ import { Scene } from './SceneManager';
 import { GameRenderer, type GameProfiles } from '../render/GameRenderer';
 import type { InkHintGate } from '../render/GameRenderer/inkHint';
 import type { BuildHintConfig } from '../render/GameRenderer/buildHint';
+import type { UnlockCalloutEntry } from '../render/GameRenderer/unlockCallout';
 import type { BattleSnapshot } from '../render/GameRenderer/battleSnapshot';
 import type { TutorialConfig } from '../render/TutorialDirector';
 import type { BattleLabelContext } from '../render/battleLabels';
@@ -25,6 +26,7 @@ import type { MatchOver, PeerDc } from '../net/proto/transport';
 import { acquireBattleBusy } from '../net/battleBusy';
 import { battleTrack } from '../audio/battleMusic';
 import type { MusicTrack } from '../audio/types';
+import type { ChainBannerHost } from '../render/ChainBanner';
 
 export interface GameSceneCallbacks {
   /**
@@ -33,8 +35,10 @@ export interface GameSceneCallbacks {
    * netplay (the server owns that recording).
    * `summary` is the match-level end state (elapsed ticks / leaks / escort HP) used by
    * campaign settlement for composite star scoring (STAR_SCORING.md); PvP callers ignore it.
+   * `banner` lets the campaign put the level-chain banner over the finished battle instead of
+   * leaving for ResultScene (ONBOARDING_DESIGN §17.3); callers that don't chain ignore it.
    */
-  onGameEnd(winner: OwnerId | null, stats: [PlayerStats, PlayerStats], replay?: Replay, summary?: MatchSummary): void;
+  onGameEnd(winner: OwnerId | null, stats: [PlayerStats, PlayerStats], replay?: Replay, summary?: MatchSummary, banner?: ChainBannerHost): void;
   onExitToLobby(): void;
   /** Surrender dialog opened (true) / cancelled (false). Confirming goes to onExitToLobby instead. */
   onPauseChange?(paused: boolean): void;
@@ -114,6 +118,8 @@ export interface GameSceneOptions {
   inkHint?: InkHintGate;
   /** The "build a defense first" nudge (ONBOARDING_DESIGN §12); absent = never shown. */
   buildHint?: BuildHintConfig;
+  /** Mid-battle new-card callouts for the level's `cardUnlocks` (ONBOARDING_DESIGN §17.4); absent = none. */
+  unlockCallouts?: UnlockCalloutEntry[];
 }
 
 /** What analytics attaches to a mid-battle exit (ANALYTICS_DESIGN §5.6d). */
@@ -188,13 +194,17 @@ export class GameScene implements Scene {
     this.renderer.setCampaignMode(isCampaign);
     this.renderer.setInkHint(opts.inkHint ?? null);
     this.renderer.setBuildHint(opts.buildHint ?? null);
+    this.renderer.setUnlockCallouts(opts.unlockCallouts ?? null);
     this.snapshotTag = {
       mode: opts.net ? 'pvp_net' : (opts.mode ?? (opts.level ? 'campaign' : 'pvp')),
       ...(opts.level ? { level_id: opts.level.id } : {}),
     };
     this.renderer.init();
     // Attach the recording (if any) to the end-of-game callback.
-    this.renderer.onGameEnd = (winner, stats, summary) => this.cb.onGameEnd(winner, stats, buildReplay(winner), summary);
+    const banner: ChainBannerHost = {
+      showChainBanner: (spec) => { if (!this.destroyed) this.renderer.showChainBanner(spec); },
+    };
+    this.renderer.onGameEnd = (winner, stats, summary) => this.cb.onGameEnd(winner, stats, buildReplay(winner), summary, banner);
     this.renderer.onExitToLobby = cb.onExitToLobby;
     if (cb.onPauseChange) this.renderer.onPauseChange = (p) => cb.onPauseChange?.(p);
 

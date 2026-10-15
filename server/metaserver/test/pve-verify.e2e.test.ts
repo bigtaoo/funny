@@ -6,6 +6,7 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createMongo, type JwtConfig, type MongoHandle } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
+import { CAMPAIGN_CONTENT_REV } from '@nw/engine';
 import { buildApp } from '../src/app.js';
 import type { GatewayClient, JudgeReq, JudgeRes } from '../src/gatewayClient.js';
 import { seedEquipment } from './helpers/equipment.js';
@@ -50,8 +51,12 @@ describe.skipIf(!mongo)('pve L1 verify e2e', () => {
   let starterCardInv: Record<string, unknown>;
   const b = (r: { payload: string }) => JSON.parse(r.payload);
   const auth = () => ({ authorization: `Bearer ${token}` });
-  const clear = (levelId: string, stars = 3, pveUpgrades?: Record<string, number>) =>
-    app.inject({ method: 'POST', url: '/pve/clear', headers: auth(), payload: { levelId, stars, ...(pveUpgrades ? { pveUpgrades } : {}) } });
+  // A current build reports its campaign content revision (ONBOARDING_DESIGN §17.2); see the stale-build case below.
+  const clear = (levelId: string, stars = 3, pveUpgrades?: Record<string, number>, extra: Record<string, unknown> = {}) =>
+    app.inject({
+      method: 'POST', url: '/pve/clear', headers: auth(),
+      payload: { levelId, stars, levelRev: CAMPAIGN_CONTENT_REV, ...(pveUpgrades ? { pveUpgrades } : {}), ...extra },
+    });
   const verify = (verifyId: string, endFrame = 100) =>
     app.inject({ method: 'POST', url: '/pve/verify', headers: auth(), payload: { verifyId, endFrame, frames: [] } });
 
@@ -78,6 +83,33 @@ describe.skipIf(!mongo)('pve L1 verify e2e', () => {
     expect(r.data.save.materials.scrap ?? 0).toBe(0);
     expect(r.data.save.progress.cleared).toContain('ch1_lv1'); // unlock proceeds as normal
     expect(r.data.save.progress.stars['ch1_lv1']).toBe(3);
+  });
+
+  it('build older than the level content (§17.2): no spot-check, settles directly', async () => {
+    const r = b(await clear('ch1_lv1', 3, undefined, { levelRev: undefined }));
+    expect(r.data.needsReplay).toBeUndefined();
+    expect(r.data.save.progress.stars['ch1_lv1']).toBe(3);
+    expect(gateway.last).toBeUndefined();
+  });
+
+  it('easier retry (§17.2): stars capped at 1, the verification record and judge carry the assist flag', async () => {
+    const c = b(await clear('ch1_lv1', 3, undefined, { assist: true }));
+    expect(c.data.needsReplay).toBe(true);
+    expect(c.data.save.progress.stars['ch1_lv1']).toBe(1);
+    const doc = await m.collections.pveVerifications.findOne({ _id: c.data.verifyId });
+    expect(doc?.claimedStars).toBe(1);
+    expect(doc?.assist).toBe(true);
+    gateway.next = { ok: true, stars: 1 };
+    const v = b(await verify(c.data.verifyId));
+    expect(v.data.verified).toBe(true);
+    expect(gateway.last?.assist).toBe(true);
+  });
+
+  it('easier retry on a level without assistOnLoss → 400', async () => {
+    const r = await clear('ch1_lv1', 3);
+    expect(r.statusCode).toBe(200);
+    const bad = await app.inject({ method: 'POST', url: '/pve/clear', headers: auth(), payload: { levelId: 'ch1_lv4', stars: 1, assist: true } });
+    expect(bad.statusCode).toBe(400);
   });
 
   it('re-computation passes (stars >= claimed) → grant materials + verified', async () => {

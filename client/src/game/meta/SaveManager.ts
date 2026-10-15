@@ -434,8 +434,8 @@ export class SaveManager {
   }
 
   /** Record a level clear (PVE_INTEGRITY_PLAN §8) — see recordClear in SaveManager/offlineQueues.ts. */
-  async recordClear(levelId: string, stars: number, replay?: Replay, stats?: Record<string, number>): Promise<void> {
-    return recordClear(this.queues, levelId, stars, replay, stats);
+  async recordClear(levelId: string, stars: number, replay?: Replay, stats?: Record<string, number>, assist = false): Promise<void> {
+    return recordClear(this.queues, levelId, stars, replay, stats, assist);
   }
 
   /**

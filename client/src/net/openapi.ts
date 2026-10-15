@@ -412,6 +412,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/pve/hero-gift/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Claim the next-day hero gift earned on the first ch1_lv5 clear (ONBOARDING_DESIGN §17.4). 400 BAD_REQUEST before claimableAt; idempotent once claimed. */
+        post: operations["claimHeroGift"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/pve/stamina/purchase": {
         parameters: {
             query?: never;
@@ -1655,6 +1672,14 @@ export interface components {
             };
             battlePass?: components["schemas"]["BattlePassData"];
             rechargeMilestone?: components["schemas"]["RechargeMilestoneData"];
+            heroGift?: {
+                /** @description CARD_DEFS key of the hero to grant */
+                defId: string;
+                /** @description Epoch ms from which the gift can be claimed */
+                claimableAt: number;
+                /** @description Epoch ms of the claim; absent while unclaimed */
+                claimedAt?: number;
+            };
             progress: {
                 cleared: string[];
                 stars: {
@@ -2802,6 +2827,10 @@ export interface operations {
                     stars: number;
                     /** @description Optional replay reference (for L1 spot-check re-simulation, deprecated) */
                     replayRef?: string;
+                    /** @description Campaign content revision of the submitting build (engine CAMPAIGN_CONTENT_REV); absent = 1. A build older than the level content skips the L1 spot-check (ONBOARDING_DESIGN §17.2) */
+                    levelRev?: number;
+                    /** @description Played as an easier retry (engine applyAssist); only levels with assistOnLoss, settles for at most 1 star (ONBOARDING_DESIGN §17.2) */
+                    assist?: boolean;
                     /** @description Client blueprint snapshot at match start (L0 anomaly check; mismatch with server-authoritative triggers spot-check) */
                     pveUpgrades?: {
                         [key: string]: number;
@@ -2900,6 +2929,35 @@ export interface operations {
                             capped: boolean;
                             /** @description Whether re-simulation passed (false = star count mismatch, deemed suspicious; materials not granted) */
                             verified: boolean;
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+        };
+    };
+    claimHeroGift: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Claimed (or already claimed) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            save: components["schemas"]["SaveData"];
                         };
                     };
                 };

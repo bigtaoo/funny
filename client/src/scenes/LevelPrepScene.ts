@@ -36,7 +36,12 @@ export interface LevelPrepCallbacks {
   intro?: string;
   /** Clear rewards (coins / materials) for this level, shown as a rewards preview row. */
   rewards?: LevelRewards;
-  /** Stamina cost to play this level (A4), deducted at Start (not at clear). Default = 10. */
+  /**
+   * Pre-translated names of cards this level adds over the previous one's loadout, shown under a
+   * NEW tag (ONBOARDING_DESIGN §17.2 — chapter one hands out one card per level).
+   */
+  newCards?: string[];
+  /** Stamina cost to play this level (A4), deducted at Start (not at clear). Default = 10; 0 = free entry, line hidden. */
   staminaCost: number;
   /** Current stamina snapshot (A4): { current, regenAt }. */
   getStamina(): { current: number; regenAt: number };
@@ -155,12 +160,17 @@ export class LevelPrepScene implements Scene {
       y = this.drawRewards(this.cb.rewards, y);
     }
 
+    if (this.cb.newCards && this.cb.newCards.length > 0) {
+      y = this.drawNewCards(this.cb.newCards, y);
+    }
+
     // The Start button, the refill row (only when stamina is short) and the stamina line are
     // stacked up from the bottom, so the brief above them has a hard ceiling on how much room it
     // may take. All of it is resolved BEFORE the top-down content is drawn.
     const stamina = this.cb.getStamina();
     const stCost = this.cb.staminaCost;
     const stInsufficient = stamina.current < stCost;
+    const stFree = stCost <= 0; // free entry (CrazyGames, ONBOARDING_DESIGN §17.5): no stamina line at all
     const sbW = Math.round(w * 0.6);
     const sbH = Math.round(h * 0.08);
     const sbX = (w - sbW) / 2;
@@ -184,6 +194,7 @@ export class LevelPrepScene implements Scene {
       true,
     );
     stTxt.anchor.set(0.5, 0.5); stTxt.x = w / 2; stTxt.y = stBarY + stBarH / 2;
+    stTxt.visible = !stFree;
     this.container.addChild(stTxt);
     if (stInsufficient) {
       // The row spans the Start button's width; with the ad refill two buttons share it, coin left.
@@ -287,6 +298,39 @@ export class LevelPrepScene implements Scene {
     desc.x = padX + innerPadX;
     desc.y = label.y + label.height + rowGap;
     this.container.addChild(desc);
+
+    return y + panH + Math.round(h * 0.01);
+  }
+
+  /** "NEW" tag + the names of the cards this level introduces, one row, same panel family as rewards. */
+  private drawNewCards(names: string[], y: number): number {
+    const { w, h } = this;
+    const padX = marginLineX(w);
+    const panW = w - padX - Math.round(w * 0.06);
+    const fs = FS.headline;
+    const padV = Math.round(h * 0.021);
+    const panH = fs * 1.6 + padV * 2;
+
+    const bg = sketchPanel(panW, panH, {
+      fill: C.paper, border: C.line, width: 1.2, seed: seedFor(padX, y + 3, panW),
+    });
+    bg.x = padX; bg.y = y;
+    sketchAccentBar(bg, panH, C.red, seedFor(padX, panH, 17));
+    this.container.addChild(bg);
+
+    const tag = txt(t('level.newCard.tag'), fs, C.red, true);
+    tag.anchor.set(0, 0.5);
+    tag.x = padX + Math.round(panW * 0.06);
+    tag.y = y + panH / 2;
+    this.container.addChild(tag);
+
+    const list = txt(names.join(t('level.newCard.sep')), fs, C.dark, true);
+    list.anchor.set(0, 0.5);
+    list.x = tag.x + tag.width + Math.round(w * 0.03);
+    list.y = y + panH / 2;
+    const room = padX + panW - Math.round(panW * 0.04) - list.x;
+    if (list.width > room) list.scale.set(room / list.width);
+    this.container.addChild(list);
 
     return y + panH + Math.round(h * 0.01);
   }

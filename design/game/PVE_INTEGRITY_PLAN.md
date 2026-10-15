@@ -115,6 +115,10 @@ metaserver 严禁 import `client/src/game`（M12）。故 PvE **经济数据**�
 - `POST /pve/upgrade` `{ upgradeId }` → 校验材料足够（服务器）→ 扣材料 + `pveUpgrades[id]+1` → 回推 `{ save }`。
   仅在线；离线客户端禁用入口。
 - 两端点都返回完整权威 SaveData（客户端 adopt 镜像，同经济回执）。
+- **2026-10-15 增补（ONBOARDING_DESIGN §17）**：
+  - `/pve/clear` 新增 `assist?: boolean` 和 `levelRev?: number`。`assist` 只接受 `ASSIST_LEVEL_IDS`（ch1 lv1–3），星数封顶 1；抽查记录与 judge 请求带上 `assist`，判官用同一个 `applyAssist` 复算。提交方 `levelRev` 低于该关 `levelContentRev` 时不抽查（老包玩的是旧内容）。
+  - peer judge 选判官：只选 `ClientCaps.level_rev` ≥ 该关内容版本的连接（老包不报 = 1）；没有合格判官按「未校验、放行」处理。
+  - `ch1_lv5` 通关时 `/pve/clear` 顺带在存档写 `heroGift`（已有则不动）；新端点 `POST /pve/hero-gift/claim` 到点（下一个 UTC 0 点）后发 `max` 卡，先标 `claimedAt` 再发卡，幂等。
 
 ### 8.4 离线补偿三档（弱网用户，2026-06-21 拍板）
 

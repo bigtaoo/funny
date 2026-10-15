@@ -226,6 +226,12 @@ export interface SaveData {
   //    mirror); this only tracks which tiers have been claimed. Absent = no tier ever claimed, lazily created. ——
   rechargeMilestone?: RechargeMilestoneData;
 
+  /**
+   * Next-day hero gift (ONBOARDING_DESIGN §17.4): written on the first HERO_GIFT_LEVEL_ID clear, claimed via
+   * POST /pve/hero-gift/claim from `claimableAt` on. Server-authoritative; absent until earned.
+   */
+  heroGift?: { defId: string; claimableAt: number; claimedAt?: number };
+
   // —— Retention system (B5, RETENTION_DESIGN). Server-authoritative; not writable via PUT /save. Lazily created. ——
   retention?: RetentionSave;
 

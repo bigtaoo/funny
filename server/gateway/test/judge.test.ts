@@ -94,7 +94,8 @@ describe('Gateway peer judge', () => {
     const port = 19513;
     const gw = startGateway(port);
     const [p, j] = await Promise.all([connect(port, 'p'), connect(port, 'j')]);
-    j.send(encodeClient({ client_caps: { can_judge: true } }));
+    // ch1_lv2 is a reworked level (ONBOARDING_DESIGN §17.2): only a judge bundling that revision qualifies.
+    j.send(encodeClient({ client_caps: { can_judge: true, level_rev: 2 } }));
 
     let seenReq: Record<string, unknown> | undefined;
     j.on('message', (data: ArrayBuffer) => {
@@ -117,7 +118,7 @@ describe('Gateway peer judge', () => {
     const cardInstancesJson = JSON.stringify({ card_1: { id: 'card_1', defId: 'lichuang', level: 9, gear: {} } });
     const verdict = await gw.judge({
       seed: 0, mode: 0, endFrame: 99, frames: [], exclude: ['p'],
-      levelId: 'ch1_lv2', cardInstancesJson,
+      levelId: 'ch1_lv2', assist: true, cardInstancesJson,
     });
     expect(verdict).toEqual({
       ok: true, stateHash: '', winnerSide: 0, stars: 2, statsJson: '{"kill.archer":3}', judgeAccountId: 'j',
@@ -125,6 +126,7 @@ describe('Gateway peer judge', () => {
     // Judge received PvE recomputation parameters (level_id + authoritative Hero Roster blueprint snapshot).
     expect(seenReq?.['level_id']).toBe('ch1_lv2');
     expect(seenReq?.['card_instances_json']).toBe(cardInstancesJson);
+    expect(seenReq?.['assist']).toBe(true);
     void p;
   });
 

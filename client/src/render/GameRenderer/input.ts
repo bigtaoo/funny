@@ -117,6 +117,9 @@ export class InputPanel {
 
     // Tutorial director intercepts taps first: its own buttons (skip / graduation) and, once the
     // graduation card is up, every tap. Otherwise taps pass through so the player can drag cards.
+    // Level-chain banner (ONBOARDING_DESIGN §17.3): a tap advances or leaves for the map. Ahead of the
+    // tutorial director, which swallows every tap once it has handed over (and the banner then follows).
+    if (this.core.chainBanner?.handleDown(x, y)) return;
     if (this.core.tutorial?.handleDown(x, y)) return;
 
     // Profile popup open → its own dim backdrop (PIXI interactive) handles the

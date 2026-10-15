@@ -32,6 +32,8 @@ export interface PendingClear {
   ts: number;
   /** Local replay id (ReplayStore); retrieved and uploaded for re-verification when the flush is sampled by L1 (§8.6). */
   replayId?: string;
+  /** The run used the easier-retry assist (ONBOARDING_DESIGN §17.3); settled as such. */
+  assist?: boolean;
 }
 
 /** Offline pending stamina-spend record (flushed on reconnect → POST /pve/enter). The local stamina mirror is already deducted; this just settles the server's authoritative copy. */

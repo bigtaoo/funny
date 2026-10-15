@@ -1,7 +1,8 @@
 // Shared by TutorialDirector.ts and panels.ts (claudedocs/client-modules.md "单文件 500 行收敛").
 // 'intro' = opening seconds (engine running, base labels up), 'beat' = the three guided plays,
-// 'finale' = meteor landed, waiting for the field to clear, 'graduate' = win card up, 'done' = left.
-export type Phase = 'intro' | 'beat' | 'finale' | 'graduate' | 'done';
+// 'free' = after the meteor (ONBOARDING_DESIGN §17.1): every card plays, the remaining waves run and a new
+// card unlocks mid-fight; 'graduate' = WIN in (card up only when it carries a notice), 'done' = left.
+export type Phase = 'intro' | 'beat' | 'free' | 'graduate' | 'done';
 
 /** Per-beat completion record for the `tutorial_beat_done` analytics event (ONBOARDING_DESIGN §11.9). */
 export interface TutorialBeatDone {
@@ -16,7 +17,10 @@ export interface TutorialBeatDone {
 
 /** What the scene hands the tutorial director (GameSceneOptions.tutorial). */
 export interface TutorialConfig {
-  /** Graduation card button label. */
+  /**
+   * Graduation card button label. The card itself only shows when it has a {@link footnote} to carry
+   * (§17.1); otherwise the WIN stamp leaves on its own after a beat.
+   */
   ctaLabel: string;
   /** Optional reward line under the graduation message (only when it is true for this player). */
   teaser?: string;
@@ -37,5 +41,10 @@ export interface TutorialConfig {
   autoContinueSec?: number;
   /** Step-level analytics (A9-9); keys match analyticsvc's TUTORIAL_ORDERED_KEYS. */
   onStep?(stepKey: string): void;
+  /**
+   * Tick of the level's last scripted spawn. The free phase calls the win this long plus
+   * FREE_SETTLE_TICKS after it, should the engine not have settled by then (§17.1).
+   */
+  lastSpawnTick?: number;
   onBeatDone?(info: TutorialBeatDone): void;
 }

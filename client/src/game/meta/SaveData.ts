@@ -122,6 +122,9 @@ export interface SaveData {
     claimed: number[];
   };
 
+  // —— Next-day hero gift (ONBOARDING_DESIGN §17.4). Server-authoritative, client read-only; absent until earned. ——
+  heroGift?: { defId: string; claimableAt: number; claimedAt?: number };
+
   // —— Retention (B5, RETENTION_DESIGN). Server-authoritative; not sent up on PUT /save (client read-only). ——
   retention?: {
     checkin?: { monthKey: string; claimedDays: number[]; lastClaimedDayKey?: string };

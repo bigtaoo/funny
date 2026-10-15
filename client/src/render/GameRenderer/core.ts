@@ -38,6 +38,7 @@ import {
   TICK_RATE,
 } from '../../game';
 import { ILayout } from '../../layout/ILayout';
+import { ChainBanner, type ChainBannerSpec } from '../ChainBanner';
 import { InputManager } from '../../inputSystem/InputManager';
 import { BoardView } from '../BoardView';
 import type { BattleLabelContext } from '../battleLabels';
@@ -100,6 +101,11 @@ export class GameRendererCore {
    * navigated to since.
    */
   private gameEndTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * Level-chain banner over the finished battle (ONBOARDING_DESIGN §17.3). Once up it owns every tap
+   * (InputPanel.handleDown asks it before the gameEnded lock) and ticks with update().
+   */
+  chainBanner: ChainBanner | null = null;
 
   readonly engine: IGameEngine;
   readonly layout: ILayout;
@@ -294,6 +300,13 @@ export class GameRendererCore {
     this.gameEndTimer = setTimeout(() => { this.gameEndTimer = null; fn(); }, delayMs);
   }
 
+  /** Put the level-chain banner up under the WIN stamp; replaces any banner already showing. */
+  showChainBanner(spec: ChainBannerSpec): void {
+    this.chainBanner?.destroy();
+    this.chainBanner = new ChainBanner(this.layout, spec);
+    this.container.addChild(this.chainBanner.container);
+  }
+
   update(dt: number): void {
     const prevTicks = this.engine.state.elapsedTicks;
     // Freeze engine advancement during tutorial checkpoints / tours (enemies/waves/hand timers all paused);
@@ -337,6 +350,7 @@ export class GameRendererCore {
     if (this.netEnabled) this.updateNetWaiting(state, prevTicks, dt);
     this.netStatus.update(dt);
     this.tutorial?.onTick(state, dt);
+    this.chainBanner?.update(dt);
   }
 
   private static readonly VIGNETTE_FADE = 0.55; // seconds to fully fade out
@@ -388,6 +402,7 @@ export class GameRendererCore {
     this.safeDestroyStep('unsubs', () => this.unsubs.forEach(u => u()));
     this.safeDestroyStep('drag', () => this.input.destroy());
     this.safeDestroyStep('profilePopup', () => this.profilePopup?.destroy());
+    this.safeDestroyStep('chainBanner', () => { this.chainBanner?.destroy(); this.chainBanner = null; });
     this.safeDestroyStep('vfxSystem', () => this.vfxSystem.destroy());
 
     this.safeDestroyStep('escortSprites', () => {

@@ -11,16 +11,29 @@ import type { CardDefinition } from './types';
  */
 export interface ICardDrawPolicy {
   draw(): CardDefinition;
+  /**
+   * Mid-battle card unlock (level `cardUnlocks`, ONBOARDING_DESIGN §17.1): add `card` to the pool and make
+   * it the very next draw. Deterministic — called from the engine step at a fixed tick.
+   */
+  unlock?(card: CardDefinition): void;
 }
 
 export class UniformCardDrawPolicy implements ICardDrawPolicy {
-  private readonly pool: readonly CardDefinition[];
+  private readonly pool: CardDefinition[];
+  private forced: CardDefinition[] = [];
 
   constructor(private readonly prng: Prng, pool?: readonly CardDefinition[]) {
-    this.pool = pool && pool.length > 0 ? pool : CARD_DEFINITIONS;
+    this.pool = [...(pool && pool.length > 0 ? pool : CARD_DEFINITIONS)];
+  }
+
+  unlock(card: CardDefinition): void {
+    if (!this.pool.some((c) => c.id === card.id)) this.pool.push(card);
+    this.forced.push(card);
   }
 
   draw(): CardDefinition {
+    const f = this.forced.shift();
+    if (f) return f;
     const idx = this.prng.nextInt(this.pool.length);
     return this.pool[idx]!;
   }
@@ -43,15 +56,26 @@ export class UniformCardDrawPolicy implements ICardDrawPolicy {
  */
 export class TutorialDrawPolicy implements ICardDrawPolicy {
   private idx = 0;
+  private readonly filler: CardDefinition[];
+  private forced: CardDefinition[] = [];
 
   constructor(
     private readonly script: readonly CardDefinition[],
-    private readonly filler: readonly CardDefinition[],
+    filler: readonly CardDefinition[],
     private readonly prng: Prng,
-  ) {}
+  ) {
+    this.filler = [...filler];
+  }
+
+  unlock(card: CardDefinition): void {
+    if (!this.filler.some((c) => c.id === card.id)) this.filler.push(card);
+    this.forced.push(card);
+  }
 
   draw(): CardDefinition {
     if (this.idx < this.script.length) return this.script[this.idx++]!;
+    const f = this.forced.shift();
+    if (f) return f;
     const pool = this.filler.length > 0 ? this.filler : this.script;
     return pool[this.prng.nextInt(pool.length)]!;
   }

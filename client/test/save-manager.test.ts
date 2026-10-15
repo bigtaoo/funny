@@ -509,14 +509,16 @@ describe('SaveManager.recordClear / pending (§8)', () => {
     hasToken?: boolean;
     onClear?: (levelId: string, stars: number) => SaveData | Error;
   }) {
-    const calls: { clears: Array<{ levelId: string; stars: number }> } = {
+    const calls: { clears: Array<{ levelId: string; stars: number }>; assists: boolean[] } = {
       clears: [],
+      assists: [],
     };
     const api = {
       hasToken: () => opts.hasToken ?? true,
       getSave: async () => ({ save: makeNewSave('a', 1) }),
-      pveClear: async (levelId: string, stars: number) => {
+      pveClear: async (levelId: string, stars: number, _u?: unknown, _s?: unknown, o?: { assist?: boolean }) => {
         calls.clears.push({ levelId, stars });
+        calls.assists.push(o?.assist === true);
         const r = opts.onClear?.(levelId, stars) ?? makeNewSave('a', 1);
         if (r instanceof Error) throw r;
         return { save: r, granted: {}, capped: false };
@@ -578,6 +580,22 @@ describe('SaveManager.recordClear / pending (§8)', () => {
     const mgr = new SaveManager({ store, api });
     await mgr.recordClear('ch1_lv1', 1);
     expect(mgr.getPendingClears().map((p) => p.levelId)).toEqual(['ch1_lv1']);
+  });
+
+  it('assisted clear: flag reaches /pve/clear online and survives the offline queue', async () => {
+    const store = new LocalSaveStore(new MemStorage());
+    store.saveLocal(makeNewSave('a', 1));
+    let online = false;
+    const { api, calls } = pveApi({ onClear: () => (online ? makeNewSave('a', 2) : new Error('network down')) });
+    const mgr = new SaveManager({ store, api });
+
+    await mgr.recordClear('ch1_lv1', 1, undefined, undefined, true);
+    expect(mgr.getPendingClears()).toEqual([expect.objectContaining({ levelId: 'ch1_lv1', assist: true })]);
+
+    online = true;
+    await mgr.refresh();
+    expect(calls.assists).toEqual([true, true]); // failed online attempt + successful flush
+    expect(mgr.getPendingClears()).toEqual([]);
   });
 
   it('flush queue after bootstrap/refresh: settle each entry in order, clear queue on success', async () => {
