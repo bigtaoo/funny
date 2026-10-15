@@ -232,6 +232,8 @@ export const zh = {
   'tutorial.b3.title': '陨石！',
   'tutorial.b3.body': '砸向那一群。',
   'tutorial.free.body': '剩下的交给你，随便出牌守住！',
+  'tutorial.idle.title': '基地需要你！',
+  'tutorial.idle.body': '把一张卡拖到战场上，挡住他们。',
   'tutorial.newCard.title': '新卡：{name}！',
   'tutorial.newCard.body': '远程射击，放在塔后面最好用。',
   'tutorial.grad.body': '守住你的本子，画花他们的。',

@@ -23,6 +23,15 @@ export function drawSlotRing(g: PIXI.Graphics, layout: ILayout, center: { x: num
   g.visible = true;
 }
 
+/** Breathing ring around a board point (the meteor's target), sized off the cell. */
+export function drawTargetRing(g: PIXI.Graphics, layout: ILayout, center: { x: number; y: number }, time: number): void {
+  const a = 0.45 + 0.35 * (0.5 + 0.5 * Math.sin(time * 5));
+  g.clear();
+  g.lineStyle(4, C_BLUE, a);
+  g.drawCircle(center.x, center.y, layout.cellSize * (1.25 + 0.15 * Math.sin(time * 5)));
+  g.visible = true;
+}
+
 /** Refill `layer` with the demo's pieces: the card ghost (when there is one) and a fingertip. */
 export function fillGhostLayer(layer: PIXI.Container, layout: ILayout, card: PIXI.Container | null): void {
   layer.removeChildren().forEach((c) => c.destroy({ children: true }));

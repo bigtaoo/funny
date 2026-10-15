@@ -64,6 +64,14 @@ export const FINALE_PAUSE_SEC = 0.5;
  * (an enemy wedged somewhere), call the win anyway — the tutorial never strands a player.
  */
 export const FREE_SETTLE_TICKS = 900;
+/**
+ * Free phase idle prompt (§17.7): this long without playing a card while enemies are on the board
+ * freezes the fight on a "play a card" prompt that stays up until a card is played — so an idle
+ * player never reaches the fallback win with an empty base.
+ */
+export const FREE_IDLE_PROMPT_SEC = 5;
+/** Idle prompt up → the ghost card starts its loop (the player has already sat out FREE_IDLE_PROMPT_SEC). */
+export const FREE_IDLE_GHOST_SEC = 1;
 /** WIN stamp → leave, when no graduation card is needed (§17.1). */
 export const WIN_HOLD_SEC = 1.4;
 /** The mid-fight new-card callout: strip + breathing frame on its hand slot. */

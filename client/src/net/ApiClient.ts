@@ -196,14 +196,7 @@ export class ApiClient {
     unitLevels?: Record<string, number>,
     stats?: Record<string, number>,
     opts?: { assist?: boolean }
-  ): Promise<{
-    save: SaveData;
-    granted: Record<string, number>;
-    capped: boolean;
-    needsReplay?: boolean;
-    verifyId?: string;
-    grantedEquipment?: EquipmentInstance;
-  }> {
+  ): ReturnType<PveService['pveClear']> {
     return this.pveSvc.pveClear(levelId, stars, unitLevels, stats, opts);
   }
 
