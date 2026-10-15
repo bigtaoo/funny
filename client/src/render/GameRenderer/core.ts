@@ -8,7 +8,7 @@
 //
 // Core holds `events`/`input` back-references (assigned by the outer assembly right after
 // constructing each, mirroring FriendsScene/core.ts's lazy `net` field) because its own
-// update()/destroy()/forceTutorialVictory() need to call into them. None of those three call sites
+// update()/destroy()/tutorialHost.forceVictory() need to call into them. None of those three call sites
 // fire synchronously inside THIS constructor, so no closure-based two-phase trick is needed for
 // them — only the InputManager onDown/onMove/onUp wiring below does, via closures that read
 // `this.input` lazily (by the time InputManager actually fires one, the outer assembly's

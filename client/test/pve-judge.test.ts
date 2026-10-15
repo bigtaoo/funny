@@ -95,6 +95,7 @@ describe('judgeRunner — PvE spot-check re-verification', () => {
       defenseJson: '',
       topDeck: [],
       bottomDeck: [],
+      assist: false,
     };
 
     const out = runJudge(req);
@@ -152,6 +153,7 @@ describe('judgeRunner — PvE spot-check re-verification', () => {
       defenseJson: '',
       topDeck: [],
       bottomDeck: [],
+      assist: false,
     };
     const withSnapshot = runJudge(reqWithSnapshot);
     expect(withSnapshot.ok).toBe(true);
@@ -183,6 +185,7 @@ describe('judgeRunner — PvE spot-check re-verification', () => {
       defenseJson: '',
       topDeck: [],
       bottomDeck: [],
+      assist: false,
     };
     expect(runJudge(req)).toEqual({ ok: false, stateHash: '', winnerSide: 0, stars: 0, statsJson: '' });
   });
@@ -201,6 +204,7 @@ describe('judgeRunner — PvE spot-check re-verification', () => {
       defenseJson: '',
       topDeck: [],
       bottomDeck: [],
+      assist: false,
     };
     const out = runJudge(req);
     expect(out.stars).toBe(0);

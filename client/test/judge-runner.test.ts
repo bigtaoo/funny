@@ -212,6 +212,7 @@ describe('siege judge recomputation (S8-3, SLG_DESIGN §5.3)', () => {
       bottomDeck: [],
       cardInstancesJson: '',
       equipmentInvJson: '',
+      assist: false,
     } as JudgeRequest;
   }
 

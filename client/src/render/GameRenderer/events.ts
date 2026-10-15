@@ -375,9 +375,9 @@ export class EventsPanel {
 
   /**
    * Scripted (non-engine) settlement stinger — tutorial graduation, which never emits a real
-   * `game_over` (see GameRendererCore.forceTutorialVictory). Kept here rather than calling `playSfx`
+   * `game_over` (see tutorialHost.forceVictory). Kept here rather than calling `playSfx`
    * from core.ts so every audio decision in the battle scene stays in this one file. Callers own the
-   * one-shot guarantee; `forceTutorialVictory` has its own `gameEnded` gate.
+   * one-shot guarantee; `forceVictory` has its own `gameEnded` gate.
    */
   playResultStinger(winner: number): void {
     this.cue(winner === this.core.localOwner ? 'sfx.result.victory' : 'sfx.result.defeat');

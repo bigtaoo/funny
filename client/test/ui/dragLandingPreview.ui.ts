@@ -14,7 +14,7 @@ import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n } from '../../src/i18n';
 import { GameRenderer } from '../../src/render/GameRenderer';
 import { createLocalMatch } from '../../src/app/matchEngine';
-import { getLevel } from '../../src/game';
+import { inputTestLevel } from './inputTestLevel';
 import { BASE_COLS } from '@nw/engine/config';
 import { UnitType } from '@nw/engine/types';
 import { boardUnitHeight, targetScreenHeight } from '../../src/render/unitSize';
@@ -38,7 +38,7 @@ const SLOT_UNIT_SHIELDBEARER = 2;
 const SLOT_BUILDING_TOWER_A  = 0;
 
 function buildRenderer(screenW = 800, screenH = 1280) {
-  const { engine } = createLocalMatch({ level: getLevel('ch1_lv1')! });
+  const { engine } = createLocalMatch({ level: inputTestLevel() });
   const layout = createLayout(screenW, screenH);
   const input = new InputManager();
   const renderer = new GameRenderer(engine, layout, input);

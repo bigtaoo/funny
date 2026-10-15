@@ -25,6 +25,7 @@ import { ShopScene } from '../../src/scenes/ShopScene';
 import { GachaScene } from '../../src/scenes/GachaScene';
 import { CampaignMapScene } from '../../src/scenes/CampaignMapScene';
 import { LevelPrepScene } from '../../src/scenes/LevelPrepScene';
+import { drawRewardsRow } from '../../src/scenes/LevelPrepScene/infoRows';
 import { marginLineX } from '../../src/render/sketchUi';
 import { CardCodexScene } from '../../src/scenes/CardCodexScene';
 import { StatsScene } from '../../src/scenes/StatsScene';
@@ -1467,7 +1468,7 @@ describe('LevelPrepScene — layout invariants', () => {
       scene.destroy();
     });
 
-    // Regression: drawBrief/drawObjective/drawRewards used to left-pad panels at `w * 0.06`,
+    // Regression: drawBrief/drawObjective/drawRewardsRow used to left-pad panels at `w * 0.06`,
     // which sits to the LEFT of the red notebook margin rule (`marginLineX(w) = w * 0.09`) — the
     // panel background + its accent bar rendered on top of the margin line instead of beside it.
     it(`brief / objective / rewards panels start at or right of the margin line — ${label}`, () => {
@@ -1488,7 +1489,8 @@ describe('LevelPrepScene — layout invariants', () => {
         (scene as any).drawBrief(100);
       });
       const objectiveX = captureNewChildX(() => (scene as any).drawObjective({ kind: 'survive' }, 200));
-      const rewardsX = captureNewChildX(() => (scene as any).drawRewards({ coins: 50, materials: { scrap: 3 } }, 300));
+      const rewardsX = captureNewChildX(() =>
+        drawRewardsRow((scene as any).container, dw, layout.designHeight, { coins: 50, materials: { scrap: 3 } }, 300));
 
       expect(briefX).toBeGreaterThanOrEqual(mx);
       expect(objectiveX).toBeGreaterThanOrEqual(mx);
