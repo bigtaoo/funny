@@ -17,6 +17,7 @@
 // order). Most of the pre-existing public API (onGameEnd, setCampaignMode, isGameOver, vignetteAlpha,
 // …) is forwarded straight through to `core`/`events` so GameScene.ts/ReplayScene.ts don't need to
 // change.
+import type { ChainBannerSpec } from './ChainBanner';
 import type { IGameEngine, MatchSummary, OwnerId, PlayerStats } from './../game';
 import type { ILayout } from '../layout/ILayout';
 import type { InputManager } from '../inputSystem/InputManager';
@@ -29,6 +30,7 @@ import { EventsPanel } from './GameRenderer/events';
 import { InputPanel } from './GameRenderer/input';
 import type { InkHintGate } from './GameRenderer/inkHint';
 import { BuildHint, type BuildHintConfig } from './GameRenderer/buildHint';
+import { UnlockCallout, type UnlockCalloutEntry } from './GameRenderer/unlockCallout';
 import { FirstBuildWatch, battleSnapshot, type BattleSnapshot } from './GameRenderer/battleSnapshot';
 
 export type { GameProfiles } from './GameRenderer/core';
@@ -45,6 +47,7 @@ export class GameRenderer {
   private readonly input: InputPanel;
   private readonly firstBuild = new FirstBuildWatch();
   private buildHint: BuildHint | null = null;
+  private unlockCallout: UnlockCallout | null = null;
 
   constructor(
     engine: IGameEngine,
@@ -114,11 +117,23 @@ export class GameRenderer {
       buildCardGhost: (i) => input.buildCardGhost(i),
     }, cfg) : null;
   }
+  /** The campaign's mid-battle new-card callouts (ONBOARDING_DESIGN §17.4); empty / null = none. */
+  setUnlockCallouts(entries: readonly UnlockCalloutEntry[] | null): void {
+    this.unlockCallout?.destroy();
+    const core = this.core;
+    this.unlockCallout = entries && entries.length > 0 ? new UnlockCallout({
+      container: core.container,
+      layout: core.layout,
+      state: () => core.engine.state,
+      handSlotCenter: (i) => core.handView.slotCenter(i),
+    }, entries) : null;
+  }
   setReconnecting(v: boolean): void { this.core.setReconnecting(v); }
   setPeerDisconnected(v: boolean): void { this.core.setPeerDisconnected(v); }
   setDisconnected(v: boolean): void { this.core.setDisconnected(v); }
   clearNetStatus(): void { this.core.clearNetStatus(); }
   isGameOver(): boolean { return this.core.isGameOver(); }
+  showChainBanner(spec: ChainBannerSpec): void { this.core.showChainBanner(spec); }
   get currentTick(): number { return this.core.currentTick; }
   snapshotStats(): [PlayerStats, PlayerStats] { return this.core.snapshotStats(); }
   /** The local player's battle right now — for analytics on a mid-battle exit (ANALYTICS_DESIGN §5.6d). */
@@ -134,7 +149,12 @@ export class GameRenderer {
     this.input.update(dt);
     this.firstBuild.observe(this.core.engine.state, this.core.localOwner);
     this.buildHint?.update(dt);
+    this.unlockCallout?.update(dt);
   }
 
-  destroy(): void { this.buildHint?.destroy(); this.buildHint = null; this.core.destroy(); }
+  destroy(): void {
+    this.buildHint?.destroy(); this.buildHint = null;
+    this.unlockCallout?.destroy(); this.unlockCallout = null;
+    this.core.destroy();
+  }
 }

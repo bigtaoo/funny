@@ -9,7 +9,10 @@
 import * as analytics from '../../../analytics';
 import { getLevel, CAMPAIGN_LEVEL_ORDER, achievementStatDelta, type AIDifficulty } from '../../../game';
 import { computeStars, buildStarContext } from '@nw/engine/campaign/stars';
+import { applyAssist, ASSIST_MAX_STARS } from '@nw/engine';
+import { CARD_DEFINITIONS } from '@nw/engine/config';
 import { t, type TranslationKey } from '../../../i18n';
+import { HERO_GIFT_LEVEL_ID } from '@nw/shared/onboarding';
 import { allEquippedSkins, skinEquipKey } from '../../../game/meta/skinDefs';
 import { genUuid } from '../../../platform/uuid';
 import type { EquipSlot } from '../../../game/meta/SaveData';
@@ -20,11 +23,12 @@ import { ApiError } from '../../../net/ApiClient';
 import { showToastMessage } from '../../../net/log';
 import type { CardRosterView } from '../../../scenes/CardScene';
 import type { IconKind } from '../../../render/icons';
+import type { UnlockCalloutEntry } from '../../../render/GameRenderer/unlockCallout';
 import { matchBadgeTelemetry } from '../../../scenes/ResultScene/badges';
 import { buildEquipmentActions } from './equipmentActions';
 import { createStaminaAd } from './staminaAd';
 import { levelStaminaCost } from './staminaCost';
-import { nextLevelAfterWin, NEXT_LEVEL_AUTO_SEC } from './nextLevel';
+import { nextLevelAfterWin, NEXT_LEVEL_AUTO_SEC, CHAIN_AUTO_SEC, CHAIN_RESULT_EVERY } from './nextLevel';
 import type { MountOpts } from '../../AppViews';
 import type { AppCtx, Nav } from '../../appCtx';
 import { TOKEN_KEY, inkHintGate, buildHintFor } from '../../appConstants';
@@ -136,6 +140,52 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
     });
   }
 
+  /**
+   * Cards a level adds over the one before it, by display name — a second copy of a card already in
+   * hand is not "new" (ch1 lv4/6/7/8 add those). The first level has nothing to compare against.
+   */
+  function newCardsFor(levelId: string): { newCards?: string[] } {
+    const idx = CAMPAIGN_LEVEL_ORDER.indexOf(levelId);
+    const prev = idx > 0 ? getLevel(CAMPAIGN_LEVEL_ORDER[idx - 1]!) : null;
+    const cur = getLevel(levelId);
+    if (!prev?.loadout || !cur?.loadout) return {};
+    const keyOf = (id: string): string | undefined => CARD_DEFINITIONS.find((c) => c.id === id)?.nameKey;
+    const had = new Set(prev.loadout.map(keyOf));
+    const fresh = [...new Set(cur.loadout.map(keyOf))].filter((k): k is string => !!k && !had.has(k));
+    return fresh.length > 0 ? { newCards: fresh.map((k) => t(k as TranslationKey)) } : {};
+  }
+
+  /**
+   * Callouts for a level's mid-battle card unlocks (ONBOARDING_DESIGN §17.4), until it is first cleared.
+   * On the hero-gift level the hero's callout also says the card is the player's from tomorrow.
+   */
+  function unlockCalloutsFor(levelId: string, unlocks: readonly { cardId: string }[] | undefined): { unlockCallouts?: UnlockCalloutEntry[] } {
+    if (!unlocks?.length || saveManager.get().progress.cleared.includes(levelId)) return {};
+    const entries = unlocks.flatMap((u) => {
+      const key = CARD_DEFINITIONS.find((c) => c.id === u.cardId)?.nameKey;
+      if (!key) return [];
+      const name = t(key as TranslationKey);
+      return levelId === HERO_GIFT_LEVEL_ID
+        ? [{ cardId: u.cardId, title: t('heroGift.battle.title', { name }), body: t('heroGift.battle.body', { name }) }]
+        : [{ cardId: u.cardId, title: t('battle.newCard.title', { name }), body: t('battle.newCard.body') }];
+    });
+    return entries.length > 0 ? { unlockCallouts: entries } : {};
+  }
+
+  /**
+   * Start the next level from the banner over the battle just won: same stamina charge and attempt
+   * event as the prep screen's Start, minus the prep screen. Short of stamina, the prep screen takes
+   * over, since buying / watching for stamina lives there.
+   */
+  function chainInto(nextId: string): void {
+    const next = getLevel(nextId);
+    if (!next) { goCampaignMap(); return; }
+    if (!saveManager.spendStaminaForLevel(nextId, levelStaminaCost(platform, next))) { goLevelPrep(nextId); return; }
+    analytics.track('level_attempt', { level_id: nextId, stars_before: saveManager.get().progress.stars[nextId] ?? 0, chained: true });
+    analytics.track('screen_view', { scene: 'GameScene' });
+    goCampaign(nextId);
+  }
+
   function goLevelPrep(levelId: string): void {
     const level = getLevel(levelId);
     if (!level) { goCampaignMap(); return; }
@@ -161,6 +211,7 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
       levelNumber,
       objective: level.objective,
       ...(level.rewards ? { rewards: level.rewards } : {}),
+      ...newCardsFor(levelId),
       // Both optional per level, so what stands between a player and a level is data: ch1_lv1 — the
       // first real level, entered straight from the tutorial — carries neither (ONBOARDING_DESIGN
       // §11.7). Its chapter-intro text moved to `story.outroKey` and plays after the win instead;
@@ -387,17 +438,34 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
     return `lv${n}_${phase}` as analytics.AnonymousFunnelStep;
   }
 
-  function goCampaign(levelId: string | undefined): void {
-    const level = levelId ? getLevel(levelId) : null;
-    if (!level || !levelId) { nav.goLobby(); return; }
+  /**
+   * The easier retry a lost assist level offers (ONBOARDING_DESIGN §17.2): straight back into the
+   * battle, skipping the prep screen the player just saw. Stamina is still charged; if it falls short
+   * the prep screen takes over, since that is where buying / watching for stamina lives.
+   */
+  function retryAssisted(levelId: string): void {
+    const level = getLevel(levelId);
+    if (!level) { goCampaignMap(); return; }
+    if (!saveManager.spendStaminaForLevel(levelId, levelStaminaCost(platform, level))) { goLevelPrep(levelId); return; }
+    analytics.track('level_attempt', { level_id: levelId, stars_before: saveManager.get().progress.stars[levelId] ?? 0, assist: true });
+    goCampaign(levelId, { assist: true });
+  }
+
+  function goCampaign(levelId: string | undefined, opts: { assist?: boolean } = {}): void {
+    const base = levelId ? getLevel(levelId) : null;
+    if (!base || !levelId) { nav.goLobby(); return; }
+    // The assisted run is the same level with weaker enemies and more ink; the judge rebuilds it with
+    // the same applyAssist from the `assist` flag on /pve/clear, so the replay still verifies.
+    const assist = opts.assist === true && base.assistOnLoss === true;
+    const level = assist ? applyAssist(base) : base;
     state.inLobby = false;
     platform.onGameplayStart();
-    analytics.track('game_start', { mode: 'campaign', level_id: levelId });
+    analytics.track('game_start', { mode: 'campaign', level_id: levelId, ...(assist ? { assist: true } : {}) });
     const startStep = anonLevelStep(levelId, 'start');
     if (startStep) analytics.countAnonymousFunnelStep(startStep);
     const campaignStartTs = Date.now();
     views.showGame({
-      onGameEnd(winner, stats, replay, summary) {
+      onGameEnd(winner, stats, replay, summary, banner) {
         // Persist the replay to disk first (once), serving both the result-screen playback and
         // potential L1 spot-check re-evaluation (§8.6).
         const kept = keepReplay(replay);
@@ -414,6 +482,8 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
             unitsKilled: stats[0].unitsKilled,
           });
           stars = computeStars(level.rewards?.starThresholds, ctx);
+          // An assisted clear counts, but is worth one star at most — the server caps it too.
+          if (assist) stars = Math.min(stars, ASSIST_MAX_STARS);
           analytics.track('level_complete', {
             level_id: levelId,
             stars,
@@ -426,7 +496,7 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
           if (stars > 0) {
             const clearStep = anonLevelStep(levelId, 'clear');
             if (clearStep) analytics.countAnonymousFunnelStep(clearStep);
-            void saveManager.recordClear(levelId, stars, kept, achievementStatDelta(stats[0]));
+            void saveManager.recordClear(levelId, stars, kept, achievementStatDelta(stats[0]), assist);
           }
         } else {
           analytics.track('game_end', {
@@ -454,10 +524,20 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
         // keeps the map one tap away — before, a defeat only had "back to map".
         // No midgame ad around the first five levels (ONBOARDING_DESIGN §15.5).
         const early = isEarlyLevel(levelId);
+        const toMap = { label: t('result.backToMap'), icon: 'mapPin' as const, onTap: proceedToMap };
+        if (winner !== 0 && base.assistOnLoss) {
+          // The first levels lead with the easier retry (§17.2) — the human funnel showed most first
+          // losses never came back for a second attempt at the same difficulty.
+          void nav.goResult(winner, stats, 0, kept, undefined, undefined, outroTexts,
+            () => retryAssisted(levelId), t('result.retryEasier'), undefined,
+            toMap, undefined,
+            { skipAd: early, extraSecondary: { label: t('result.retry'), icon: 'replay', onTap: () => goLevelPrep(levelId) } });
+          return;
+        }
         if (winner !== 0) {
           void nav.goResult(winner, stats, 0, kept, undefined, undefined, outroTexts,
             () => goLevelPrep(levelId), t('result.retry'), undefined,
-            { label: t('result.backToMap'), icon: 'mapPin', onTap: proceedToMap }, undefined, { skipAd: early });
+            toMap, undefined, { skipAd: early });
           return;
         }
         // A clear offers the next level first and keeps the map one tap away (ONBOARDING_DESIGN §13).
@@ -467,14 +547,36 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
             undefined, undefined, undefined, { skipAd: early });
           return;
         }
+        // A first clear rolls straight on into the next level from a banner over this battle (§17.3) —
+        // no result screen, no prep screen, no ad — except on every CHAIN_RESULT_EVERY-th level (lv5,
+        // lv10, …), which keeps the full result screen: stars, rewards, the way to the map.
+        // The pair to goCampaign's onGameplayStart is sent here, since goResult (which sends it
+        // otherwise) is skipped.
+        const nextLevel = getLevel(nextId);
+        if (banner && firstClear && stars > 0 && !outroTexts && nextLevel && (CAMPAIGN_LEVEL_ORDER.indexOf(levelId) + 1) % CHAIN_RESULT_EVERY !== 0) {
+          platform.onGameplayStop();
+          banner.showChainBanner({
+            stars,
+            nextName: t(nextLevel.nameKey as TranslationKey),
+            ...newCardsFor(nextId),
+            autoSec: CHAIN_AUTO_SEC,
+            onNext: () => chainInto(nextId),
+            onMap: proceedToMap,
+          });
+          return;
+        }
         // The first clear of an early level gets the compact screen with an "up next" teaser (§15.4).
         const nextKey = getLevel(nextId)?.nameKey;
-        const firstWin = early && firstClear && nextKey ? { nextName: t(nextKey as TranslationKey) } : undefined;
+        // The hero-gift level's first clear also says the trial hero is theirs from tomorrow (§17.4).
+        const giftLine = firstClear && levelId === HERO_GIFT_LEVEL_ID ? t('heroGift.result', { name: t('card.max.name') }) : undefined;
+        const firstWin = early && firstClear && nextKey
+          ? { nextName: t(nextKey as TranslationKey), ...(giftLine ? { giftLine } : {}) }
+          : undefined;
         // No detour here any more (ONBOARDING_DESIGN §15.2): the reward loop waits for the player's own
         // first trip to the lobby — routing the ch1_lv2 win there cut lv3 starts from 72% to 19%.
         void nav.goResult(winner, stats, 0, kept, undefined, undefined, outroTexts,
           () => goLevelPrep(nextId), t('result.nextLevel'), undefined,
-          { label: t('result.backToMap'), icon: 'mapPin', onTap: proceedToMap },
+          toMap,
           firstClear ? NEXT_LEVEL_AUTO_SEC : undefined, { skipAd: early, ...(firstWin ? { firstWin } : {}) });
       },
       onExitToLobby() {
@@ -489,6 +591,7 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
         (outcome, tick) => analytics.track('build_hint', { level_id: levelId, outcome, tick })),
       // Replay labels: human at the bottom, the level's forces at the top (owner-indexed).
       players: { bottom: ctx.playerName(), top: t('replay.aiOpponent') },
+      ...unlockCalloutsFor(levelId, level.cardUnlocks),
       // Hero Roster → engine (card level + per-card equipment buff blueprints, §9) and to the
       // renderer (worn gear drawn on units, §20.4). PvE-only; PvP omits both (hard wall).
       cardInstances: toEngineCardInstances(saveManager.get().cardInv ?? {}),

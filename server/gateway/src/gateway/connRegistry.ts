@@ -256,7 +256,7 @@ export class ConnRegistry {
         /* ignore */
       }
     }
-    const conn: GwConn = { accountId, ws, alive: true, canJudge: false, connSeq: this.nextConnSeq() };
+    const conn: GwConn = { accountId, ws, alive: true, canJudge: false, levelRev: 0, connSeq: this.nextConnSeq() };
     this.conns.set(accountId, conn);
     log.info('WS connected', { accountId, online: this.conns.size });
     // Tell sibling gateway instances too (2026-07-18): the account→socket map above is per-process,

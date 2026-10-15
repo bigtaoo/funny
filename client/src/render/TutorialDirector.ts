@@ -1,5 +1,5 @@
 import * as PIXI from 'pixi.js-legacy';
-import type { GameState } from '../game';
+import { GamePhase, type GameState } from '../game';
 import { toFp } from '@nw/engine/math/fixed';
 import { ILayout, Rect } from '../layout/ILayout';
 import { t } from '../i18n';
@@ -7,9 +7,9 @@ import type { Phase, TutorialConfig } from './TutorialDirector/types';
 import { buildLayers, drawStrip, clearStrip, drawGradCard, type PanelHost } from './TutorialDirector/panels';
 import { BEATS, BEAT_STEP_KEY, beatText, type BeatSpec } from './TutorialDirector/beats';
 import {
-  IDLE_GHOST_SEC, BASE_LABEL_HOLD_SEC, BASE_LABEL_FADE_SEC, FEEDBACK_SEC, STRIP_FADE_SEC, FINALE_MAX_SEC, FINALE_PAUSE_SEC, GRAD_CARD_DELAY_SEC, GRAD_POP_SEC, SHAKE_SEC, SHAKE_AMP, LANE_SNAP_COLS, BUILDING_SNAP_COLS, METEOR_SNAP_CELLS,
+  IDLE_GHOST_SEC, BASE_LABEL_HOLD_SEC, BASE_LABEL_FADE_SEC, FEEDBACK_SEC, STRIP_FADE_SEC, FINALE_PAUSE_SEC, FREE_SETTLE_TICKS, WIN_HOLD_SEC, NEW_CARD_CALLOUT_SEC, TUTORIAL_NEW_CARD, GRAD_CARD_DELAY_SEC, GRAD_POP_SEC, SHAKE_SEC, SHAKE_AMP, LANE_SNAP_COLS, BUILDING_SNAP_COLS, METEOR_SNAP_CELLS,
 } from './TutorialDirector/beats';
-import { enemyUnits, bestMeteorAnchor, beatTargetPoint, meteorAnchorCenter } from './TutorialDirector/geometry';
+import { bestMeteorAnchor, beatTargetPoint, meteorAnchorCenter } from './TutorialDirector/geometry';
 import { dispatchHit } from '../ui/hits';
 import { drawSlotRing, fillGhostLayer, poseGhost, GHOST_LOOP_SEC } from './TutorialDirector/ghostDemo';
 
@@ -27,8 +27,10 @@ export type { TutorialConfig, TutorialBeatDone } from './TutorialDirector/types'
  * Flow (no "Next" buttons anywhere, §11.2): the battle is live from tick 0 (`YOU` / `ENEMY` on the
  * bases); each of the three beats runs the engine to its `setupTick`, freezes on one instruction line
  * until the guided card lands, then runs on while the next beat's enemies arrive — no dead waits
- * (§11.2 rules 5–6; ticks tuned headless, see beats.ts). The meteor ends it: WIN banner → graduation
- * card, whose one button leaves.
+ * (§11.2 rules 5–6; ticks tuned headless, see beats.ts). After the meteor the fight carries on
+ * (§17.1, 'free'): every card plays, the level's later waves arrive, and the card its `cardUnlocks`
+ * hands out gets a callout once it reaches the hand. The engine's own `survive` win ends it: WIN
+ * stamp, then out — through the graduation card only when that card carries the analytics notice.
  *
  * Idle escalation (§11.4) — never plays for the player: breathing card frame + lit target from the
  * first frame; after IDLE_GHOST_SEC[beat] without touching a card a ghost card glides from the hand
@@ -87,8 +89,12 @@ export class TutorialDirector {
   private promptAt = 0;
   private idleSec = 0;
   private stripHideAt = Infinity;
-  private finaleAt = 0;
   private victoryAt = Infinity;
+  /** No graduation card: the WIN stamp holds until this time, then the tutorial leaves by itself. */
+  private leaveAt = Infinity;
+  /** The free phase's new-card callout: shown once, its card framed until newCardUntil. */
+  private newCardShown = false;
+  private newCardUntil = -Infinity;
   private gradAt = Infinity;
   private footnoteShown = false;
   private shakeLeft = 0;
@@ -162,6 +168,8 @@ export class TutorialDirector {
   handleDown(x: number, y: number): boolean {
     if (this.phase === 'done') return true;
     if (this.phase === 'graduate') {
+      // No card: a tap just hurries the WIN stamp along.
+      if (this.leaveAt !== Infinity) { this.leave(); return true; }
       // Only the button leaves; the rest of the screen is inert so a stray tap can't skip the moment.
       if (this.ctaRect && this.gradCard.scale.x >= 0.999) {
         dispatchHit([{ rect: this.ctaRect, fn: () => this.leave() }], x, y);
@@ -192,6 +200,7 @@ export class TutorialDirector {
    * away (§11.4).
    */
   allowCardPlay(cardId: string, col: number, row: number): { col: number; row: number } | null {
+    if (this.phase === 'free') return { col, row };
     if (!this.prompting || this.pendingRelease) return null;
     const target = this.snapCardPlay(cardId, col, row);
     if (!target) {
@@ -210,6 +219,7 @@ export class TutorialDirector {
    * drag's landing preview can ask on every pointer move.
    */
   snapCardPlay(cardId: string, col: number, row: number): { col: number; row: number } | null {
+    if (this.phase === 'free') return { col, row };
     if (!this.prompting || this.pendingRelease) return null;
     const beat = BEATS[this.beatIndex]!;
     if (cardId !== beat.cardId) return null;
@@ -239,16 +249,12 @@ export class TutorialDirector {
       case 'beat':
         this.tickBeats(state, dt);
         break;
-      case 'finale':
-        if (this.victoryAt === Infinity) {
-          const cleared = enemyUnits(state).length === 0;
-          if (cleared || this.time - this.finaleAt >= FINALE_MAX_SEC) this.victoryAt = this.time + FINALE_PAUSE_SEC;
-        } else if (this.time >= this.victoryAt) {
-          this.victory();
-        }
+      case 'free':
+        this.tickFree(state);
         break;
       case 'graduate':
-        if (this.time >= this.gradAt) this.animateGradCard();
+        if (this.time >= this.leaveAt) this.leave();
+        else if (this.time >= this.gradAt) this.animateGradCard();
         break;
       case 'done':
         break;
@@ -331,8 +337,43 @@ export class TutorialDirector {
     this.beatIndex++;
     if (beat.kind === 'spell') {
       this.shakeLeft = SHAKE_SEC;
-      this.phase = 'finale';
-      this.finaleAt = this.time;
+      this.phase = 'free';
+      this.showStrip(null, t('tutorial.free.body'), this.time + FEEDBACK_SEC * 2);
+      // `graduate` now marks the end of the guided part (§17.1); the free fight follows.
+      this.host.config.onStep?.('graduate');
+    }
+  }
+
+  /**
+   * After the meteor the fight is the player's. Frames the mid-fight unlock once it reaches the hand,
+   * and calls the win when the engine settles — on any settlement: the base floor clamp runs after the
+   * engine's tick, so a big leak could in principle end the run as an engine loss, which the tutorial
+   * never is. `lastSpawnTick + FREE_SETTLE_TICKS` is the fallback should a straggler never die.
+   */
+  private tickFree(state: GameState): void {
+    const slots = state.bottomPlayer.hand.slots;
+    if (!this.newCardShown) {
+      if (slots.some((s) => s?.card.id === TUTORIAL_NEW_CARD)) {
+        this.newCardShown = true;
+        this.newCardUntil = this.time + NEW_CARD_CALLOUT_SEC;
+        this.showStrip(t('tutorial.newCard.title', { name: t('card.archer.name') }), t('tutorial.newCard.body'), this.newCardUntil);
+      }
+    }
+    if (this.time < this.newCardUntil) {
+      this.slotIndex = slots.findIndex((s) => s?.card.id === TUTORIAL_NEW_CARD);
+      if (this.slotIndex >= 0) drawSlotRing(this.slotRing, this.layout, this.host.handSlotCenter(this.slotIndex), this.time);
+      else this.slotRing.visible = false;
+    } else if (this.slotRing.visible) {
+      this.slotRing.visible = false;
+    }
+
+    if (this.victoryAt === Infinity) {
+      const last = this.host.config.lastSpawnTick;
+      const settled = state.phase === GamePhase.GameOver
+        || (last !== undefined && state.elapsedTicks >= last + FREE_SETTLE_TICKS);
+      if (settled) this.victoryAt = this.time + FINALE_PAUSE_SEC;
+    } else if (this.time >= this.victoryAt) {
+      this.victory();
     }
   }
 
@@ -343,12 +384,17 @@ export class TutorialDirector {
     this.engineFrozen = true;
     this.stripHideAt = this.time;
     this.skipBtn.visible = false;
+    this.slotRing.visible = false;
     this.host.forceVictory();
     const cfg = this.host.config;
+    if (!cfg.footnote) {
+      // §17.1: no stop between the tutorial and level 1 — the WIN stamp, a beat, and on.
+      this.leaveAt = this.time + WIN_HOLD_SEC;
+      return;
+    }
     drawGradCard(this.panelHost(), t('tutorial.grad.body'), cfg.teaser, cfg.ctaLabel, cfg.footnote);
     this.gradCard.scale.set(0);
     this.gradAt = this.time + GRAD_CARD_DELAY_SEC;
-    cfg.onStep?.('graduate');
   }
 
   private leave(): void {

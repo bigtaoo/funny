@@ -70,7 +70,10 @@ message Ping {}
 // ── Peer-judge anti-cheat (Phase C, single judge) ─────────────────────
 // For ranked matches with a hash mismatch, meta selects a high-spec idle online player to perform a headless re-simulation verdict.
 // client_caps: reported by the client after connecting to the gateway, indicating whether the local device can serve as a judge (control plane).
-message ClientCaps  { bool can_judge = 1; }
+// level_rev: the campaign content revision this build bundles (engine CAMPAIGN_CONTENT_REV, ONBOARDING_DESIGN §17.2).
+// A PvE spot-check only goes to a judge whose bundled level JSON matches what the submitter played; absent (old
+// builds) = revision 1.
+message ClientCaps  { bool can_judge = 1; uint32 level_rev = 2; }
 // judge_verdict: sent back by the judge client after completing the headless re-simulation of the final state (control plane).
 message JudgeVerdict {
   string request_id  = 1;
@@ -218,6 +221,9 @@ message JudgeRequest {
   string                 card_instances_json = 12;
   // JSON of Record<string, EquipmentInstance> (shared/types.ts), paired with card_instances_json.
   string                 equipment_inv_json  = 13;
+  // PvE "easier retry" (ONBOARDING_DESIGN §17.2): the clear was played with engine applyAssist() on the level
+  // (weaker enemies + bonus ink), so the judge must re-simulate the same assisted level.
+  bool                   assist              = 14;
 }
 
 // ── Social real-time push (S6, SOCIAL_DESIGN §4.2) ─────────────────

@@ -1,6 +1,7 @@
 // Bots log in exactly like a real Web/CrazyGames client: metaserver's public anonymous device-login
 // (contracts/openapi.yml POST /auth/device), no bot-specific account API (BOTSVC_DESIGN §3.1/B2).
 // The PvE calls are the client's own (contracts/openapi/paths/pve.yml, save.yml) — BOTSVC_DESIGN §3.5.
+import { CAMPAIGN_CONTENT_REV } from '@nw/engine';
 import { internalHeaders, type CardInstance, type EquipmentInstance } from '@nw/shared';
 import { envelopeError } from './apiError';
 import type { UploadFrame } from './pve';
@@ -63,7 +64,8 @@ export class MetaClient {
   }
 
   pveClear(token: string, levelId: string, stars: number, stats: Record<string, number>): Promise<PveClearResult> {
-    return this.call<PveClearResult>('POST', '/pve/clear', token, { levelId, stars, stats });
+    // botsvc plays the level JSON bundled from this same repo, so it is always on the current content revision.
+    return this.call<PveClearResult>('POST', '/pve/clear', token, { levelId, stars, stats, levelRev: CAMPAIGN_CONTENT_REV });
   }
 
   async pveVerify(token: string, verifyId: string, endFrame: number, frames: UploadFrame[]): Promise<{ verified: boolean }> {

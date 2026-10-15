@@ -23,6 +23,8 @@ export interface JudgeReq {
   exclude: string[];
   /** PvE spot-check re-computation (PVE_INTEGRITY §8.6 L1): non-empty → judge re-computes this level in campaign mode. */
   levelId?: string;
+  /** PvE "easier retry" clear (ONBOARDING_DESIGN §17.2): the judge re-simulates the level through engine applyAssist(). */
+  assist?: boolean;
   /** CC-1 Hero Roster snapshot (2026-07-26 fix, PVE_INTEGRITY §9): JSON of Record<string, CardInstance>, server-authoritative, ensures PvE re-computation uses the player's real card levels. */
   cardInstancesJson?: string;
   /** JSON of Record<string, EquipmentInstance>, paired with cardInstancesJson. */

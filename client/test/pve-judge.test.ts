@@ -108,9 +108,10 @@ describe('judgeRunner — PvE spot-check re-verification', () => {
     // fields (removed by the CC-1 migration; GameConfig only reads cardInstances/equipmentInv), so every L1
     // spot-check silently recomputed with unleveled, gear-less units — regardless of the player's real Hero
     // Roster investment — causing false `rejected` verdicts for legitimately progressed, actively-played clears.
-    // ch1_lv2, not ch1_lv1: since the 2026-10-13 lv1 pacing pass (ONBOARDING_DESIGN §14.1) lv1 is easy enough
-    // that even the bare level-1 recompute clears it, which would make the contrast below vacuous.
-    const level = CAMPAIGN_LEVELS[CAMPAIGN_LEVEL_ORDER[1]!]!;
+    // ch1_lv7, not an earlier level: since the 2026-10-15 ch1 rework (ONBOARDING_DESIGN §17.2) lv1-6 are soft
+    // enough that even the bare level-1 recompute clears them with this script, which would make the contrast
+    // below vacuous.
+    const level = CAMPAIGN_LEVELS[CAMPAIGN_LEVEL_ORDER[6]!]!;
     const script: PlayScript = { plays: { 30: [0, 1], 120: [0, 8], 260: [1, 4] }, upgrades: [60] };
 
     const equipmentInv: Record<string, EquipmentInstance> = {

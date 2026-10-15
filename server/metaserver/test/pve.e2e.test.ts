@@ -1,6 +1,7 @@
 // PvE server-authoritative end-to-end (PVE_INTEGRITY_PLAN §8): /pve/clear completion settlement.
 //   Validates unlock prerequisites, repeatable farming with material grants, daily cap capped.
 // Requires `cd server && docker compose up -d` + `tsc -b` first (for @nw/shared's dist; this file imports ../src).
+import { CAMPAIGN_CONTENT_REV } from '@nw/engine';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMongo, type JwtConfig, type MongoHandle, PVE_DAILY_CLEAR_REWARD_CAP } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
@@ -367,7 +368,7 @@ describe.skipIf(!mongo)('pve achievement feed (S9-3b) e2e', () => {
     push: async () => {},
   };
   const clear = (levelId: string, stars = 3) =>
-    app.inject({ method: 'POST', url: '/pve/clear', headers: auth(), payload: { levelId, stars } });
+    app.inject({ method: 'POST', url: '/pve/clear', headers: auth(), payload: { levelId, stars, levelRev: CAMPAIGN_CONTENT_REV } });
   const verify = (verifyId: string) =>
     app.inject({ method: 'POST', url: '/pve/verify', headers: auth(), payload: { verifyId, frames: [], endFrame: 0 } });
 

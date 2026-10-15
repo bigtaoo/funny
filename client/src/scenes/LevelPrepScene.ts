@@ -36,6 +36,11 @@ export interface LevelPrepCallbacks {
   intro?: string;
   /** Clear rewards (coins / materials) for this level, shown as a rewards preview row. */
   rewards?: LevelRewards;
+  /**
+   * Pre-translated names of cards this level adds over the previous one's loadout, shown under a
+   * NEW tag (ONBOARDING_DESIGN §17.2 — chapter one hands out one card per level).
+   */
+  newCards?: string[];
   /** Stamina cost to play this level (A4), deducted at Start (not at clear). Default = 10; 0 = free entry, line hidden. */
   staminaCost: number;
   /** Current stamina snapshot (A4): { current, regenAt }. */
@@ -153,6 +158,10 @@ export class LevelPrepScene implements Scene {
 
     if (this.cb.rewards && (this.cb.rewards.coins || this.cb.rewards.materials)) {
       y = this.drawRewards(this.cb.rewards, y);
+    }
+
+    if (this.cb.newCards && this.cb.newCards.length > 0) {
+      y = this.drawNewCards(this.cb.newCards, y);
     }
 
     // The Start button, the refill row (only when stamina is short) and the stamina line are
@@ -289,6 +298,39 @@ export class LevelPrepScene implements Scene {
     desc.x = padX + innerPadX;
     desc.y = label.y + label.height + rowGap;
     this.container.addChild(desc);
+
+    return y + panH + Math.round(h * 0.01);
+  }
+
+  /** "NEW" tag + the names of the cards this level introduces, one row, same panel family as rewards. */
+  private drawNewCards(names: string[], y: number): number {
+    const { w, h } = this;
+    const padX = marginLineX(w);
+    const panW = w - padX - Math.round(w * 0.06);
+    const fs = FS.headline;
+    const padV = Math.round(h * 0.021);
+    const panH = fs * 1.6 + padV * 2;
+
+    const bg = sketchPanel(panW, panH, {
+      fill: C.paper, border: C.line, width: 1.2, seed: seedFor(padX, y + 3, panW),
+    });
+    bg.x = padX; bg.y = y;
+    sketchAccentBar(bg, panH, C.red, seedFor(padX, panH, 17));
+    this.container.addChild(bg);
+
+    const tag = txt(t('level.newCard.tag'), fs, C.red, true);
+    tag.anchor.set(0, 0.5);
+    tag.x = padX + Math.round(panW * 0.06);
+    tag.y = y + panH / 2;
+    this.container.addChild(tag);
+
+    const list = txt(names.join(t('level.newCard.sep')), fs, C.dark, true);
+    list.anchor.set(0, 0.5);
+    list.x = tag.x + tag.width + Math.round(w * 0.03);
+    list.y = y + panH / 2;
+    const room = padX + panW - Math.round(panW * 0.04) - list.x;
+    if (list.width > room) list.scale.set(room / list.width);
+    this.container.addChild(list);
 
     return y + panH + Math.round(h * 0.01);
   }

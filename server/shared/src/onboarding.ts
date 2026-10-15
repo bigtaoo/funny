@@ -8,3 +8,18 @@
  * (§11.6), so both sides must read this one number.
  */
 export const WELCOME_MAIL_COINS = 1000;
+
+/**
+ * Next-day hero gift (ONBOARDING_DESIGN §17.4): the first clear of this level — where the hero joins the
+ * fight as a trial card — earns this hero card for keeps, claimable from the next UTC midnight on. A reason
+ * to come back tomorrow, announced in the battle, on the result screen and in the lobby.
+ */
+export const HERO_GIFT_LEVEL_ID = 'ch1_lv5';
+export const HERO_GIFT_DEF_ID = 'max';
+
+const DAY_MS = 86_400_000;
+
+/** When a gift earned at `ts` (epoch ms) becomes claimable: the next UTC midnight. */
+export function heroGiftClaimableAt(ts: number): number {
+  return (Math.floor(ts / DAY_MS) + 1) * DAY_MS;
+}

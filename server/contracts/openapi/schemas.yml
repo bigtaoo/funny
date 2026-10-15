@@ -120,6 +120,16 @@ schemas:
       #    via PUT /save. May be absent in legacy saves (no tier ever claimed), not required. ——
       rechargeMilestone:
         $ref: '#/components/schemas/RechargeMilestoneData'
+      # —— Next-day hero gift (ONBOARDING_DESIGN §17.4). Written on the first ch1_lv5 clear; the card is the
+      #    player's from claimableAt (next UTC midnight) via POST /pve/hero-gift/claim. Server-authoritative;
+      #    absent until earned. ——
+      heroGift:
+        type: object
+        required: [defId, claimableAt]
+        properties:
+          defId: { type: string, description: CARD_DEFS key of the hero to grant }
+          claimableAt: { type: integer, description: 'Epoch ms from which the gift can be claimed' }
+          claimedAt: { type: integer, description: 'Epoch ms of the claim; absent while unclaimed' }
       progress:
         type: object
         required: [cleared, stars, best]

@@ -335,6 +335,7 @@ export function createResultNav(ctx: AppCtx): ResultNav {
         ...(secondaryAction ? { secondaryAction } : {}),
         ...(autoContinueSec ? { autoContinueSec } : {}),
         ...(extras?.firstWin ? { firstWin: extras.firstWin } : {}),
+        ...(extras?.extraSecondary ? { extraSecondary: extras.extraSecondary } : {}),
         ...(worldApi ? { getProfileExtra: (publicId: string) => worldApi.getProfileExtra(publicId) } : {}),
       },
     });

@@ -53,8 +53,8 @@ vi.mock('pixi.js-legacy', () => {
 import * as PIXI from 'pixi.js-legacy';
 import { TutorialDirector, type TutorialConfig, type TutorialHost } from '../../src/render/TutorialDirector';
 import { bestMeteorAnchor } from '../../src/render/TutorialDirector/geometry';
-import { BEATS } from '../../src/render/TutorialDirector/beats';
-import { Side, type GameState } from '../../src/game';
+import { BEATS, FREE_SETTLE_TICKS, TUTORIAL_NEW_CARD } from '../../src/render/TutorialDirector/beats';
+import { GamePhase, Side, type GameState } from '../../src/game';
 import type { ILayout, Rect } from '../../src/layout/ILayout';
 
 function fakeLayout(): ILayout {
@@ -158,7 +158,8 @@ describe('TutorialDirector', () => {
     expect(ghost.ghostOn).toBe(false);
   });
 
-  it('meteor beat: aim-assists onto the 2×2 covering the cluster, then WIN → graduation card → finish', () => {
+  /** Plays the three guided beats; leaves the director in the free phase. */
+  const playBeats = (): void => {
     runTo(BEATS[0]!.setupTick); director.allowCardPlay('infantry_1', BEATS[0]!.col, 1); frame();
     runTo(BEATS[1]!.setupTick); director.allowCardPlay('tower_1', BEATS[1]!.col, 0); frame();
     state.units.push(
@@ -168,14 +169,58 @@ describe('TutorialDirector', () => {
     runTo(BEATS[2]!.setupTick);
     expect(config.onStep).toHaveBeenLastCalledWith('beat_spell');
     expect(director.allowCardPlay('meteor_1', 3, 11)).toEqual({ col: 2, row: 9 }); // dropped a cell off, snapped
-    frame(); // release → finale
-    for (const u of state.units) u.isDead = true; // the meteor landed
+    frame(); // release → free
+  };
+
+  it('after the meteor the fight runs free: any card anywhere, no win until the engine settles', () => {
+    playBeats();
+    expect(config.onStep).toHaveBeenLastCalledWith('graduate');
+    expect(director.engineFrozen).toBe(false);
+    expect(director.allowCardPlay('barracks_1', 7, 0)).toEqual({ col: 7, row: 0 });
+    for (const u of state.units) u.isDead = true; // the board is clear, but waves are still to come
+    frame(); frame(1);
+    expect(host.forceVictory).not.toHaveBeenCalled();
+    expect(director.isFinished).toBe(false);
+  });
+
+  it('frames the mid-fight unlock once it reaches the hand', () => {
+    playBeats();
+    const ring = (director as unknown as { slotRing: { visible: boolean } }).slotRing;
+    frame();
+    expect(ring.visible).toBe(false);
+    state.bottomPlayer.hand.slots[3] = { card: { id: TUTORIAL_NEW_CARD } } as never;
+    frame();
+    expect(ring.visible).toBe(true);
+    frame(5);
+    expect(ring.visible).toBe(false);
+  });
+
+  it('engine settles without the analytics notice: WIN stamp, then leaves by itself', () => {
+    playBeats();
+    (state as { phase: GamePhase }).phase = GamePhase.GameOver;
     frame(); frame(0.6);
     expect(host.forceVictory).toHaveBeenCalledTimes(1);
-    expect(config.onStep).toHaveBeenLastCalledWith('graduate');
     expect(director.isFinished).toBe(true);
+    expect(host.finish).not.toHaveBeenCalled();
+    frame(1.5);
+    expect(host.finish).toHaveBeenCalledTimes(1);
+  });
 
-    // Graduation card pops in, then its button (and only its button) leaves.
+  it('falls back to the win a while after the last spawn when a straggler never dies', () => {
+    config.lastSpawnTick = 1000;
+    playBeats();
+    runTo(1000 + FREE_SETTLE_TICKS - 1); frame(1);
+    expect(host.forceVictory).not.toHaveBeenCalled();
+    runTo(1000 + FREE_SETTLE_TICKS); frame(0.6);
+    expect(host.forceVictory).toHaveBeenCalledTimes(1);
+  });
+
+  it('with the analytics notice pending the graduation card shows, and only its button leaves', () => {
+    config.footnote = 'We count anonymous stats.';
+    playBeats();
+    (state as { phase: GamePhase }).phase = GamePhase.GameOver;
+    frame(); frame(0.6);
+    expect(director.isFinished).toBe(true);
     frame(0.6); frame(0.3);
     const cta = (director as unknown as { ctaRect: Rect }).ctaRect;
     expect(director.handleDown(0, 0)).toBe(true);

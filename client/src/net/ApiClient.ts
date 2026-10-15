@@ -194,7 +194,8 @@ export class ApiClient {
     levelId: string,
     stars: number,
     unitLevels?: Record<string, number>,
-    stats?: Record<string, number>
+    stats?: Record<string, number>,
+    opts?: { assist?: boolean }
   ): Promise<{
     save: SaveData;
     granted: Record<string, number>;
@@ -203,7 +204,7 @@ export class ApiClient {
     verifyId?: string;
     grantedEquipment?: EquipmentInstance;
   }> {
-    return this.pveSvc.pveClear(levelId, stars, unitLevels, stats);
+    return this.pveSvc.pveClear(levelId, stars, unitLevels, stats, opts);
   }
 
   createReplayShare(roomId: string): Promise<{ shareId: string }> {
@@ -246,6 +247,10 @@ export class ApiClient {
 
   pveEnter(levelId: string): Promise<{ stamina: { current: number; regenAt: number } }> {
     return this.pveSvc.pveEnter(levelId);
+  }
+
+  claimHeroGift(): Promise<{ save: SaveData }> {
+    return this.pveSvc.claimHeroGift();
   }
 
   getMatchHistory(limit?: number): Promise<MatchHistoryEntry[]> {

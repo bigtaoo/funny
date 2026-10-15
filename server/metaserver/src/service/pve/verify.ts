@@ -150,6 +150,7 @@ export async function pveVerifyHandler(core: MetaCore, req: FastifyRequest, repl
     frames: frames ?? [],
     exclude: [accountId],
     levelId: doc.levelId,
+    ...(doc.assist ? { assist: true } : {}),
     cardInstancesJson: JSON.stringify(doc.cardInv ?? {}),
     equipmentInvJson: JSON.stringify(doc.equipmentInv ?? {}),
   });

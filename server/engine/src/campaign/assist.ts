@@ -9,6 +9,15 @@ export const ASSIST_ENEMY_SCALE = 0.7;
 /** Extra starting ink (`startInk` is added on top of the player's base ink). */
 export const ASSIST_BONUS_INK = 20;
 
+/** Max stars an assisted clear can settle for (metaserver caps the claim). */
+export const ASSIST_MAX_STARS = 1;
+
+/**
+ * Levels carrying `assistOnLoss: true` in their JSON. The level JSON ships only with the client, so the
+ * server side (which validates an `assist` claim) reads this list; a client test keeps the two in sync.
+ */
+export const ASSIST_LEVEL_IDS: readonly string[] = ['ch1_lv1', 'ch1_lv2', 'ch1_lv3'];
+
 /** The assisted variant of `level`. Throws if the level did not opt in. */
 export function applyAssist(level: LevelDefinition): LevelDefinition {
   if (!level.assistOnLoss) throw new Error(`applyAssist: level '${level.id}' has no assistOnLoss`);

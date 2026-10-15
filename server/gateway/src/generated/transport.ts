@@ -122,9 +122,13 @@ export interface Ping {
  * ── Peer-judge anti-cheat (Phase C, single judge) ─────────────────────
  * For ranked matches with a hash mismatch, meta selects a high-spec idle online player to perform a headless re-simulation verdict.
  * client_caps: reported by the client after connecting to the gateway, indicating whether the local device can serve as a judge (control plane).
+ * level_rev: the campaign content revision this build bundles (engine CAMPAIGN_CONTENT_REV, ONBOARDING_DESIGN §17.2).
+ * A PvE spot-check only goes to a judge whose bundled level JSON matches what the submitter played; absent (old
+ * builds) = revision 1.
  */
 export interface ClientCaps {
   canJudge: boolean;
+  levelRev: number;
 }
 
 /** judge_verdict: sent back by the judge client after completing the headless re-simulation of the final state (control plane). */
@@ -327,6 +331,11 @@ export interface JudgeRequest {
   cardInstancesJson: string;
   /** JSON of Record<string, EquipmentInstance> (shared/types.ts), paired with card_instances_json. */
   equipmentInvJson: string;
+  /**
+   * PvE "easier retry" (ONBOARDING_DESIGN §17.2): the clear was played with engine applyAssist() on the level
+   * (weaker enemies + bonus ink), so the judge must re-simulate the same assisted level.
+   */
+  assist: boolean;
 }
 
 /**
@@ -1381,13 +1390,16 @@ export const Ping: MessageFns<Ping> = {
 };
 
 function createBaseClientCaps(): ClientCaps {
-  return { canJudge: false };
+  return { canJudge: false, levelRev: 0 };
 }
 
 export const ClientCaps: MessageFns<ClientCaps> = {
   encode(message: ClientCaps, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.canJudge !== false) {
       writer.uint32(8).bool(message.canJudge);
+    }
+    if (message.levelRev !== 0) {
+      writer.uint32(16).uint32(message.levelRev);
     }
     return writer;
   },
@@ -1407,6 +1419,14 @@ export const ClientCaps: MessageFns<ClientCaps> = {
           message.canJudge = reader.bool();
           continue;
         }
+        case 2: {
+          if (tag !== 16) {
+            break;
+          }
+
+          message.levelRev = reader.uint32();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1422,6 +1442,7 @@ export const ClientCaps: MessageFns<ClientCaps> = {
   fromPartial<I extends Exact<DeepPartial<ClientCaps>, I>>(object: I): ClientCaps {
     const message = createBaseClientCaps();
     message.canJudge = object.canJudge ?? false;
+    message.levelRev = object.levelRev ?? 0;
     return message;
   },
 };
@@ -2729,6 +2750,7 @@ function createBaseJudgeRequest(): JudgeRequest {
     bottomDeck: [],
     cardInstancesJson: "",
     equipmentInvJson: "",
+    assist: false,
   };
 }
 
@@ -2766,6 +2788,9 @@ export const JudgeRequest: MessageFns<JudgeRequest> = {
     }
     if (message.equipmentInvJson !== "") {
       writer.uint32(106).string(message.equipmentInvJson);
+    }
+    if (message.assist !== false) {
+      writer.uint32(112).bool(message.assist);
     }
     return writer;
   },
@@ -2865,6 +2890,14 @@ export const JudgeRequest: MessageFns<JudgeRequest> = {
           message.equipmentInvJson = reader.string();
           continue;
         }
+        case 14: {
+          if (tag !== 112) {
+            break;
+          }
+
+          message.assist = reader.bool();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -2890,6 +2923,7 @@ export const JudgeRequest: MessageFns<JudgeRequest> = {
     message.bottomDeck = object.bottomDeck?.map((e) => e) || [];
     message.cardInstancesJson = object.cardInstancesJson ?? "";
     message.equipmentInvJson = object.equipmentInvJson ?? "";
+    message.assist = object.assist ?? false;
     return message;
   },
 };

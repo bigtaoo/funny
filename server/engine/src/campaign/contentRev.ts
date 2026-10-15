@@ -11,6 +11,8 @@ export const CAMPAIGN_CONTENT_REV = 2;
 /** Levels whose content changed after rev 1 → the revision of their latest change. Absent = 1. */
 const LEVEL_CONTENT_REV: Readonly<Record<string, number>> = {
   // §17.2: ch1 first-ten rework (per-level card unlocks, monotonic difficulty, easier retry, lv5 hero trial).
+  // ch0_tutorial is never judged; listed so every level carrying `cardUnlocks` is marked alike.
+  ch0_tutorial: 2,
   ch1_lv1: 2, ch1_lv2: 2, ch1_lv3: 2, ch1_lv4: 2, ch1_lv5: 2, ch1_lv6: 2, ch1_lv7: 2, ch1_lv8: 2,
 };
 

@@ -606,7 +606,7 @@ CG 新包上线后对比 10-12 版。所有数都能按版本拆（匿名计数�
 - **难度单调**：新 lv1 明显比旧 lv1 软（`enemyScale` 往下压、波次减少）；旧 lv1 那个强度挪到 lv4–5。用 `client/test/difficulty` 的模拟器逐关调，`baseline.json` 重新钉住；卡组变少本身会让关卡变难，lv6–8 也要复测。
 - **失败一键「降低难度重试」**（lv1–3）：引擎 `applyAssist(level)` 是一个确定性变换（敌人血量 / 伤害 ×0.7、开局墨水 +20）。客户端以 assist 模式重开；`/pve/clear` 带 `assist: true`，服务端只接受 lv1–3 的 assist，并把星数封顶为 1；抽查记录里存 assist，judge 请求带 assist，判官用同一变换复算——回放校验照样成立。
 - **关卡内容版本门**（新增，防误判）：现在 peer judge 不看客户端版本，iOS / 微信的老包会拿旧关卡 JSON 复算新关卡，误判后给新玩家发「疑似作弊」邮件。所以：
-  - `@nw/shared` 新增 `CAMPAIGN_CONTENT_REV` 和 `LEVEL_CONTENT_REV`（关卡 id → 最后一次改内容的版本）。
+  - `@nw/engine`（`campaign/contentRev.ts`）新增 `CAMPAIGN_CONTENT_REV` 和 `LEVEL_CONTENT_REV`（关卡 id → 最后一次改内容的版本）。
   - 客户端在 `ClientCaps` 里报自己的版本（新字段 `level_rev`；老包没有这个字段，按 1 处理）。
   - gateway 给关卡 L 选判官时只选版本 ≥ `LEVEL_CONTENT_REV[L]` 的连接；没有合格判官 → 按现有规则算「未校验、放行」。
   - `/pve/clear` 带 `levelRev`；提交方版本低于该关的内容版本时不抽查（老包玩的是旧内容，谁也判不了它），只对改过的关卡放行，其它关卡的抽查不受影响。
@@ -623,7 +623,7 @@ CG 新包上线后对比 10-12 版。所有数都能按版本拆（匿名计数�
 
 - lv5 用 `cardUnlocks` 在开局不久塞进英雄战斗卡 `max_1`，导演 / HUD 弹「英雄 Max 加入！明天正式归你」。
 - 服务端：`ch1_lv5` 首通时写一条待领英雄（`max`，可领时间 = 下一个 UTC 日 0 点）；到点后在大厅领取，走 `grantCards`。
-- 提醒：lv5 结算页一行「明天来领 Max」；大厅放一张倒计时卡（复用 `firstRewardLoop` 的卡位），到点变「领取」。
+- 提醒：lv5 结算页一行「明天来领 Max」。~~大厅倒计时卡~~ 没做（见 §17.7）：到点前大厅不提示，到点后进大厅自动领取并弹说明。
 - 已知局限：拥有 `max` 在第一章不会把 Max 放进手牌（卡牌只加属性，手牌由关卡 `loadout` 决定）；它在第二章（loadout 含 `max_1/2`）和 PvP 里才起作用。
 
 ### 17.5 ④ CG 上去掉体力
@@ -637,3 +637,32 @@ CG 新包上线后对比 10-12 版。所有数都能按版本拆（匿名计数�
 - **服务端、gateway、客户端必须一起发**：关卡 JSON、judge 协议字段、`/pve/clear` 新字段都是两侧共用的。analyticsvc 跟着改漏斗标签。
 - 建议同时问 CG 支持：Basic Launch 能否重跑一轮。
 - 评估（上线后一周，按设备拆）：`alive_60s / loaded`；`tutorial_complete / tutorial_start`；`lvN_clear / lvN_start` 是否单调下降且 lv1–3 ≥ 90%；打到 lv4+、lv6+ 的会话占比；assist 使用率；lv5 首通 → 次日回访领 Max 的比例。
+
+### 17.7 实现记录（2026-10-15，分支 `feat/cg-first-ten`）
+
+与上面方案不一致或方案没写到的地方，以本节为准。
+
+**① 教学合一**
+- `ch0_tutorial` 卡组 = 步兵 I/II、塔 I/II、陨石（三拍要用），`cardUnlocks: [{atTick: 420, cardId: 'archer_1'}]`；18 波 59 个敌人，`enemyScale` 0.065 / 1（血量极低，靠数量撑时长）。
+- 导演新增 `free` 阶段：陨石拍后 `onStep('graduate')`，放开所有出牌；弓手进手牌时弹「新卡！」4 s（`NEW_CARD_CALLOUT_SEC`）并框住卡位。引擎判胜后 WIN 章停 `WIN_HOLD_SEC = 1.4` s 再离开；若最后一个脚本刷怪后 `FREE_SETTLE_TICKS = 900` tick 仍未结束（漏网的兵不死），导演强制收尾。
+  - 已知外观问题（2026-10-15 真浏览器走查）：完全挂机的玩家会在敌兵仍围着基地、红心已空的情况下被这条兜底判胜。按「保底胜」设计接受；若首周数据显示挂机比例高，再考虑兜底前清场或停刷。
+- **毕业卡只在要挂统计告知（`entryNotice.stats` 脚注）时出现**；其余情况 WIN 章 → §17.3 的横幅（无星数）→ `ch1_lv1`。
+
+**② 前 8 关**
+- 实际卡组（关卡 JSON `loadout`）：lv1 步兵/塔/陨石/弓手/兵营 → lv2 +盾兵 → lv3 +加速 → lv4 +步兵 II → lv5 +塔 II（+开局 150 tick 解锁 `max_1`）→ lv6 +弓手 II → lv7 +盾兵 II → lv8 +兵营 II。
+- `enemyScale`（hp=damage，lv6 除外）：lv1 0.6、lv2 0.714、lv3 0.72、lv4 0.95、lv5 0.88、lv6 1.15/1.08、lv7 0.95、lv8 0.82。数值本身不单调，因为卡组每关在变强、波次在变——单调的是模拟器里的结果，以 `client/test/difficulty/baseline.json` 为准（已重钉）。
+- 出战准备页：本关新卡在一行「NEW」面板里列出（与上一关 loadout 求差）。
+- 降低难度重试：`assistOnLoss: true` 的关（lv1–3，与 `ASSIST_LEVEL_IDS` 由客户端测试保持一致）输了，结算页多一个「降低难度重试」按钮 → `applyAssist`（敌人 ×0.7、开局墨水 +20）直接重开，不经出战准备页；客户端和服务端都把星数封顶为 `ASSIST_MAX_STARS = 1`；埋点 `game_start` / `level_attempt` 带 `assist: true`。
+
+**③ 关间不停顿**
+- 只在**首通且 ≥1 星**、非章末插画、存在下一关时触发；第 5、10… 关（`CHAIN_RESULT_EVERY = 5`）照旧结算页。横幅 `CHAIN_AUTO_SEC = 1.5` s，点任意处立刻开下一关，点「地图」回地图。
+- 链式进入跳过关卡简报和出战准备页；`level_attempt` 带 `chained: true`。
+- 每次横幅前先 `platform.onGameplayStop()`，由 `goCampaign` 发配对的 `onGameplayStart()`。
+- 教学结束的横幅只在不需要毕业卡（即没有统计告知）时出现。
+
+**⑤ 英雄礼物**
+- 存档字段 `SaveData.heroGift = { defId, claimableAt, claimedAt? }`；常量在 `@nw/shared/onboarding`（`HERO_GIFT_LEVEL_ID = 'ch1_lv5'`、`HERO_GIFT_DEF_ID = 'max'`、`heroGiftClaimableAt(ts)` = 下一个 UTC 0 点）。
+- `/pve/clear` 在 `ch1_lv5` 通关时（普通路径和抽查路径都算）写入，已有则不动——重打不会推迟领取时间。
+- `POST /pve/hero-gift/claim`：没有礼物 404、未到点 400；**先在 `mutateSave` 里标 `claimedAt`，再 `grantCards(..., 'hero_gift')`**，所以并发 / 重放只发一次；已领过的再调用直接返回存档（幂等）。背包满走金币补偿（reason `hero_gift_inv_full`）。
+- 客户端：战斗里 `max_1` 进手牌时弹「英雄 麦克斯 加入战斗！明天起正式归你」（`render/GameRenderer/unlockCallout.ts`，其它关的 `cardUnlocks` 用通用「新卡」文案；只对未通关的关卡弹）；lv5 首通结算页加一行；大厅进入时 `runHeroGift` 优先于首奖励环——到点且未领就领，领到后若仍在大厅弹说明，按钮去卡牌名册。失败静默，下次进大厅重试。
+- **不做倒计时卡**：到点前大厅什么都不显示，提醒只靠战斗弹窗 + 结算页那一行。上线后看「lv5 首通 → 次日领取」比例再决定要不要补。

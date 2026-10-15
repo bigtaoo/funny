@@ -22,13 +22,15 @@
   "loadout": [
     "infantry_1",
     "infantry_2",
-    "shieldbearer_1",
-    "archer_1",
-    "barracks_1",
     "tower_1",
     "tower_2",
-    "haste_1",
     "meteor_1"
+  ],
+  "cardUnlocks": [
+    {
+      "atTick": 420,
+      "cardId": "archer_1"
+    }
   ],
   "waves": {
     "entries": [
@@ -58,6 +60,104 @@
         "col": 3,
         "count": 2,
         "spacingTicks": 30
+      },
+      {
+        "atTick": 360,
+        "unitType": "max",
+        "col": 4,
+        "count": 3,
+        "spacingTicks": 25
+      },
+      {
+        "atTick": 480,
+        "unitType": "max",
+        "col": 7,
+        "count": 3,
+        "spacingTicks": 22
+      },
+      {
+        "atTick": 480,
+        "unitType": "max",
+        "col": 2,
+        "count": 2,
+        "spacingTicks": 30
+      },
+      {
+        "atTick": 620,
+        "unitType": "max",
+        "col": 3,
+        "count": 4,
+        "spacingTicks": 20
+      },
+      {
+        "atTick": 760,
+        "unitType": "max",
+        "col": 4,
+        "count": 3,
+        "spacingTicks": 20
+      },
+      {
+        "atTick": 760,
+        "unitType": "max",
+        "col": 7,
+        "count": 3,
+        "spacingTicks": 20
+      },
+      {
+        "atTick": 900,
+        "unitType": "max",
+        "col": 2,
+        "count": 4,
+        "spacingTicks": 18
+      },
+      {
+        "atTick": 900,
+        "unitType": "max",
+        "col": 3,
+        "count": 4,
+        "spacingTicks": 18
+      },
+      {
+        "atTick": 1060,
+        "unitType": "max",
+        "col": 4,
+        "count": 5,
+        "spacingTicks": 15
+      },
+      {
+        "atTick": 1060,
+        "unitType": "max",
+        "col": 7,
+        "count": 4,
+        "spacingTicks": 15
+      },
+      {
+        "atTick": 1240,
+        "unitType": "max",
+        "col": 2,
+        "count": 4,
+        "spacingTicks": 15
+      },
+      {
+        "atTick": 1240,
+        "unitType": "max",
+        "col": 3,
+        "count": 4,
+        "spacingTicks": 15
+      },
+      {
+        "atTick": 1240,
+        "unitType": "max",
+        "col": 4,
+        "count": 4,
+        "spacingTicks": 15
+      },
+      {
+        "atTick": 1240,
+        "unitType": "max",
+        "col": 7,
+        "count": 4,
+        "spacingTicks": 15
       }
     ]
   },

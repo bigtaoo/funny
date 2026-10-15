@@ -228,6 +228,21 @@ components:
           $ref: '#/components/schemas/BattlePassData'
         rechargeMilestone:
           $ref: '#/components/schemas/RechargeMilestoneData'
+        heroGift:
+          type: object
+          required:
+            - defId
+            - claimableAt
+          properties:
+            defId:
+              type: string
+              description: CARD_DEFS key of the hero to grant
+            claimableAt:
+              type: integer
+              description: Epoch ms from which the gift can be claimed
+            claimedAt:
+              type: integer
+              description: Epoch ms of the claim; absent while unclaimed
         progress:
           type: object
           required:
@@ -2117,6 +2132,13 @@ paths:
                 replayRef:
                   type: string
                   description: Optional replay reference (for L1 spot-check re-simulation, deprecated)
+                levelRev:
+                  type: integer
+                  minimum: 0
+                  description: Campaign content revision of the submitting build (engine CAMPAIGN_CONTENT_REV); absent = 1. A build older than the level content skips the L1 spot-check (ONBOARDING_DESIGN §17.2)
+                assist:
+                  type: boolean
+                  description: Played as an easier retry (engine applyAssist); only levels with assistOnLoss, settles for at most 1 star (ONBOARDING_DESIGN §17.2)
                 pveUpgrades:
                   type: object
                   additionalProperties:
@@ -2269,6 +2291,42 @@ paths:
                       verified:
                         type: boolean
                         description: Whether re-simulation passed (false = star count mismatch, deemed suspicious; materials not granted)
+        '400':
+          $ref: '#/components/responses/ErrorResp'
+        '401':
+          $ref: '#/components/responses/ErrorResp'
+        '404':
+          $ref: '#/components/responses/ErrorResp'
+  /pve/hero-gift/claim:
+    post:
+      operationId: claimHeroGift
+      tags:
+        - save
+      summary: Claim the next-day hero gift earned on the first ch1_lv5 clear (ONBOARDING_DESIGN §17.4). 400 BAD_REQUEST before claimableAt; idempotent once claimed.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Claimed (or already claimed)
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                  - data
+                properties:
+                  ok:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: object
+                    required:
+                      - save
+                    properties:
+                      save:
+                        $ref: '#/components/schemas/SaveData'
         '400':
           $ref: '#/components/responses/ErrorResp'
         '401':

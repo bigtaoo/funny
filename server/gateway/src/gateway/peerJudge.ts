@@ -2,6 +2,7 @@
 // picks an eligible idle online player to headlessly re-compute a match and report the verdict back to meta.
 // Depends only on connRegistry's `ConnLookup.values()` (to enumerate judge candidates) — never the WS
 // handshake/heartbeat internals.
+import { hasLevelContent } from '@nw/engine';
 import { activeMatchKey, createLogger, type RedisLike } from '@nw/shared';
 import { encodeServer } from '../proto';
 import { JUDGE_TIMEOUT_MS, type ConnLookup, type GwConn, type JudgeArgs, type JudgeResult, type PendingJudge } from './types';
@@ -30,7 +31,7 @@ export class PeerJudgeService {
    * No eligible candidate / timeout / re-computation failed → {ok:false}; meta voids the result (no penalty).
    */
   async judge(args: JudgeArgs): Promise<JudgeResult> {
-    const candidate = await this.pickJudge(args.exclude);
+    const candidate = await this.pickJudge(args.exclude, args.levelId);
     if (!candidate) return { ok: false };
 
     const requestId = `j${++this.judgeSeq}:${Date.now()}`;
@@ -51,6 +52,7 @@ export class PeerJudgeService {
             endFrame: args.endFrame,
             frames: args.frames,
             levelId: args.levelId ?? '',
+            assist: args.assist === true,
             cardInstancesJson: args.cardInstancesJson ?? '',
             equipmentInvJson: args.equipmentInvJson ?? '',
             topDeck: args.decks?.top ?? [],
@@ -110,13 +112,18 @@ export class PeerJudgeService {
    * (covers local bot/campaign battles too), and matchsvc's activeMatch record covers online matches
    * server-side, so an old or misbehaving client can't be handed a recompute mid-match — which is what
    * made live PvP stall once bot PvE spot-checks began (2026-09-27). Redis unavailable → the flag alone.
+   *
+   * A PvE spot-check additionally needs a judge whose bundled level JSON is the revision the clear was
+   * played on (ONBOARDING_DESIGN §17.2): during a rollout an old build would re-simulate a reworked level
+   * against its stale data and reject an honest clear.
    */
-  private async pickJudge(exclude: string[]): Promise<GwConn | null> {
+  private async pickJudge(exclude: string[], levelId?: string): Promise<GwConn | null> {
     const candidates: GwConn[] = [];
     for (const conn of this.deps.conns.values()) {
       if (!conn.canJudge) continue;
       if (conn.ws.readyState !== conn.ws.OPEN) continue;
       if (exclude.includes(conn.accountId)) continue;
+      if (levelId && !hasLevelContent(conn.levelRev, levelId)) continue;
       candidates.push(conn);
     }
     const idle = await this.withoutActiveMatch(candidates);

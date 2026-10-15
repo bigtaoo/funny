@@ -21,3 +21,16 @@ export function nextLevelAfterWin(levelId: string, cleared: boolean, hasInterlud
   const i = CAMPAIGN_LEVEL_ORDER.indexOf(levelId);
   return i >= 0 ? (CAMPAIGN_LEVEL_ORDER[i + 1] ?? null) : null;
 }
+
+/**
+ * Seconds the level-chain banner holds over a won battle before the next level starts by itself
+ * (ONBOARDING_DESIGN §17.3). Short on purpose: the first-week CrazyGames sessions showed every
+ * screen between two fights losing players, and a tap anywhere skips the wait anyway.
+ */
+export const CHAIN_AUTO_SEC = 1.5;
+
+/**
+ * First clears chain from banner to banner, except on every this-many-th campaign level (lv5, lv10,
+ * …), which stops at the full result screen — stars, rewards, the way to the map (§17.3).
+ */
+export const CHAIN_RESULT_EVERY = 5;
