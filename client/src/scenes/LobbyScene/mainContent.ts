@@ -21,6 +21,7 @@ import { drawButtonLabel } from '../../ui/widgets/buttonLabel';
 import { headerMetrics } from './format';
 import { snapFont } from '../../render/fontScale';
 import { drawProtectSticker } from './protectSticker';
+import { drawHeroGiftSticker } from './heroGiftSticker';
 
 /**
  * One shortcut in the engagement strip. `icon` is the same glyph the destination screen wears on its
@@ -234,6 +235,7 @@ export function drawMainContent(core: LobbySceneCore, badges: BadgesPanel): void
   } else {
     core.worldPillarRect = { x: 0, y: 0, w: 0, h: 0 };
   }
+  drawHeroGiftSticker(core, core.campaignBtnRect, tbH);
 
   // 3. Engagement strip — Daily / Mail / Events / Feedback / Auction (P2).
   // Replaces the old horizontal engagement chip row. Items are compact sketch panels, each with a

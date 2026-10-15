@@ -8,22 +8,15 @@
   "startInk": 40,
   "inkRegenMult": 1.6,
   "enemyScale": {
-    "hp": 0.8,
-    "damage": 0.8
+    "hp": 0.6,
+    "damage": 0.6
   },
   "loadout": [
     "infantry_1",
-    "infantry_2",
-    "shieldbearer_1",
-    "shieldbearer_2",
-    "archer_1",
-    "archer_2",
-    "barracks_1",
-    "barracks_2",
     "tower_1",
-    "tower_2",
-    "haste_1",
-    "meteor_1"
+    "meteor_1",
+    "archer_1",
+    "barracks_1"
   ],
   "waves": {
     "entries": [
@@ -101,8 +94,7 @@
         "atTick": 840,
         "unitType": "lena",
         "col": 4,
-        "count": 1,
-        "isBoss": true
+        "count": 1
       }
     ]
   },
@@ -118,10 +110,5 @@
     }
   },
   "nameKey": "campaign.ch1.lv1.name",
-  "lanePunish": {
-    "units": 5,
-    "sustainTicks": 120,
-    "cooldownTicks": 450,
-    "spell": "rockslide"
-  }
+  "assistOnLoss": true
 }

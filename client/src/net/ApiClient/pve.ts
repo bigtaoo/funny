@@ -2,6 +2,7 @@
 import type { SaveData, EquipmentInstance } from '../../game/meta/SaveData';
 import { packReplayBlob, unpackReplayBlob } from '../replayCompress';
 import { decodeReplayGz } from '../serverReplay';
+import { CAMPAIGN_CONTENT_REV } from '@nw/engine';
 import type { ApiClientCore } from './core';
 import type { ServerReplay, MatchHistoryEntry } from './types';
 
@@ -10,7 +11,8 @@ export interface PveApi {
     levelId: string,
     stars: number,
     unitLevels?: Record<string, number>,
-    stats?: Record<string, number>
+    stats?: Record<string, number>,
+    opts?: { assist?: boolean }
   ): Promise<{
     save: SaveData;
     granted: Record<string, number>;
@@ -37,6 +39,7 @@ export interface PveApi {
   purchaseStamina(): Promise<{ stamina: { current: number; regenAt: number } }>;
   adStamina(adToken: string, platform: string): Promise<{ stamina: { current: number; regenAt: number }; adsLeft: number }>;
   pveEnter(levelId: string): Promise<{ stamina: { current: number; regenAt: number } }>;
+  claimHeroGift(): Promise<{ save: SaveData }>;
   getMatchHistory(limit?: number): Promise<MatchHistoryEntry[]>;
   getMatchReplay(roomId: string): Promise<ServerReplay>;
 }
@@ -55,12 +58,14 @@ export class PveService implements PveApi {
    * PvE level-clear settlement: server validates the unlock → grants materials + cards within the daily cap → writes progress/stars → pushes back.
    * L1 sampling check (§8.6 step 3): when the request is sampled, returns `needsReplay + verifyId` (materials held back); the caller must submit the replay via {@link pveVerify} for re-computation and crediting.
    * `unitLevels` is the client-side unit blueprint snapshot at game start (L0 anomaly detection, S12).
+   * `opts.assist`: the run used the easier-retry assist (ONBOARDING_DESIGN §17.3) — the server caps it at 1 star.
    */
   async pveClear(
     levelId: string,
     stars: number,
     unitLevels?: Record<string, number>,
-    stats?: Record<string, number>
+    stats?: Record<string, number>,
+    opts?: { assist?: boolean }
   ): Promise<{
     save: SaveData;
     granted: Record<string, number>;
@@ -81,7 +86,19 @@ export class PveService implements PveApi {
       stars,
       ...(unitLevels ? { unitLevels } : {}),
       ...(stats ? { stats } : {}),
+      // Campaign content revision this build bundles (PVE_INTEGRITY §8.6a): the server skips the
+      // replay spot-check when our level JSON is older than the current server/judge copy.
+      levelRev: CAMPAIGN_CONTENT_REV,
+      ...(opts?.assist ? { assist: true } : {}),
     });
+  }
+
+  /**
+   * Claim the next-day hero gift (ONBOARDING_DESIGN §17.4). Idempotent once claimed; before
+   * `claimableAt` → ApiError('BAD_REQUEST'), without a gift → ApiError('NOT_FOUND').
+   */
+  async claimHeroGift(): Promise<{ save: SaveData }> {
+    return this.core.post<{ save: SaveData }>('/pve/hero-gift/claim', {});
   }
 
   /** Create a replay share link (S1-RP): 7-day TTL; anyone with the shareId can retrieve the replay (no login required). */

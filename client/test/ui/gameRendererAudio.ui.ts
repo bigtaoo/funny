@@ -20,6 +20,7 @@ import { getLevel, SpellType } from '../../src/game';
 import { toFp } from '@nw/engine/math/fixed';
 import { setAudioBus, NullAudioBus } from '../../src/audio/audioBus';
 import type { AudioBus, AudioCue } from '../../src/audio/types';
+import { buildTutorialHost } from '../../src/render/GameRenderer/tutorialHost';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -248,8 +249,9 @@ describe('battle audio — result stinger one-shot gate', () => {
 
   it('scripted tutorial victory gets the same stinger, exactly once', () => {
     const { renderer, r } = buildRenderer();
-    r.core.forceTutorialVictory();
-    r.core.forceTutorialVictory();
+    const host = buildTutorialHost(r.core, {} as any);
+    host.forceVictory();
+    host.forceVictory();
     expect(bus.calls).toEqual([['sfx.result.victory', 1]]);
     renderer.destroy();
   });

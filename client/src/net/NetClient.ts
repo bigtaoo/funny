@@ -10,6 +10,7 @@ import type { IGameSocket, IPlatform, SocketHandlers } from '../platform/IPlatfo
 import { Envelope, type ClientMsg, type MatchMode, type ServerMsg } from './proto/transport';
 import { netLog, type NetLogger } from './log';
 import { globalRequestGate } from './rateGate';
+import { CAMPAIGN_CONTENT_REV } from '@nw/engine';
 
 /**
  * 'closed': an intentional/graceful disconnect (disconnect() was called) — nothing to show the
@@ -208,7 +209,9 @@ export class NetClient {
   }
   /** Report whether this client can serve as a headless re-computation judge (send after connecting to gateway, Phase C). */
   sendClientCaps(canJudge: boolean): void {
-    this.sendClient({ clientCaps: { canJudge } });
+    // levelRev: the campaign content revision bundled here — the gateway only routes PvE judge work
+    // for levels whose JSON this build has at the current revision.
+    this.sendClient({ clientCaps: { canJudge, levelRev: CAMPAIGN_CONTENT_REV } });
   }
   /** Report the judge re-computation result (send after processing a judge_request, Phase C; PvE spot-checks include stars + achievement count statsJson). */
   sendJudgeVerdict(

@@ -42,6 +42,9 @@ export interface GwConn {
   alive: boolean;
   /** Whether this client is capable of performing headless re-computation judging (reported via client_caps). */
   canJudge: boolean;
+  /** Campaign content revision the client bundles (client_caps.level_rev; 0/absent = an old build = revision 1).
+   *  pickJudge only hands a PvE spot-check to a client whose level JSON matches (ONBOARDING_DESIGN §17.2). */
+  levelRev: number;
   /** Monotonic per-connection sequence (see connRegistry's nextConnSeq) — lets routeKick order two connections
    *  for the same account that landed on DIFFERENT instances, instead of evicting unconditionally. */
   connSeq: number;
@@ -57,6 +60,8 @@ export interface JudgeArgs {
   exclude: string[];
   /** PvE spot-check re-computation (PVE_INTEGRITY §8.6 L1): if non-empty, the judge re-runs the specified campaign level. */
   levelId?: string;
+  /** PvE "easier retry" clear (ONBOARDING_DESIGN §17.2): the judge re-simulates the level through engine applyAssist(). */
+  assist?: boolean;
   /** SLG siege defense config JSON string (S8-3b): if non-empty, the judge re-runs in siege mode. */
   defenseJson?: string;
   /** CC-1 Hero Roster snapshot (2026-07-26 fix, PVE_INTEGRITY §9): JSON of Record<string, CardInstance>, server-authoritative, ensures deterministic PvE/siege re-computation using the player's real card levels. */

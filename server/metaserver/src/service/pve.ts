@@ -19,13 +19,15 @@
 // - pve/stamina.ts:  pveEnter + purchaseStamina (A4) + adStamina (CrazyGames rewarded-ad refill)
 // - pve/clear.ts:    pveClear + the L1 spot-check decision (§8.6)
 // - pve/verify.ts:   pveVerify — L1 replay re-simulation settlement (§8.6)
+// - pve/heroGift.ts: next-day hero gift — stamped by pveClear, claimed via claimHeroGift (ONBOARDING_DESIGN §17.4)
 import type { MetaHandlers } from '../generated/routes.gen.js';
 import { type MetaCore } from './base.js';
 import { pveEnterHandler, purchaseStaminaHandler, adStaminaHandler } from './pve/stamina.js';
 import { pveClearHandler } from './pve/clear.js';
 import { pveVerifyHandler } from './pve/verify.js';
+import { claimHeroGiftHandler } from './pve/heroGift.js';
 
-type PveHandlers = Pick<MetaHandlers, 'purchaseStamina' | 'adStamina' | 'pveEnter' | 'pveClear' | 'pveVerify'>;
+type PveHandlers = Pick<MetaHandlers, 'purchaseStamina' | 'adStamina' | 'pveEnter' | 'pveClear' | 'pveVerify' | 'claimHeroGift'>;
 
 export class PveService {
   constructor(private readonly core: MetaCore) {}
@@ -48,5 +50,9 @@ export class PveService {
 
     async pveVerify(...args: Parameters<PveHandlers['pveVerify']>) {
       return pveVerifyHandler(this.core, ...args);
+    }
+
+    async claimHeroGift(...args: Parameters<PveHandlers['claimHeroGift']>) {
+      return claimHeroGiftHandler(this.core, ...args);
     }
 }

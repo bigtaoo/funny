@@ -34,6 +34,8 @@ export interface PveVerificationDoc {
   /** Star count from re-simulation (present when verified or rejected). */
   judgedStars?: number;
   judgeAccountId?: string;
+  /** The clear was an "easier retry" (ONBOARDING_DESIGN §17.2) — the judge must re-simulate the assisted level. */
+  assist?: boolean;
   /**
    * Raw replay frames submitted to `/pve/verify`, archived only when the re-simulation came back `rejected`
    * (PVE_INTEGRITY_PLAN §8.6 待办) — lets ops re-examine a disputed clear after the fact instead of only

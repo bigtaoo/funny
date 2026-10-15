@@ -292,9 +292,27 @@ describe('drawSocialTabRail — hidden param (13.07.2026: sect tab hidden for no
   });
 
   it('a hidden tab that also happens to be the active tab is not double-excluded', () => {
-    // SectScene's own case: active='sect' AND hidden=['sect'] together — must behave exactly
-    // like hiding it while some other tab is active, not remove an extra slot.
+    // SectScene's own case: active='sect' AND hidden=['sect'] together. The active cell stays
+    // drawn (next test) but has no hit rect, so the clickable set is the other four.
     expect(clickableTabs('sect', ['sect'])).toEqual(['friends', 'family', 'world', 'mail']);
+  });
+
+  it('a hidden tab that is the active tab is still drawn (the page on screen keeps its cell)', () => {
+    // App Review 14.10.2026: a no-family player on FriendsScene's Sect page saw a 4-tab bar,
+    // because the visibility rule hid the very tab being shown.
+    function labels(c: PIXI.Container): string[] {
+      return c.children.flatMap((ch) =>
+        ch instanceof PIXI.Text ? [ch.text] : ch instanceof PIXI.Container ? labels(ch) : []);
+    }
+    const tabLabels = (['friends', 'family', 'sect', 'world', 'mail'] as const).map((id) => t(`friends.tab.${id}` as TranslationKey));
+    const drawn = (active: SocialTab): string[] => {
+      const container = new PIXI.Container();
+      drawSocialTabRail(container, W, H, 0, false, active, {}, () => {}, ['sect']);
+      return labels(container).filter((s) => tabLabels.includes(s));
+    };
+    expect(drawn('sect')).toContain(t('friends.tab.sect'));
+    expect(drawn('sect')).toHaveLength(5);
+    expect(drawn('friends')).not.toContain(t('friends.tab.sect'));
   });
 
   it('hiding multiple tabs at once removes both from the clickable set', () => {

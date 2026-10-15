@@ -6,22 +6,17 @@
     "kind": "survive"
   },
   "enemyScale": {
-    "hp": 1.027,
-    "damage": 1.012
+    "hp": 0.72,
+    "damage": 0.72
   },
   "loadout": [
     "infantry_1",
-    "infantry_2",
-    "shieldbearer_1",
-    "shieldbearer_2",
-    "archer_1",
-    "archer_2",
-    "barracks_1",
-    "barracks_2",
     "tower_1",
-    "tower_2",
-    "haste_1",
-    "meteor_1"
+    "meteor_1",
+    "archer_1",
+    "barracks_1",
+    "shieldbearer_1",
+    "haste_1"
   ],
   "board": {
     "cellMask": {
@@ -220,5 +215,6 @@
     "sustainTicks": 120,
     "cooldownTicks": 450,
     "spell": "rockslide"
-  }
+  },
+  "assistOnLoss": true
 }

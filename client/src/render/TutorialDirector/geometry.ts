@@ -2,7 +2,7 @@
 // points — split out of TutorialDirector.ts for the 500-line rule (claudedocs/client-modules.md).
 import { Side, type GameState } from '../../game';
 import { BOARD_COLS, BOARD_ROWS, BOTTOM_BUILDING_ROW, BOTTOM_SPAWN_ROW } from '@nw/engine/config';
-import type { ILayout } from '../../layout/ILayout';
+import type { ILayout, Rect } from '../../layout/ILayout';
 import type { BeatSpec } from './beats';
 
 /** Screen centre of a meteor's 2×2 footprint anchored at `a` (its top-left cell, SpellSystem.castMeteor). */
@@ -17,6 +17,20 @@ export function beatTargetPoint(layout: ILayout, beat: BeatSpec, meteorAnchor: {
   if (beat.kind === 'unit') return layout.gridToScreen(beat.col, BOTTOM_SPAWN_ROW);
   if (beat.kind === 'building') return layout.gridToScreen(beat.col, BOTTOM_BUILDING_ROW);
   return meteorAnchor ? meteorAnchorCenter(layout, meteorAnchor) : layout.gridToScreen(beat.col, BOARD_ROWS / 2);
+}
+
+/**
+ * What the instruction strip must not cover (§11.5): the Skip button, the prompt's target (`target`,
+ * from beatTargetPoint) and the guided card in hand (`cardCenter`, null when it is not in hand).
+ */
+export function stripAvoidRects(
+  layout: ILayout, skip: Rect, kind: BeatSpec['kind'], target: { x: number; y: number }, cardCenter: { x: number; y: number } | null,
+): Rect[] {
+  const reach = kind === 'spell' ? layout.cellSize * 1.5 : layout.cellSize;
+  const out: Rect[] = [skip, { x: target.x - reach, y: target.y - reach, w: reach * 2, h: reach * 2 }];
+  const { cardWidth: w, cardHeight: h } = layout;
+  if (cardCenter) out.push({ x: cardCenter.x - w / 2, y: cardCenter.y - h / 2, w, h });
+  return out;
 }
 
 /** Live enemy units (the tutorial's local player is always the bottom side). */

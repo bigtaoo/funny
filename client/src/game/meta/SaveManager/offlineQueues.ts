@@ -184,8 +184,9 @@ export async function flushPendingFlags(host: OfflineQueuesHost): Promise<void> 
  */
 /**
  * @param stats Per-run achievement stat deltas (achievementStatDelta output); S9-3b, regular clears feed these counts into the server.
+ * @param assist The run used the easier-retry assist (ONBOARDING_DESIGN §17.3); the server caps it at 1 star.
  */
-export async function recordClear(host: OfflineQueuesHost, levelId: string, stars: number, replay?: Replay, stats?: Record<string, number>): Promise<void> {
+export async function recordClear(host: OfflineQueuesHost, levelId: string, stars: number, replay?: Replay, stats?: Record<string, number>, assist = false): Promise<void> {
   if (stars <= 0) return;
   // Optimistic local unlock (offline-first): write the clear into local progress immediately so the next
   // level is unlocked when returning to CampaignMap — no waiting for the server receipt (online recordClear
@@ -195,7 +196,7 @@ export async function recordClear(host: OfflineQueuesHost, levelId: string, star
   applyLocalClear(host, levelId, stars);
   if (host.online()) {
     try {
-      const res = await host.api!.pveClear(levelId, stars, {}, stats);
+      const res = await host.api!.pveClear(levelId, stars, {}, stats, { assist });
       host.adoptServer(res.save);
       if (res.needsReplay && res.verifyId && replay) {
         await verifyReplay(host, res.verifyId, replay);
@@ -209,6 +210,7 @@ export async function recordClear(host: OfflineQueuesHost, levelId: string, star
     levelId,
     stars,
     ts: Date.now(),
+    ...(assist ? { assist: true } : {}),
     ...(replay?.meta?.recordedAt !== undefined
       ? { replayId: replayIdFor(replay.meta.recordedAt) }
       : {}),
@@ -245,7 +247,7 @@ export async function flushPending(host: OfflineQueuesHost): Promise<void> {
   while (host.pending.length > 0) {
     const head = host.pending[0];
     try {
-      const res = await host.api!.pveClear(head.levelId, head.stars, {});
+      const res = await host.api!.pveClear(head.levelId, head.stars, {}, undefined, { assist: head.assist === true });
       host.adoptServer(res.save);
       // L1 spot-check triggered: retrieve the local replay and upload for re-calculation (if evicted from ReplayStore, skip — materials not credited this round).
       if (res.needsReplay && res.verifyId && head.replayId && host.loadReplay) {

@@ -241,7 +241,7 @@
 | **教学关 `ch0_tutorial` JSON**（满 loadout） | ✅ 已建。`server/engine/src/campaign/levels/ch0_tutorial.json`（2026-09-26 前在 `client/src/game/campaign/levels/`），仅入 `CAMPAIGN_LEVELS` 不入 `CAMPAIGN_LEVEL_ORDER`（不计进度） |
 | **TutorialDirector（三拍先动后停 + 幽灵卡示范 + 拖错反馈 + 落点吸附 + 毕业卡）** | ✅ 2026-10-07 重做（§3.4）。`client/src/render/TutorialDirector.ts` + `TutorialDirector/` |
 | **TutorialDrawPolicy（保证引导卡按拍到手，确定性纯引擎）** | ✅ 已建。`@nw/engine Card.ts`，`GameEngine` 据 `id===ch0_tutorial` 注入（`enterFreePlay()` 随阶段 C 一起删了） |
-| `flags.tutorial_done` + 「重看教学」 | ✅ 已加。`tutorial_done` 门控；设置「帮助 → 重看新手教学」重跑。**`SaveData.flags.tutorial_step` 断点续教未做**（见 §10——⚠️ 与下面「FTUE 漏斗埋点」行提到的 `tutorial_step` **同名不同物**：这里指存档断点续教字段，未建；那里指 analyticsvc 的 `tutorial_step` 埋点事件，已建，两者互不影响，勿混淆） |
+| `flags.tutorial_done` + 「重看教学」 | ✅ 已加。`tutorial_done` 门控；设置「帮助 → 重看新手教学」重跑。**`SaveData.flags.tutorial_step` 精确到拍的断点续教未做**（三拍做完后离开的已有两档续教 `tutorial_beats_done`，见 §17.7；另见 §10——⚠️ 与下面「FTUE 漏斗埋点」行提到的 `tutorial_step` **同名不同物**：这里指存档断点续教字段，未建；那里指 analyticsvc 的 `tutorial_step` 埋点事件，已建，两者互不影响，勿混淆） |
 | 教学关永不失败兜底（基地不可破） | ✅ 已建。导演每 tick 夹 `baseHp≥1` + GameRenderer 未毕业时吞 `game_over/game_draw`（导演独占终局） |
 | SLG 软门槛（通 ch1 解锁）+ 灰显气泡 | ✅ 已接。`progress.isFirstChapterCleared` + 大厅 `worldLocked` 灰显 + `showInfoToast`「通关第一章解锁」 |
 | **首次功能引导机制（`flags.featSeen.*`）** | ✅ 机制已建。`SaveManager.featSeen/markFeatSeen` + 大厅 `showFeatureGuide` + `withGuide`（match/shop/social/cards/daily/world）+ `guide.*` 全语种 + `feature_guide_shown/closed` 埋点（design-doc-audit-2026-07 补齐，见 §7）。**各子页内「?」按钮未逐页接**（见 §10），因此 `feature_guide_replay` 事件暂无调用点 |
@@ -580,3 +580,94 @@ CG 新包上线后对比 10-12 版。所有数都能按版本拆（匿名计数�
 - **埋点**：`intro_complete` / `intro_skip` 不再发出，从 analyticsvc `DEFAULT_CONFIG` 删除；`ONBOARDING_STEPS` 去掉 `intro_seen` 一步，运维后台 `ONBOARDING_LABELS` 同步删除。**analyticsvc 要和新客户端包一起部署**，否则旧服务端的漏斗会多出一个恒 0 的末步。
 - **保留**：设置 → 帮助 →「重看开场故事」仍播完整 7 行 `IntroScene`（`nav.goIntro` 唯一调用方，插画 `intro_notebook.png` 仍被它引用）；各章结尾的插画过场（`IllustratedInterludeScene`）不动。
 - **验证**：Chrome 新 origin 走一遍 年龄/同意 → 单机试玩 → 跳过教学进 `ch1_lv1` → 退出 → 大厅 → 战役地图，地图上无卡片。
+
+## 17. CG 前十分钟重做（2026-10-15）
+
+起因：CG 首周数据（记忆 `crazygames-first-live-day-2026-10-09`）。会话时长几乎完全由「打过几关」决定——0 关 p50 75 s、1 关 140 s、2–3 关 ~250 s、4–5 关 ~8 min、6+ 关 ~20 min；而单局胜率是 lv1 62% → lv2 99% → lv3 87% → lv4 89% → lv5 64%，第一关反而是最难的一关，打完 lv4 的会话只有 ~6%。§13–16 的小修补救不回来，本节是整体重排。
+
+**目标**：`alive_60s / loaded` 桌面 ≥ 65%、手机 ≥ 85%；打到 lv4+ 的会话 ≥ 40%。日程：10-15..20 开发（④→①→②→③→⑤），10-21 难度模拟 + 真浏览器全流程，10-22 上传 CG（赶 10-23..29 的评分窗口）。⑤ 时间不够可砍。
+
+### 17.1 ① 教学与第一战合一
+
+`ch0_tutorial` 不再是「三拍 + 毕业卡 + 切场景进 `ch1_lv1`」，而是一场连续的 ~2 分钟战斗：
+
+- 三拍（出兵 / 建塔 / 陨石）照旧，engine 冻结与 ghost hand 不变。
+- 陨石拍之后**不出毕业卡**、不强制胜利：导演进入 `free` 阶段，放开出牌限制，后续波次逐渐加码。
+- 中途来一张新卡（弓手）：关卡 JSON 新字段 `cardUnlocks: [{atTick, cardId}]`（引擎层、确定性：到点把卡加入抽牌池并让下一次抽牌必出它），导演在它进手牌时弹一句「新卡！」。
+- **必胜**：基地血量下限钳制保留到战斗结束；波次放完、场上清空即胜利（`survive` 目标照常走引擎的 `game_over`）。
+- 结束后不进结算页：设 `tutorial_done` → 走 §17.3 的关间横幅 → 直接开 `ch1_lv1`。
+- 跳过按钮保留（直接进 `ch1_lv1`）。
+- 教学关仍不上报 `/pve/clear`、不走回放校验（它从来不在 `PVE_LEVELS` 里）。
+- 埋点：`graduate` 一步改义为「三拍完成、进入自由战斗」，`tutorial_complete` = 整场打完。
+
+### 17.2 ② 第一章前 8 关：单调难度 + 每关一张新卡
+
+- **卡组逐关解锁**（关卡 JSON 的 `loadout`，服务端回放共用同一份）：教学 = 步兵 / 塔 / 陨石 + 中途弓手；lv1 + 兵营；lv2 + 盾兵；lv3 + 加速；lv4 + 步兵 II；lv5 + 塔 II（外加 §17.5 的英雄试用卡）；lv6 + 弓手 II；lv7 + 盾兵 II；lv8 + 兵营 II = 全 12 张。本关新增的卡在手牌上标「NEW」（客户端对比上一关 loadout 得出，无需新字段）。
+- **难度单调**：新 lv1 明显比旧 lv1 软（`enemyScale` 往下压、波次减少）；旧 lv1 那个强度挪到 lv4–5。用 `client/test/difficulty` 的模拟器逐关调，`baseline.json` 重新钉住；卡组变少本身会让关卡变难，lv6–8 也要复测。
+- **失败一键「降低难度重试」**（lv1–3）：引擎 `applyAssist(level)` 是一个确定性变换（敌人血量 / 伤害 ×0.7、开局墨水 +20）。客户端以 assist 模式重开；`/pve/clear` 带 `assist: true`，服务端只接受 lv1–3 的 assist，并把星数封顶为 1；抽查记录里存 assist，judge 请求带 assist，判官用同一变换复算——回放校验照样成立。
+- **关卡内容版本门**（新增，防误判）：现在 peer judge 不看客户端版本，iOS / 微信的老包会拿旧关卡 JSON 复算新关卡，误判后给新玩家发「疑似作弊」邮件。所以：
+  - `@nw/engine`（`campaign/contentRev.ts`）新增 `CAMPAIGN_CONTENT_REV` 和 `LEVEL_CONTENT_REV`（关卡 id → 最后一次改内容的版本）。
+  - 客户端在 `ClientCaps` 里报自己的版本（新字段 `level_rev`；老包没有这个字段，按 1 处理）。
+  - gateway 给关卡 L 选判官时只选版本 ≥ `LEVEL_CONTENT_REV[L]` 的连接；没有合格判官 → 按现有规则算「未校验、放行」。
+  - `/pve/clear` 带 `levelRev`；提交方版本低于该关的内容版本时不抽查（老包玩的是旧内容，谁也判不了它），只对改过的关卡放行，其它关卡的抽查不受影响。
+
+### 17.3 ③ 关间不停顿
+
+- 赢了（非章末、非插画过场）：在战斗场景里显示 1.5 s 横幅（星数 + 下一关的新卡），然后直接 `goCampaign(next)`——不经 `ResultScene`、不经地图、不经出战准备页。
+- 每 5 关（lv5、lv10…）照旧走结算页 → 地图；横幅上有「地图」小按钮，点了也回地图。
+- 输了仍走结算页（重试 / 降低难度重试 / 回地图）。
+- 关间不放插屏广告（插屏只留在每 5 关的结算页）。CG SDK 的 `gameplayStop` / `gameplayStart` 照旧成对调用。
+- 兜底方案（场内横幅做不成时）：保留切场景，但跳过结算页。
+
+### 17.4 ⑤ D1 钩子：lv5 英雄试用、明天归你
+
+- lv5 用 `cardUnlocks` 在开局不久塞进英雄战斗卡 `max_1`，导演 / HUD 弹「英雄 Max 加入！明天正式归你」。
+- 服务端：`ch1_lv5` 首通时写一条待领英雄（`max`，可领时间 = 下一个 UTC 日 0 点）；到点后在大厅领取，走 `grantCards`。
+- 提醒：lv5 结算页一行「明天来领 Max」；大厅「战役」入口上一张倒计时贴纸（2026-10-15 补上，见 §17.7），到点后进大厅（或贴纸在大厅里走到 0）自动领取并弹说明。
+- 已知局限：拥有 `max` 在第一章不会把 Max 放进手牌（卡牌只加属性，手牌由关卡 `loadout` 决定）；它在第二章（loadout 含 `max_1/2`）和 PvP 里才起作用。
+
+### 17.5 ④ CG 上去掉体力
+
+- 服务端 `pveEnterHandler`：`x-nw-platform === PVE_STAMINA_FREE_CLIENT_PLATFORM`（`crazygames`）时不扣体力，直接返回当前体力快照；关卡解锁 / 封禁校验不变。
+- 客户端 `IPlatform.freePveStamina`（只有 `CrazyGamesPlatform` 设为 true）→ `levelStaminaCost()` 返回 0；出战准备页在消耗为 0 时不显示体力行，补体力 / 看广告按钮本来就只在不够时出现。
+- 信任模型与体力广告相同：平台头由客户端声明，可以伪造；体力只是软门槛，不是货币，接受这个风险。
+
+### 17.6 部署与评估
+
+- **服务端、gateway、客户端必须一起发**：关卡 JSON、judge 协议字段、`/pve/clear` 新字段都是两侧共用的。analyticsvc 跟着改漏斗标签。
+- 建议同时问 CG 支持：Basic Launch 能否重跑一轮。
+- 评估（上线后一周，按设备拆）：`alive_60s / loaded`；`tutorial_complete / tutorial_start`；`lvN_clear / lvN_start` 是否单调下降且 lv1–3 ≥ 90%；打到 lv4+、lv6+ 的会话占比；assist 使用率；lv5 首通 → 次日回访领 Max 的比例。
+
+### 17.7 实现记录（2026-10-15，分支 `feat/cg-first-ten`）
+
+与上面方案不一致或方案没写到的地方，以本节为准。
+
+**① 教学合一**
+- `ch0_tutorial` 卡组 = 步兵 I/II、塔 I/II、陨石（三拍要用），`cardUnlocks: [{atTick: 420, cardId: 'archer_1'}]`；18 波 59 个敌人，`enemyScale` 0.065 / 1（血量极低，靠数量撑时长）。
+- 导演新增 `free` 阶段：陨石拍后 `onStep('graduate')`，放开所有出牌；弓手进手牌时弹「新卡！」4 s（`NEW_CARD_CALLOUT_SEC`）并框住卡位。引擎判胜后 WIN 章停 `WIN_HOLD_SEC = 1.4` s 再离开；若最后一个脚本刷怪后 `FREE_SETTLE_TICKS = 900` tick 仍未结束（漏网的兵不死），导演强制收尾。
+  - **挂机冻结提示（2026-10-15，分支 `feat/tutorial-idle-prompt`）**：原先完全挂机的玩家会在敌兵围着基地、红心已空时被这条兜底判胜——基地没血还赢了，困惑大于保底。现改为：`free` 阶段里玩家 `FREE_IDLE_PROMPT_SEC = 5` s 没出牌、场上有敌兵、手里有付得起的牌时，**冻结战斗**并停在提示上，直到玩家出牌为止，不会自己放弃，也不会替玩家判胜。
+    - 提示内容：指令条「基地需要你！/ 把一张卡拖到战场上，挡住他们。」（`tutorial.idle.*`），点亮离基地最近（行号最小）那个敌兵所在的列，`FREE_IDLE_GHOST_SEC = 1` s 后幽灵手循环演示拖牌。选牌顺序：兵 → 建筑 → 法术里第一张付得起的（`TutorialDirector/idleHint.ts`）。
+    - 出任何一张牌即解冻，重新计 5 s。冻结时引擎不走 tick，`FREE_SETTLE_TICKS` 兜底也不走，所以兜底胜只会落到「一直在出牌但没清干净」的玩家头上。
+    - 手里没有付得起的牌时不冻结，战斗照常推进到墨水回上来，再弹提示。
+  - **断点续教（2026-10-15，分支 `feat/first-ten-polish`）**：进入 `free` 阶段（`onStep('graduate')`）时写 `tutorial_beats_done` 旗标。新账号（未通任何关）下次启动若已有这个旗标而没有 `tutorial_done`，不再重放教学，直接写 `tutorial_done` 并进 `ch1_lv1`（埋点 `tutorial_skip { step: 'resume' }`）。只做到「三拍做完 / 没做完」两档：自由战斗本身是一场确定性战斗，中途存档续打不值得。§10 的 `SaveData.flags.tutorial_step` 精确到拍的续教仍不做——三拍合计不到 1 分钟，没做完就从头来。
+- **毕业卡只在要挂统计告知（`entryNotice.stats` 脚注）时出现**；其余情况 WIN 章 → §17.3 的横幅（无星数）→ `ch1_lv1`。
+
+**② 前 8 关**
+- 实际卡组（关卡 JSON `loadout`）：lv1 步兵/塔/陨石/弓手/兵营 → lv2 +盾兵 → lv3 +加速 → lv4 +步兵 II → lv5 +塔 II（+开局 150 tick 解锁 `max_1`）→ lv6 +弓手 II → lv7 +盾兵 II → lv8 +兵营 II。
+- `enemyScale`（hp=damage，lv6 除外）：lv1 0.6、lv2 0.714、lv3 0.72、lv4 0.95、lv5 0.88、lv6 1.15/1.08、lv7 0.95、lv8 0.82。数值本身不单调，因为卡组每关在变强、波次在变——单调的是模拟器里的结果，以 `client/test/difficulty/baseline.json` 为准（已重钉）。
+- 出战准备页：本关新卡在一行「NEW」面板里列出（与上一关 loadout 求差）。
+- 难度模拟（2026-10-15 复核，`client/test/difficulty`，与重钉的 `baseline.json` 一致）：零养成（fresh）下 lv1–5 胜率全部 100%（星数 2/2/3/1/2），lv6 60%、lv7 80%、lv8 80%；lv9 起零养成过不去（T2 才 80%）。注意 lv4 零养成只拿 1 星、比 lv5 难，lv6 是前 8 关里最难的一关——上线后看 `lv4/lv6_clear / start` 是否掉到 90% 以下再决定要不要回调。
+- 降低难度重试：`assistOnLoss: true` 的关（lv1–3，与 `ASSIST_LEVEL_IDS` 由客户端测试保持一致）输了，结算页多一个「降低难度重试」按钮 → `applyAssist`（敌人 ×0.7、开局墨水 +20）直接重开，不经出战准备页；客户端和服务端都把星数封顶为 `ASSIST_MAX_STARS = 1`；埋点 `game_start` / `level_attempt` 带 `assist: true`。
+
+**③ 关间不停顿**
+- 只在**首通且 ≥1 星**、非章末插画、存在下一关时触发；第 5、10… 关（`CHAIN_RESULT_EVERY = 5`）照旧结算页。横幅 `CHAIN_AUTO_SEC = 1.5` s，点任意处立刻开下一关，点「地图」回地图。
+- 链式进入跳过关卡简报和出战准备页；`level_attempt` 带 `chained: true`。
+- 每次横幅前先 `platform.onGameplayStop()`，由 `goCampaign` 发配对的 `onGameplayStart()`。
+- 教学结束的横幅只在不需要毕业卡（即没有统计告知）时出现。
+
+**⑤ 英雄礼物**
+- 存档字段 `SaveData.heroGift = { defId, claimableAt, claimedAt? }`；常量在 `@nw/shared/onboarding`（`HERO_GIFT_LEVEL_ID = 'ch1_lv5'`、`HERO_GIFT_DEF_ID = 'max'`、`heroGiftClaimableAt(ts)` = 下一个 UTC 0 点）。
+- `/pve/clear` 在 `ch1_lv5` 通关时（普通路径和抽查路径都算）写入，已有则不动——重打不会推迟领取时间。
+- `POST /pve/hero-gift/claim`：没有礼物 404、未到点 400；**先在 `mutateSave` 里标 `claimedAt`，再 `grantCards(..., 'hero_gift')`**，所以并发 / 重放只发一次；已领过的再调用直接返回存档（幂等）。背包满走金币补偿（reason `hero_gift_inv_full`）。
+- 客户端：战斗里 `max_1` 进手牌时弹「英雄 麦克斯 加入战斗！明天起正式归你」（`render/GameRenderer/unlockCallout.ts`，其它关的 `cardUnlocks` 用通用「新卡」文案；只对未通关的关卡弹）；lv5 首通结算页加一行；大厅进入时 `runHeroGift` 优先于首奖励环——到点且未领就领，领到后若仍在大厅弹说明，按钮去卡牌名册。失败静默，下次进大厅重试。
+- **大厅倒计时贴纸（2026-10-15，分支 `feat/first-ten-polish`）**：有已获得未领取的礼物且未到点时，大厅「战役」入口顶边右侧贴一张纸签「英雄麦克斯：h:mm:ss 后归你」（`scenes/LobbyScene/heroGiftSticker.ts`，摆法同 PvP 按钮上的保护局贴纸），每帧刷新、文字一秒变一次；点它等于点战役入口。走到 0 时贴纸隐藏并当场调 `runHeroGift` 领取。倒计时和到点判断都用 `serverNow()`（`claimableAt` 是服务端时间，本机时钟快了会提前领、吃 400）。只在在线时显示（领取要服务端）。

@@ -1,7 +1,7 @@
 // Campaign/siege scripted-enemy domain (§4.10, G3 §16) — free-function form of the old
 // CampaignMixin (see claudedocs/server.md "engine/GameEngine"). checkWinCondition's
 // `survive`/`destroy_base` branches call hasLivingEnemyUnits/hasLivingAttackerUnits.
-import { BOARD_ROWS, BOTTOM_BUILDING_ROW, TOP_SPAWN_ROW } from '../../config';
+import { BOARD_ROWS, BOTTOM_BUILDING_ROW, CARD_DEFINITIONS, TOP_SPAWN_ROW } from '../../config';
 import { toFp } from '../../math/fixed';
 import { Unit } from '../../Unit';
 import { OwnerId, Side, UnitType } from '../../types';
@@ -120,4 +120,18 @@ export function hasLivingAttackerUnits(ctx: EngineCtx): boolean {
     if (unit.side === Side.Bottom && !unit.isDead) return true;
   }
   return false;
+}
+
+/**
+ * Level `cardUnlocks` (ONBOARDING_DESIGN §17.1): at its tick a card joins the player's draw pool and is
+ * forced as the next draw. Fixed-tick and pool-only, so replays / the judge reproduce it exactly.
+ */
+export function tickCardUnlocks(ctx: EngineCtx, tick: number): void {
+  const unlocks = ctx.level?.cardUnlocks;
+  if (!unlocks) return;
+  for (const u of unlocks) {
+    if (u.atTick !== tick) continue;
+    const def = CARD_DEFINITIONS.find((c) => c.id === u.cardId);
+    if (def) ctx.state.bottomPlayer.drawPolicy.unlock?.(def);
+  }
 }

@@ -110,7 +110,7 @@ export interface Nav {
   goLeaderboard(onBack?: () => void): void;
   goAchievements(back?: () => void): void;
   goCodex(back?: () => void): void;
-  goCampaign(levelId: string | undefined): void;
+  goCampaign(levelId: string | undefined, opts?: { assist?: boolean }): void;
   goTutorial(): void;
   goReplay(replay: Replay, onExit?: () => void): void;
   goStatePlayer(shareCode: string): Promise<void>;
@@ -138,6 +138,8 @@ export interface ResultExtras {
   skipAd?: boolean;
   /** Show the compact first-win screen with this "up next" teaser. */
   firstWin?: ResultSceneCallbacks['firstWin'];
+  /** A second secondary-row entry after `secondaryAction` (campaign's plain retry under an easier one). */
+  extraSecondary?: ResultSceneCallbacks['extraSecondary'];
 }
 
 /** The dependency + state bag handed to every nav module. */

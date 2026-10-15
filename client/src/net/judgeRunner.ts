@@ -28,6 +28,7 @@ import {
   type Replay,
   type ReplayFrame,
 } from '../game';
+import { applyAssist } from '@nw/engine';
 import { computeStars, buildStarContext } from '@nw/engine/campaign/stars';
 import { toEngineCardInstances } from '../game/meta/cardDefs';
 import type { CardInstance, EquipmentInstance } from '../game/meta/SaveData';
@@ -138,8 +139,10 @@ function planPvpJudge(req: JudgeRequest): JudgePlan {
  * so the recomputed result matches an honest clear. Clear = player (owner 0) wins; otherwise → 0 stars.
  */
 function planPveJudge(req: JudgeRequest): JudgePlan | null {
-  const level = getLevel(req.levelId);
-  if (!level) return null; // judge does not have a local definition for this level → cannot recompute (version mismatch)
+  const base = getLevel(req.levelId);
+  if (!base) return null; // judge does not have a local definition for this level → cannot recompute (version mismatch)
+  // Easier-retry run (ONBOARDING_DESIGN §17.3): recompute against the same assisted level the player saw.
+  const level = req.assist && base.assistOnLoss ? applyAssist(base) : base;
   const replay = buildReplay(req, 'campaign', level.seed, req.levelId);
   return {
     config: {

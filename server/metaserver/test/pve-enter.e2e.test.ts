@@ -110,4 +110,19 @@ describe.skipIf(!mongo)('pve stamina-at-entry e2e (A4)', () => {
     expect(r.data.granted).toEqual({ scrap: 6, lead: 2 });
     expect(r.data.save.stamina.current).toBe(0); // clear response still reports the current balance, just doesn't change it
   });
+
+  it('crazygames client platform enters for free, even at zero stamina (ONBOARDING_DESIGN §17.5)', async () => {
+    await setStamina(0);
+    const cg = (levelId: string) => app.inject({
+      method: 'POST', url: '/pve/enter', headers: { ...auth(), 'x-nw-platform': 'crazygames' }, payload: { levelId },
+    });
+    const r = await cg('ch1_lv1');
+    expect(r.statusCode).toBe(200);
+    expect(body(r).data.stamina.current).toBe(0);
+    expect((await m.collections.pveStamina.findOne({ _id: accountId }))?.current).toBe(0);
+    // Unlock gating still applies on the free path.
+    expect((await cg('ch1_lv3')).statusCode).toBe(400);
+    // Any other platform still pays.
+    expect((await enter('ch1_lv1')).statusCode).toBe(402);
+  });
 });

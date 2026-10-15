@@ -2,6 +2,7 @@
 // activeMatch record in Redis — is never handed a recompute, even if their client still advertises
 // canJudge (an old build, or the caps update racing the match start).
 import { describe, it, expect } from 'vitest';
+import { CAMPAIGN_CONTENT_REV } from '@nw/engine';
 import { activeMatchKey, type RedisLike } from '@nw/shared';
 import { PeerJudgeService } from '../src/gateway/peerJudge';
 import type { ConnLookup, GwConn } from '../src/gateway/types';
@@ -12,6 +13,7 @@ function fakeConn(accountId: string, sent: string[]): GwConn {
   return {
     accountId,
     canJudge: true,
+    levelRev: 0,
     alive: true,
     connSeq: 1,
     ws: { OPEN, readyState: OPEN, send: () => sent.push(accountId) },
@@ -99,5 +101,26 @@ describe('PeerJudgeService idle check', () => {
     const verdict = await svc.judge({ seed: 1, mode: 1, endFrame: 0, frames: [], exclude: ['p'] });
     expect(verdict).toEqual({ ok: false });
     expect(sent).toEqual([]);
+  });
+
+  it('PvE spot-check on a reworked level only drafts a client bundling that content revision (ONBOARDING_DESIGN §17.2)', async () => {
+    for (let i = 0; i < 20; i++) {
+      const sent: string[] = [];
+      const stale = fakeConn('stale', sent);
+      const fresh = fakeConn('fresh', sent);
+      fresh.levelRev = CAMPAIGN_CONTENT_REV;
+      const svc = new PeerJudgeService({ conns: lookup([stale, fresh]) });
+      void svc.judge({ seed: 0, mode: 0, endFrame: 0, frames: [], exclude: [], levelId: 'ch1_lv1' });
+      await new Promise((r) => setTimeout(r, 0));
+      expect(sent).toEqual(['fresh']);
+    }
+  });
+
+  it('a level untouched by the rework can still go to an old build', async () => {
+    const sent: string[] = [];
+    const svc = new PeerJudgeService({ conns: lookup([fakeConn('stale', sent)]) });
+    void svc.judge({ seed: 0, mode: 0, endFrame: 0, frames: [], exclude: [], levelId: 'ch2_lv1' });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(sent).toEqual(['stale']);
   });
 });

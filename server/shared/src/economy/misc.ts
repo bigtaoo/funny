@@ -15,6 +15,12 @@ export const STAMINA_AD_AMOUNT = 30;
 export const STAMINA_AD_DAILY_CAP = 3;
 /** The only `x-nw-platform` the stamina-ad endpoint serves. */
 export const STAMINA_AD_CLIENT_PLATFORM = 'crazygames';
+/**
+ * The `x-nw-platform` whose PvE entries cost no stamina (ONBOARDING_DESIGN §17.5, 2026-10-15): on a web
+ * portal the stamina wall ends the very sessions that drive average playtime. Same trust model as the
+ * stamina ad — the header is client-declared, and stamina is a soft gate, not a currency.
+ */
+export const PVE_STAMINA_FREE_CLIENT_PLATFORM = 'crazygames';
 
 /** Rename cost (coins). Deducted once per display-name change (commercial wallet deducts → meta renames). */
 export const RENAME_COST = 500;

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { ATTACK_LANES } from '@nw/engine/config';
 import { CAMPAIGN_LEVELS, CAMPAIGN_LEVEL_ORDER } from '@nw/engine/campaign/levels';
 import type { LevelDefinition } from '@nw/engine/campaign/LevelDefinition';
+import { ASSIST_LEVEL_IDS, levelContentRev, CAMPAIGN_CONTENT_REV } from '@nw/engine';
 
 /**
  * Conventions across the 60 campaign levels that `parseLevelDefinition` cannot express.
@@ -36,13 +37,16 @@ describe('campaign level invariants', () => {
     }
   });
 
-  it('all 60 levels share one lanePunish spec (§4.9.5)', () => {
+  it('ch1_lv1 has no lanePunish; all other levels share one spec (§4.9.5)', () => {
     // Per-level tuning of the punish is allowed by the schema and may well happen later.
     // Today the campaign deliberately ships one setting everywhere, and "one level quietly
     // differs" is the failure mode of the batch script that wrote them — so pin the set,
     // not the value: if the campaign moves to per-chapter punishment, this test is the
     // place that records the decision.
-    const specs = new Set(LEVELS.map((lv) => JSON.stringify(lv.lanePunish ?? null)));
+    // ch1_lv1 is the one deliberate exception (ONBOARDING_DESIGN §17.2): a player's first real level
+    // must not punish the single-lane stacking every newcomer starts with.
+    expect(CAMPAIGN_LEVELS.ch1_lv1!.lanePunish).toBeUndefined();
+    const specs = new Set(LEVELS.filter((lv) => lv.id !== 'ch1_lv1').map((lv) => JSON.stringify(lv.lanePunish ?? null)));
     expect(
       [...specs],
       'campaign levels disagree about lanePunish — if that is intended, this test wants updating',
@@ -71,6 +75,23 @@ describe('campaign level invariants', () => {
     for (const lv of LEVELS) {
       const { hp = 1, damage = 1 } = lv.enemyScale ?? {};
       expect(damage, `${lv.id}: damage ${damage} exceeds hp ${hp}`).toBeLessThanOrEqual(hp + 1e-9);
+    }
+  });
+
+  it('assistOnLoss flags match the server-side ASSIST_LEVEL_IDS (ONBOARDING_DESIGN §17.2)', () => {
+    // The client offers the easier retry off the JSON flag; /pve/clear accepts `assist` only for
+    // ASSIST_LEVEL_IDS. If the two drift, the button either never shows or every assisted clear 400s.
+    const flagged = LEVELS.filter((lv) => lv.assistOnLoss).map((lv) => lv.id);
+    expect(flagged).toEqual([...ASSIST_LEVEL_IDS]);
+  });
+
+  it('levels with assist or mid-battle unlocks are marked as current-revision content', () => {
+    // Both features change what the judge must recompute; an older build replaying these levels
+    // must be filtered out by the content-revision gate.
+    for (const lv of LEVELS) {
+      if (lv.assistOnLoss || lv.cardUnlocks) {
+        expect(levelContentRev(lv.id), `${lv.id} changed content without a revision bump`).toBe(CAMPAIGN_CONTENT_REV);
+      }
     }
   });
 });

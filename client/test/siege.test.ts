@@ -153,6 +153,7 @@ describe('judgeRunner — siege re-verification closed loop', () => {
       defenseJson: JSON.stringify(lvl),
       topDeck: [],
       bottomDeck: [],
+      assist: false,
     };
 
     const out = runJudge(req);
@@ -174,6 +175,7 @@ describe('judgeRunner — siege re-verification closed loop', () => {
       defenseJson: '{not json',
       topDeck: [],
       bottomDeck: [],
+      assist: false,
     };
     expect(runJudge(req)).toEqual({ ok: false, stateHash: '', winnerSide: 0, stars: 0, statsJson: '' });
   });

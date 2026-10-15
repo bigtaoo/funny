@@ -9,7 +9,7 @@
 // are called directly (the same entry points a platform adapter would call), so this exercises the
 // real handleDown/handleMove/handleUp chain, not a re-implementation of it.
 //
-// Level: ch1_lv1 (startInk: 40, deterministic seed 65537 — same level already used by
+// Level: ch1_lv1 with INPUT_TEST_LOADOUT pinned (startInk: 40, deterministic seed 65537 — same level already used by
 // gameScenes.ui.ts's recordCampaignReplay). After 5 ticks the bottom hand is deterministically
 // [tower_1, barracks_2, shieldbearer_1, tower_2, tower_1, barracks_2] — verified once via a scratch
 // probe and pinned here; if CARD_DEFINITIONS or the draw RNG ever changes this, these tests fail
@@ -21,8 +21,8 @@ import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n } from '../../src/i18n';
 import { GameRenderer } from '../../src/render/GameRenderer';
 import { createLocalMatch } from '../../src/app/matchEngine';
-import { getLevel } from '../../src/game';
 import { BASE_COLS } from '@nw/engine/config';
+import { inputTestLevel } from './inputTestLevel';
 
 // In-memory storage so initI18n (which persists the locale) has somewhere to write.
 const memStore = (() => {
@@ -35,13 +35,14 @@ const memStore = (() => {
 })();
 initI18n('en', memStore, ['zh', 'en', 'de']);
 
+
 /** Hand-slot indices in the deterministic ch1_lv1 opening hand (see file banner). */
 const SLOT_UNIT_SHIELDBEARER = 2; // cost 6
 const SLOT_BUILDING_TOWER_A  = 0; // cost 12
 const SLOT_BUILDING_TOWER_B  = 3; // cost 12
 
 function buildRenderer() {
-  const level = getLevel('ch1_lv1')!;
+  const level = inputTestLevel();
   const { engine } = createLocalMatch({ level });
   const layout = createLayout(800, 1280);
   const input = new InputManager();

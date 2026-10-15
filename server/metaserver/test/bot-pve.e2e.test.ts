@@ -4,6 +4,7 @@
 // judge that recomputes the run the way a peer client does (client/src/net/judgeRunner.ts
 // runPveJudge): from the level's seed, the server's own card snapshot in the judge request, and the
 // bot's uploaded frames. An honest bot has to come out verified, never flagged.
+import { CAMPAIGN_CONTENT_REV } from '@nw/engine';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createMongo, internalHeaders, type JwtConfig, type MongoHandle } from '@nw/shared';
 import {
@@ -105,7 +106,7 @@ describe.skipIf(!mongo)('botsvc PvE run settles on the real metaserver', () => {
       { aiSeed: 7, difficulty },
     );
     if (!run.won) return { levelId, enter, run };
-    const clear = await post('/pve/clear', { levelId, stars: run.stars, stats: run.stats });
+    const clear = await post('/pve/clear', { levelId, stars: run.stars, stats: run.stats, levelRev: CAMPAIGN_CONTENT_REV });
     const verify = clear.data?.needsReplay
       ? body(await app.inject({
           method: 'POST',

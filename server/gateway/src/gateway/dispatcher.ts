@@ -154,7 +154,10 @@ export class Dispatcher {
         break;
       case 'client_caps': {
         const conn = this.deps.conns.get(accountId);
-        if (conn) conn.canJudge = msg.canJudge;
+        if (conn) {
+          conn.canJudge = msg.canJudge;
+          conn.levelRev = msg.levelRev;
+        }
         break;
       }
       case 'judge_verdict':

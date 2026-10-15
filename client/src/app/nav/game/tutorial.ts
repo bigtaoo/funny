@@ -5,9 +5,11 @@ import * as analytics from '../../../analytics';
 import { getLevel, CAMPAIGN_LEVEL_ORDER } from '../../../game';
 import { TUTORIAL_LEVEL_ID } from '@nw/engine';
 import { WELCOME_MAIL_COINS } from '@nw/shared/onboarding';
-import { t } from '../../../i18n';
+import { t, type TranslationKey } from '../../../i18n';
 import type { AppCtx, Nav } from '../../appCtx';
-import { TUTORIAL_DONE_FLAG } from '../../appConstants';
+import { TUTORIAL_BEATS_DONE_FLAG, TUTORIAL_DONE_FLAG } from '../../appConstants';
+import { levelStaminaCost } from './staminaCost';
+import { CHAIN_AUTO_SEC } from './nextLevel';
 
 type TutorialNav = Pick<Nav, 'goTutorial'>;
 
@@ -43,17 +45,39 @@ export function createTutorialNav(ctx: AppCtx): TutorialNav {
     const level = getLevel(TUTORIAL_LEVEL_ID);
     if (!level) { nav.goLobby(); return; }  // If the tutorial level is missing, skip silently rather than blocking new players.
     state.inLobby = false;
-    platform.onGameplayStart();
-    analytics.track('tutorial_start', { level_id: TUTORIAL_LEVEL_ID });
-    analytics.countAnonymousFunnelStep('tutorial_start');
     const firstLevelId = CAMPAIGN_LEVEL_ORDER[0];
     const freshAccount = !saveManager.getFlag(TUTORIAL_DONE_FLAG) && saveManager.get().progress.cleared.length === 0;
     const nextLevelId = freshAccount && firstLevelId && getLevel(firstLevelId) ? firstLevelId : null;
+    // Resume (§17.7): left during the free fight last time — the beats are learned, so go on to the
+    // first real level instead of replaying a two-minute tutorial from its first beat.
+    if (nextLevelId && saveManager.getFlag(TUTORIAL_BEATS_DONE_FLAG)) {
+      saveManager.setFlag(TUTORIAL_DONE_FLAG, true);
+      analytics.track('tutorial_skip', { step: 'resume' });
+      startLevelFromTutorial(nextLevelId);
+      return;
+    }
+    platform.onGameplayStart();
+    analytics.track('tutorial_start', { level_id: TUTORIAL_LEVEL_ID });
+    analytics.countAnonymousFunnelStep('tutorial_start');
+    // With the analytics notice the graduation card is up and its button already said "next level";
+    // without it the WIN stamp leaves on its own and the chain banner names what comes next (§17.3).
+    const withCard = ctx.statsNoticePending?.() ?? false;
     views.showGame({
-      onGameEnd(_winner, _stats, _replay) {
+      onGameEnd(_winner, _stats, _replay, _summary, banner) {
         saveManager.setFlag(TUTORIAL_DONE_FLAG, true);
         analytics.track('tutorial_complete', { level_id: TUTORIAL_LEVEL_ID });
         analytics.countAnonymousFunnelStep('tutorial_complete');
+        const next = nextLevelId ? getLevel(nextLevelId) : null;
+        if (nextLevelId && next && banner && !withCard) {
+          platform.onGameplayStop(); // goCampaign sends the matching start
+          banner.showChainBanner({
+            nextName: t(next.nameKey as TranslationKey),
+            autoSec: CHAIN_AUTO_SEC,
+            onNext: () => startLevelFromTutorial(nextLevelId),
+            onMap: () => nav.goCampaignMap(),
+          });
+          return;
+        }
         if (nextLevelId) startLevelFromTutorial(nextLevelId);
         else nav.goLobby({ fade: true }); // exiting a match — one of the transitions that cross-fade
       },
@@ -80,7 +104,9 @@ export function createTutorialNav(ctx: AppCtx): TutorialNav {
           footnote: t('entryNotice.stats'),
           onFootnoteShown: () => ctx.acknowledgeStatsNotice?.(),
         } : {}),
+        lastSpawnTick: Math.max(...level.waves.entries.map((e) => e.atTick + (e.count - 1) * (e.spacingTicks ?? 0))),
         onStep(stepKey) {
+          if (stepKey === 'graduate') saveManager.setFlag(TUTORIAL_BEATS_DONE_FLAG, true);
           analytics.track('tutorial_step', { level_id: TUTORIAL_LEVEL_ID, step_key: stepKey });
           if ((analytics.ANONYMOUS_FUNNEL_STEPS as readonly string[]).includes(stepKey)) {
             analytics.countAnonymousFunnelStep(stepKey as analytics.AnonymousFunnelStep);
@@ -103,7 +129,7 @@ export function createTutorialNav(ctx: AppCtx): TutorialNav {
     const level = getLevel(levelId);
     if (!level) { nav.goCampaignMap(); return; }
     analytics.track('level_attempt', { level_id: levelId, stars_before: saveManager.get().progress.stars[levelId] ?? 0 });
-    if (!saveManager.spendStaminaForLevel(levelId, level.staminaCost ?? 10)) { nav.goLevelPrep(levelId); return; }
+    if (!saveManager.spendStaminaForLevel(levelId, levelStaminaCost(platform, level))) { nav.goLevelPrep(levelId); return; }
     analytics.track('screen_view', { scene: 'GameScene' });
     nav.goCampaign(levelId);
   }

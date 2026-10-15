@@ -56,8 +56,9 @@ describe('decodeClient', () => {
     const msg = decodeClient(encodeClientRaw({ duelRespond: { inviteId: 'inv1', accept: true, deck: ['c5'] } }));
     expect(msg).toEqual({ case: 'duel_respond', inviteId: 'inv1', accept: true, deck: ['c5'] });
   });
-  it('client_caps: carries canJudge', () => {
-    expect(decodeClient(encodeClientRaw({ clientCaps: { canJudge: true } }))).toEqual({ case: 'client_caps', canJudge: true });
+  it('client_caps: carries canJudge; an old build without level_rev decodes as revision 0', () => {
+    expect(decodeClient(encodeClientRaw({ clientCaps: { canJudge: true } }))).toEqual({ case: 'client_caps', canJudge: true, levelRev: 0 });
+    expect(decodeClient(encodeClientRaw({ clientCaps: { canJudge: true, levelRev: 2 } }))).toEqual({ case: 'client_caps', canJudge: true, levelRev: 2 });
   });
   it('judge_verdict: carries the full re-simulation report', () => {
     const msg = decodeClient(
@@ -95,7 +96,7 @@ describe('encodeServer', () => {
     const msg: ServerMsg = {
       case: 'judge_request', requestId: 'req1', seed: 7, mode: MatchMode.RANKED, endFrame: 100,
       frames: [{ frame: 1, cmds: [{ side: 0, commands: new Uint8Array([9]) }] }],
-      levelId: '', cardInstancesJson: '{}', equipmentInvJson: '{}', topDeck: ['c1'], bottomDeck: ['c2'],
+      levelId: '', assist: false, cardInstancesJson: '{}', equipmentInvJson: '{}', topDeck: ['c1'], bottomDeck: ['c2'],
     };
     const server = decodeServerRaw(encodeServer(msg));
     expect(server.judgeRequest).toMatchObject({ requestId: 'req1', seed: 7, mode: MatchMode.RANKED, endFrame: 100, topDeck: ['c1'], bottomDeck: ['c2'] });

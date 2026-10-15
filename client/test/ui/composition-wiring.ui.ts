@@ -360,7 +360,7 @@ describe('GameRenderer composition wiring', () => {
     expect(core).toBeDefined();
     expect((renderer.events as Record<string, unknown>).core).toBe(core);
     expect((renderer.input as Record<string, unknown>).core).toBe(core);
-    // Core's onDown/onMove/onUp wiring (and forceTutorialVictory/update/destroy) reach EventsPanel/
+    // Core's onDown/onMove/onUp wiring (and update/destroy) reach EventsPanel/
     // InputPanel through the lazy `events`/`input` back-references the outer assembly overwrites
     // right after constructing each — must be the SAME instances the facade itself holds, not a
     // second pair (see core.ts's file-header comment).

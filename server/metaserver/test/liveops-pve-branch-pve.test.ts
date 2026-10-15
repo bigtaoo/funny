@@ -18,6 +18,7 @@
 // grantCards/recordMaterialGrants use $addToSet-with-$each and $push+$slice, which FakeCollection does
 // not implement. Handlers are called as plain functions against a directly-constructed MetaCore — the
 // route schema would otherwise reject the missing-field bodies before the handler ever sees them.
+import { CAMPAIGN_CONTENT_REV } from '@nw/engine';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { createMongo, type Collections, type JwtConfig, type MongoHandle, type SaveData } from '@nw/shared';
@@ -244,7 +245,7 @@ describe.skipIf(!mongo)('pve verify/clear branch backfill (group E)', () => {
       await seedSave();
       gateway.available = false; // no judge -> normal settle, no spot check
       const { sent, reply } = makeReply();
-      const out = (await pveClearHandler(makeCore(), req({ levelId: 'ch1_lv1', stars: 3 }), reply)) as {
+      const out = (await pveClearHandler(makeCore(), req({ levelId: 'ch1_lv1', stars: 3, levelRev: CAMPAIGN_CONTENT_REV }), reply)) as {
         data: { save: SaveData; granted: Record<string, number> };
       };
       expect(sent.code).toBeUndefined();
@@ -256,7 +257,7 @@ describe.skipIf(!mongo)('pve verify/clear branch backfill (group E)', () => {
     it('spot-checked clear WITH client stats records them on the verification doc as an audit baseline', async () => {
       await seedSave();
       const { sent, reply } = makeReply();
-      const out = (await pveClearHandler(makeCore(), req({ levelId: 'ch1_lv1', stars: 3, stats: { 'kill.archer': 2 } }), reply)) as {
+      const out = (await pveClearHandler(makeCore(), req({ levelId: 'ch1_lv1', stars: 3, levelRev: CAMPAIGN_CONTENT_REV, stats: { 'kill.archer': 2 } }), reply)) as {
         data: { needsReplay: boolean; verifyId: string };
       };
       expect(sent.code).toBeUndefined();
@@ -268,7 +269,7 @@ describe.skipIf(!mongo)('pve verify/clear branch backfill (group E)', () => {
     it('spot-checked clear whose progress write loses every rev race -> 409, no verification recorded', async () => {
       await seedSave();
       const { sent, reply } = makeReply();
-      await pveClearHandler(makeCore({ losingSaves: true }), req({ levelId: 'ch1_lv1', stars: 3 }), reply);
+      await pveClearHandler(makeCore({ losingSaves: true }), req({ levelId: 'ch1_lv1', stars: 3, levelRev: CAMPAIGN_CONTENT_REV }), reply);
       expect(sent.code).toBe(409);
       expect(errOf(sent.payload).code).toBe('REV_CONFLICT');
       expect(await m.collections.pveVerifications.countDocuments({})).toBe(0);

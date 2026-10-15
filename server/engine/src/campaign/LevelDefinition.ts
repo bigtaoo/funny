@@ -53,6 +53,16 @@ export interface LevelDefinition {
   /** Pre-level loadout / banned cards (§4.7). */
   loadout?: string[];
   bannedCards?: string[];
+  /**
+   * Mid-battle card unlocks (ONBOARDING_DESIGN §17.1): at `atTick` the card joins the player's draw pool
+   * and is the next card drawn. Cards must be regular `CARD_DEFINITIONS` ids not already in `loadout`.
+   */
+  cardUnlocks?: { atTick: number; cardId: string }[];
+  /**
+   * Opt-in for the one-tap "easier retry" after a loss (§17.2): the level may be replayed through
+   * {@link import('./assist').applyAssist}. Pure flag — the transform itself is fixed in code.
+   */
+  assistOnLoss?: boolean;
   /** PvE-only level spells force-injected into the player's opening hand (§4.9.2). */
   levelSpells?: { cardId: string; initialCount: number }[];
   /** Scripted answer to a player lane wall (§4.9.5). Omitted → disabled. */

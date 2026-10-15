@@ -20,6 +20,8 @@ interface JudgeReqBody {
   exclude?: string[];
   /** PvE spot-check re-computation (PVE_INTEGRITY §8.6 L1). */
   levelId?: string;
+  /** PvE "easier retry" clear (ONBOARDING_DESIGN §17.2). */
+  assist?: boolean;
   /** CC-1 Hero Roster snapshot (2026-07-26 fix, PVE_INTEGRITY §9): JSON of Record<string, CardInstance>. */
   cardInstancesJson?: string;
   /** JSON of Record<string, EquipmentInstance>, paired with cardInstancesJson. */
@@ -153,6 +155,7 @@ export function startInternalHttp(
             frames: decodeFrames(b.frames),
             exclude: b.exclude ?? [],
             ...(b.levelId ? { levelId: b.levelId } : {}),
+            ...(b.assist === true ? { assist: true } : {}),
             ...(b.cardInstancesJson ? { cardInstancesJson: b.cardInstancesJson } : {}),
             ...(b.equipmentInvJson ? { equipmentInvJson: b.equipmentInvJson } : {}),
             ...(b.defenseJson ? { defenseJson: b.defenseJson } : {}),

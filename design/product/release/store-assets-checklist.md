@@ -325,9 +325,69 @@ iOS/web 拿不到 token 就 `goLogin()`，落在 `LoginScene` 的三个按钮上
 知道旧口令时可用，2026-09-08 就是这么换的），彻底忘了则走 admin 的账号管理重设
 （`server/admin/src/service/accounts.ts`）。
 
-#### App Review Information → Notes（直接贴；2026-10-04 build 19 版，加了录屏与 1.2 / 3.1.1 两段）
+#### 第二审核账号 + 社交数据种子（2026-10-14，build 19 被 2.1(a) 打回后加）
+
+**为什么**：2026-10-14 Apple 以 **2.1(a) Information Needed** 打回 build 19——审核员在 iPad 上点开
+Friends（0 个好友）、Mail（无邮件）、World 聊天（空）、Sect（「先加入家族」），原话要求
+「demo accounts must include pre-populated content … such as chat, friends」，并明说录屏不够。
+一个只通了第一章、0 好友的账号**在社交页上什么都看不到**，举报 / 拉黑（1.2 的核心）也就没有对象可点。
+
+**做法**：第二个账号 + 一份幂等种子脚本，让两个账号互为好友、同一家族、同一宗门，各频道都有对话。
+
+| 项 | 值 |
+|---|---|
+| loginId | `appstore.review2@gamestao.com` |
+| 密码 | **与主账号相同**（用户 2026-10-14 定：审核员只需记一个口令），即 `access.yaml` 键 `funny-appstore-review`；**不进 git** |
+| displayName | `AppReview2`（注册时填；Notes 里按这个名字指路） |
+| 注册方式 | 种子脚本首跑时登录失败（`INVALID_CREDENTIALS`）就走公开 `POST /api/auth/register`——与游戏内 Sign up 同一路径，口令散列 / `publicId` / 新手卡都是正常产出 |
+
+**种子脚本**：[`server/scripts/seedAppReviewAccounts.mjs`](../../../server/scripts/seedAppReviewAccounts.mjs)，
+纯 `fetch` 走公开玩家 API（和真客户端同一条路，不碰数据库）。每一步先读现状、缺什么补什么，可反复跑：
+
+| 步骤 | 内容 | 花费 |
+|---|---|---|
+| 好友 | 主号发请求，review2 接受 | 0 |
+| 私聊 | 两人来回 4 条（会话已存在则跳过） | 0 |
+| 家族 | 主号建 `Ink Squad` / `[APRV]`，review2 申请、主号批准；设家族公告 | 0 |
+| 家族聊天 | 双方共 3 条 | 0 |
+| 宗门 | 主号（族长）在当前赛季分片建 `Paper Pact` / `[APRV]` | **5000 金币，只一次** |
+| 宗门聊天 | 双方共 2 条 | 0 |
+| 世界聊天 | 主号 2 条 | 每条 50 金币 |
+| 邮件 | 双方各寄一封 | 0 |
+
+赛季分片在家族建好**之后**才解析（分片选择是「宗门 > 家族 > 独行」，先同族才能保证两人落在同一分片），
+两个号解析出的 `worldId` 不一致时脚本会打警告。
+
+**金币要先补**：2026-10-14 首跑在建宗门那步报 `INSUFFICIENT_FUNDS`——截图里审核员那 26,955 是沙盒购买时的显示值，
+主号实际余额不够 5000（注册时就是故意 0，见上表）。补法走 admin 补偿工单（OPS_DESIGN §3），单张上限
+`COMP_COINS_CAP_PER_TICKET` = 2500，所以开 **3 张 2500**（宗门 5000 + 世界聊天 2×50，余量留给下次重跑）发给主号
+`publicId 104496720`。脚本会先自动领取主号未领的系统金币邮件、打印余额；钱不够的付费步骤只警告跳过、退出码 3，
+其余步骤照常完成，补完钱重跑即可。首跑结果：注册 review2（`publicId 719346582`）、好友、私聊、家族 `fam:APRV`
++ 公告 + 群聊均已完成，分片 `s1-2`。
+
+**每次提审前重跑一次**：世界 / 家族 / 宗门聊天 7 天过期，私聊和邮件 30 天过期；已有内容不会重复发。
+
+```bash
+NW_REVIEW_PASSWORD='<funny-appstore-review 的口令>' node D:/funny/server/scripts/seedAppReviewAccounts.mjs
+```
+
+（`NW_REVIEW2_PASSWORD` 不设就沿用 `NW_REVIEW_PASSWORD`。口令用 `sops -d secrets/infra/access.yaml` 查。）
+
+**ASC 两处要改**：「Sign-In Information」仍填主账号；第二账号写进 Notes 的 `DEMO ACCOUNTS` 段（下面那块）。
+
+#### App Review Information → Notes（直接贴；2026-10-14 版，加了 DEMO ACCOUNTS 段）
 
 ```
+DEMO ACCOUNTS
+Account 1 (use in "Sign-In Information"): appstore.review@gamestao.com
+Account 2: appstore.review2@gamestao.com (same password as account 1)
+Both are regular player accounts (there is only one account type). They are friends,
+members of the same family ("Ink Squad") and sect ("Paper Pact"), and already have
+private messages, family/sect/world chat, a family announcement and mail.
+To test chat and moderation live, sign in with account 1 on one device and account 2
+on another: Social tab -> Friends -> AppReview2 -> Chat; Family / Sect / World tabs for
+group chat; Mail tab for mail. Report and Block are on every message and player name.
+
 SCREEN RECORDING (physical device, build 19)
 https://nivara.gamestao.com/review/app-review-build19.mp4
 It shows the Terms of Use (EULA) before login, reporting a message, and blocking a user.

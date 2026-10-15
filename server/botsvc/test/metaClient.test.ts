@@ -2,6 +2,7 @@
 // literal, never touching the real fetch-based deviceLogin implementation). Mocks globalThis.fetch.
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { MetaClient } from '../src/metaClient';
+import { CAMPAIGN_CONTENT_REV } from '@nw/engine';
 
 const BASE = 'http://meta:18080';
 
@@ -69,7 +70,7 @@ describe('MetaClient PvE calls (BOTSVC_DESIGN §3.5) — the client\'s own endpo
     expect(await meta.pveVerify('jwt', 'v1', 900, frames)).toMatchObject({ verified: true });
     expect(calls.map((c) => [c.method, c.url.slice(BASE.length), c.auth, c.body])).toEqual([
       ['POST', '/pve/enter', 'Bearer jwt', { levelId: 'ch1_lv2' }],
-      ['POST', '/pve/clear', 'Bearer jwt', { levelId: 'ch1_lv2', stars: 3, stats: { 'kill.archer': 2 } }],
+      ['POST', '/pve/clear', 'Bearer jwt', { levelId: 'ch1_lv2', stars: 3, stats: { 'kill.archer': 2 }, levelRev: CAMPAIGN_CONTENT_REV }],
       ['POST', '/pve/verify', 'Bearer jwt', { verifyId: 'v1', endFrame: 900, frames }],
     ]);
   });

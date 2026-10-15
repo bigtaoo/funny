@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import {
   ErrorCode, err, ok, findPveLevel, bumpCappedCounter, readCounterField,
-  STAMINA_AD_AMOUNT, STAMINA_AD_DAILY_CAP, STAMINA_AD_CLIENT_PLATFORM,
+  STAMINA_AD_AMOUNT, STAMINA_AD_DAILY_CAP, STAMINA_AD_CLIENT_PLATFORM, PVE_STAMINA_FREE_CLIENT_PLATFORM,
   type RedisLike,
 } from '@nw/shared';
 import { getOrCreateSave } from '../../save.js';
@@ -34,6 +34,10 @@ export async function pveEnterHandler(core: MetaCore, req: FastifyRequest, reply
     return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'level locked'));
   }
 
+  // CrazyGames: no stamina wall (ONBOARDING_DESIGN §17.5) — unlock/ban checks above still apply.
+  if (clientPlatformOf(req) === PVE_STAMINA_FREE_CLIENT_PLATFORM) {
+    return ok({ stamina: await core.readStaminaSnapshot(accountId, now()) });
+  }
   const staminaCost = level.staminaCost ?? DEFAULT_STAMINA_COST;
   const staminaResult = await deductStamina(cols, accountId, staminaCost, now());
   if (!staminaResult.ok) {

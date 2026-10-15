@@ -39,6 +39,8 @@ export interface ResultSceneCallbacks {
    * the primary CTA into "retry".
    */
   secondaryAction?: { label: string; icon: IconKind; onTap(): void };
+  /** Placed right after `secondaryAction` — a lost assist level's plain retry (ONBOARDING_DESIGN §17.2). */
+  extraSecondary?: { label: string; icon: IconKind; onTap(): void };
   /** Unified profile-popup extras (rank/ELO + family/sect) — see ProfilePopup's `fetchExtra`. Omitted offline/AI. */
   getProfileExtra?(publicId: string): Promise<ProfileExtra>;
   /**
@@ -53,5 +55,9 @@ export interface ResultSceneCallbacks {
    * only the hero badge, no medallion row, and an "up next" teaser naming the level the primary CTA
    * leads to, so the screen reads as one step of a run rather than a stats page.
    */
-  firstWin?: { nextName: string };
+  firstWin?: {
+    nextName: string;
+    /** One more line under the teaser — the next-day hero gift earned by this clear (§17.4). */
+    giftLine?: string;
+  };
 }

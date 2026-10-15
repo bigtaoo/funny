@@ -1,4 +1,5 @@
 import type { LevelDefinition } from './LevelDefinition';
+import { CARD_DEFINITIONS } from '../config';
 import { MAX_BASE_LEVEL, fail, int, isObject, num, optStringArray, str } from './levelSchema/helpers';
 import { parseObjective } from './levelSchema/objective';
 import { parseWaves } from './levelSchema/waves';
@@ -71,6 +72,24 @@ export function parseLevelDefinition(raw: unknown, ctx = 'level'): LevelDefiniti
   if (loadout) level.loadout = loadout;
   const bannedCards = optStringArray(raw.bannedCards, `${ctx}.bannedCards`);
   if (bannedCards) level.bannedCards = bannedCards;
+
+  if (raw.cardUnlocks !== undefined) {
+    if (!Array.isArray(raw.cardUnlocks)) fail(`${ctx}.cardUnlocks`, 'expected an array');
+    level.cardUnlocks = (raw.cardUnlocks as unknown[]).map((u, i) => {
+      const up = `${ctx}.cardUnlocks[${i}]`;
+      if (!isObject(u)) fail(up, 'expected a {atTick, cardId} object');
+      const atTick = int(u.atTick, `${up}.atTick`);
+      const cardId = str(u.cardId, `${up}.cardId`);
+      if (atTick < 1) fail(`${up}.atTick`, `must be >= 1, got ${atTick}`);
+      if (!CARD_DEFINITIONS.some((c) => c.id === cardId)) fail(`${up}.cardId`, `unknown card '${cardId}'`);
+      if (level.loadout?.includes(cardId)) fail(`${up}.cardId`, `'${cardId}' is already in the loadout`);
+      return { atTick, cardId };
+    });
+  }
+  if (raw.assistOnLoss !== undefined) {
+    if (typeof raw.assistOnLoss !== 'boolean') fail(`${ctx}.assistOnLoss`, 'expected a boolean');
+    level.assistOnLoss = raw.assistOnLoss;
+  }
 
   if (raw.levelSpells !== undefined) {
     if (!Array.isArray(raw.levelSpells)) fail(`${ctx}.levelSpells`, 'expected an array');

@@ -57,9 +57,27 @@ export const BASE_LABEL_FADE_SEC = 0.4;
 /** Post-release feedback line lifetime (then fades over STRIP_FADE_SEC). */
 export const FEEDBACK_SEC = 2;
 export const STRIP_FADE_SEC = 0.3;
-/** Finale: wait at most this long for the field to clear after the meteor, then this beat before WIN. */
-export const FINALE_MAX_SEC = 2;
+/** Free phase: this beat between the engine's win and the WIN stamp. */
 export const FINALE_PAUSE_SEC = 0.5;
+/**
+ * Free phase fallback: if the engine has not settled this many ticks after the last scripted spawn
+ * (an enemy wedged somewhere), call the win anyway — the tutorial never strands a player.
+ */
+export const FREE_SETTLE_TICKS = 900;
+/**
+ * Free phase idle prompt (§17.7): this long without playing a card while enemies are on the board
+ * freezes the fight on a "play a card" prompt that stays up until a card is played — so an idle
+ * player never reaches the fallback win with an empty base.
+ */
+export const FREE_IDLE_PROMPT_SEC = 5;
+/** Idle prompt up → the ghost card starts its loop (the player has already sat out FREE_IDLE_PROMPT_SEC). */
+export const FREE_IDLE_GHOST_SEC = 1;
+/** WIN stamp → leave, when no graduation card is needed (§17.1). */
+export const WIN_HOLD_SEC = 1.4;
+/** The mid-fight new-card callout: strip + breathing frame on its hand slot. */
+export const NEW_CARD_CALLOUT_SEC = 4;
+/** The card the tutorial's `cardUnlocks` hands out mid-fight (ch0_tutorial.json). */
+export const TUTORIAL_NEW_CARD = 'archer_1';
 /** WIN banner → graduation card. */
 export const GRAD_CARD_DELAY_SEC = 0.5;
 export const GRAD_POP_SEC = 0.25;

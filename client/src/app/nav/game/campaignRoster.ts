@@ -9,6 +9,7 @@
 import * as analytics from '../../../analytics';
 import { getLevel, CAMPAIGN_LEVEL_ORDER, achievementStatDelta, type AIDifficulty } from '../../../game';
 import { computeStars, buildStarContext } from '@nw/engine/campaign/stars';
+import { applyAssist, ASSIST_MAX_STARS } from '@nw/engine';
 import { t, type TranslationKey } from '../../../i18n';
 import { allEquippedSkins, skinEquipKey } from '../../../game/meta/skinDefs';
 import { genUuid } from '../../../platform/uuid';
@@ -23,25 +24,15 @@ import type { IconKind } from '../../../render/icons';
 import { matchBadgeTelemetry } from '../../../scenes/ResultScene/badges';
 import { buildEquipmentActions } from './equipmentActions';
 import { createStaminaAd } from './staminaAd';
-import { nextLevelAfterWin, NEXT_LEVEL_AUTO_SEC } from './nextLevel';
+import { levelStaminaCost } from './staminaCost';
+import { isEarlyLevel, newCardsFor, unlockCalloutsFor, routeCampaignResult } from './campaignResult';
 import type { MountOpts } from '../../AppViews';
 import type { AppCtx, Nav } from '../../appCtx';
 import { TOKEN_KEY, inkHintGate, buildHintFor } from '../../appConstants';
 import { pickPracticeDifficulty } from '../lobby';
-import { resolveRealLayerInterlude } from '../../../scenes/realLayerInterludeArt';
 
 type CampaignRosterNav = Pick<Nav,
   'goGame' | 'goCampaignMap' | 'goLevelPrep' | 'goCardRoster' | 'goEquipment' | 'goCampaign'>;
-
-/**
- * The first five campaign levels — the stretch the anonymous funnel follows level by level, that
- * shows no midgame ad, and whose first clears get the compact result (ONBOARDING_DESIGN §15).
- */
-const EARLY_LEVEL_COUNT = 5;
-function isEarlyLevel(levelId: string): boolean {
-  const i = CAMPAIGN_LEVEL_ORDER.indexOf(levelId);
-  return i >= 0 && i < EARLY_LEVEL_COUNT;
-}
 
 /** See goCardRoster's SLG-fetch comment. */
 const CARD_ROSTER_SLG_BUDGET_MS = 2500;
@@ -135,6 +126,20 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
     });
   }
 
+  /**
+   * Start the next level from the banner over the battle just won: same stamina charge and attempt
+   * event as the prep screen's Start, minus the prep screen. Short of stamina, the prep screen takes
+   * over, since buying / watching for stamina lives there.
+   */
+  function chainInto(nextId: string): void {
+    const next = getLevel(nextId);
+    if (!next) { goCampaignMap(); return; }
+    if (!saveManager.spendStaminaForLevel(nextId, levelStaminaCost(platform, next))) { goLevelPrep(nextId); return; }
+    analytics.track('level_attempt', { level_id: nextId, stars_before: saveManager.get().progress.stars[nextId] ?? 0, chained: true });
+    analytics.track('screen_view', { scene: 'GameScene' });
+    goCampaign(nextId);
+  }
+
   function goLevelPrep(levelId: string): void {
     const level = getLevel(levelId);
     if (!level) { goCampaignMap(); return; }
@@ -146,7 +151,7 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
     });
     analytics.track('screen_view', { scene: 'LevelPrepScene' });
     // A4 stamina system: cost is deducted at entry (onStart), not on clear — no refund on retreat/loss.
-    const staminaCost = level.staminaCost ?? 10;
+    const staminaCost = levelStaminaCost(platform, level);
     const onWatchAdStamina = staminaAd.offer(() => goLevelPrep(levelId));
     views.showLevelPrep({
       ...(onWatchAdStamina ? { onWatchAdStamina } : {}),
@@ -160,6 +165,7 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
       levelNumber,
       objective: level.objective,
       ...(level.rewards ? { rewards: level.rewards } : {}),
+      ...newCardsFor(levelId),
       // Both optional per level, so what stands between a player and a level is data: ch1_lv1 — the
       // first real level, entered straight from the tutorial — carries neither (ONBOARDING_DESIGN
       // §11.7). Its chapter-intro text moved to `story.outroKey` and plays after the win instead;
@@ -386,17 +392,34 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
     return `lv${n}_${phase}` as analytics.AnonymousFunnelStep;
   }
 
-  function goCampaign(levelId: string | undefined): void {
-    const level = levelId ? getLevel(levelId) : null;
-    if (!level || !levelId) { nav.goLobby(); return; }
+  /**
+   * The easier retry a lost assist level offers (ONBOARDING_DESIGN §17.2): straight back into the
+   * battle, skipping the prep screen the player just saw. Stamina is still charged; if it falls short
+   * the prep screen takes over, since that is where buying / watching for stamina lives.
+   */
+  function retryAssisted(levelId: string): void {
+    const level = getLevel(levelId);
+    if (!level) { goCampaignMap(); return; }
+    if (!saveManager.spendStaminaForLevel(levelId, levelStaminaCost(platform, level))) { goLevelPrep(levelId); return; }
+    analytics.track('level_attempt', { level_id: levelId, stars_before: saveManager.get().progress.stars[levelId] ?? 0, assist: true });
+    goCampaign(levelId, { assist: true });
+  }
+
+  function goCampaign(levelId: string | undefined, opts: { assist?: boolean } = {}): void {
+    const base = levelId ? getLevel(levelId) : null;
+    if (!base || !levelId) { nav.goLobby(); return; }
+    // The assisted run is the same level with weaker enemies and more ink; the judge rebuilds it with
+    // the same applyAssist from the `assist` flag on /pve/clear, so the replay still verifies.
+    const assist = opts.assist === true && base.assistOnLoss === true;
+    const level = assist ? applyAssist(base) : base;
     state.inLobby = false;
     platform.onGameplayStart();
-    analytics.track('game_start', { mode: 'campaign', level_id: levelId });
+    analytics.track('game_start', { mode: 'campaign', level_id: levelId, ...(assist ? { assist: true } : {}) });
     const startStep = anonLevelStep(levelId, 'start');
     if (startStep) analytics.countAnonymousFunnelStep(startStep);
     const campaignStartTs = Date.now();
     views.showGame({
-      onGameEnd(winner, stats, replay, summary) {
+      onGameEnd(winner, stats, replay, summary, banner) {
         // Persist the replay to disk first (once), serving both the result-screen playback and
         // potential L1 spot-check re-evaluation (§8.6).
         const kept = keepReplay(replay);
@@ -413,6 +436,8 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
             unitsKilled: stats[0].unitsKilled,
           });
           stars = computeStars(level.rewards?.starThresholds, ctx);
+          // An assisted clear counts, but is worth one star at most — the server caps it too.
+          if (assist) stars = Math.min(stars, ASSIST_MAX_STARS);
           analytics.track('level_complete', {
             level_id: levelId,
             stars,
@@ -425,7 +450,7 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
           if (stars > 0) {
             const clearStep = anonLevelStep(levelId, 'clear');
             if (clearStep) analytics.countAnonymousFunnelStep(clearStep);
-            void saveManager.recordClear(levelId, stars, kept, achievementStatDelta(stats[0]));
+            void saveManager.recordClear(levelId, stars, kept, achievementStatDelta(stats[0]), assist);
           }
         } else {
           analytics.track('game_end', {
@@ -439,42 +464,8 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
         // computeBadges the ResultScene renders. Local player is owner 0 in campaign.
         const outcome = winner === 0 ? 'win' : winner === 1 ? 'loss' : 'draw';
         analytics.track('match_badges', { mode: 'campaign', result: outcome, level_id: levelId, ...matchBadgeTelemetry(stats[0], outcome) });
-        const outroTexts = winner === 0 && level.story?.outroKey ? [t(level.story.outroKey as TranslationKey)] : undefined;
-        // Each chapter's last level (chN_lv10.json) carries a `realLayerKey` — the Tao/Anna
-        // "real layer" beat for that chapter (world.md「章末真实层」). Shown as its own
-        // illustrated interlude after the result panel, before actually returning to the map;
-        // every other level (or a non-win) has no interlude, so `proceedToMap` is just
-        // `goCampaignMap` (see resolveRealLayerInterlude's own unit tests for the branching).
-        const interlude = resolveRealLayerInterlude(level, winner);
-        const proceedToMap = interlude
-          ? () => views.showRealLayerInterlude(interlude.illustrationUrl, interlude.textKey, { onFinish: () => goCampaignMap() })
-          : goCampaignMap;
-        // A lost level offers the retry first (through level prep, which charges the stamina) and
-        // keeps the map one tap away — before, a defeat only had "back to map".
-        // No midgame ad around the first five levels (ONBOARDING_DESIGN §15.5).
-        const early = isEarlyLevel(levelId);
-        if (winner !== 0) {
-          void nav.goResult(winner, stats, 0, kept, undefined, undefined, outroTexts,
-            () => goLevelPrep(levelId), t('result.retry'), undefined,
-            { label: t('result.backToMap'), icon: 'mapPin', onTap: proceedToMap }, undefined, { skipAd: early });
-          return;
-        }
-        // A clear offers the next level first and keeps the map one tap away (ONBOARDING_DESIGN §13).
-        const nextId = nextLevelAfterWin(levelId, stars > 0 || !firstClear, !!interlude);
-        if (!nextId) {
-          void nav.goResult(winner, stats, 0, kept, undefined, undefined, outroTexts, proceedToMap, t('result.backToMap'),
-            undefined, undefined, undefined, { skipAd: early });
-          return;
-        }
-        // The first clear of an early level gets the compact screen with an "up next" teaser (§15.4).
-        const nextKey = getLevel(nextId)?.nameKey;
-        const firstWin = early && firstClear && nextKey ? { nextName: t(nextKey as TranslationKey) } : undefined;
-        // No detour here any more (ONBOARDING_DESIGN §15.2): the reward loop waits for the player's own
-        // first trip to the lobby — routing the ch1_lv2 win there cut lv3 starts from 72% to 19%.
-        void nav.goResult(winner, stats, 0, kept, undefined, undefined, outroTexts,
-          () => goLevelPrep(nextId), t('result.nextLevel'), undefined,
-          { label: t('result.backToMap'), icon: 'mapPin', onTap: proceedToMap },
-          firstClear ? NEXT_LEVEL_AUTO_SEC : undefined, { skipAd: early, ...(firstWin ? { firstWin } : {}) });
+        routeCampaignResult(ctx, { goCampaignMap, goLevelPrep, retryAssisted, chainInto },
+          { levelId, base, level, winner, stats, kept, stars, firstClear, banner });
       },
       onExitToLobby() {
         analytics.track('level_abandon', { level_id: levelId, phase: 'in_game', ...analytics.battleProps() });
@@ -488,6 +479,7 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
         (outcome, tick) => analytics.track('build_hint', { level_id: levelId, outcome, tick })),
       // Replay labels: human at the bottom, the level's forces at the top (owner-indexed).
       players: { bottom: ctx.playerName(), top: t('replay.aiOpponent') },
+      ...unlockCalloutsFor(levelId, level.cardUnlocks, saveManager.get().progress.cleared),
       // Hero Roster → engine (card level + per-card equipment buff blueprints, §9) and to the
       // renderer (worn gear drawn on units, §20.4). PvE-only; PvP omits both (hard wall).
       cardInstances: toEngineCardInstances(saveManager.get().cardInv ?? {}),

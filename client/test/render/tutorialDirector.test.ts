@@ -5,7 +5,8 @@
  * setupTick is reached ("move, then freeze"), only the guided card *by id* near its target is let
  * through (aim-assisted onto the target), a wrong drop is counted and starts the ghost demo, the
  * meteor anchor is the 2×2 covering the most enemies, and the meteor ends in WIN → graduation card →
- * finish() on the card's button. No "Next" button exists anywhere.
+ * finish() on the card's button. No "Next" button exists anywhere. In the free fight after the meteor
+ * an idle player is frozen on a "play a card" prompt until they play (§17.7).
  *
  * Run with: npm test — the default suite's include covers every *.test.ts under test/.
  */
@@ -53,8 +54,8 @@ vi.mock('pixi.js-legacy', () => {
 import * as PIXI from 'pixi.js-legacy';
 import { TutorialDirector, type TutorialConfig, type TutorialHost } from '../../src/render/TutorialDirector';
 import { bestMeteorAnchor } from '../../src/render/TutorialDirector/geometry';
-import { BEATS } from '../../src/render/TutorialDirector/beats';
-import { Side, type GameState } from '../../src/game';
+import { BEATS, FREE_IDLE_PROMPT_SEC, FREE_SETTLE_TICKS, TUTORIAL_NEW_CARD } from '../../src/render/TutorialDirector/beats';
+import { CardType, GamePhase, Side, type GameState } from '../../src/game';
 import type { ILayout, Rect } from '../../src/layout/ILayout';
 
 function fakeLayout(): ILayout {
@@ -158,7 +159,8 @@ describe('TutorialDirector', () => {
     expect(ghost.ghostOn).toBe(false);
   });
 
-  it('meteor beat: aim-assists onto the 2×2 covering the cluster, then WIN → graduation card → finish', () => {
+  /** Plays the three guided beats; leaves the director in the free phase. */
+  const playBeats = (): void => {
     runTo(BEATS[0]!.setupTick); director.allowCardPlay('infantry_1', BEATS[0]!.col, 1); frame();
     runTo(BEATS[1]!.setupTick); director.allowCardPlay('tower_1', BEATS[1]!.col, 0); frame();
     state.units.push(
@@ -168,16 +170,92 @@ describe('TutorialDirector', () => {
     runTo(BEATS[2]!.setupTick);
     expect(config.onStep).toHaveBeenLastCalledWith('beat_spell');
     expect(director.allowCardPlay('meteor_1', 3, 11)).toEqual({ col: 2, row: 9 }); // dropped a cell off, snapped
-    frame(); // release → finale
-    for (const u of state.units) u.isDead = true; // the meteor landed
+    frame(); // release → free
+  };
+
+  it('after the meteor the fight runs free: any card anywhere, no win until the engine settles', () => {
+    playBeats();
+    expect(config.onStep).toHaveBeenLastCalledWith('graduate');
+    expect(director.engineFrozen).toBe(false);
+    expect(director.allowCardPlay('barracks_1', 7, 0)).toEqual({ col: 7, row: 0 });
+    for (const u of state.units) u.isDead = true; // the board is clear, but waves are still to come
+    frame(); frame(1);
+    expect(host.forceVictory).not.toHaveBeenCalled();
+    expect(director.isFinished).toBe(false);
+  });
+
+  it('frames the mid-fight unlock once it reaches the hand', () => {
+    playBeats();
+    const ring = (director as unknown as { ui: { slotRing: { visible: boolean } } }).ui.slotRing;
+    frame();
+    expect(ring.visible).toBe(false);
+    state.bottomPlayer.hand.slots[3] = { card: { id: TUTORIAL_NEW_CARD } } as never;
+    frame();
+    expect(ring.visible).toBe(true);
+    frame(5);
+    expect(ring.visible).toBe(false);
+  });
+
+  it('engine settles without the analytics notice: WIN stamp, then leaves by itself', () => {
+    playBeats();
+    (state as { phase: GamePhase }).phase = GamePhase.GameOver;
     frame(); frame(0.6);
     expect(host.forceVictory).toHaveBeenCalledTimes(1);
-    expect(config.onStep).toHaveBeenLastCalledWith('graduate');
     expect(director.isFinished).toBe(true);
+    expect(host.finish).not.toHaveBeenCalled();
+    frame(1.5);
+    expect(host.finish).toHaveBeenCalledTimes(1);
+  });
 
-    // Graduation card pops in, then its button (and only its button) leaves.
+  it('falls back to the win a while after the last spawn when a straggler never dies', () => {
+    config.lastSpawnTick = 1000;
+    playBeats();
+    runTo(1000 + FREE_SETTLE_TICKS - 1); frame(1);
+    expect(host.forceVictory).not.toHaveBeenCalled();
+    runTo(1000 + FREE_SETTLE_TICKS); frame(0.6);
+    expect(host.forceVictory).toHaveBeenCalledTimes(1);
+  });
+
+  it('an idle player in the free fight is frozen on a play-a-card prompt until they play again', () => {
+    playBeats();
+    (state.bottomPlayer as unknown as { ink: number }).ink = 3;
+    state.bottomPlayer.hand.slots[3] = { card: { id: 'scout_1', cardType: CardType.Unit, cost: 2 } } as never;
+    frame(FREE_IDLE_PROMPT_SEC - 0.2);
+    expect(director.engineFrozen).toBe(false);
+    frame(0.3);
+    expect(director.engineFrozen).toBe(true);
+    // Aimed at the enemy nearest the base (the lowest row), with the affordable unit.
+    expect(host.highlightUnitLane).toHaveBeenLastCalledWith(2);
+    for (let i = 0; i < 60; i++) frame(1); // it never gives up, and never wins for them
+    expect(director.engineFrozen).toBe(true);
+    expect((director as unknown as { ghostOn: boolean }).ghostOn).toBe(true);
+    expect(host.forceVictory).not.toHaveBeenCalled();
+    expect(director.allowCardPlay('scout_1', 5, 1)).toEqual({ col: 5, row: 1 }); // any play lifts it
+    frame();
+    expect(director.engineFrozen).toBe(false);
+    frame(FREE_IDLE_PROMPT_SEC - 0.2);
+    expect(director.engineFrozen).toBe(false);
+  });
+
+  it('no idle prompt when nothing in hand is affordable — the fight runs on until ink comes in', () => {
+    playBeats();
+    (state.bottomPlayer as unknown as { ink: number }).ink = 1;
+    state.bottomPlayer.hand.slots[3] = { card: { id: 'scout_1', cardType: CardType.Unit, cost: 2 } } as never;
+    frame(FREE_IDLE_PROMPT_SEC + 1);
+    expect(director.engineFrozen).toBe(false);
+    (state.bottomPlayer as unknown as { ink: number }).ink = 2;
+    frame();
+    expect(director.engineFrozen).toBe(true);
+  });
+
+  it('with the analytics notice pending the graduation card shows, and only its button leaves', () => {
+    config.footnote = 'We count anonymous stats.';
+    playBeats();
+    (state as { phase: GamePhase }).phase = GamePhase.GameOver;
+    frame(); frame(0.6);
+    expect(director.isFinished).toBe(true);
     frame(0.6); frame(0.3);
-    const cta = (director as unknown as { ctaRect: Rect }).ctaRect;
+    const cta = (director as unknown as { ui: { ctaRect: Rect } }).ui.ctaRect;
     expect(director.handleDown(0, 0)).toBe(true);
     expect(host.finish).not.toHaveBeenCalled();
     director.handleDown(cta.x + 1, cta.y + 1);

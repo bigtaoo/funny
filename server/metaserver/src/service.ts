@@ -92,6 +92,7 @@ export class MetaService implements MetaHandlers {
   pveEnter(...args: Parameters<PveService['pveEnter']>) { return this.pveSvc.pveEnter(...args); }
   pveClear(...args: Parameters<PveService['pveClear']>) { return this.pveSvc.pveClear(...args); }
   pveVerify(...args: Parameters<PveService['pveVerify']>) { return this.pveSvc.pveVerify(...args); }
+  claimHeroGift(...args: Parameters<PveService['claimHeroGift']>) { return this.pveSvc.claimHeroGift(...args); }
 
   // ── economy ──
   getShopItems(...args: Parameters<EconomyService['getShopItems']>) { return this.economySvc.getShopItems(...args); }

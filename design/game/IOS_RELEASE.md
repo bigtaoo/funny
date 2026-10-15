@@ -811,6 +811,12 @@ OTA 管线**不需要 macOS runner**（无原生编译），`ubuntu-latest` 即�
 - [x] **build 12 拒审（3.1.1 兑换码 + 1.2 UGC）的返工**（2026-09-29，§9.2 / §9.3）：**2026-10-04 以 build 19 重新提交，
       Waiting for Review**。录屏 `https://nivara.gamestao.com/review/app-review-build19.mp4`（随官网部署，
       `/review/*` 走 Worker 支持 Range，Safari 才能播），回复见 [`APP_REVIEW_REPLY_BUILD13.md`](APP_REVIEW_REPLY_BUILD13.md)
+- [ ] **build 19 拒审（2.1(a) Information Needed，2026-10-14）**：审核员在 iPad 上看到的好友 / 邮件 / 世界聊天 / 宗门全是空的，
+      要求演示账号预置聊天与好友内容。**数据问题，不换包**：加第二审核账号 `appstore.review2@gamestao.com` +
+      幂等种子脚本 `server/scripts/seedAppReviewAccounts.mjs`（好友、私聊、家族 + 公告 + 群聊、宗门 + 群聊、世界聊天、邮件），
+      Notes 加 `DEMO ACCOUNTS` 段，见 `store-assets-checklist.md §1.2b`「第二审核账号 + 社交数据种子」。
+      顺手修了截图里看到的 Sect 页底栏少了 Sect 自己那格（`socialTabRail.ts`，SOCIAL_DESIGN.md 已记）。
+      review2 与主号同口令，脚本首跑自动注册。待办：跑脚本 → 改 ASC Notes → 回复 Apple → 用 build 19 重新提交
 
 - [x] Apple Developer：建 App ID（勾 IAP）+ ASC App 记录
 - [x] 生成 Distribution 证书 `.p12` / App Store 描述文件 / ASC API Key `.p8`
