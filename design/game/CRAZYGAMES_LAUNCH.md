@@ -153,6 +153,10 @@
   - 部署顺序：PR #180 合入 main → CI → server-deploy（含 analyticsvc 新步骤白名单）与 client-deploy 都在 `73847e183` 上成功，`version.json` = `73847e1`，之后才上传。
   - 包：干净 detached worktree 构建，拷出到 `D:cg-buildscrazygames-main-73847e183`（388 文件 / 24 MB）。
   - 预览核查（用户自己的 CG 号，进大厅）：SDK Log 顺序完整（sdkInit → gameLoaded → loading start/stop → requestUserToken → gameplayStop → addAuthListener）、Warnings 为空；`funnel_anon_daily` 当天收到 `open_desktop` / `loaded_desktop` / `alive_60s`，`_id` 尾部为 `|73847e183|desktop`——新版本号与按设备拆分都已生效。新号流程同样没法在预览里测（CG 登录跟着用户账号走）。
+- **2026-10-15 版本更新（build `2e18192f`，main `c741bef15`，12:43 上传，已 Active；旧 `a27a66ba` 变 Accepted，没有重新审核）**：内容 = ONBOARDING_DESIGN §17（教学与第一场合并、第一章 1–8 关难度重排 + 每关一张新卡、1–3 关 Easier Retry、首通自动连关、CG 上战役不耗体力、第 5 关送试用英雄 Max + 大厅倒计时贴纸、教学空闲冻结提示、教学中途离开直接续到 ch1_lv1）。
+  - 部署顺序：PR #182 合入 main → CI → server-deploy 成功（`POST /pve/hero-gift/claim` 从 404 变 401 确认上线）之后才上传。
+  - 包：`client/crazygames-c741bef15.zip`（388 项 / 21.2 MB，上传后已删）。
+  - 预览核查（用户自己的 CG 号）：总大小 23.1 MB、首次加载 2.2 MB、Warnings 为空；SDK 检测到 Gameplay Start/Stop、Loading Start/Stop、Mute audio、Get User Token、Auth Listener、Room join listener。第一关新手牌、空闲提示、失败页 Easier Retry 都看到了。面板 Load time 95 s 是在大厅停太久才进第一场造成的，不代表真实加载。新访客教程路径和真机没测。
 - **`NW_CRAZYGAMES_GAME_ID` 的值曾是 `133101`**（2026-10-05 核，旧条目；现为 `136102`，见上）：取自预览页 `__NEXT_DATA__` 的 `props.pageProps.game.id`。
   门户 URL 里的 `8f3d95b1-c884-4175-bb28-08728dae174d` 是 **`submission.id`**，不是 token 里的 `gameId`——
   官方 User 文档的 token 示例就是数字（`"gameId": "20267"`）。配错不会卡人（服务端拒 token → §2 回退设备访客），但等于没配。
