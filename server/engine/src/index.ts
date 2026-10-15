@@ -127,6 +127,8 @@ export type {
 export { parseLevelDefinition, LevelParseError } from './campaign/levelSchema';
 export { TUTORIAL_LEVEL_ID, TUTORIAL_TEACHING_CARDS } from './campaign/tutorial';
 export { CAMPAIGN_LEVELS, CAMPAIGN_LEVEL_ORDER, getLevel } from './campaign/levels';
+export { applyAssist, ASSIST_ENEMY_SCALE, ASSIST_BONUS_INK } from './campaign/assist';
+export { CAMPAIGN_CONTENT_REV, levelContentRev, hasLevelContent } from './campaign/contentRev';
 export {
   buildStarContext,
   computeStarScore,
