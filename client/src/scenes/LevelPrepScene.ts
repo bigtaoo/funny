@@ -36,7 +36,7 @@ export interface LevelPrepCallbacks {
   intro?: string;
   /** Clear rewards (coins / materials) for this level, shown as a rewards preview row. */
   rewards?: LevelRewards;
-  /** Stamina cost to play this level (A4), deducted at Start (not at clear). Default = 10. */
+  /** Stamina cost to play this level (A4), deducted at Start (not at clear). Default = 10; 0 = free entry, line hidden. */
   staminaCost: number;
   /** Current stamina snapshot (A4): { current, regenAt }. */
   getStamina(): { current: number; regenAt: number };
@@ -161,6 +161,7 @@ export class LevelPrepScene implements Scene {
     const stamina = this.cb.getStamina();
     const stCost = this.cb.staminaCost;
     const stInsufficient = stamina.current < stCost;
+    const stFree = stCost <= 0; // free entry (CrazyGames, ONBOARDING_DESIGN §17.5): no stamina line at all
     const sbW = Math.round(w * 0.6);
     const sbH = Math.round(h * 0.08);
     const sbX = (w - sbW) / 2;
@@ -184,6 +185,7 @@ export class LevelPrepScene implements Scene {
       true,
     );
     stTxt.anchor.set(0.5, 0.5); stTxt.x = w / 2; stTxt.y = stBarY + stBarH / 2;
+    stTxt.visible = !stFree;
     this.container.addChild(stTxt);
     if (stInsufficient) {
       // The row spans the Start button's width; with the ad refill two buttons share it, coin left.

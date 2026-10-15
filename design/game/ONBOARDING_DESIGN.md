@@ -580,3 +580,60 @@ CG 新包上线后对比 10-12 版。所有数都能按版本拆（匿名计数�
 - **埋点**：`intro_complete` / `intro_skip` 不再发出，从 analyticsvc `DEFAULT_CONFIG` 删除；`ONBOARDING_STEPS` 去掉 `intro_seen` 一步，运维后台 `ONBOARDING_LABELS` 同步删除。**analyticsvc 要和新客户端包一起部署**，否则旧服务端的漏斗会多出一个恒 0 的末步。
 - **保留**：设置 → 帮助 →「重看开场故事」仍播完整 7 行 `IntroScene`（`nav.goIntro` 唯一调用方，插画 `intro_notebook.png` 仍被它引用）；各章结尾的插画过场（`IllustratedInterludeScene`）不动。
 - **验证**：Chrome 新 origin 走一遍 年龄/同意 → 单机试玩 → 跳过教学进 `ch1_lv1` → 退出 → 大厅 → 战役地图，地图上无卡片。
+
+## 17. CG 前十分钟重做（2026-10-15）
+
+起因：CG 首周数据（记忆 `crazygames-first-live-day-2026-10-09`）。会话时长几乎完全由「打过几关」决定——0 关 p50 75 s、1 关 140 s、2–3 关 ~250 s、4–5 关 ~8 min、6+ 关 ~20 min；而单局胜率是 lv1 62% → lv2 99% → lv3 87% → lv4 89% → lv5 64%，第一关反而是最难的一关，打完 lv4 的会话只有 ~6%。§13–16 的小修补救不回来，本节是整体重排。
+
+**目标**：`alive_60s / loaded` 桌面 ≥ 65%、手机 ≥ 85%；打到 lv4+ 的会话 ≥ 40%。日程：10-15..20 开发（④→①→②→③→⑤），10-21 难度模拟 + 真浏览器全流程，10-22 上传 CG（赶 10-23..29 的评分窗口）。⑤ 时间不够可砍。
+
+### 17.1 ① 教学与第一战合一
+
+`ch0_tutorial` 不再是「三拍 + 毕业卡 + 切场景进 `ch1_lv1`」，而是一场连续的 ~2 分钟战斗：
+
+- 三拍（出兵 / 建塔 / 陨石）照旧，engine 冻结与 ghost hand 不变。
+- 陨石拍之后**不出毕业卡**、不强制胜利：导演进入 `free` 阶段，放开出牌限制，后续波次逐渐加码。
+- 中途来一张新卡（弓手）：关卡 JSON 新字段 `cardUnlocks: [{atTick, cardId}]`（引擎层、确定性：到点把卡加入抽牌池并让下一次抽牌必出它），导演在它进手牌时弹一句「新卡！」。
+- **必胜**：基地血量下限钳制保留到战斗结束；波次放完、场上清空即胜利（`survive` 目标照常走引擎的 `game_over`）。
+- 结束后不进结算页：设 `tutorial_done` → 走 §17.3 的关间横幅 → 直接开 `ch1_lv1`。
+- 跳过按钮保留（直接进 `ch1_lv1`）。
+- 教学关仍不上报 `/pve/clear`、不走回放校验（它从来不在 `PVE_LEVELS` 里）。
+- 埋点：`graduate` 一步改义为「三拍完成、进入自由战斗」，`tutorial_complete` = 整场打完。
+
+### 17.2 ② 第一章前 8 关：单调难度 + 每关一张新卡
+
+- **卡组逐关解锁**（关卡 JSON 的 `loadout`，服务端回放共用同一份）：教学 = 步兵 / 塔 / 陨石 + 中途弓手；lv1 + 兵营；lv2 + 盾兵；lv3 + 加速；lv4 + 步兵 II；lv5 + 塔 II（外加 §17.5 的英雄试用卡）；lv6 + 弓手 II；lv7 + 盾兵 II；lv8 + 兵营 II = 全 12 张。本关新增的卡在手牌上标「NEW」（客户端对比上一关 loadout 得出，无需新字段）。
+- **难度单调**：新 lv1 明显比旧 lv1 软（`enemyScale` 往下压、波次减少）；旧 lv1 那个强度挪到 lv4–5。用 `client/test/difficulty` 的模拟器逐关调，`baseline.json` 重新钉住；卡组变少本身会让关卡变难，lv6–8 也要复测。
+- **失败一键「降低难度重试」**（lv1–3）：引擎 `applyAssist(level)` 是一个确定性变换（敌人血量 / 伤害 ×0.7、开局墨水 +20）。客户端以 assist 模式重开；`/pve/clear` 带 `assist: true`，服务端只接受 lv1–3 的 assist，并把星数封顶为 1；抽查记录里存 assist，judge 请求带 assist，判官用同一变换复算——回放校验照样成立。
+- **关卡内容版本门**（新增，防误判）：现在 peer judge 不看客户端版本，iOS / 微信的老包会拿旧关卡 JSON 复算新关卡，误判后给新玩家发「疑似作弊」邮件。所以：
+  - `@nw/shared` 新增 `CAMPAIGN_CONTENT_REV` 和 `LEVEL_CONTENT_REV`（关卡 id → 最后一次改内容的版本）。
+  - 客户端在 `ClientCaps` 里报自己的版本（新字段 `level_rev`；老包没有这个字段，按 1 处理）。
+  - gateway 给关卡 L 选判官时只选版本 ≥ `LEVEL_CONTENT_REV[L]` 的连接；没有合格判官 → 按现有规则算「未校验、放行」。
+  - `/pve/clear` 带 `levelRev`；提交方版本低于该关的内容版本时不抽查（老包玩的是旧内容，谁也判不了它），只对改过的关卡放行，其它关卡的抽查不受影响。
+
+### 17.3 ③ 关间不停顿
+
+- 赢了（非章末、非插画过场）：在战斗场景里显示 1.5 s 横幅（星数 + 下一关的新卡），然后直接 `goCampaign(next)`——不经 `ResultScene`、不经地图、不经出战准备页。
+- 每 5 关（lv5、lv10…）照旧走结算页 → 地图；横幅上有「地图」小按钮，点了也回地图。
+- 输了仍走结算页（重试 / 降低难度重试 / 回地图）。
+- 关间不放插屏广告（插屏只留在每 5 关的结算页）。CG SDK 的 `gameplayStop` / `gameplayStart` 照旧成对调用。
+- 兜底方案（场内横幅做不成时）：保留切场景，但跳过结算页。
+
+### 17.4 ⑤ D1 钩子：lv5 英雄试用、明天归你
+
+- lv5 用 `cardUnlocks` 在开局不久塞进英雄战斗卡 `max_1`，导演 / HUD 弹「英雄 Max 加入！明天正式归你」。
+- 服务端：`ch1_lv5` 首通时写一条待领英雄（`max`，可领时间 = 下一个 UTC 日 0 点）；到点后在大厅领取，走 `grantCards`。
+- 提醒：lv5 结算页一行「明天来领 Max」；大厅放一张倒计时卡（复用 `firstRewardLoop` 的卡位），到点变「领取」。
+- 已知局限：拥有 `max` 在第一章不会把 Max 放进手牌（卡牌只加属性，手牌由关卡 `loadout` 决定）；它在第二章（loadout 含 `max_1/2`）和 PvP 里才起作用。
+
+### 17.5 ④ CG 上去掉体力
+
+- 服务端 `pveEnterHandler`：`x-nw-platform === PVE_STAMINA_FREE_CLIENT_PLATFORM`（`crazygames`）时不扣体力，直接返回当前体力快照；关卡解锁 / 封禁校验不变。
+- 客户端 `IPlatform.freePveStamina`（只有 `CrazyGamesPlatform` 设为 true）→ `levelStaminaCost()` 返回 0；出战准备页在消耗为 0 时不显示体力行，补体力 / 看广告按钮本来就只在不够时出现。
+- 信任模型与体力广告相同：平台头由客户端声明，可以伪造；体力只是软门槛，不是货币，接受这个风险。
+
+### 17.6 部署与评估
+
+- **服务端、gateway、客户端必须一起发**：关卡 JSON、judge 协议字段、`/pve/clear` 新字段都是两侧共用的。analyticsvc 跟着改漏斗标签。
+- 建议同时问 CG 支持：Basic Launch 能否重跑一轮。
+- 评估（上线后一周，按设备拆）：`alive_60s / loaded`；`tutorial_complete / tutorial_start`；`lvN_clear / lvN_start` 是否单调下降且 lv1–3 ≥ 90%；打到 lv4+、lv6+ 的会话占比；assist 使用率；lv5 首通 → 次日回访领 Max 的比例。

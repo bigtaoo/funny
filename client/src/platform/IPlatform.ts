@@ -213,6 +213,12 @@ export interface IPlatform {
   readonly staminaRewardedAd?: boolean;
 
   /**
+   * Campaign levels cost no stamina (ONBOARDING_DESIGN §17.5). Only `CrazyGamesPlatform` sets it; the
+   * server skips the deduction for the same `x-nw-platform` (`PVE_STAMINA_FREE_CLIENT_PLATFORM`).
+   */
+  readonly freePveStamina?: boolean;
+
+  /**
    * Show a rewarded video ad for the DailyScene "Ads" tab (ECONOMY_NUMBERS §6.2). Only ever called
    * when {@link hasRewardedAd} is true. `accountId` is forwarded to platforms whose SSV callback
    * needs it explicitly (AdMob's `customRewardText` — WeChat's SSV already identifies the account

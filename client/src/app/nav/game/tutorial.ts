@@ -8,6 +8,7 @@ import { WELCOME_MAIL_COINS } from '@nw/shared/onboarding';
 import { t } from '../../../i18n';
 import type { AppCtx, Nav } from '../../appCtx';
 import { TUTORIAL_DONE_FLAG } from '../../appConstants';
+import { levelStaminaCost } from './staminaCost';
 
 type TutorialNav = Pick<Nav, 'goTutorial'>;
 
@@ -103,7 +104,7 @@ export function createTutorialNav(ctx: AppCtx): TutorialNav {
     const level = getLevel(levelId);
     if (!level) { nav.goCampaignMap(); return; }
     analytics.track('level_attempt', { level_id: levelId, stars_before: saveManager.get().progress.stars[levelId] ?? 0 });
-    if (!saveManager.spendStaminaForLevel(levelId, level.staminaCost ?? 10)) { nav.goLevelPrep(levelId); return; }
+    if (!saveManager.spendStaminaForLevel(levelId, levelStaminaCost(platform, level))) { nav.goLevelPrep(levelId); return; }
     analytics.track('screen_view', { scene: 'GameScene' });
     nav.goCampaign(levelId);
   }

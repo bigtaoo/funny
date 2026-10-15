@@ -23,6 +23,7 @@ import type { IconKind } from '../../../render/icons';
 import { matchBadgeTelemetry } from '../../../scenes/ResultScene/badges';
 import { buildEquipmentActions } from './equipmentActions';
 import { createStaminaAd } from './staminaAd';
+import { levelStaminaCost } from './staminaCost';
 import { nextLevelAfterWin, NEXT_LEVEL_AUTO_SEC } from './nextLevel';
 import type { MountOpts } from '../../AppViews';
 import type { AppCtx, Nav } from '../../appCtx';
@@ -146,7 +147,7 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
     });
     analytics.track('screen_view', { scene: 'LevelPrepScene' });
     // A4 stamina system: cost is deducted at entry (onStart), not on clear — no refund on retreat/loss.
-    const staminaCost = level.staminaCost ?? 10;
+    const staminaCost = levelStaminaCost(platform, level);
     const onWatchAdStamina = staminaAd.offer(() => goLevelPrep(levelId));
     views.showLevelPrep({
       ...(onWatchAdStamina ? { onWatchAdStamina } : {}),
