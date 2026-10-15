@@ -10,7 +10,7 @@ import { WorldApiClient } from '../../net/WorldApiClient';
 import { getWorldBaseUrl } from '../../net/config';
 import { serverNow } from '../../net/serverClock';
 import { runRewardLoop } from './firstRewardLoop';
-import { runHeroGift } from './heroGift';
+import { runHeroGift, pendingHeroGiftAt, type HeroGiftDeps } from './heroGift';
 import type { LobbyView } from '../AppViews';
 import type { AppCtx, Nav } from '../appCtx';
 import type { AIDifficulty } from '../../game';
@@ -190,6 +190,16 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
         navFn();
       });
     }
+    // Next-day hero gift (§17.4): claimed on a lobby arrival once due, or the moment the lobby's
+    // countdown sticker runs out. A function because it closes over `lobby`, assigned just below.
+    const heroGiftDeps = (client: NonNullable<typeof api>): HeroGiftDeps => ({
+      saveManager,
+      client,
+      showGuide: (titleKey, bodyKey, onDismiss) => lobby.showFeatureGuide(titleKey, bodyKey, onDismiss),
+      goRoster: () => nav.goCardRoster(),
+      stillInLobby: () => state.inLobby,
+      now: serverNow,
+    });
     const lobby = views.showLobby({
       onStartGame(_opponentName: string) {
         analytics.click('lobby.practice');
@@ -242,6 +252,11 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
       avatarId: avatarId(),
       pvp: { rank: pvp.rank, elo: pvp.elo },
       getProtectedGamesLeft: () => protectedGamesLeftToday(saveManager.get().pvp, serverNow()),
+      ...(online && api ? {
+        getHeroGiftAt: () => pendingHeroGiftAt(saveManager.get()),
+        onHeroGiftDue: () => { if (state.inLobby) runHeroGift(heroGiftDeps(api)); },
+      } : {}),
+      now: serverNow,
       getCoins: () => saveManager.get().wallet.coins,
       onSaveChanged: (listener: () => void) => saveManager.subscribe(listener),
       offline: state.offlineMode,
@@ -289,14 +304,7 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
     // the daily check-in on the next arrival. Needs the server (mail, gacha, check-in are all online).
     // The pull's Back leads on to the campaign map: the loop is a stop on the way, not a destination.
     // The next-day hero gift (§17.4) goes first: on the day it is due, it is the arrival's one guide.
-    if (online && api && !opts?.fromResize && !runHeroGift({
-      saveManager,
-      client: api,
-      showGuide: (titleKey, bodyKey, onDismiss) => lobby.showFeatureGuide(titleKey, bodyKey, onDismiss),
-      goRoster: () => nav.goCardRoster(),
-      stillInLobby: () => state.inLobby,
-      now: () => Date.now(),
-    })) {
+    if (online && api && !opts?.fromResize && !runHeroGift(heroGiftDeps(api))) {
       const client = api;
       runRewardLoop({
         saveManager,

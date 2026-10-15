@@ -27,6 +27,7 @@ import { BuildPanel } from './LobbyScene/build';
 import { BadgesPanel } from './LobbyScene/badges';
 import { OverlaysPanel } from './LobbyScene/overlays';
 import { matchFound } from './LobbyScene/matchState';
+import { tickHeroGiftSticker } from './LobbyScene/heroGiftSticker';
 import type { EntryNoticeSpec } from '../ui/dialogs/EntryNoticeStrip';
 
 export type { LobbySceneCallbacks } from './LobbyScene/core';
@@ -95,6 +96,7 @@ export class LobbyScene implements Scene {
         core.heroFigure.play(name);
       }
     }
+    tickHeroGiftSticker(core);
   }
 
   destroy(): void {

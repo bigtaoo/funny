@@ -10,6 +10,11 @@ export const log = netLog('app');
 
 /** Set after the tutorial is completed or skipped; prevents auto-entry afterwards. Clearing it via "replay tutorial" in settings allows re-entry (ONBOARDING_DESIGN §3.4). */
 export const TUTORIAL_DONE_FLAG = 'tutorial_done';
+/**
+ * Set when the guided beats are done and the free fight starts (ONBOARDING_DESIGN §17.7). A player who
+ * leaves during the free fight has learned the controls, so the next launch resumes at ch1_lv1.
+ */
+export const TUTORIAL_BEATS_DONE_FLAG = 'tutorial_beats_done';
 /** flags key — the one-time "not enough ink" bubble has been shown (ONBOARDING_DESIGN §9 item 9). */
 export const INK_HINT_FLAG = 'hint.ink';
 /** flags key — the one-time "ink is full, cast a spell" bubble has been shown (ONBOARDING_DESIGN §14.1). */

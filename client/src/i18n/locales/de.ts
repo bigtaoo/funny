@@ -532,6 +532,7 @@ export const de: Record<TranslationKey, string> = {
   'heroGift.result': 'Held {name} gehört ab morgen dir – komm wieder und hol ihn ab!',
   'heroGift.claimed.title': 'Max gehört dir!',
   'heroGift.claimed.body': 'Der Held, der gestern an deiner Seite kämpfte, ist jetzt fest in deiner Truppe.',
+  'heroGift.lobby.countdown': 'Held {name} gehört dir in {time}',
   'chain.next': 'Weiter: {name}',
   'level.rewards.label': 'Belohnung',
   'level.objective.survive': 'Alle Feinde besiegen',
