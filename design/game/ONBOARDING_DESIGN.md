@@ -241,7 +241,7 @@
 | **教学关 `ch0_tutorial` JSON**（满 loadout） | ✅ 已建。`server/engine/src/campaign/levels/ch0_tutorial.json`（2026-09-26 前在 `client/src/game/campaign/levels/`），仅入 `CAMPAIGN_LEVELS` 不入 `CAMPAIGN_LEVEL_ORDER`（不计进度） |
 | **TutorialDirector（三拍先动后停 + 幽灵卡示范 + 拖错反馈 + 落点吸附 + 毕业卡）** | ✅ 2026-10-07 重做（§3.4）。`client/src/render/TutorialDirector.ts` + `TutorialDirector/` |
 | **TutorialDrawPolicy（保证引导卡按拍到手，确定性纯引擎）** | ✅ 已建。`@nw/engine Card.ts`，`GameEngine` 据 `id===ch0_tutorial` 注入（`enterFreePlay()` 随阶段 C 一起删了） |
-| `flags.tutorial_done` + 「重看教学」 | ✅ 已加。`tutorial_done` 门控；设置「帮助 → 重看新手教学」重跑。**`SaveData.flags.tutorial_step` 断点续教未做**（见 §10——⚠️ 与下面「FTUE 漏斗埋点」行提到的 `tutorial_step` **同名不同物**：这里指存档断点续教字段，未建；那里指 analyticsvc 的 `tutorial_step` 埋点事件，已建，两者互不影响，勿混淆） |
+| `flags.tutorial_done` + 「重看教学」 | ✅ 已加。`tutorial_done` 门控；设置「帮助 → 重看新手教学」重跑。**`SaveData.flags.tutorial_step` 精确到拍的断点续教未做**（三拍做完后离开的已有两档续教 `tutorial_beats_done`，见 §17.7；另见 §10——⚠️ 与下面「FTUE 漏斗埋点」行提到的 `tutorial_step` **同名不同物**：这里指存档断点续教字段，未建；那里指 analyticsvc 的 `tutorial_step` 埋点事件，已建，两者互不影响，勿混淆） |
 | 教学关永不失败兜底（基地不可破） | ✅ 已建。导演每 tick 夹 `baseHp≥1` + GameRenderer 未毕业时吞 `game_over/game_draw`（导演独占终局） |
 | SLG 软门槛（通 ch1 解锁）+ 灰显气泡 | ✅ 已接。`progress.isFirstChapterCleared` + 大厅 `worldLocked` 灰显 + `showInfoToast`「通关第一章解锁」 |
 | **首次功能引导机制（`flags.featSeen.*`）** | ✅ 机制已建。`SaveManager.featSeen/markFeatSeen` + 大厅 `showFeatureGuide` + `withGuide`（match/shop/social/cards/daily/world）+ `guide.*` 全语种 + `feature_guide_shown/closed` 埋点（design-doc-audit-2026-07 补齐，见 §7）。**各子页内「?」按钮未逐页接**（见 §10），因此 `feature_guide_replay` 事件暂无调用点 |
@@ -623,7 +623,7 @@ CG 新包上线后对比 10-12 版。所有数都能按版本拆（匿名计数�
 
 - lv5 用 `cardUnlocks` 在开局不久塞进英雄战斗卡 `max_1`，导演 / HUD 弹「英雄 Max 加入！明天正式归你」。
 - 服务端：`ch1_lv5` 首通时写一条待领英雄（`max`，可领时间 = 下一个 UTC 日 0 点）；到点后在大厅领取，走 `grantCards`。
-- 提醒：lv5 结算页一行「明天来领 Max」。~~大厅倒计时卡~~ 没做（见 §17.7）：到点前大厅不提示，到点后进大厅自动领取并弹说明。
+- 提醒：lv5 结算页一行「明天来领 Max」；大厅「战役」入口上一张倒计时贴纸（2026-10-15 补上，见 §17.7），到点后进大厅（或贴纸在大厅里走到 0）自动领取并弹说明。
 - 已知局限：拥有 `max` 在第一章不会把 Max 放进手牌（卡牌只加属性，手牌由关卡 `loadout` 决定）；它在第二章（loadout 含 `max_1/2`）和 PvP 里才起作用。
 
 ### 17.5 ④ CG 上去掉体力
@@ -649,12 +649,14 @@ CG 新包上线后对比 10-12 版。所有数都能按版本拆（匿名计数�
     - 提示内容：指令条「基地需要你！/ 把一张卡拖到战场上，挡住他们。」（`tutorial.idle.*`），点亮离基地最近（行号最小）那个敌兵所在的列，`FREE_IDLE_GHOST_SEC = 1` s 后幽灵手循环演示拖牌。选牌顺序：兵 → 建筑 → 法术里第一张付得起的（`TutorialDirector/idleHint.ts`）。
     - 出任何一张牌即解冻，重新计 5 s。冻结时引擎不走 tick，`FREE_SETTLE_TICKS` 兜底也不走，所以兜底胜只会落到「一直在出牌但没清干净」的玩家头上。
     - 手里没有付得起的牌时不冻结，战斗照常推进到墨水回上来，再弹提示。
+  - **断点续教（2026-10-15，分支 `feat/first-ten-polish`）**：进入 `free` 阶段（`onStep('graduate')`）时写 `tutorial_beats_done` 旗标。新账号（未通任何关）下次启动若已有这个旗标而没有 `tutorial_done`，不再重放教学，直接写 `tutorial_done` 并进 `ch1_lv1`（埋点 `tutorial_skip { step: 'resume' }`）。只做到「三拍做完 / 没做完」两档：自由战斗本身是一场确定性战斗，中途存档续打不值得。§10 的 `SaveData.flags.tutorial_step` 精确到拍的续教仍不做——三拍合计不到 1 分钟，没做完就从头来。
 - **毕业卡只在要挂统计告知（`entryNotice.stats` 脚注）时出现**；其余情况 WIN 章 → §17.3 的横幅（无星数）→ `ch1_lv1`。
 
 **② 前 8 关**
 - 实际卡组（关卡 JSON `loadout`）：lv1 步兵/塔/陨石/弓手/兵营 → lv2 +盾兵 → lv3 +加速 → lv4 +步兵 II → lv5 +塔 II（+开局 150 tick 解锁 `max_1`）→ lv6 +弓手 II → lv7 +盾兵 II → lv8 +兵营 II。
 - `enemyScale`（hp=damage，lv6 除外）：lv1 0.6、lv2 0.714、lv3 0.72、lv4 0.95、lv5 0.88、lv6 1.15/1.08、lv7 0.95、lv8 0.82。数值本身不单调，因为卡组每关在变强、波次在变——单调的是模拟器里的结果，以 `client/test/difficulty/baseline.json` 为准（已重钉）。
 - 出战准备页：本关新卡在一行「NEW」面板里列出（与上一关 loadout 求差）。
+- 难度模拟（2026-10-15 复核，`client/test/difficulty`，与重钉的 `baseline.json` 一致）：零养成（fresh）下 lv1–5 胜率全部 100%（星数 2/2/3/1/2），lv6 60%、lv7 80%、lv8 80%；lv9 起零养成过不去（T2 才 80%）。注意 lv4 零养成只拿 1 星、比 lv5 难，lv6 是前 8 关里最难的一关——上线后看 `lv4/lv6_clear / start` 是否掉到 90% 以下再决定要不要回调。
 - 降低难度重试：`assistOnLoss: true` 的关（lv1–3，与 `ASSIST_LEVEL_IDS` 由客户端测试保持一致）输了，结算页多一个「降低难度重试」按钮 → `applyAssist`（敌人 ×0.7、开局墨水 +20）直接重开，不经出战准备页；客户端和服务端都把星数封顶为 `ASSIST_MAX_STARS = 1`；埋点 `game_start` / `level_attempt` 带 `assist: true`。
 
 **③ 关间不停顿**
@@ -668,4 +670,4 @@ CG 新包上线后对比 10-12 版。所有数都能按版本拆（匿名计数�
 - `/pve/clear` 在 `ch1_lv5` 通关时（普通路径和抽查路径都算）写入，已有则不动——重打不会推迟领取时间。
 - `POST /pve/hero-gift/claim`：没有礼物 404、未到点 400；**先在 `mutateSave` 里标 `claimedAt`，再 `grantCards(..., 'hero_gift')`**，所以并发 / 重放只发一次；已领过的再调用直接返回存档（幂等）。背包满走金币补偿（reason `hero_gift_inv_full`）。
 - 客户端：战斗里 `max_1` 进手牌时弹「英雄 麦克斯 加入战斗！明天起正式归你」（`render/GameRenderer/unlockCallout.ts`，其它关的 `cardUnlocks` 用通用「新卡」文案；只对未通关的关卡弹）；lv5 首通结算页加一行；大厅进入时 `runHeroGift` 优先于首奖励环——到点且未领就领，领到后若仍在大厅弹说明，按钮去卡牌名册。失败静默，下次进大厅重试。
-- **不做倒计时卡**：到点前大厅什么都不显示，提醒只靠战斗弹窗 + 结算页那一行。上线后看「lv5 首通 → 次日领取」比例再决定要不要补。
+- **大厅倒计时贴纸（2026-10-15，分支 `feat/first-ten-polish`）**：有已获得未领取的礼物且未到点时，大厅「战役」入口顶边右侧贴一张纸签「英雄麦克斯：h:mm:ss 后归你」（`scenes/LobbyScene/heroGiftSticker.ts`，摆法同 PvP 按钮上的保护局贴纸），每帧刷新、文字一秒变一次；点它等于点战役入口。走到 0 时贴纸隐藏并当场调 `runHeroGift` 领取。倒计时和到点判断都用 `serverNow()`（`claimableAt` 是服务端时间，本机时钟快了会提前领、吃 400）。只在在线时显示（领取要服务端）。

@@ -233,6 +233,12 @@ export interface LobbySceneCallbacks {
    * §15.5) — read at build time and drawn as a sticker on the hero when online and > 0.
    */
   getProtectedGamesLeft?(): number;
+  /** When the pending hero gift becomes claimable (ms, server clock); null when none is pending (heroGiftSticker.ts). */
+  getHeroGiftAt?(): number | null;
+  /** Fired once when the gift countdown reaches zero while the lobby is up. */
+  onHeroGiftDue?(): void;
+  /** Server-synced clock for countdowns; Date.now() when absent. */
+  now?(): number;
   /**
    * Live soft-currency balance getter (SaveData.wallet.coins mirror); shown in the header (online only).
    * A closure rather than a snapshot value so the header re-renders with the current balance instead of
@@ -314,6 +320,10 @@ export class LobbySceneCore {
   profileChipRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   /** Bounds of the hero's "N games today without ELO loss" sticker (protectSticker.ts); null when hidden. */
   protectStickerRect: Rect | null = null;
+  /** Hero-gift countdown sticker (heroGiftSticker.ts), ticked from update(); null when hidden. */
+  heroGiftLayer: PIXI.Container | null = null;
+  heroGiftLabel: PIXI.Text | null = null;
+  heroGiftAt = 0;
 
   /** Aggregate social unread (friends + chat + mail) → red dot on the social nav slot. */
   socialBadge = 0;
@@ -423,6 +433,8 @@ export class LobbySceneCore {
     this.heroFigure = null;
     this.heroFigureClips = [];
     this.heroFigureSwapTimer = 0;
+    this.heroGiftLabel = null;
+    this.heroGiftLayer = null;
     // The modal overlays are state, not layout: lift them out before the teardown and put them back
     // on top afterwards. Destroying them here while their fields stayed set left the consent card
     // invisible yet still swallowing every lobby tap until the player happened to hit one of its

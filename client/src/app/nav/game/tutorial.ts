@@ -7,7 +7,7 @@ import { TUTORIAL_LEVEL_ID } from '@nw/engine';
 import { WELCOME_MAIL_COINS } from '@nw/shared/onboarding';
 import { t, type TranslationKey } from '../../../i18n';
 import type { AppCtx, Nav } from '../../appCtx';
-import { TUTORIAL_DONE_FLAG } from '../../appConstants';
+import { TUTORIAL_BEATS_DONE_FLAG, TUTORIAL_DONE_FLAG } from '../../appConstants';
 import { levelStaminaCost } from './staminaCost';
 import { CHAIN_AUTO_SEC } from './nextLevel';
 
@@ -45,12 +45,20 @@ export function createTutorialNav(ctx: AppCtx): TutorialNav {
     const level = getLevel(TUTORIAL_LEVEL_ID);
     if (!level) { nav.goLobby(); return; }  // If the tutorial level is missing, skip silently rather than blocking new players.
     state.inLobby = false;
-    platform.onGameplayStart();
-    analytics.track('tutorial_start', { level_id: TUTORIAL_LEVEL_ID });
-    analytics.countAnonymousFunnelStep('tutorial_start');
     const firstLevelId = CAMPAIGN_LEVEL_ORDER[0];
     const freshAccount = !saveManager.getFlag(TUTORIAL_DONE_FLAG) && saveManager.get().progress.cleared.length === 0;
     const nextLevelId = freshAccount && firstLevelId && getLevel(firstLevelId) ? firstLevelId : null;
+    // Resume (§17.7): left during the free fight last time — the beats are learned, so go on to the
+    // first real level instead of replaying a two-minute tutorial from its first beat.
+    if (nextLevelId && saveManager.getFlag(TUTORIAL_BEATS_DONE_FLAG)) {
+      saveManager.setFlag(TUTORIAL_DONE_FLAG, true);
+      analytics.track('tutorial_skip', { step: 'resume' });
+      startLevelFromTutorial(nextLevelId);
+      return;
+    }
+    platform.onGameplayStart();
+    analytics.track('tutorial_start', { level_id: TUTORIAL_LEVEL_ID });
+    analytics.countAnonymousFunnelStep('tutorial_start');
     // With the analytics notice the graduation card is up and its button already said "next level";
     // without it the WIN stamp leaves on its own and the chain banner names what comes next (§17.3).
     const withCard = ctx.statsNoticePending?.() ?? false;
@@ -98,6 +106,7 @@ export function createTutorialNav(ctx: AppCtx): TutorialNav {
         } : {}),
         lastSpawnTick: Math.max(...level.waves.entries.map((e) => e.atTick + (e.count - 1) * (e.spacingTicks ?? 0))),
         onStep(stepKey) {
+          if (stepKey === 'graduate') saveManager.setFlag(TUTORIAL_BEATS_DONE_FLAG, true);
           analytics.track('tutorial_step', { level_id: TUTORIAL_LEVEL_ID, step_key: stepKey });
           if ((analytics.ANONYMOUS_FUNNEL_STEPS as readonly string[]).includes(stepKey)) {
             analytics.countAnonymousFunnelStep(stepKey as analytics.AnonymousFunnelStep);

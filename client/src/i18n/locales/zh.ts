@@ -539,6 +539,7 @@ export const zh = {
   'heroGift.result': '明天起英雄 {name} 正式归你——记得回来领取！',
   'heroGift.claimed.title': '麦克斯归你了！',
   'heroGift.claimed.body': '昨天并肩作战的英雄，现在正式加入你的英雄名册。',
+  'heroGift.lobby.countdown': '英雄{name}：{time} 后归你',
   'chain.next': '下一关：{name}',
   'level.rewards.label': '通关奖励',
   'level.objective.survive': '消灭所有敌人',

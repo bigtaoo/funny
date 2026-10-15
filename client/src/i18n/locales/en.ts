@@ -532,6 +532,7 @@ export const en: Record<TranslationKey, string> = {
   'heroGift.result': 'Hero {name} is yours from tomorrow — come back to claim!',
   'heroGift.claimed.title': 'Max is yours!',
   'heroGift.claimed.body': 'The hero who fought beside you yesterday has joined your roster for good.',
+  'heroGift.lobby.countdown': 'Hero {name} is yours in {time}',
   'chain.next': 'Next: {name}',
   'level.rewards.label': 'Rewards',
   'level.objective.survive': 'Defeat all enemies',
