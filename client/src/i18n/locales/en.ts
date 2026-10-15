@@ -227,6 +227,8 @@ export const en: Record<TranslationKey, string> = {
   'tutorial.b3.title': 'Meteor!',
   'tutorial.b3.body': 'Drop it on the crowd.',
   'tutorial.free.body': 'Hold off the rest - play any card!',
+  'tutorial.idle.title': 'Your base needs you!',
+  'tutorial.idle.body': 'Drag a card onto the field to stop them.',
   'tutorial.newCard.title': 'New card: {name}!',
   'tutorial.newCard.body': 'It shoots from range. Keep it behind your tower.',
   'tutorial.grad.body': 'Protect your notebook. Break theirs.',

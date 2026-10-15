@@ -4,14 +4,16 @@ import { toFp } from '@nw/engine/math/fixed';
 import { ILayout, Rect } from '../layout/ILayout';
 import { t } from '../i18n';
 import type { Phase, TutorialConfig } from './TutorialDirector/types';
-import { buildLayers, drawStrip, clearStrip, drawGradCard, type PanelHost } from './TutorialDirector/panels';
+import { buildLayers, drawStrip, clearStrip, type PanelHost } from './TutorialDirector/panels';
 import { BEATS, BEAT_STEP_KEY, beatText, type BeatSpec } from './TutorialDirector/beats';
 import {
-  IDLE_GHOST_SEC, BASE_LABEL_HOLD_SEC, BASE_LABEL_FADE_SEC, FEEDBACK_SEC, STRIP_FADE_SEC, FINALE_PAUSE_SEC, FREE_SETTLE_TICKS, WIN_HOLD_SEC, NEW_CARD_CALLOUT_SEC, TUTORIAL_NEW_CARD, GRAD_CARD_DELAY_SEC, GRAD_POP_SEC, SHAKE_SEC, SHAKE_AMP, LANE_SNAP_COLS, BUILDING_SNAP_COLS, METEOR_SNAP_CELLS,
+  IDLE_GHOST_SEC, BASE_LABEL_HOLD_SEC, BASE_LABEL_FADE_SEC, FEEDBACK_SEC, STRIP_FADE_SEC, FINALE_PAUSE_SEC, FREE_SETTLE_TICKS, FREE_IDLE_PROMPT_SEC, FREE_IDLE_GHOST_SEC, NEW_CARD_CALLOUT_SEC, TUTORIAL_NEW_CARD, SHAKE_SEC, SHAKE_AMP, LANE_SNAP_COLS, BUILDING_SNAP_COLS, METEOR_SNAP_CELLS,
 } from './TutorialDirector/beats';
-import { bestMeteorAnchor, beatTargetPoint, meteorAnchorCenter } from './TutorialDirector/geometry';
+import { bestMeteorAnchor, beatTargetPoint, meteorAnchorCenter, stripAvoidRects } from './TutorialDirector/geometry';
 import { dispatchHit } from '../ui/hits';
-import { drawSlotRing, fillGhostLayer, poseGhost, GHOST_LOOP_SEC } from './TutorialDirector/ghostDemo';
+import { drawSlotRing, drawTargetRing, fillGhostLayer, poseGhost, GHOST_LOOP_SEC } from './TutorialDirector/ghostDemo';
+import { pickIdleHint } from './TutorialDirector/idleHint';
+import { Graduation } from './TutorialDirector/graduation';
 
 export type { TutorialConfig, TutorialBeatDone } from './TutorialDirector/types';
 
@@ -29,8 +31,10 @@ export type { TutorialConfig, TutorialBeatDone } from './TutorialDirector/types'
  * until the guided card lands, then runs on while the next beat's enemies arrive — no dead waits
  * (§11.2 rules 5–6; ticks tuned headless, see beats.ts). After the meteor the fight carries on
  * (§17.1, 'free'): every card plays, the level's later waves arrive, and the card its `cardUnlocks`
- * hands out gets a callout once it reaches the hand. The engine's own `survive` win ends it: WIN
- * stamp, then out — through the graduation card only when that card carries the analytics notice.
+ * hands out gets a callout once it reaches the hand. A player who stops playing there is frozen on a
+ * "play a card" prompt (§17.7) until they play again, so nobody idles into a win. The engine's own
+ * `survive` win ends it: WIN stamp, then out — through the graduation card only when that card
+ * carries the analytics notice.
  *
  * Idle escalation (§11.4) — never plays for the player: breathing card frame + lit target from the
  * first frame; after IDLE_GHOST_SEC[beat] without touching a card a ghost card glides from the hand
@@ -66,9 +70,6 @@ export interface TutorialHost {
 // Base never falls: clamp HP to this floor when it drops below (§3.5 fallback).
 const NEVER_FAIL_BASE_FLOOR = 1;
 
-// Blue = player highlight (panels.ts keeps its own copy for the strip border).
-const C_BLUE = 0x4a7fc1;
-
 export class TutorialDirector {
   private readonly host: TutorialHost;
   private readonly layout: ILayout;
@@ -90,13 +91,14 @@ export class TutorialDirector {
   private idleSec = 0;
   private stripHideAt = Infinity;
   private victoryAt = Infinity;
-  /** No graduation card: the WIN stamp holds until this time, then the tutorial leaves by itself. */
-  private leaveAt = Infinity;
   /** The free phase's new-card callout: shown once, its card framed until newCardUntil. */
   private newCardShown = false;
   private newCardUntil = -Infinity;
-  private gradAt = Infinity;
-  private footnoteShown = false;
+  /** Free phase: seconds since the last card play (or prompt), for the idle prompt. */
+  private freeIdleSec = 0;
+  /** Free phase: the idle prompt's target while it is up — the fight is frozen on it. */
+  private idleHint: BeatSpec | null = null;
+  private readonly graduation: Graduation;
   private shakeLeft = 0;
   private readonly shakeOrigin = { x: 0, y: 0 };
 
@@ -119,44 +121,20 @@ export class TutorialDirector {
   /** Hand slot of the current guided card, -1 when not in hand. */
   private slotIndex = -1;
 
-  // UI layers (built by panels.ts).
-  private slotRing!: PIXI.Graphics;
-  private clusterRing!: PIXI.Graphics;
-  private baseLabels!: PIXI.Container;
-  private ghost!: PIXI.Container;
-  private strip!: PIXI.Container;
-  private gradCard!: PIXI.Container;
-  /** Auto-continue progress along the graduation button's foot (lazily added to gradCard). */
-  private gradBar: PIXI.Graphics | null = null;
-  private skipBtn!: PIXI.Container;
-  private skipBtnRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
-  private ctaRect: Rect | null = null;
+  /** UI layers — built and redrawn by panels.ts, animated here. */
+  private readonly ui: PanelHost;
 
   constructor(host: TutorialHost) {
     this.host = host;
     this.layout = host.layout;
     this.root = new PIXI.Container();
     host.container.addChild(this.root);
-    buildLayers(this.panelHost());
+    // buildLayers fills in every layer before anything reads them.
+    this.ui = { root: this.root, layout: this.layout, skipBtnRect: { x: 0, y: 0, w: 0, h: 0 }, ctaRect: null } as PanelHost;
+    buildLayers(this.ui);
+    this.graduation = new Graduation(() => this.ui, host.config);
     this.shakeOrigin.x = host.container.x;
     this.shakeOrigin.y = host.container.y;
-  }
-
-  /** Bundles what panels.ts's build/draw functions need instead of them closing over `this`. */
-  private panelHost(): PanelHost {
-    const d = this;
-    return {
-      root: this.root, layout: this.layout,
-      get slotRing() { return d.slotRing; }, set slotRing(v) { d.slotRing = v; },
-      get clusterRing() { return d.clusterRing; }, set clusterRing(v) { d.clusterRing = v; },
-      get baseLabels() { return d.baseLabels; }, set baseLabels(v) { d.baseLabels = v; },
-      get ghost() { return d.ghost; }, set ghost(v) { d.ghost = v; },
-      get strip() { return d.strip; }, set strip(v) { d.strip = v; },
-      get gradCard() { return d.gradCard; }, set gradCard(v) { d.gradCard = v; },
-      get skipBtn() { return d.skipBtn; }, set skipBtn(v) { d.skipBtn = v; },
-      get skipBtnRect() { return d.skipBtnRect; }, set skipBtnRect(v) { d.skipBtnRect = v; },
-      get ctaRect() { return d.ctaRect; }, set ctaRect(v) { d.ctaRect = v; },
-    };
   }
 
   /** True once the scripted win is in — GameRenderer stops settling engine win/loss before this. */
@@ -168,16 +146,11 @@ export class TutorialDirector {
   handleDown(x: number, y: number): boolean {
     if (this.phase === 'done') return true;
     if (this.phase === 'graduate') {
-      // No card: a tap just hurries the WIN stamp along.
-      if (this.leaveAt !== Infinity) { this.leave(); return true; }
-      // Only the button leaves; the rest of the screen is inert so a stray tap can't skip the moment.
-      if (this.ctaRect && this.gradCard.scale.x >= 0.999) {
-        dispatchHit([{ rect: this.ctaRect, fn: () => this.leave() }], x, y);
-      }
+      if (this.graduation.tap(x, y)) this.leave();
       return true;
     }
     // The skip button goes through the shared table like every other button (its tap cue lives there).
-    if (dispatchHit([{ rect: this.skipBtnRect, sound: 'sfx.ui.back', fn: () => this.host.onSkip() }], x, y)) return true;
+    if (dispatchHit([{ rect: this.ui.skipBtnRect, sound: 'sfx.ui.back', fn: () => this.host.onSkip() }], x, y)) return true;
     return false; // board/hand interactions pass through
   }
 
@@ -197,10 +170,14 @@ export class TutorialDirector {
    * at, or null to reject the play. Outside a prompt every play is rejected; inside one only the guided
    * card itself (by id — barracks is a building too, haste a spell too) near its target is accepted
    * (snapped onto the target); anything else counts as a wrong drop and plays the ghost demo straight
-   * away (§11.4).
+   * away (§11.4). In the free phase every play goes, and lifts the idle prompt if it is up.
    */
   allowCardPlay(cardId: string, col: number, row: number): { col: number; row: number } | null {
-    if (this.phase === 'free') return { col, row };
+    if (this.phase === 'free') {
+      this.freeIdleSec = 0;
+      if (this.idleHint) this.pendingRelease = true;
+      return { col, row };
+    }
     if (!this.prompting || this.pendingRelease) return null;
     const target = this.snapCardPlay(cardId, col, row);
     if (!target) {
@@ -250,11 +227,10 @@ export class TutorialDirector {
         this.tickBeats(state, dt);
         break;
       case 'free':
-        this.tickFree(state);
+        this.tickFree(state, dt);
         break;
       case 'graduate':
-        if (this.time >= this.leaveAt) this.leave();
-        else if (this.time >= this.gradAt) this.animateGradCard();
+        if (this.graduation.tick(this.time)) this.leave();
         break;
       case 'done':
         break;
@@ -276,14 +252,18 @@ export class TutorialDirector {
       if (state.elapsedTicks >= beat.setupTick) this.prompt(state);
       return;
     }
-    // Prompt up: track the guided card, idle escalation, ghost demo.
+    this.tickPrompt(state, dt, beat, IDLE_GHOST_SEC[this.beatIndex]!);
+  }
+
+  /** A prompt is up (a beat's or the free phase's idle one): track its card, idle escalation, ghost demo. */
+  private tickPrompt(state: GameState, dt: number, beat: BeatSpec, ghostSec: number): void {
     this.slotIndex = state.bottomPlayer.hand.slots.findIndex((s) => s?.card.id === beat.cardId);
     if (beat.kind === 'spell') this.meteorAnchor = bestMeteorAnchor(state);
     this.animateRings(beat);
     if (!this.holdingCard) {
       if (this.highlightDirty) { this.highlightTarget(beat); this.highlightDirty = false; }
       this.idleSec += dt;
-      if (!this.ghostOn && this.idleSec >= IDLE_GHOST_SEC[this.beatIndex]!) this.setGhost(true);
+      if (!this.ghostOn && this.idleSec >= ghostSec) this.setGhost(true);
     }
     if (this.ghostOn) this.animateGhost(dt, beat);
   }
@@ -291,21 +271,35 @@ export class TutorialDirector {
   private prompt(state: GameState): void {
     const beat = BEATS[this.beatIndex]!;
     this.phase = 'beat';
-    this.prompting = true;
-    this.engineFrozen = true;
     this.promptAt = this.time;
-    this.idleSec = 0;
-    this.ghostShown = false;
     this.wrongDrops = 0;
-    this.slotIndex = state.bottomPlayer.hand.slots.findIndex((s) => s?.card.id === beat.cardId);
-
-    this.highlightTarget(beat);
-    this.meteorAnchor = beat.kind === 'spell' ? bestMeteorAnchor(state) : null;
-    this.animateRings(beat);
-
+    this.raisePrompt(state, beat);
     const text = beatText(beat.kind);
     this.showStrip(text.title, text.body, Infinity);
     this.host.config.onStep?.(BEAT_STEP_KEY[beat.kind]);
+  }
+
+  /** Freeze the fight on `beat`: frame its card, light its target. The caller shows the strip. */
+  private raisePrompt(state: GameState, beat: BeatSpec): void {
+    this.prompting = true;
+    this.engineFrozen = true;
+    this.idleSec = 0;
+    this.ghostShown = false;
+    this.slotIndex = state.bottomPlayer.hand.slots.findIndex((s) => s?.card.id === beat.cardId);
+    this.highlightTarget(beat);
+    this.meteorAnchor = beat.kind === 'spell' ? bestMeteorAnchor(state) : null;
+    this.animateRings(beat);
+  }
+
+  /** Unfreeze after a prompt: drop the ghost, the lit target and the frames. */
+  private lowerPrompt(): void {
+    this.pendingRelease = false;
+    this.prompting = false;
+    this.engineFrozen = false;
+    this.setGhost(false);
+    this.host.clearLaneHighlights();
+    this.ui.slotRing.visible = false;
+    this.ui.clusterRing.visible = false;
   }
 
   private highlightTarget(beat: BeatSpec): void {
@@ -316,13 +310,7 @@ export class TutorialDirector {
 
   private release(): void {
     const beat = BEATS[this.beatIndex]!;
-    this.pendingRelease = false;
-    this.prompting = false;
-    this.engineFrozen = false;
-    this.setGhost(false);
-    this.host.clearLaneHighlights();
-    this.slotRing.visible = false;
-    this.clusterRing.visible = false;
+    this.lowerPrompt();
     this.host.config.onBeatDone?.({
       beat: beat.kind,
       idle_ms: Math.round((this.time - this.promptAt) * 1000),
@@ -338,6 +326,7 @@ export class TutorialDirector {
     if (beat.kind === 'spell') {
       this.shakeLeft = SHAKE_SEC;
       this.phase = 'free';
+      this.freeIdleSec = 0;
       this.showStrip(null, t('tutorial.free.body'), this.time + FEEDBACK_SEC * 2);
       // `graduate` now marks the end of the guided part (§17.1); the free fight follows.
       this.host.config.onStep?.('graduate');
@@ -348,9 +337,23 @@ export class TutorialDirector {
    * After the meteor the fight is the player's. Frames the mid-fight unlock once it reaches the hand,
    * and calls the win when the engine settles — on any settlement: the base floor clamp runs after the
    * engine's tick, so a big leak could in principle end the run as an engine loss, which the tutorial
-   * never is. `lastSpawnTick + FREE_SETTLE_TICKS` is the fallback should a straggler never die.
+   * never is. `lastSpawnTick + FREE_SETTLE_TICKS` is the fallback should a straggler never die — it
+   * counts engine ticks, which stand still while the idle prompt has the fight frozen, so only a
+   * player who keeps playing can reach it.
    */
-  private tickFree(state: GameState): void {
+  private tickFree(state: GameState, dt: number): void {
+    if (this.idleHint) {
+      if (this.pendingRelease) this.endIdlePrompt();
+      else this.tickPrompt(state, dt, this.idleHint, FREE_IDLE_GHOST_SEC);
+      return;
+    }
+    if (this.victoryAt === Infinity && !this.holdingCard) {
+      this.freeIdleSec += dt;
+      if (this.freeIdleSec >= FREE_IDLE_PROMPT_SEC && this.time >= this.newCardUntil) {
+        const hint = pickIdleHint(state);
+        if (hint) { this.startIdlePrompt(state, hint); return; }
+      }
+    }
     const slots = state.bottomPlayer.hand.slots;
     if (!this.newCardShown) {
       if (slots.some((s) => s?.card.id === TUTORIAL_NEW_CARD)) {
@@ -361,10 +364,10 @@ export class TutorialDirector {
     }
     if (this.time < this.newCardUntil) {
       this.slotIndex = slots.findIndex((s) => s?.card.id === TUTORIAL_NEW_CARD);
-      if (this.slotIndex >= 0) drawSlotRing(this.slotRing, this.layout, this.host.handSlotCenter(this.slotIndex), this.time);
-      else this.slotRing.visible = false;
-    } else if (this.slotRing.visible) {
-      this.slotRing.visible = false;
+      if (this.slotIndex >= 0) drawSlotRing(this.ui.slotRing, this.layout, this.host.handSlotCenter(this.slotIndex), this.time);
+      else this.ui.slotRing.visible = false;
+    } else if (this.ui.slotRing.visible) {
+      this.ui.slotRing.visible = false;
     }
 
     if (this.victoryAt === Infinity) {
@@ -377,24 +380,30 @@ export class TutorialDirector {
     }
   }
 
+  /** §17.7: freeze on a "play a card" prompt aimed at the enemy nearest the base; stays until a play. */
+  private startIdlePrompt(state: GameState, hint: BeatSpec): void {
+    this.idleHint = hint;
+    this.raisePrompt(state, hint);
+    this.showStrip(t('tutorial.idle.title'), t('tutorial.idle.body'), Infinity);
+  }
+
+  private endIdlePrompt(): void {
+    this.idleHint = null;
+    this.freeIdleSec = 0;
+    this.lowerPrompt();
+    this.stripHideAt = this.time; // fade the prompt out
+  }
+
   // ── Endgame ─────────────────────────────────────────────────────────────────────────────────────
 
   private victory(): void {
     this.phase = 'graduate';
     this.engineFrozen = true;
     this.stripHideAt = this.time;
-    this.skipBtn.visible = false;
-    this.slotRing.visible = false;
+    this.ui.skipBtn.visible = false;
+    this.ui.slotRing.visible = false;
     this.host.forceVictory();
-    const cfg = this.host.config;
-    if (!cfg.footnote) {
-      // §17.1: no stop between the tutorial and level 1 — the WIN stamp, a beat, and on.
-      this.leaveAt = this.time + WIN_HOLD_SEC;
-      return;
-    }
-    drawGradCard(this.panelHost(), t('tutorial.grad.body'), cfg.teaser, cfg.ctaLabel, cfg.footnote);
-    this.gradCard.scale.set(0);
-    this.gradAt = this.time + GRAD_CARD_DELAY_SEC;
+    this.graduation.start(this.time);
   }
 
   private leave(): void {
@@ -406,22 +415,22 @@ export class TutorialDirector {
   // ── Animation ───────────────────────────────────────────────────────────────────────────────────
 
   private showStrip(title: string | null, body: string | null, hideAt: number): void {
-    drawStrip(this.panelHost(), title, body, this.avoidRects());
+    drawStrip(this.ui, title, body, this.avoidRects());
     this.stripHideAt = hideAt;
   }
 
   private animateStrip(dt: number): void {
-    if (!this.strip.visible || this.time < this.stripHideAt) return;
-    this.strip.alpha = Math.max(0, this.strip.alpha - dt / STRIP_FADE_SEC);
-    if (this.strip.alpha <= 0) { clearStrip(this.panelHost()); this.strip.visible = false; }
+    if (!this.ui.strip.visible || this.time < this.stripHideAt) return;
+    this.ui.strip.alpha = Math.max(0, this.ui.strip.alpha - dt / STRIP_FADE_SEC);
+    if (this.ui.strip.alpha <= 0) { clearStrip(this.ui); this.ui.strip.visible = false; }
   }
 
   private animateBaseLabels(): void {
-    if (!this.baseLabels.visible) return;
+    if (!this.ui.baseLabels.visible) return;
     const a = 1 - (this.time - BASE_LABEL_HOLD_SEC) / BASE_LABEL_FADE_SEC;
     if (a >= 1) return;
-    if (a <= 0) { this.baseLabels.visible = false; return; }
-    this.baseLabels.alpha = a;
+    if (a <= 0) { this.ui.baseLabels.visible = false; return; }
+    this.ui.baseLabels.alpha = a;
   }
 
   private animateShake(dt: number): void {
@@ -434,52 +443,17 @@ export class TutorialDirector {
     );
   }
 
-  private animateGradCard(): void {
-    if (!this.footnoteShown) { this.footnoteShown = true; this.host.config.onFootnoteShown?.(); }
-    const k = Math.min(1, (this.time - this.gradAt) / GRAD_POP_SEC);
-    // easeOutBack — a small overshoot reads as a stamp landing.
-    const c = 1.70158;
-    const s = 1 + (c + 1) * Math.pow(k - 1, 3) + c * Math.pow(k - 1, 2);
-    this.gradCard.scale.set(k >= 1 ? 1 : s);
-    if (k >= 1) this.tickAutoContinue();
-  }
-
-  /** {@link TutorialConfig.autoContinueSec}: fill the bar, then press the button. */
-  private tickAutoContinue(): void {
-    const sec = this.host.config.autoContinueSec;
-    const r = this.ctaRect;
-    if (!sec || !r) return;
-    const p = Math.min(1, (this.time - this.gradAt - GRAD_POP_SEC) / sec);
-    if (!this.gradBar || this.gradBar.destroyed || this.gradBar.parent !== this.gradCard) {
-      this.gradBar = new PIXI.Graphics();
-      this.gradCard.addChild(this.gradBar);
-    }
-    const inset = r.h * 0.3; // clear of the button's rounded corners
-    const barH = Math.max(3, Math.round(r.h * 0.08));
-    this.gradBar.clear();
-    this.gradBar.beginFill(0xffffff, 0.75);
-    this.gradBar.drawRect(r.x + inset, r.y + r.h - barH * 2, (r.w - inset * 2) * p, barH);
-    this.gradBar.endFill();
-    if (p >= 1) this.leave();
-  }
-
   /** Breathing frame around the guided card + the meteor target ring. */
   private animateRings(beat: BeatSpec): void {
     if (this.slotIndex >= 0) {
-      drawSlotRing(this.slotRing, this.layout, this.host.handSlotCenter(this.slotIndex), this.time);
+      drawSlotRing(this.ui.slotRing, this.layout, this.host.handSlotCenter(this.slotIndex), this.time);
     } else {
-      this.slotRing.visible = false;
+      this.ui.slotRing.visible = false;
     }
     if (beat.kind === 'spell' && this.meteorAnchor) {
-      const a = 0.45 + 0.35 * (0.5 + 0.5 * Math.sin(this.time * 5));
-      const p = this.anchorCenter(this.meteorAnchor);
-      const r = this.layout.cellSize * (1.25 + 0.15 * Math.sin(this.time * 5));
-      this.clusterRing.clear();
-      this.clusterRing.lineStyle(4, C_BLUE, a);
-      this.clusterRing.drawCircle(p.x, p.y, r);
-      this.clusterRing.visible = true;
+      drawTargetRing(this.ui.clusterRing, this.layout, meteorAnchorCenter(this.layout, this.meteorAnchor), this.time);
     } else {
-      this.clusterRing.visible = false;
+      this.ui.clusterRing.visible = false;
     }
   }
 
@@ -492,19 +466,19 @@ export class TutorialDirector {
       return;
     }
     this.ghostOn = false;
-    this.ghost.visible = false;
+    this.ui.ghost.visible = false;
   }
 
   /** Ghost card glides from the guided card's hand slot to its target, holds, loops (§11.4). */
   private animateGhost(dt: number, beat: BeatSpec): void {
-    if (this.slotIndex < 0) { this.ghost.visible = false; return; }
+    if (this.slotIndex < 0) { this.ui.ghost.visible = false; return; }
     if (this.ghostSlot !== this.slotIndex || !this.ghostCard) {
       this.ghostCard = this.host.buildCardGhost(this.slotIndex);
       this.ghostSlot = this.slotIndex;
-      fillGhostLayer(this.ghost, this.layout, this.ghostCard);
+      fillGhostLayer(this.ui.ghost, this.layout, this.ghostCard);
     }
     this.ghostT = (this.ghostT + dt) % GHOST_LOOP_SEC;
-    poseGhost(this.ghost, this.ghostT, this.host.handSlotCenter(this.slotIndex), this.targetPoint(beat));
+    poseGhost(this.ui.ghost, this.ghostT, this.host.handSlotCenter(this.slotIndex), this.targetPoint(beat));
   }
 
   // ── Geometry ────────────────────────────────────────────────────────────────────────────────────
@@ -513,25 +487,10 @@ export class TutorialDirector {
     return beatTargetPoint(this.layout, beat, this.meteorAnchor);
   }
 
-  private anchorCenter(a: { col: number; row: number }): { x: number; y: number } {
-    return meteorAnchorCenter(this.layout, a);
-  }
-
-  /** What the instruction strip must not cover (§11.5): the target, the guided card, the Skip button. */
   private avoidRects(): Rect[] {
-    const out: Rect[] = [this.skipBtnRect];
-    const beat = BEATS[this.beatIndex];
-    if (!beat) return out;
-    const cs = this.layout.cellSize;
-    const p = this.targetPoint(beat);
-    const reach = beat.kind === 'spell' ? cs * 1.5 : cs;
-    out.push({ x: p.x - reach, y: p.y - reach, w: reach * 2, h: reach * 2 });
-    if (this.slotIndex >= 0) {
-      const c = this.host.handSlotCenter(this.slotIndex);
-      const w = this.layout.cardWidth;
-      const h = this.layout.cardHeight;
-      out.push({ x: c.x - w / 2, y: c.y - h / 2, w, h });
-    }
-    return out;
+    const beat = this.idleHint ?? BEATS[this.beatIndex];
+    if (!beat) return [this.ui.skipBtnRect];
+    const card = this.slotIndex >= 0 ? this.host.handSlotCenter(this.slotIndex) : null;
+    return stripAvoidRects(this.layout, this.ui.skipBtnRect, beat.kind, this.targetPoint(beat), card);
   }
 }

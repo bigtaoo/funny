@@ -5,11 +5,10 @@ import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
 import type { ObjectiveSpec, LevelRewards } from '@nw/engine/campaign/LevelDefinition';
+import { drawRewardsRow, drawNewCardsRow } from './LevelPrepScene/infoRows';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren, marginLineX } from '../render/sketchUi';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
-import { buildIcon, type IconKind } from '../render/icons';
-import { buildMaterialIcon, type MaterialKind } from '../render/atlas/materialAtlas';
 import { FS, snapFont } from '../render/fontScale';
 import { dispatchHit, type Hit } from '../ui/hits';
 import { drawButtonLabel } from '../ui/widgets/buttonLabel';
@@ -157,11 +156,11 @@ export class LevelPrepScene implements Scene {
     }
 
     if (this.cb.rewards && (this.cb.rewards.coins || this.cb.rewards.materials)) {
-      y = this.drawRewards(this.cb.rewards, y);
+      y = drawRewardsRow(this.container, this.w, this.h, this.cb.rewards, y);
     }
 
     if (this.cb.newCards && this.cb.newCards.length > 0) {
-      y = this.drawNewCards(this.cb.newCards, y);
+      y = drawNewCardsRow(this.container, this.w, this.h, this.cb.newCards, y);
     }
 
     // The Start button, the refill row (only when stamina is short) and the stamina line are
@@ -298,86 +297,6 @@ export class LevelPrepScene implements Scene {
     desc.x = padX + innerPadX;
     desc.y = label.y + label.height + rowGap;
     this.container.addChild(desc);
-
-    return y + panH + Math.round(h * 0.01);
-  }
-
-  /** "NEW" tag + the names of the cards this level introduces, one row, same panel family as rewards. */
-  private drawNewCards(names: string[], y: number): number {
-    const { w, h } = this;
-    const padX = marginLineX(w);
-    const panW = w - padX - Math.round(w * 0.06);
-    const fs = FS.headline;
-    const padV = Math.round(h * 0.021);
-    const panH = fs * 1.6 + padV * 2;
-
-    const bg = sketchPanel(panW, panH, {
-      fill: C.paper, border: C.line, width: 1.2, seed: seedFor(padX, y + 3, panW),
-    });
-    bg.x = padX; bg.y = y;
-    sketchAccentBar(bg, panH, C.red, seedFor(padX, panH, 17));
-    this.container.addChild(bg);
-
-    const tag = txt(t('level.newCard.tag'), fs, C.red, true);
-    tag.anchor.set(0, 0.5);
-    tag.x = padX + Math.round(panW * 0.06);
-    tag.y = y + panH / 2;
-    this.container.addChild(tag);
-
-    const list = txt(names.join(t('level.newCard.sep')), fs, C.dark, true);
-    list.anchor.set(0, 0.5);
-    list.x = tag.x + tag.width + Math.round(w * 0.03);
-    list.y = y + panH / 2;
-    const room = padX + panW - Math.round(panW * 0.04) - list.x;
-    if (list.width > room) list.scale.set(room / list.width);
-    this.container.addChild(list);
-
-    return y + panH + Math.round(h * 0.01);
-  }
-
-  /** Reward preview row (coins + materials) shown below the objective banner (fills the otherwise-empty mid page). */
-  private drawRewards(rewards: LevelRewards, y: number): number {
-    const { w, h } = this;
-    const padX = marginLineX(w);
-    const panW = w - padX - Math.round(w * 0.06);
-    const fs = FS.headline;
-    const padV = Math.round(h * 0.021);
-    const panH = fs * 1.6 + padV * 2;
-
-    const bg = sketchPanel(panW, panH, {
-      fill: C.paper, border: C.line, width: 1.2, seed: seedFor(padX, y + 2, panW),
-    });
-    bg.x = padX; bg.y = y;
-    sketchAccentBar(bg, panH, C.green, seedFor(padX, panH, 11));
-    this.container.addChild(bg);
-
-    const label = txt(t('level.rewards.label'), fs, C.mid);
-    label.anchor.set(0, 0.5);
-    label.x = padX + Math.round(panW * 0.06);
-    label.y = y + panH / 2;
-    this.container.addChild(label);
-
-    let cx = label.x + label.width + Math.round(w * 0.03);
-    const iconSize = Math.round(panH * 0.56);
-    const entries: Array<{ icon: IconKind; count: number }> = [];
-    if (rewards.coins) entries.push({ icon: 'coin', count: rewards.coins });
-    for (const [id, count] of Object.entries(rewards.materials ?? {})) {
-      if (count > 0 && (id === 'scrap' || id === 'lead' || id === 'binding')) entries.push({ icon: id, count });
-    }
-
-    for (const entry of entries) {
-      const icon = entry.icon === 'coin'
-        ? buildIcon(entry.icon, iconSize, C.dark)
-        : buildMaterialIcon(entry.icon as MaterialKind, iconSize, C.dark);
-      icon.x = cx; icon.y = y + (panH - iconSize) / 2;
-      this.container.addChild(icon);
-      cx += iconSize + Math.round(w * 0.01);
-      const cnt = txt(`×${entry.count}`, fs, C.dark, true);
-      cnt.anchor.set(0, 0.5);
-      cnt.x = cx; cnt.y = y + panH / 2;
-      this.container.addChild(cnt);
-      cx += cnt.width + Math.round(w * 0.03);
-    }
 
     return y + panH + Math.round(h * 0.01);
   }

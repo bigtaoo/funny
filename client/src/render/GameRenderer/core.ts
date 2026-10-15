@@ -48,7 +48,7 @@ import { HUDView } from '../HUDView';
 import { NetStatusView } from '../NetStatusView';
 import { UnitView } from '../UnitView';
 import type { EngineCardInstance, EngineEquipInv } from '@nw/engine';
-import { TutorialDirector, type TutorialConfig, type TutorialHost } from '../TutorialDirector';
+import { TutorialDirector, type TutorialConfig } from '../TutorialDirector';
 import { VFXSystem } from '../VFXSystem';
 import { buildWearOverlay } from '../wearOverlay';
 import { ProfilePopup, type ProfileData, type ProfileExtra } from '../../ui/dialogs/ProfilePopup';
@@ -58,6 +58,7 @@ import { netLog } from '../../net/log';
 import type { EventsPanel } from './events';
 import type { InputPanel } from './input';
 import { drawOpponentLabel, drawReplayNameLabels } from './labels';
+import { buildTutorialHost } from './tutorialHost';
 
 const log = netLog('GameRenderer');
 
@@ -250,50 +251,12 @@ export class GameRendererCore {
 
   init(): void {
     this.buildSceneGraph();
-    if (this.tutorialConfig) {
-      const host: TutorialHost = {
-        container: this.container,
-        layout: this.layout,
-        config: this.tutorialConfig,
-        highlightUnitLane: (col) => this.boardView.showUnitLaneHighlights([col], new Set(), col),
-        highlightBuildingLane: (col) => this.boardView.showBuildingHighlights([col], this.localBuildRow),
-        clearLaneHighlights: () => this.boardView.clearHighlights(),
-        handSlotCenter: (i) => this.handView.slotCenter(i),
-        buildCardGhost: (i) => this.input.buildCardGhost(i),
-        forceVictory: () => this.forceTutorialVictory(),
-        finish: () => this.finishTutorial(),
-        onSkip: () => this.onExitToLobby?.(),
-      };
-      this.tutorial = new TutorialDirector(host);
-    }
-  }
-
-  /**
-   * Tutorial graduation, part 1: the scripted victory moment — WIN banner + stinger, the same pair a
-   * real game_over shows (tutorial level never actually decides a winner, §3.5). The scene stays up:
-   * the director's graduation card owns the exit (finishTutorial).
-   */
-  private forceTutorialVictory(): void {
-    if (this.gameEnded) return;
-    this.gameEnded = true;
-    stateRecorder.setWinner(this.localOwner);
-    this.input.cancelDrag(); this.input.cancelTapSelect();
-    this.hudView.showGameOver(this.localOwner, this.localOwner);
-    this.events.playResultStinger(this.localOwner);
-  }
-
-  /** Tutorial graduation, part 2: the graduation card's button — settle as a local win. */
-  private finishTutorial(): void {
-    if (this.gameEndTimer !== null) return;
-    const winner = this.localOwner;
-    const stats = this.engine.state.snapshotStats();
-    const summary = this.engine.state.snapshotSummary();
-    this.scheduleGameEnd(() => this.onGameEnd?.(winner, stats, summary), 0);
+    if (this.tutorialConfig) this.tutorial = new TutorialDirector(buildTutorialHost(this, this.tutorialConfig));
   }
 
   /**
    * Schedule the deferred onGameEnd settlement callback, tracking the timer handle so destroy()
-   * can cancel it (see gameEndTimer's doc comment). Callers (here + events.ts's game_over/game_draw)
+   * can cancel it (see gameEndTimer's doc comment). Callers (tutorialHost.ts + events.ts's game_over/game_draw)
    * are expected to have already set `gameEnded = true` and shown the banner.
    */
   scheduleGameEnd(fn: () => void, delayMs: number): void {
