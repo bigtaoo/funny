@@ -448,6 +448,25 @@ metaserver → admin → ops「Server retention」卡上加了平台选择。**1
 
 **上线顺序**同 §3.6g：analyticsvc 先部署，再传 CG 新包；否则 `c` 被丢、新键被白名单丢。
 
+### 3.6i 教学自由战斗 + 链式自动开局（2026-10-16）
+
+**为什么要有**：c741bef15 之后桌面教学在 `graduate → tutorial_complete` 之间掉了一截，但分不清是自由战斗太长还是卡在挂机冻结提示上；lv2 的 `lv2_clear / lv2_start` 被 1.5 s 横幅自动开局灌水。设计侧见 [`ONBOARDING_DESIGN.md` §17.8](ONBOARDING_DESIGN.md)。
+
+**新键**（同 §3.6h 的四处白名单一起改）：
+| 键 | 什么时候打 | 位置 |
+|---|---|---|
+| `free_idle_prompt` | 教学自由战斗挂机冻结提示弹出（每次都计） | `nav/game/tutorial.ts` ← `TutorialDirector.onIdlePrompt` |
+| `free_idle_resume` | 提示后出牌解冻 | 同上 |
+| `free_won` | 自由战斗判胜 / 兜底收尾（WIN 章之前） | `TutorialDirector` → `onStep('free_won')` |
+| `lv1_auto` … `lv5_auto` | 该关未通过、由关间横幅倒计时自动开局 | `campaignRoster.ts` `chainInto` / `tutorial.ts` `startLevelFromTutorial` |
+| `lv2_first_play` … `lv5_first_play` | 该关未通过时本局第一次出牌（原来只有 lv1） | `appConstants.ts` `buildHintFor` 的 `onFirstPlay` |
+
+`lvN_start` 照旧包括自动开局；主动开局 = `lvN_start − lvN_auto`。lv2+ 的过关率用 `lvN_clear / lvN_first_play`。
+
+**新事件** `tutorial_idle_prompt { level_id, outcome: 'shown'|'resumed', n, tick?, wait_ms? }`，采样 1.0（`eventConfig.ts`）；`level_attempt` 在链式进入时多 `chained: true, auto: boolean`。
+
+**上线顺序**同 §3.6g。
+
 ---
 
 ## §4 采集配置（服务端控制开关）

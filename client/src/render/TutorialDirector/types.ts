@@ -15,6 +15,21 @@ export interface TutorialBeatDone {
   wrong_drops: number;
 }
 
+/**
+ * One free-phase idle prompt for the `tutorial_idle_prompt` event (ONBOARDING_DESIGN §17.7): 'shown'
+ * when the fight freezes on it, 'resumed' at the play that lifts it. Tells a player who left on the
+ * frozen prompt apart from one who left mid-fight.
+ */
+export interface TutorialIdlePrompt {
+  outcome: 'shown' | 'resumed';
+  /** 1-based count of prompts this run. */
+  n: number;
+  /** Engine tick the fight froze at ('shown' only). */
+  tick?: number;
+  /** Real time the prompt was up ('resumed' only). */
+  wait_ms?: number;
+}
+
 /** What the scene hands the tutorial director (GameSceneOptions.tutorial). */
 export interface TutorialConfig {
   /**
@@ -39,7 +54,10 @@ export interface TutorialConfig {
    * within 2 s (p90 4 s) — a WIN stamp read as "the game is over".
    */
   autoContinueSec?: number;
-  /** Step-level analytics (A9-9); keys match analyticsvc's TUTORIAL_ORDERED_KEYS. */
+  /**
+   * Step-level analytics (A9-9); keys match analyticsvc's TUTORIAL_ORDERED_KEYS, plus `free_won` —
+   * the free fight settled, before the WIN stamp / graduation card (§17.7).
+   */
   onStep?(stepKey: string): void;
   /**
    * Tick of the level's last scripted spawn. The free phase calls the win this long plus
@@ -47,4 +65,5 @@ export interface TutorialConfig {
    */
   lastSpawnTick?: number;
   onBeatDone?(info: TutorialBeatDone): void;
+  onIdlePrompt?(info: TutorialIdlePrompt): void;
 }

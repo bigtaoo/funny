@@ -15,7 +15,7 @@ import { drawSlotRing, drawTargetRing, fillGhostLayer, poseGhost, GHOST_LOOP_SEC
 import { pickIdleHint } from './TutorialDirector/idleHint';
 import { Graduation } from './TutorialDirector/graduation';
 
-export type { TutorialConfig, TutorialBeatDone } from './TutorialDirector/types';
+export type { TutorialConfig, TutorialBeatDone, TutorialIdlePrompt } from './TutorialDirector/types';
 
 /**
  * TutorialDirector — presentation-layer orchestrator for the tutorial level `ch0_tutorial`
@@ -98,6 +98,7 @@ export class TutorialDirector {
   private freeIdleSec = 0;
   /** Free phase: the idle prompt's target while it is up — the fight is frozen on it. */
   private idleHint: BeatSpec | null = null;
+  private idlePrompts = 0; private idlePromptAt = 0; // telemetry: prompts shown so far, when the current one went up
   private readonly graduation: Graduation;
   private shakeLeft = 0;
   private readonly shakeOrigin = { x: 0, y: 0 };
@@ -374,7 +375,7 @@ export class TutorialDirector {
       const last = this.host.config.lastSpawnTick;
       const settled = state.phase === GamePhase.GameOver
         || (last !== undefined && state.elapsedTicks >= last + FREE_SETTLE_TICKS);
-      if (settled) this.victoryAt = this.time + FINALE_PAUSE_SEC;
+      if (settled) { this.victoryAt = this.time + FINALE_PAUSE_SEC; this.host.config.onStep?.('free_won'); }
     } else if (this.time >= this.victoryAt) {
       this.victory();
     }
@@ -383,12 +384,15 @@ export class TutorialDirector {
   /** §17.7: freeze on a "play a card" prompt aimed at the enemy nearest the base; stays until a play. */
   private startIdlePrompt(state: GameState, hint: BeatSpec): void {
     this.idleHint = hint;
+    this.idlePromptAt = this.time;
+    this.host.config.onIdlePrompt?.({ outcome: 'shown', n: ++this.idlePrompts, tick: state.elapsedTicks });
     this.raisePrompt(state, hint);
     this.showStrip(t('tutorial.idle.title'), t('tutorial.idle.body'), Infinity);
   }
 
   private endIdlePrompt(): void {
     this.idleHint = null;
+    this.host.config.onIdlePrompt?.({ outcome: 'resumed', n: this.idlePrompts, wait_ms: Math.round((this.time - this.idlePromptAt) * 1000) });
     this.freeIdleSec = 0;
     this.lowerPrompt();
     this.stripHideAt = this.time; // fade the prompt out

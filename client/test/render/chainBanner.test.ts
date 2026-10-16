@@ -71,6 +71,7 @@ describe('ChainBanner', () => {
     banner.update(0.6);
     banner.update(1.0);
     expect(onNext).toHaveBeenCalledTimes(1);
+    expect(onNext).toHaveBeenCalledWith(true); // auto: no tap (ONBOARDING_DESIGN §17.7 lvN_auto)
     expect(onMap).not.toHaveBeenCalled();
   });
 
@@ -78,6 +79,7 @@ describe('ChainBanner', () => {
     const { banner, onNext } = make();
     expect(banner.handleDown(5, 5)).toBe(true);
     expect(onNext).toHaveBeenCalledTimes(1);
+    expect(onNext).toHaveBeenCalledWith(false);
     banner.update(5);
     expect(onNext).toHaveBeenCalledTimes(1);
   });

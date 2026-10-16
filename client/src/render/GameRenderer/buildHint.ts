@@ -31,8 +31,8 @@ const IDLE_NUDGE_MAX = 4;
 
 /** Supplied by the nav layer for levels that should carry the hint. */
 export interface BuildHintConfig {
-  /** Engine tick after which a player with no building yet is shown the hint. */
-  atTick: number;
+  /** Engine tick after which a player with no building yet is shown the hint; unset = no hint, only the play telemetry. */
+  atTick?: number;
   /** Lifecycle telemetry: 'shown' once, then exactly one of 'built' / 'expired'. */
   onEvent?(outcome: BuildHintOutcome, tick: number): void;
   /** Seconds of engine time with an affordable card and no play before the idle nudge; unset = none. */
@@ -95,7 +95,7 @@ export class BuildHint {
     if (this.host.firstBuildTick() !== null) { this.end('built', state); return; }
     if (state.phase === GamePhase.GameOver) { this.end(null, state); return; }
     if (!this.shown) {
-      const slot = state.elapsedTicks < this.cfg.atTick ? -1 : this.pickSlot(state);
+      const slot = state.elapsedTicks < (this.cfg.atTick ?? Infinity) ? -1 : this.pickSlot(state);
       if (slot < 0) { this.idleNudge(dt, state); return; } // too early, or no affordable building yet
       this.stopNudge();
       this.show(state, slot);

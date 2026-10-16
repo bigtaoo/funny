@@ -84,14 +84,19 @@ export function countDeclinedLaunch(): void {
  * signal that also counts players who never consented ({@link countReturnLaunch}). Since 2026-10-14
  * (ONBOARDING_DESIGN §15): `alive_60s` — the launch is still open a minute after its first screen,
  * our side of CrazyGames' "gameplay conversion" ({@link countLoadedLaunch}) — the first card played in
- * ch1_lv1 and its idle-card hint, and the first attempt / clear of levels 4–5. Must match analyticsvc's `ANON_FUNNEL_STEPS` (service/defs.ts) and the `t` enum on
+ * ch1_lv1 and its idle-card hint, and the first attempt / clear of levels 4–5. Since 2026-10-16
+ * (ONBOARDING_DESIGN §17.7): the tutorial free fight's idle prompt / resume / win, and per early level
+ * `lvN_auto` (the chain banner's countdown started it, no tap) and `lvN_first_play` (first card played)
+ * — chaining made `lvN_start` count players who were already leaving. Must match analyticsvc's `ANON_FUNNEL_STEPS` (service/defs.ts) and the `t` enum on
  * `GET /analytics/config`; the server drops anything else.
  */
 export const ANONYMOUS_FUNNEL_STEPS = [
   'open_desktop', 'open_mobile', 'loaded_desktop', 'loaded_mobile', 'alive_60s',
-  'tutorial_start', 'beat_unit', 'beat_building', 'beat_spell', 'graduate', 'tutorial_complete', 'tutorial_skip',
-  'lv1_start', 'lv1_first_play', 'lv1_play_hint', 'lv1_clear', 'lv2_start', 'lv2_clear', 'lv3_start', 'lv3_clear',
-  'lv4_start', 'lv4_clear', 'lv5_start', 'lv5_clear',
+  'tutorial_start', 'beat_unit', 'beat_building', 'beat_spell', 'graduate',
+  'free_idle_prompt', 'free_idle_resume', 'free_won', 'tutorial_complete', 'tutorial_skip',
+  'lv1_auto', 'lv1_start', 'lv1_first_play', 'lv1_play_hint', 'lv1_clear',
+  'lv2_auto', 'lv2_start', 'lv2_first_play', 'lv2_clear', 'lv3_auto', 'lv3_start', 'lv3_first_play', 'lv3_clear',
+  'lv4_auto', 'lv4_start', 'lv4_first_play', 'lv4_clear', 'lv5_auto', 'lv5_start', 'lv5_first_play', 'lv5_clear',
   'ink_full_hint', 'gift_shown', 'gift_gacha', 'gacha_pull', 'daily_shown', 'daily_open', 'daily_claim',
   'return_launch',
 ] as const;

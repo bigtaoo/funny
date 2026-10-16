@@ -643,7 +643,7 @@ CG 新包上线后对比 10-12 版。所有数都能按版本拆（匿名计数�
 与上面方案不一致或方案没写到的地方，以本节为准。
 
 **① 教学合一**
-- `ch0_tutorial` 卡组 = 步兵 I/II、塔 I/II、陨石（三拍要用），`cardUnlocks: [{atTick: 420, cardId: 'archer_1'}]`；18 波 59 个敌人，`enemyScale` 0.065 / 1（血量极低，靠数量撑时长）。
+- `ch0_tutorial` 卡组 = 步兵 I/II、塔 I/II、陨石（三拍要用），`cardUnlocks: [{atTick: 420, cardId: 'archer_1'}]`；18 波 59 个敌人，`enemyScale` 0.065 / 1（血量极低，靠数量撑时长）。**2026-10-16 砍到 10 波 26 个**，见 §17.8。
 - 导演新增 `free` 阶段：陨石拍后 `onStep('graduate')`，放开所有出牌；弓手进手牌时弹「新卡！」4 s（`NEW_CARD_CALLOUT_SEC`）并框住卡位。引擎判胜后 WIN 章停 `WIN_HOLD_SEC = 1.4` s 再离开；若最后一个脚本刷怪后 `FREE_SETTLE_TICKS = 900` tick 仍未结束（漏网的兵不死），导演强制收尾。
   - **挂机冻结提示（2026-10-15，分支 `feat/tutorial-idle-prompt`）**：原先完全挂机的玩家会在敌兵围着基地、红心已空时被这条兜底判胜——基地没血还赢了，困惑大于保底。现改为：`free` 阶段里玩家 `FREE_IDLE_PROMPT_SEC = 5` s 没出牌、场上有敌兵、手里有付得起的牌时，**冻结战斗**并停在提示上，直到玩家出牌为止，不会自己放弃，也不会替玩家判胜。
     - 提示内容：指令条「基地需要你！/ 把一张卡拖到战场上，挡住他们。」（`tutorial.idle.*`），点亮离基地最近（行号最小）那个敌兵所在的列，`FREE_IDLE_GHOST_SEC = 1` s 后幽灵手循环演示拖牌。选牌顺序：兵 → 建筑 → 法术里第一张付得起的（`TutorialDirector/idleHint.ts`）。
@@ -671,3 +671,24 @@ CG 新包上线后对比 10-12 版。所有数都能按版本拆（匿名计数�
 - `POST /pve/hero-gift/claim`：没有礼物 404、未到点 400；**先在 `mutateSave` 里标 `claimedAt`，再 `grantCards(..., 'hero_gift')`**，所以并发 / 重放只发一次；已领过的再调用直接返回存档（幂等）。背包满走金币补偿（reason `hero_gift_inv_full`）。
 - 客户端：战斗里 `max_1` 进手牌时弹「英雄 麦克斯 加入战斗！明天起正式归你」（`render/GameRenderer/unlockCallout.ts`，其它关的 `cardUnlocks` 用通用「新卡」文案；只对未通关的关卡弹）；lv5 首通结算页加一行；大厅进入时 `runHeroGift` 优先于首奖励环——到点且未领就领，领到后若仍在大厅弹说明，按钮去卡牌名册。失败静默，下次进大厅重试。
 - **大厅倒计时贴纸（2026-10-15，分支 `feat/first-ten-polish`）**：有已获得未领取的礼物且未到点时，大厅「战役」入口顶边右侧贴一张纸签「英雄麦克斯：h:mm:ss 后归你」（`scenes/LobbyScene/heroGiftSticker.ts`，摆法同 PvP 按钮上的保护局贴纸），每帧刷新、文字一秒变一次；点它等于点战役入口。走到 0 时贴纸隐藏并当场调 `runHeroGift` 领取。倒计时和到点判断都用 `serverNow()`（`claimableAt` 是服务端时间，本机时钟快了会提前领、吃 400）。只在在线时显示（领取要服务端）。
+
+### 17.8 第一轮数据后的修订（2026-10-16，分支 `feat/tutorial-free-trim`）
+
+起因：c741bef15 上线 ~18 h 的早期数据（记忆 `cg-first-ten-redesign-2026-10-15`）。桌面教学变差（`graduate / tutorial_start` 69% → 62%，匿名 `graduate → tutorial_complete` 93% → 66%），lv2 看着像新的墙（`lv2_clear / lv2_start` 93% → 46%）。诊断：
+
+- **教学流失在 `graduate` 之后的自由战斗**：`graduate` 改义后，到 `tutorial_complete` 的间隔从 2 s 变成 p50 55 s；能看到的流失者都在 `graduate` 后 47–64 s 离开。敌人血量 0.065、波次拖到 tick ~1285，**无聊**；另一种可能是卡在挂机冻结提示上——原来没有埋点，分不清。
+- **lv2「墙」是口径假象**：1.5 s 横幅自动开 lv2，本来就要走的人也被算成 `lv2_start`。lv2 没赢的 14 个会话里 9 个在 `game_start` 后 10 s 内离开、一张牌没出，零个输局；敌人强度没改。改用 `lv2_clear / lv1_clear` 看：桌面 55% → 46%，手机 50% → 62%。
+
+**A. 自由战斗缩短**：`ch0_tutorial` 删掉 tick > 760 的波次（原 900 / 1060 / 1240 三批），剩 10 波 26 个敌人，最后一个刷怪在 tick 800；`graduate`（~tick 270）到判胜约 18 s（原 ~40 s+，加上兜底最长 ~70 s）。弓手 tick 420 解锁不变，玩家仍有 ~13 s 用它。教学关从不进 judge，不动 `CAMPAIGN_CONTENT_REV`。
+
+**B. 自由战斗埋点**：
+- 匿名步骤 `free_idle_prompt`（挂机冻结提示弹出，每次都计）/ `free_idle_resume`（提示后出牌解冻）/ `free_won`（引擎判胜或兜底收尾，WIN 章之前）。读法：`free_won / graduate` = 自由战斗打完率；`free_idle_prompt / graduate` 高、`free_idle_resume / free_idle_prompt` 低 = 卡在提示上；`free_won` 高而 `tutorial_complete` 低 = 丢在 WIN 章到 `ch1_lv1` 的过场。
+- 事件 `tutorial_idle_prompt { level_id, outcome: 'shown'|'resumed', n, tick?, wait_ms? }`（采样 1.0）：`n` = 本局第几次提示，`tick` = 弹出时的引擎 tick，`wait_ms` = 提示挂了多久（真实时间，冻结期间引擎不走）。导演回调 `TutorialConfig.onIdlePrompt`。
+
+**C. 链式自动开局与主动开局分开**：
+- 横幅回调带 `auto`：倒计时走完 = `true`，点了 = `false`。`level_attempt` 在链式进入时带 `chained: true, auto`。
+- 匿名步骤 `lvN_auto`（N = 1–5，该关未通过、由横幅倒计时自动开的那次；教学结束进 `ch1_lv1` 也算）。`lvN_start` 照旧计所有开局，所以「主动开局」= `lvN_start − lvN_auto`。
+- `lvN_first_play`（原来只有 lv1）扩到 lv1–5：该关未通过时本局第一次出牌。`buildHintFor` 对没有建造提示的关也返回只带 `onFirstPlay` 的配置（`BuildHintConfig.atTick` 改为可选）。
+- **以后读 lv2+**：用 `lvN_clear / lvN_first_play`（真打了的人里有多少过关）和 `lvN_clear / lv(N−1)_clear`（链路保留率），不要用 `lvN_clear / lvN_start`。
+- 上线顺序同 ANALYTICS §3.6g：analyticsvc 先部署，再传 CG 新包。
+
