@@ -51,19 +51,22 @@ export const BUILD_HINT_TICKS: Readonly<Record<string, number>> = { ch1_lv1: 180
  */
 export const IDLE_NUDGE_SEC = 4;
 
-/** The hint's config for `levelId`, or undefined when it doesn't carry one or has been cleared already. */
-export function buildHintFor(levelId: string, starsSoFar: number, onEvent: (outcome: BuildHintOutcome, tick: number) => void): BuildHintConfig | undefined {
+/**
+ * The hint's config for `levelId`, or undefined when it doesn't carry one or has been cleared already.
+ * `onFirstPlay` (the level's `lvN_first_play` funnel tick) rides along on any level not yet starred —
+ * on a level without the hint, as a config that only watches for the first play.
+ */
+export function buildHintFor(levelId: string, starsSoFar: number, onEvent: (outcome: BuildHintOutcome, tick: number) => void, onFirstPlay?: () => void): BuildHintConfig | undefined {
+  if (starsSoFar > 0) return undefined;
+  const firstPlay = onFirstPlay ? { onFirstPlay: () => onFirstPlay() } : {};
   const atTick = BUILD_HINT_TICKS[levelId];
-  if (atTick === undefined || starsSoFar > 0) return undefined;
-  const firstLevel = levelId === 'ch1_lv1';
+  if (atTick === undefined) return onFirstPlay ? firstPlay : undefined;
   return {
     atTick,
     onEvent,
     idleNudgeSec: IDLE_NUDGE_SEC,
-    ...(firstLevel ? {
-      onIdleNudge: () => analytics.countAnonymousFunnelStep('lv1_play_hint'),
-      onFirstPlay: () => analytics.countAnonymousFunnelStep('lv1_first_play'),
-    } : {}),
+    ...(levelId === 'ch1_lv1' ? { onIdleNudge: () => analytics.countAnonymousFunnelStep('lv1_play_hint') } : {}),
+    ...firstPlay,
   };
 }
 /** flags key — set after the player accepts the GDPR / privacy consent (C5-c, L1-1). Mirrors server `flags.gdprConsent`. */

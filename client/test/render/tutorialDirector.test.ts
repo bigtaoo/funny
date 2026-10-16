@@ -199,7 +199,9 @@ describe('TutorialDirector', () => {
   it('engine settles without the analytics notice: WIN stamp, then leaves by itself', () => {
     playBeats();
     (state as { phase: GamePhase }).phase = GamePhase.GameOver;
-    frame(); frame(0.6);
+    frame();
+    expect(config.onStep).toHaveBeenLastCalledWith('free_won'); // before the WIN stamp
+    frame(0.6);
     expect(host.forceVictory).toHaveBeenCalledTimes(1);
     expect(director.isFinished).toBe(true);
     expect(host.finish).not.toHaveBeenCalled();
@@ -217,6 +219,8 @@ describe('TutorialDirector', () => {
   });
 
   it('an idle player in the free fight is frozen on a play-a-card prompt until they play again', () => {
+    const onIdlePrompt = vi.fn();
+    config.onIdlePrompt = onIdlePrompt;
     playBeats();
     (state.bottomPlayer as unknown as { ink: number }).ink = 3;
     state.bottomPlayer.hand.slots[3] = { card: { id: 'scout_1', cardType: CardType.Unit, cost: 2 } } as never;
@@ -224,6 +228,7 @@ describe('TutorialDirector', () => {
     expect(director.engineFrozen).toBe(false);
     frame(0.3);
     expect(director.engineFrozen).toBe(true);
+    expect(onIdlePrompt).toHaveBeenCalledWith({ outcome: 'shown', n: 1, tick: state.elapsedTicks });
     // Aimed at the enemy nearest the base (the lowest row), with the affordable unit.
     expect(host.highlightUnitLane).toHaveBeenLastCalledWith(2);
     for (let i = 0; i < 60; i++) frame(1); // it never gives up, and never wins for them
@@ -233,6 +238,10 @@ describe('TutorialDirector', () => {
     expect(director.allowCardPlay('scout_1', 5, 1)).toEqual({ col: 5, row: 1 }); // any play lifts it
     frame();
     expect(director.engineFrozen).toBe(false);
+    // Telemetry: how long the prompt was up (60 s of frames plus the frame that lifted it).
+    const resumed = onIdlePrompt.mock.lastCall![0] as { outcome: string; n: number; wait_ms: number };
+    expect(resumed).toMatchObject({ outcome: 'resumed', n: 1 });
+    expect(resumed.wait_ms).toBeGreaterThanOrEqual(60_000);
     frame(FREE_IDLE_PROMPT_SEC - 0.2);
     expect(director.engineFrozen).toBe(false);
   });

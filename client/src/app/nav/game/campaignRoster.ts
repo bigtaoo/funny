@@ -25,7 +25,7 @@ import { matchBadgeTelemetry } from '../../../scenes/ResultScene/badges';
 import { buildEquipmentActions } from './equipmentActions';
 import { createStaminaAd } from './staminaAd';
 import { levelStaminaCost } from './staminaCost';
-import { isEarlyLevel, newCardsFor, unlockCalloutsFor, routeCampaignResult } from './campaignResult';
+import { anonLevelStep as anonStepFor, newCardsFor, unlockCalloutsFor, routeCampaignResult } from './campaignResult';
 import type { MountOpts } from '../../AppViews';
 import type { AppCtx, Nav } from '../../appCtx';
 import { TOKEN_KEY, inkHintGate, buildHintFor } from '../../appConstants';
@@ -131,11 +131,13 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
    * event as the prep screen's Start, minus the prep screen. Short of stamina, the prep screen takes
    * over, since buying / watching for stamina lives there.
    */
-  function chainInto(nextId: string): void {
+  function chainInto(nextId: string, auto: boolean): void {
     const next = getLevel(nextId);
     if (!next) { goCampaignMap(); return; }
     if (!saveManager.spendStaminaForLevel(nextId, levelStaminaCost(platform, next))) { goLevelPrep(nextId); return; }
-    analytics.track('level_attempt', { level_id: nextId, stars_before: saveManager.get().progress.stars[nextId] ?? 0, chained: true });
+    analytics.track('level_attempt', { level_id: nextId, stars_before: saveManager.get().progress.stars[nextId] ?? 0, chained: true, auto });
+    const autoStep = auto ? anonLevelStep(nextId, 'auto') : null;
+    if (autoStep) analytics.countAnonymousFunnelStep(autoStep);
     analytics.track('screen_view', { scene: 'GameScene' });
     goCampaign(nextId);
   }
@@ -381,15 +383,9 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
     }, opts);
   }
 
-  /**
-   * The anonymous first-session funnel step (ANALYTICS_DESIGN §3.6d) for starting / clearing one of
-   * the first five campaign levels — only while that level has never been cleared, so the row means
-   * "a new player got this far", not "someone replayed level 1". Read before recordClear updates it.
-   */
-  function anonLevelStep(levelId: string, phase: 'start' | 'clear'): analytics.AnonymousFunnelStep | null {
-    const n = CAMPAIGN_LEVEL_ORDER.indexOf(levelId) + 1;
-    if (!isEarlyLevel(levelId) || saveManager.get().progress.cleared.includes(levelId)) return null;
-    return `lv${n}_${phase}` as analytics.AnonymousFunnelStep;
+  /** campaignResult's anonLevelStep against the current save. Read before recordClear updates it. */
+  function anonLevelStep(levelId: string, phase: Parameters<typeof anonStepFor>[2]): analytics.AnonymousFunnelStep | null {
+    return anonStepFor(levelId, saveManager.get().progress.cleared, phase);
   }
 
   /**
@@ -417,6 +413,7 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
     analytics.track('game_start', { mode: 'campaign', level_id: levelId, ...(assist ? { assist: true } : {}) });
     const startStep = anonLevelStep(levelId, 'start');
     if (startStep) analytics.countAnonymousFunnelStep(startStep);
+    const firstPlayStep = anonLevelStep(levelId, 'first_play');
     const campaignStartTs = Date.now();
     views.showGame({
       onGameEnd(winner, stats, replay, summary, banner) {
@@ -476,7 +473,8 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
       equippedSkins: allEquippedSkins(saveManager.get().equipped),
       inkHint: inkHintGate(saveManager),
       buildHint: buildHintFor(levelId, saveManager.get().progress.stars[levelId] ?? 0,
-        (outcome, tick) => analytics.track('build_hint', { level_id: levelId, outcome, tick })),
+        (outcome, tick) => analytics.track('build_hint', { level_id: levelId, outcome, tick }),
+        firstPlayStep ? () => analytics.countAnonymousFunnelStep(firstPlayStep) : undefined),
       // Replay labels: human at the bottom, the level's forces at the top (owner-indexed).
       players: { bottom: ctx.playerName(), top: t('replay.aiOpponent') },
       ...unlockCalloutsFor(levelId, level.cardUnlocks, saveManager.get().progress.cleared),

@@ -112,8 +112,9 @@ export const TUTORIAL_LABELS: Record<string, string> = {
 
 /**
  * Labels for the anonymous first-session funnel (`anon_funnel`), in funnel order — must match
- * ANON_FUNNEL_STEPS in analyticsvc: the tutorial steps, its Skip, levels 1–5 first try / first clear
- * (with level 1's first card played and its idle-card hint), the one-minute-alive tick, the ink-full
+ * ANON_FUNNEL_STEPS in analyticsvc: the tutorial steps (with the free fight's idle prompt and win), its
+ * Skip, levels 1–5 chain auto-start / first try / first card played / first clear (level 1 also its
+ * idle-card hint), the one-minute-alive tick, the ink-full
  * hint, the first-session reward loop, and returning launches.
  */
 export const ANON_FUNNEL_LABELS: Record<string, string> = {
@@ -121,12 +122,13 @@ export const ANON_FUNNEL_LABELS: Record<string, string> = {
   loaded_desktop: 'Loaded (desktop)', loaded_mobile: 'Loaded (touch)',
   alive_60s: 'Still open at 60 s',
   ...TUTORIAL_LABELS,
+  free_idle_prompt: 'Free fight: idle nudge shown', free_idle_resume: 'Free fight: played after nudge', free_won: 'Free fight won',
   tutorial_skip: 'Skipped tutorial',
-  lv1_start: 'Lv1 tried', lv1_play_hint: 'Lv1 idle-card hint', lv1_first_play: 'Lv1 first card played', lv1_clear: 'Lv1 cleared',
-  lv2_start: 'Lv2 tried', lv2_clear: 'Lv2 cleared',
-  lv3_start: 'Lv3 tried', lv3_clear: 'Lv3 cleared',
-  lv4_start: 'Lv4 tried', lv4_clear: 'Lv4 cleared',
-  lv5_start: 'Lv5 tried', lv5_clear: 'Lv5 cleared',
+  lv1_auto: 'Lv1 auto-started', lv1_start: 'Lv1 tried', lv1_play_hint: 'Lv1 idle-card hint', lv1_first_play: 'Lv1 first card played', lv1_clear: 'Lv1 cleared',
+  lv2_auto: 'Lv2 auto-started', lv2_start: 'Lv2 tried', lv2_first_play: 'Lv2 first card played', lv2_clear: 'Lv2 cleared',
+  lv3_auto: 'Lv3 auto-started', lv3_start: 'Lv3 tried', lv3_first_play: 'Lv3 first card played', lv3_clear: 'Lv3 cleared',
+  lv4_auto: 'Lv4 auto-started', lv4_start: 'Lv4 tried', lv4_first_play: 'Lv4 first card played', lv4_clear: 'Lv4 cleared',
+  lv5_auto: 'Lv5 auto-started', lv5_start: 'Lv5 tried', lv5_first_play: 'Lv5 first card played', lv5_clear: 'Lv5 cleared',
   ink_full_hint: 'Ink-full hint shown',
   gift_shown: 'Gift card shown', gift_gacha: 'Gift → gacha', gacha_pull: 'Gacha pulled',
   daily_shown: 'Daily card shown', daily_open: 'Daily → check-in', daily_claim: 'Checked in',

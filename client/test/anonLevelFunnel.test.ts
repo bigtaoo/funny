@@ -13,7 +13,8 @@ vi.mock('../src/analytics', async (importOriginal) => {
 import { createGameNav } from '../src/app/nav/game';
 import type { AppCtx, AppState, Nav } from '../src/app/appCtx';
 import type { AppViews } from '../src/app/AppViews';
-import type { GameSceneCallbacks } from '../src/scenes/GameScene';
+import type { GameSceneCallbacks, GameSceneOptions } from '../src/scenes/GameScene';
+import { anonLevelStep } from '../src/app/nav/game/campaignResult';
 import type { PlayerStats } from '@nw/engine/types';
 import { CAMPAIGN_LEVEL_ORDER } from '@nw/engine/campaign/levels';
 
@@ -22,11 +23,12 @@ const stats = (owner: 0 | 1): PlayerStats => ({
   killsByType: {}, castsByType: {}, buildingSurvivalTicks: 0, goldSpent: 0,
 });
 
-function nav(cleared: string[]): { goCampaign: Nav['goCampaign']; lastGame: () => GameSceneCallbacks } {
+function nav(cleared: string[]): { goCampaign: Nav['goCampaign']; lastGame: () => GameSceneCallbacks; lastOpts: () => GameSceneOptions } {
   let cb: GameSceneCallbacks | null = null;
+  let opts: GameSceneOptions | null = null;
   const ctx = {
     platform: { onGameplayStart: () => {}, onGameplayStop: () => {} },
-    views: { showGame: (c: GameSceneCallbacks) => { cb = c; } } as unknown as AppViews,
+    views: { showGame: (c: GameSceneCallbacks, o: GameSceneOptions) => { cb = c; opts = o; } } as unknown as AppViews,
     api: undefined,
     baseUrl: null,
     saveManager: {
@@ -47,7 +49,11 @@ function nav(cleared: string[]): { goCampaign: Nav['goCampaign']; lastGame: () =
     resolvePvpDeck: () => [],
   } as unknown as AppCtx;
   const { goCampaign } = createGameNav(ctx);
-  return { goCampaign, lastGame: () => { if (!cb) throw new Error('showGame not called'); return cb; } };
+  return {
+    goCampaign,
+    lastGame: () => { if (!cb) throw new Error('showGame not called'); return cb; },
+    lastOpts: () => { if (!opts) throw new Error('showGame not called'); return opts; },
+  };
 }
 
 describe('anonymous funnel: first five campaign levels', () => {
@@ -86,5 +92,21 @@ describe('anonymous funnel: first five campaign levels', () => {
     const n = nav([]);
     n.goCampaign(CAMPAIGN_LEVEL_ORDER[5]);
     expect(ticks).toEqual([]);
+  });
+
+  it('every early level counts its first play, not only level 1 (ONBOARDING_DESIGN §17.7)', () => {
+    const n = nav([CAMPAIGN_LEVEL_ORDER[0]!]);
+    n.goCampaign(CAMPAIGN_LEVEL_ORDER[1]);
+    n.lastOpts().buildHint?.onFirstPlay?.(30);
+    expect(ticks).toEqual(['lv2_start', 'lv2_first_play']);
+  });
+});
+
+describe('anonLevelStep', () => {
+  it('names the step for an uncleared early level and nothing otherwise', () => {
+    expect(anonLevelStep(CAMPAIGN_LEVEL_ORDER[1]!, [], 'auto')).toBe('lv2_auto');
+    expect(anonLevelStep(CAMPAIGN_LEVEL_ORDER[4]!, [], 'first_play')).toBe('lv5_first_play');
+    expect(anonLevelStep(CAMPAIGN_LEVEL_ORDER[1]!, [CAMPAIGN_LEVEL_ORDER[1]!], 'auto')).toBeNull();
+    expect(anonLevelStep(CAMPAIGN_LEVEL_ORDER[5]!, [], 'start')).toBeNull();
   });
 });

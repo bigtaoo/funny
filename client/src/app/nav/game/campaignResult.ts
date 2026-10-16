@@ -11,6 +11,7 @@ import type { UnlockCalloutEntry } from '../../../render/GameRenderer/unlockCall
 import { resolveRealLayerInterlude } from '../../../scenes/realLayerInterludeArt';
 import { nextLevelAfterWin, NEXT_LEVEL_AUTO_SEC, CHAIN_AUTO_SEC, CHAIN_RESULT_EVERY } from './nextLevel';
 import type { AppCtx } from '../../appCtx';
+import type { AnonymousFunnelStep } from '../../../analytics';
 
 /**
  * The first five campaign levels — the stretch the anonymous funnel follows level by level, that
@@ -20,6 +21,18 @@ const EARLY_LEVEL_COUNT = 5;
 export function isEarlyLevel(levelId: string): boolean {
   const i = CAMPAIGN_LEVEL_ORDER.indexOf(levelId);
   return i >= 0 && i < EARLY_LEVEL_COUNT;
+}
+
+/**
+ * The anonymous first-session funnel step (ANALYTICS_DESIGN §3.6d) for one of the first five campaign
+ * levels — only while that level has never been cleared, so the row means "a new player got this far",
+ * not "someone replayed level 1". Besides start / clear: `auto` — the chain banner's countdown started
+ * it with no tap, and `first_play` — the first card played in it (ONBOARDING_DESIGN §17.7: since the
+ * chain, `lvN_start` also counts players who were already leaving). Read before recordClear.
+ */
+export function anonLevelStep(levelId: string, cleared: readonly string[], phase: 'start' | 'clear' | 'auto' | 'first_play'): AnonymousFunnelStep | null {
+  if (!isEarlyLevel(levelId) || cleared.includes(levelId)) return null;
+  return `lv${CAMPAIGN_LEVEL_ORDER.indexOf(levelId) + 1}_${phase}` as AnonymousFunnelStep;
 }
 
 /**
@@ -77,7 +90,8 @@ export interface CampaignResultNav {
   goCampaignMap(): void;
   goLevelPrep(levelId: string): void;
   retryAssisted(levelId: string): void;
-  chainInto(nextId: string): void;
+  /** `auto` = the banner's countdown ran out rather than a tap. */
+  chainInto(nextId: string, auto: boolean): void;
 }
 
 export function routeCampaignResult(ctx: Pick<AppCtx, 'nav' | 'views' | 'platform'>, go: CampaignResultNav, o: CampaignOutcome): void {
@@ -133,7 +147,7 @@ export function routeCampaignResult(ctx: Pick<AppCtx, 'nav' | 'views' | 'platfor
       nextName: t(nextLevel.nameKey as TranslationKey),
       ...newCardsFor(nextId),
       autoSec: CHAIN_AUTO_SEC,
-      onNext: () => go.chainInto(nextId),
+      onNext: (auto) => go.chainInto(nextId, auto),
       onMap: proceedToMap,
     });
     return;
