@@ -467,6 +467,8 @@ metaserver → admin → ops「Server retention」卡上加了平台选择。**1
 
 **上线顺序**同 §3.6g。
 
+**2026-10-16 补**：`tutorial_beat_done` 多 `wrong_card`（拖了不是引导的卡）/ `wrong_spot`（引导的卡放错地方），`wrong_drops` = 两者之和保留。同日建造拍、陨石拍改为引导卡放哪都吸到目标，所以这两拍之后只会有 `wrong_card`。见 [`ONBOARDING_DESIGN.md` §17.9](ONBOARDING_DESIGN.md)。
+
 ---
 
 ## §4 采集配置（服务端控制开关）

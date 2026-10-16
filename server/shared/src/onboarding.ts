@@ -12,9 +12,10 @@ export const WELCOME_MAIL_COINS = 1000;
 /**
  * Next-day hero gift (ONBOARDING_DESIGN §17.4): the first clear of this level — where the hero joins the
  * fight as a trial card — earns this hero card for keeps, claimable from the next UTC midnight on. A reason
- * to come back tomorrow, announced in the battle, on the result screen and in the lobby.
+ * to come back tomorrow, announced in the battle, on the chain banner and in the lobby. Moved from ch1_lv5
+ * to ch1_lv3 on 2026-10-16 (§17.9): few CG sessions got as far as lv5.
  */
-export const HERO_GIFT_LEVEL_ID = 'ch1_lv5';
+export const HERO_GIFT_LEVEL_ID = 'ch1_lv3';
 export const HERO_GIFT_DEF_ID = 'max';
 
 const DAY_MS = 86_400_000;

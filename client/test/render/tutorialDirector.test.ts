@@ -136,7 +136,7 @@ describe('TutorialDirector', () => {
     expect(director.allowCardPlay('infantry_1', BEATS[0]!.col - 1, 1)).toEqual({ col: BEATS[0]!.col, row: 1 });
     frame(); // release
     expect(director.engineFrozen).toBe(false);
-    expect(config.onBeatDone).toHaveBeenCalledWith(expect.objectContaining({ beat: 'unit', wrong_drops: 2, ghost_shown: true }));
+    expect(config.onBeatDone).toHaveBeenCalledWith(expect.objectContaining({ beat: 'unit', wrong_drops: 2, wrong_card: 1, wrong_spot: 1, ghost_shown: true }));
   });
 
   it('a building of the wrong id (barracks) does not pass the tower beat', () => {
@@ -145,7 +145,7 @@ describe('TutorialDirector', () => {
     runTo(BEATS[1]!.setupTick);
     expect(config.onStep).toHaveBeenLastCalledWith('beat_building');
     expect(director.allowCardPlay('barracks_1', BEATS[1]!.col, 0)).toBeNull();
-    expect(director.allowCardPlay('tower_1', BEATS[1]!.col, 0)).toEqual({ col: BEATS[1]!.col, row: 0 });
+    expect(director.allowCardPlay('tower_1', BEATS[1]!.col + 4, 0)).toEqual({ col: BEATS[1]!.col, row: 0 }); // any lane, snapped
   });
 
   it('starts the ghost demo after the idle threshold, and a held card stops it', () => {
@@ -169,7 +169,7 @@ describe('TutorialDirector', () => {
     );
     runTo(BEATS[2]!.setupTick);
     expect(config.onStep).toHaveBeenLastCalledWith('beat_spell');
-    expect(director.allowCardPlay('meteor_1', 3, 11)).toEqual({ col: 2, row: 9 }); // dropped a cell off, snapped
+    expect(director.allowCardPlay('meteor_1', 8, 4)).toEqual({ col: 2, row: 9 }); // dropped anywhere, snapped
     frame(); // release → free
   };
 

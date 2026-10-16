@@ -87,10 +87,12 @@ describe('campaign level invariants', () => {
 
   it('levels with assist or mid-battle unlocks are marked as current-revision content', () => {
     // Both features change what the judge must recompute; an older build replaying these levels
-    // must be filtered out by the content-revision gate.
+    // must be filtered out by the content-revision gate. Rev 2 introduced them (ONBOARDING_DESIGN §17.2).
+    const FEATURE_REV = 2;
     for (const lv of LEVELS) {
       if (lv.assistOnLoss || lv.cardUnlocks) {
-        expect(levelContentRev(lv.id), `${lv.id} changed content without a revision bump`).toBe(CAMPAIGN_CONTENT_REV);
+        expect(levelContentRev(lv.id), `${lv.id} changed content without a revision bump`).toBeGreaterThanOrEqual(FEATURE_REV);
+        expect(levelContentRev(lv.id)).toBeLessThanOrEqual(CAMPAIGN_CONTENT_REV);
       }
     }
   });

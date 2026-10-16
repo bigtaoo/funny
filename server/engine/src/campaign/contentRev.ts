@@ -6,14 +6,16 @@
 // submitter whose build predates it.
 
 /** The content revision this build carries. Bump when any level's gameplay content changes. */
-export const CAMPAIGN_CONTENT_REV = 2;
+export const CAMPAIGN_CONTENT_REV = 3;
 
 /** Levels whose content changed after rev 1 → the revision of their latest change. Absent = 1. */
 const LEVEL_CONTENT_REV: Readonly<Record<string, number>> = {
   // §17.2: ch1 first-ten rework (per-level card unlocks, monotonic difficulty, easier retry, lv5 hero trial).
   // ch0_tutorial is never judged; listed so every level carrying `cardUnlocks` is marked alike.
   ch0_tutorial: 2,
-  ch1_lv1: 2, ch1_lv2: 2, ch1_lv3: 2, ch1_lv4: 2, ch1_lv5: 2, ch1_lv6: 2, ch1_lv7: 2, ch1_lv8: 2,
+  ch1_lv1: 2, ch1_lv2: 2, ch1_lv5: 2,
+  // §17.9: hero trial moved to lv3, lv4/lv6–8 eased to smooth the curve.
+  ch1_lv3: 3, ch1_lv4: 3, ch1_lv6: 3, ch1_lv7: 3, ch1_lv8: 3,
 };
 
 /** Revision of the latest content change to `levelId`. */

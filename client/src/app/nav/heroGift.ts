@@ -1,4 +1,4 @@
-// Next-day hero gift, lobby side (ONBOARDING_DESIGN §17.4). The first ch1_lv5 clear earns the trial
+// Next-day hero gift, lobby side (ONBOARDING_DESIGN §17.4). The first ch1_lv3 clear earns the trial
 // hero for keeps from the next UTC midnight (server pve/heroGift.ts); the battle and the result screen
 // already said so. The first lobby arrival once it is due claims it and says so, then opens the roster
 // where the card now sits. Before it is due, the lobby's Campaign pillar carries a countdown sticker

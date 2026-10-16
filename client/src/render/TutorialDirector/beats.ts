@@ -84,8 +84,9 @@ export const GRAD_POP_SEC = 0.25;
 /** Meteor screen shake. */
 export const SHAKE_SEC = 0.35;
 export const SHAKE_AMP = 9;
-/** A drop this many cells off the guided target still counts (and is snapped onto it). */
+/**
+ * The unit beat's drop zone: a drop this many lanes off the guided lane still counts (and is snapped
+ * onto it) — that beat teaches lanes. The building and spell beats take the guided card dropped anywhere
+ * and snap it onto the target (§17.9: ~60% wrong drops even with a two-lane zone).
+ */
 export const LANE_SNAP_COLS = 1;
-/** The building beat's wider drop zone (§15.7): a tower dropped two lanes off still lands on the target. */
-export const BUILDING_SNAP_COLS = 2;
-export const METEOR_SNAP_CELLS = 2;

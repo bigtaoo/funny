@@ -397,7 +397,7 @@ export class InputPanel {
     handIndex: number, cardType: CardType, spellType: SpellType | undefined,
     col: number, row: number,
   ): void {
-    // Tutorial: only the guided card near its target is allowed, aim-assisted onto the target;
+    // Tutorial: only the guided card is allowed (the unit beat near its lane), aim-assisted onto the target;
     // anything else is rejected and the director replays the ghost demo (ONBOARDING_DESIGN §11.4).
     if (this.core.tutorial) {
       const cardId = this.core.localPlayer(this.core.engine.state).hand.slots[handIndex]?.card.id ?? '';
