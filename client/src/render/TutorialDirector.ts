@@ -168,12 +168,11 @@ export class TutorialDirector {
   }
 
   /**
-   * Called by GameRenderer.commitCardPlay. Returns the (possibly aim-assisted) target to play the card
-   * at, or null to reject the play. Outside a prompt every play is rejected; inside one only the guided
-   * card itself (by id — barracks is a building too, haste a spell too) is accepted and snapped onto
-   * its target — the unit beat only within LANE_SNAP_COLS of its lane, the building and spell beats
-   * from anywhere (§17.9); anything else counts as a wrong drop and plays the ghost demo straight
-   * away (§11.4). In the free phase every play goes, and lifts the idle prompt if it is up.
+   * Called by GameRenderer.commitCardPlay: the (possibly aim-assisted) target to play the card at, or null
+   * to reject. Outside a prompt every play is rejected; inside one only the guided card itself (by id —
+   * barracks is a building too, haste a spell too) is accepted and snapped onto its target (unit beat
+   * within LANE_SNAP_COLS of its lane, building/spell beats from anywhere, §17.9); anything else is a wrong
+   * drop and plays the ghost demo straight away (§11.4). In the free phase every play goes and lifts the idle prompt.
    */
   allowCardPlay(cardId: string, col: number, row: number): { col: number; row: number } | null {
     if (this.phase === 'free') {
@@ -184,8 +183,7 @@ export class TutorialDirector {
     if (!this.prompting || this.pendingRelease) return null;
     const target = this.snapCardPlay(cardId, col, row);
     if (!target) {
-      if (cardId === BEATS[this.beatIndex]!.cardId) this.wrongSpots++;
-      else this.wrongCards++;
+      if (cardId === BEATS[this.beatIndex]!.cardId) this.wrongSpots++; else this.wrongCards++;
       this.holdingCard = false;
       this.setGhost(true);
       return null;
@@ -273,8 +271,7 @@ export class TutorialDirector {
     const beat = BEATS[this.beatIndex]!;
     this.phase = 'beat';
     this.promptAt = this.time;
-    this.wrongCards = 0;
-    this.wrongSpots = 0;
+    this.wrongCards = this.wrongSpots = 0;
     this.raisePrompt(state, beat);
     const text = beatText(beat.kind);
     this.showStrip(text.title, text.body, Infinity);
