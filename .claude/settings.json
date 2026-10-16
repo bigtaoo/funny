@@ -1,5 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "env": {
+    "END_TASK_BRANCH": "daily"
+  },
   "permissions": {
     "deny": [
       "mcp__Claude_Browser__browser_batch",

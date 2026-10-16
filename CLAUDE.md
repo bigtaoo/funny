@@ -36,14 +36,9 @@
 
 服务端测试（`server/`）的输出**不要接 `| head`**：`head` 一退出，vitest 就因 EPIPE 死在 teardown 之前，`%TEMP%` 里会留下约 0.5 GB 的 `mongo-mem-*`。要截断就先写进文件（`> /tmp/x.log 2>&1`）再看。详见 [`claudedocs/server-testing-tooling.md`](claudedocs/server-testing-tooling.md)。
 
-## 结束任务（收尾前完整走一遍）
+## 结束任务
 
-1. 更新 `design/` 相关文档。
-2. 更新记忆（`MEMORY.md` + 对应 `index/<分类>.md`）。
-3. 提交，并把任务分支合进当日分支（`DD.MM.YYYY`，不存在则创建）。
-4. 先停掉在该 worktree 里起过的**所有**进程（dev server、微信 DevTools），再删任务分支 + worktree；删之前确认路径在 `.claude/worktrees/` 下，**绝不删主检出**。合并后 `cat .claude/launch.json` 确认端口没指向已删目录。
-
-直接在主目录当日分支做的任务：第 3 步退化成一次普通提交，第 4 步不适用。
+收尾走全局 skill `/end-task`。本项目参数：目标分支 = 当日分支（`.claude/settings.json` 里 `END_TASK_BRANCH=daily`）；文档在 `design/`；记忆走分层索引（`MEMORY.md` → `index/<分类>.md`）；删 worktree 前要停的外部工具包括微信 DevTools；清理陷阱见 [`claudedocs/worktrees.md`](claudedocs/worktrees.md)。
 
 ## 其它
 
