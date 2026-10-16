@@ -18,6 +18,12 @@
     "shieldbearer_1",
     "haste_1"
   ],
+  "cardUnlocks": [
+    {
+      "atTick": 150,
+      "cardId": "max_1"
+    }
+  ],
   "board": {
     "cellMask": {
       "noBuild": [

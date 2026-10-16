@@ -171,7 +171,7 @@
   post:
     operationId: claimHeroGift
     tags: [save]
-    summary: Claim the next-day hero gift earned on the first ch1_lv5 clear (ONBOARDING_DESIGN §17.4). 400 BAD_REQUEST before claimableAt; idempotent once claimed.
+    summary: Claim the next-day hero gift earned on the first ch1_lv3 clear (ONBOARDING_DESIGN §17.4). 400 BAD_REQUEST before claimableAt; idempotent once claimed.
     security: [{ bearerAuth: [] }]
     responses:
       '200':

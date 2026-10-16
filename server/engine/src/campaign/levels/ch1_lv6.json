@@ -7,8 +7,8 @@
     "durationTicks": 1800
   },
   "enemyScale": {
-    "hp": 1.15,
-    "damage": 1.08
+    "hp": 0.9,
+    "damage": 0.85
   },
   "loadout": [
     "infantry_1",
@@ -137,14 +137,14 @@
         "atTick": 1170,
         "unitType": "lena",
         "col": 2,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 20
       },
       {
         "atTick": 1170,
         "unitType": "lena",
         "col": 9,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 20
       },
       {
@@ -179,14 +179,14 @@
         "atTick": 1440,
         "unitType": "max",
         "col": 1,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 12
       },
       {
         "atTick": 1440,
         "unitType": "max",
         "col": 10,
-        "count": 2,
+        "count": 1,
         "spacingTicks": 12
       },
       {

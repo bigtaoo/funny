@@ -9,7 +9,7 @@ import { HERO_GIFT_LEVEL_ID } from '@nw/shared/onboarding';
 import type { ChainBannerHost } from '../../../render/ChainBanner';
 import type { UnlockCalloutEntry } from '../../../render/GameRenderer/unlockCallout';
 import { resolveRealLayerInterlude } from '../../../scenes/realLayerInterludeArt';
-import { nextLevelAfterWin, NEXT_LEVEL_AUTO_SEC, CHAIN_AUTO_SEC, CHAIN_RESULT_EVERY } from './nextLevel';
+import { nextLevelAfterWin, NEXT_LEVEL_AUTO_SEC, CHAIN_AUTO_SEC, CHAIN_GIFT_AUTO_SEC, CHAIN_RESULT_EVERY } from './nextLevel';
 import type { AppCtx } from '../../appCtx';
 import type { AnonymousFunnelStep } from '../../../analytics';
 
@@ -140,13 +140,16 @@ export function routeCampaignResult(ctx: Pick<AppCtx, 'nav' | 'views' | 'platfor
   // The pair to goCampaign's onGameplayStart is sent here, since goResult (which sends it
   // otherwise) is skipped.
   const nextLevel = getLevel(nextId);
+  // The hero-gift level's first clear also says the trial hero is theirs from tomorrow (§17.4, §17.9).
+  const giftLine = firstClear && levelId === HERO_GIFT_LEVEL_ID ? t('heroGift.result', { name: t('card.max.name') }) : undefined;
   if (banner && firstClear && stars > 0 && !outroTexts && nextLevel && (CAMPAIGN_LEVEL_ORDER.indexOf(levelId) + 1) % CHAIN_RESULT_EVERY !== 0) {
     platform.onGameplayStop();
     banner.showChainBanner({
       stars,
       nextName: t(nextLevel.nameKey as TranslationKey),
       ...newCardsFor(nextId),
-      autoSec: CHAIN_AUTO_SEC,
+      ...(giftLine ? { giftLine } : {}),
+      autoSec: giftLine ? CHAIN_GIFT_AUTO_SEC : CHAIN_AUTO_SEC,
       onNext: (auto) => go.chainInto(nextId, auto),
       onMap: proceedToMap,
     });
@@ -154,8 +157,6 @@ export function routeCampaignResult(ctx: Pick<AppCtx, 'nav' | 'views' | 'platfor
   }
   // The first clear of an early level gets the compact screen with an "up next" teaser (§15.4).
   const nextKey = nextLevel?.nameKey;
-  // The hero-gift level's first clear also says the trial hero is theirs from tomorrow (§17.4).
-  const giftLine = firstClear && levelId === HERO_GIFT_LEVEL_ID ? t('heroGift.result', { name: t('card.max.name') }) : undefined;
   const firstWin = early && firstClear && nextKey
     ? { nextName: t(nextKey as TranslationKey), ...(giftLine ? { giftLine } : {}) }
     : undefined;

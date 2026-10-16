@@ -1,4 +1,4 @@
-// Next-day hero gift (ONBOARDING_DESIGN §17.4): the first ch1_lv5 clear stamps save.heroGift, claimable
+// Next-day hero gift (ONBOARDING_DESIGN §17.4): the first ch1_lv3 clear stamps save.heroGift, claimable
 // from the next UTC midnight via POST /pve/hero-gift/claim, which grants the hero card exactly once.
 // Requires `cd server && docker compose up -d` + `tsc -b` first (for @nw/shared's dist; this file imports ../src).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
@@ -48,7 +48,7 @@ describe.skipIf(!mongo)('pve hero gift e2e', () => {
     token = r.data.token;
     accountId = r.data.accountId;
     await app.inject({ method: 'GET', url: '/save', headers: auth() });
-    await seedCleared(['ch1_lv1', 'ch1_lv2', 'ch1_lv3', 'ch1_lv4']);
+    await seedCleared(['ch1_lv1', 'ch1_lv2']);
   });
   afterAll(async () => { if (app) await app.close(); });
 
@@ -57,12 +57,12 @@ describe.skipIf(!mongo)('pve hero gift e2e', () => {
     expect(r.statusCode).toBe(404);
   });
 
-  it('first ch1_lv5 clear stamps the gift for the next UTC midnight; a replay does not move it', async () => {
-    const r = body(await clear('ch1_lv5'));
+  it('first ch1_lv3 clear stamps the gift for the next UTC midnight; a replay does not move it', async () => {
+    const r = body(await clear('ch1_lv3'));
     expect(r.data.save.heroGift).toEqual({ defId: HERO_GIFT_DEF_ID, claimableAt: heroGiftClaimableAt(T0) });
     expect(r.data.save.heroGift.claimableAt).toBe(Date.UTC(2026, 9, 16));
     clock = T0 + 3_600_000 * 10; // next day
-    const r2 = body(await clear('ch1_lv5'));
+    const r2 = body(await clear('ch1_lv3'));
     expect(r2.data.save.heroGift.claimableAt).toBe(Date.UTC(2026, 9, 16));
   });
 
@@ -72,7 +72,7 @@ describe.skipIf(!mongo)('pve hero gift e2e', () => {
   });
 
   it('claim before claimableAt → 400; after → the hero card once, idempotent afterwards', async () => {
-    const before = body(await clear('ch1_lv5'));
+    const before = body(await clear('ch1_lv3'));
     const n0 = heroCount(before.data.save);
     expect((await claim()).statusCode).toBe(400);
     clock = Date.UTC(2026, 9, 16) + 1;

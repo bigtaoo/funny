@@ -11,8 +11,12 @@ export interface TutorialBeatDone {
   idle_ms: number;
   /** Whether the ghost-hand demo played at least once during this beat. */
   ghost_shown: boolean;
-  /** Drops of a wrong card / onto a wrong spot during this beat. */
+  /** Rejected drops during this beat: wrong_card + wrong_spot. */
   wrong_drops: number;
+  /** Drops of a card other than the guided one (§17.9). */
+  wrong_card: number;
+  /** Drops of the guided card outside its drop zone (unit beat only since §17.9). */
+  wrong_spot: number;
 }
 
 /**
