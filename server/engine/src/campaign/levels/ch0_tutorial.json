@@ -102,62 +102,6 @@
         "col": 7,
         "count": 3,
         "spacingTicks": 20
-      },
-      {
-        "atTick": 900,
-        "unitType": "max",
-        "col": 2,
-        "count": 4,
-        "spacingTicks": 18
-      },
-      {
-        "atTick": 900,
-        "unitType": "max",
-        "col": 3,
-        "count": 4,
-        "spacingTicks": 18
-      },
-      {
-        "atTick": 1060,
-        "unitType": "max",
-        "col": 4,
-        "count": 5,
-        "spacingTicks": 15
-      },
-      {
-        "atTick": 1060,
-        "unitType": "max",
-        "col": 7,
-        "count": 4,
-        "spacingTicks": 15
-      },
-      {
-        "atTick": 1240,
-        "unitType": "max",
-        "col": 2,
-        "count": 4,
-        "spacingTicks": 15
-      },
-      {
-        "atTick": 1240,
-        "unitType": "max",
-        "col": 3,
-        "count": 4,
-        "spacingTicks": 15
-      },
-      {
-        "atTick": 1240,
-        "unitType": "max",
-        "col": 4,
-        "count": 4,
-        "spacingTicks": 15
-      },
-      {
-        "atTick": 1240,
-        "unitType": "max",
-        "col": 7,
-        "count": 4,
-        "spacingTicks": 15
       }
     ]
   },

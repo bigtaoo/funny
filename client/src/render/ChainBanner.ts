@@ -20,8 +20,8 @@ export interface ChainBannerSpec {
   newCards?: readonly string[];
   /** Seconds before the next level starts by itself. */
   autoSec: number;
-  /** Start the next level now (countdown ran out, or a tap anywhere but the map button). */
-  onNext(): void;
+  /** Start the next level now: `auto` = the countdown ran out, else a tap anywhere but the map button. */
+  onNext(auto: boolean): void;
   /** Leave the chain for the campaign map. */
   onMap(): void;
 }
@@ -126,7 +126,7 @@ export class ChainBanner {
   /** Any tap decides: the map button leaves the chain, anywhere else starts the next level now. */
   handleDown(x: number, y: number): boolean {
     if (this.decided) return true;
-    if (!dispatchHit([{ rect: this.mapRect, sound: 'sfx.ui.back', fn: () => this.decide('map') }], x, y)) this.decide('next');
+    if (!dispatchHit([{ rect: this.mapRect, sound: 'sfx.ui.back', fn: () => this.decide('map') }], x, y)) this.decide('next', false);
     return true;
   }
 
@@ -135,18 +135,18 @@ export class ChainBanner {
     this.elapsed += dt;
     const p = Math.min(1, this.elapsed / this.spec.autoSec);
     this.drawBar(p);
-    if (p >= 1) this.decide('next');
+    if (p >= 1) this.decide('next', true);
   }
 
   destroy(): void {
     this.container.destroy({ children: true });
   }
 
-  private decide(which: 'next' | 'map'): void {
+  private decide(which: 'next' | 'map', auto = false): void {
     if (this.decided) return;
     this.decided = true;
     if (which === 'map') this.spec.onMap();
-    else this.spec.onNext();
+    else this.spec.onNext(auto);
   }
 
   private drawBar(p: number): void {

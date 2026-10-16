@@ -10,6 +10,7 @@ import type { AppCtx, Nav } from '../../appCtx';
 import { TUTORIAL_BEATS_DONE_FLAG, TUTORIAL_DONE_FLAG } from '../../appConstants';
 import { levelStaminaCost } from './staminaCost';
 import { CHAIN_AUTO_SEC } from './nextLevel';
+import { anonLevelStep } from './campaignResult';
 
 type TutorialNav = Pick<Nav, 'goTutorial'>;
 
@@ -73,7 +74,7 @@ export function createTutorialNav(ctx: AppCtx): TutorialNav {
           banner.showChainBanner({
             nextName: t(next.nameKey as TranslationKey),
             autoSec: CHAIN_AUTO_SEC,
-            onNext: () => startLevelFromTutorial(nextLevelId),
+            onNext: (auto) => startLevelFromTutorial(nextLevelId, auto),
             onMap: () => nav.goCampaignMap(),
           });
           return;
@@ -115,6 +116,10 @@ export function createTutorialNav(ctx: AppCtx): TutorialNav {
         onBeatDone(info) {
           analytics.track('tutorial_beat_done', { level_id: TUTORIAL_LEVEL_ID, ...info });
         },
+        onIdlePrompt(info) {
+          analytics.track('tutorial_idle_prompt', { level_id: TUTORIAL_LEVEL_ID, ...info });
+          analytics.countAnonymousFunnelStep(info.outcome === 'shown' ? 'free_idle_prompt' : 'free_idle_resume');
+        },
       },
     });
   }
@@ -123,13 +128,20 @@ export function createTutorialNav(ctx: AppCtx): TutorialNav {
    * Tutorial graduation → the first campaign level, skipping the map and the prep page (one tap from
    * the graduation card, §3.6). Same bookkeeping as LevelPrep's Start: the attempt is tracked and the
    * stamina cost is paid at entry; if stamina somehow does not cover it, fall back to the prep page,
-   * which explains why.
+   * which explains why. `auto` is set when the chain banner started it: its countdown ran out (true)
+   * or the player tapped (false).
    */
-  function startLevelFromTutorial(levelId: string): void {
+  function startLevelFromTutorial(levelId: string, auto?: boolean): void {
     const level = getLevel(levelId);
     if (!level) { nav.goCampaignMap(); return; }
-    analytics.track('level_attempt', { level_id: levelId, stars_before: saveManager.get().progress.stars[levelId] ?? 0 });
+    analytics.track('level_attempt', {
+      level_id: levelId,
+      stars_before: saveManager.get().progress.stars[levelId] ?? 0,
+      ...(auto !== undefined ? { chained: true, auto } : {}),
+    });
     if (!saveManager.spendStaminaForLevel(levelId, levelStaminaCost(platform, level))) { nav.goLevelPrep(levelId); return; }
+    const autoStep = auto ? anonLevelStep(levelId, saveManager.get().progress.cleared, 'auto') : null;
+    if (autoStep) analytics.countAnonymousFunnelStep(autoStep);
     analytics.track('screen_view', { scene: 'GameScene' });
     nav.goCampaign(levelId);
   }
