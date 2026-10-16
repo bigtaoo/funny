@@ -7,7 +7,7 @@ import type { Phase, TutorialConfig } from './TutorialDirector/types';
 import { buildLayers, drawStrip, clearStrip, type PanelHost } from './TutorialDirector/panels';
 import { BEATS, BEAT_STEP_KEY, beatText, type BeatSpec } from './TutorialDirector/beats';
 import {
-  IDLE_GHOST_SEC, BASE_LABEL_HOLD_SEC, BASE_LABEL_FADE_SEC, FEEDBACK_SEC, STRIP_FADE_SEC, FINALE_PAUSE_SEC, FREE_SETTLE_TICKS, FREE_IDLE_PROMPT_SEC, FREE_IDLE_GHOST_SEC, NEW_CARD_CALLOUT_SEC, TUTORIAL_NEW_CARD, SHAKE_SEC, SHAKE_AMP, LANE_SNAP_COLS, BUILDING_SNAP_COLS, METEOR_SNAP_CELLS,
+  IDLE_GHOST_SEC, BASE_LABEL_HOLD_SEC, BASE_LABEL_FADE_SEC, FEEDBACK_SEC, STRIP_FADE_SEC, FINALE_PAUSE_SEC, FREE_SETTLE_TICKS, FREE_IDLE_PROMPT_SEC, FREE_IDLE_GHOST_SEC, NEW_CARD_CALLOUT_SEC, TUTORIAL_NEW_CARD, SHAKE_SEC, SHAKE_AMP, LANE_SNAP_COLS,
 } from './TutorialDirector/beats';
 import { bestMeteorAnchor, beatTargetPoint, meteorAnchorCenter, stripAvoidRects } from './TutorialDirector/geometry';
 import { dispatchHit } from '../ui/hits';
@@ -105,7 +105,8 @@ export class TutorialDirector {
 
   // Per-beat analytics.
   private ghostShown = false;
-  private wrongDrops = 0;
+  private wrongCards = 0;
+  private wrongSpots = 0;
 
   // Ghost-hand demo.
   private ghostOn = false;
@@ -169,8 +170,9 @@ export class TutorialDirector {
   /**
    * Called by GameRenderer.commitCardPlay. Returns the (possibly aim-assisted) target to play the card
    * at, or null to reject the play. Outside a prompt every play is rejected; inside one only the guided
-   * card itself (by id — barracks is a building too, haste a spell too) near its target is accepted
-   * (snapped onto the target); anything else counts as a wrong drop and plays the ghost demo straight
+   * card itself (by id — barracks is a building too, haste a spell too) is accepted and snapped onto
+   * its target — the unit beat only within LANE_SNAP_COLS of its lane, the building and spell beats
+   * from anywhere (§17.9); anything else counts as a wrong drop and plays the ghost demo straight
    * away (§11.4). In the free phase every play goes, and lifts the idle prompt if it is up.
    */
   allowCardPlay(cardId: string, col: number, row: number): { col: number; row: number } | null {
@@ -182,7 +184,8 @@ export class TutorialDirector {
     if (!this.prompting || this.pendingRelease) return null;
     const target = this.snapCardPlay(cardId, col, row);
     if (!target) {
-      this.wrongDrops++;
+      if (cardId === BEATS[this.beatIndex]!.cardId) this.wrongSpots++;
+      else this.wrongCards++;
       this.holdingCard = false;
       this.setGhost(true);
       return null;
@@ -201,12 +204,9 @@ export class TutorialDirector {
     if (!this.prompting || this.pendingRelease) return null;
     const beat = BEATS[this.beatIndex]!;
     if (cardId !== beat.cardId) return null;
-    if (beat.kind === 'spell') {
-      const a = this.meteorAnchor;
-      return a && Math.abs(col - a.col) <= METEOR_SNAP_CELLS && Math.abs(row - a.row) <= METEOR_SNAP_CELLS ? a : null;
-    }
-    const snap = beat.kind === 'building' ? BUILDING_SNAP_COLS : LANE_SNAP_COLS;
-    return Math.abs(col - beat.col) <= snap ? { col: beat.col, row } : null;
+    if (beat.kind === 'spell') return this.meteorAnchor;
+    if (beat.kind === 'building') return { col: beat.col, row };
+    return Math.abs(col - beat.col) <= LANE_SNAP_COLS ? { col: beat.col, row } : null;
   }
 
   // ── Per-frame (end of GameRenderer.update): clock control, never-fail clamp, state machine, anims ──
@@ -273,7 +273,8 @@ export class TutorialDirector {
     const beat = BEATS[this.beatIndex]!;
     this.phase = 'beat';
     this.promptAt = this.time;
-    this.wrongDrops = 0;
+    this.wrongCards = 0;
+    this.wrongSpots = 0;
     this.raisePrompt(state, beat);
     const text = beatText(beat.kind);
     this.showStrip(text.title, text.body, Infinity);
@@ -316,7 +317,9 @@ export class TutorialDirector {
       beat: beat.kind,
       idle_ms: Math.round((this.time - this.promptAt) * 1000),
       ghost_shown: this.ghostShown,
-      wrong_drops: this.wrongDrops,
+      wrong_drops: this.wrongCards + this.wrongSpots,
+      wrong_card: this.wrongCards,
+      wrong_spot: this.wrongSpots,
     });
 
     const done = beatText(beat.kind).done;

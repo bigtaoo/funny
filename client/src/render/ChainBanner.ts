@@ -18,6 +18,8 @@ export interface ChainBannerSpec {
   nextName: string;
   /** Display names of the cards that level adds, if any. */
   newCards?: readonly string[];
+  /** The hero-gift line ("yours from tomorrow"), on the gift level's first clear only. */
+  giftLine?: string;
   /** Seconds before the next level starts by itself. */
   autoSec: number;
   /** Start the next level now: `auto` = the countdown ran out, else a tap anywhere but the map button. */
@@ -93,6 +95,17 @@ export class ChainBanner {
       nc.x = cx; nc.y = y;
       lines.push(nc);
       y += nc.height + 8;
+    }
+
+    if (spec.giftLine) {
+      const gl = makeText(spec.giftLine, {
+        fontSize: snapFont(FS.body), fill: C_STAR, fontWeight: 'bold', fontFamily: UI_FONT_FAMILY,
+      });
+      gl.anchor.set(0.5, 0);
+      if (gl.width > PANEL_W - pad * 2) gl.scale.set((PANEL_W - pad * 2) / gl.width);
+      gl.x = cx; gl.y = y;
+      lines.push(gl);
+      y += gl.height + 8;
     }
 
     // Countdown bar, then the one button: the map.

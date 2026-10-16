@@ -421,7 +421,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Claim the next-day hero gift earned on the first ch1_lv5 clear (ONBOARDING_DESIGN §17.4). 400 BAD_REQUEST before claimableAt; idempotent once claimed. */
+        /** Claim the next-day hero gift earned on the first ch1_lv3 clear (ONBOARDING_DESIGN §17.4). 400 BAD_REQUEST before claimableAt; idempotent once claimed. */
         post: operations["claimHeroGift"];
         delete?: never;
         options?: never;

@@ -1,5 +1,5 @@
 // "Hero Max · 05:12:33" countdown sticker on the Campaign pillar (ONBOARDING_DESIGN §17.4): the
-// first ch1_lv5 clear earns Max for keeps from the next UTC midnight, and until then the lobby says
+// first ch1_lv3 clear earns Max for keeps from the next UTC midnight, and until then the lobby says
 // how long is left. Before this the promise lived only in a battle callout and one result-screen
 // line, so a player who came back early found nothing that remembered it.
 //

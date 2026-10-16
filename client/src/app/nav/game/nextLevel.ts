@@ -29,6 +29,9 @@ export function nextLevelAfterWin(levelId: string, cleared: boolean, hasInterlud
  */
 export const CHAIN_AUTO_SEC = 1.5;
 
+/** The banner after the hero-gift level's first clear holds longer: it carries the "yours from tomorrow" line (§17.9). */
+export const CHAIN_GIFT_AUTO_SEC = 4;
+
 /**
  * First clears chain from banner to banner, except on every this-many-th campaign level (lv5, lv10,
  * …), which stops at the full result screen — stars, rewards, the way to the map (§17.3).

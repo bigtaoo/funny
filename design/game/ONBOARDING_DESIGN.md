@@ -377,7 +377,7 @@ CG 包第一屏原来是年龄 + 同意 + 使用条款合成的一屏 `EntryGate
 全部已实现：
 
 - **新的 `step_key` 序列**：`tutorial_start → beat_unit → beat_building → beat_spell → graduate → tutorial_complete`。`orientation_*` 和 `freeplay` 退役（analyticsvc `TUTORIAL_ORDERED_KEYS` 已改，旧事件不再匹配任何一步）。
-- **每拍完成时**发 `tutorial_beat_done { beat, idle_ms, ghost_shown, wrong_drops }`（100% 采样）。
+- **每拍完成时**发 `tutorial_beat_done { beat, idle_ms, ghost_shown, wrong_drops }`（100% 采样）。2026-10-16 起多 `wrong_card` / `wrong_spot`（§17.9）。
 - **未同意玩家的匿名逐拍计数**：同一组 step，只带平台和步骤名，不带任何标识（ANALYTICS_DESIGN §3.6d）。下一位审核员如果在欧盟没点同意，也能看到他走到哪一拍。
 - **同意停留时长**：`gdpr_consent` 加 `dwell_ms` 和 `mode`（`gate` / `notice` / `prompt`），只在「同意」这条路上带。
 - **补洞（根因已查明）**：和 SSO 无关。`analytics.init()` 先建好事件队列，再去拉采样配置；配置回来之前 `shouldTrack()` 用的是「禁用」兜底，于是这段时间里的事件——包括同意那一刻重放的 `boot`/`first_frame`/`load_time` 和紧接着的 `gdpr_consent`——全被丢掉。QA 一秒内就点了同意，正好落在这个窗口里；配置回来后 `init()` 才发 `session_start`，所以会话从 `session_start` 开始。存档里的同意标记走的是另一条路（flag 同步），所以是 true。修法：配置回来之前不开放队列，事件一律缓冲（`client/test/analyticsConfigRace.test.ts` 复现了旧行为）。
@@ -563,7 +563,7 @@ CG 新包上线后对比 10-12 版。所有数都能按版本拆（匿名计数�
 ### 15.7 教学节奏：建造拍更早示范、更宽吸附、毕业更短
 
 - 建造拍空闲示范 4 s → **2 s**（`IDLE_GHOST_SEC = [2, 2, 4]`）：CG 上三拍里它掉人最多。
-- 建造拍吸附 `BUILDING_SNAP_COLS = 2`：偏两列以内放下也落在目标格（手机上手指挡住格子，偏一列很常见）。
+- 建造拍吸附 `BUILDING_SNAP_COLS = 2`：偏两列以内放下也落在目标格（手机上手指挡住格子，偏一列很常见）。**2026-10-16 起建造拍和陨石拍改为放在哪都吸到目标，此常量删除，见 §17.9。**
 - 毕业卡自动继续 4 s → **2.5 s**（带统计说明小字时 6 s → 4 s）。
 
 ### 15.8 没做的 / 验证
@@ -621,6 +621,8 @@ CG 新包上线后对比 10-12 版。所有数都能按版本拆（匿名计数�
 
 ### 17.4 ⑤ D1 钩子：lv5 英雄试用、明天归你
 
+> **2026-10-16 起挪到 lv3**（`HERO_GIFT_LEVEL_ID = 'ch1_lv3'`），提醒行改在关间横幅上，见 §17.9。下面的 lv5 按当时写法保留。
+
 - lv5 用 `cardUnlocks` 在开局不久塞进英雄战斗卡 `max_1`，导演 / HUD 弹「英雄 Max 加入！明天正式归你」。
 - 服务端：`ch1_lv5` 首通时写一条待领英雄（`max`，可领时间 = 下一个 UTC 日 0 点）；到点后在大厅领取，走 `grantCards`。
 - 提醒：lv5 结算页一行「明天来领 Max」；大厅「战役」入口上一张倒计时贴纸（2026-10-15 补上，见 §17.7），到点后进大厅（或贴纸在大厅里走到 0）自动领取并弹说明。
@@ -654,7 +656,7 @@ CG 新包上线后对比 10-12 版。所有数都能按版本拆（匿名计数�
 
 **② 前 8 关**
 - 实际卡组（关卡 JSON `loadout`）：lv1 步兵/塔/陨石/弓手/兵营 → lv2 +盾兵 → lv3 +加速 → lv4 +步兵 II → lv5 +塔 II（+开局 150 tick 解锁 `max_1`）→ lv6 +弓手 II → lv7 +盾兵 II → lv8 +兵营 II。
-- `enemyScale`（hp=damage，lv6 除外）：lv1 0.6、lv2 0.714、lv3 0.72、lv4 0.95、lv5 0.88、lv6 1.15/1.08、lv7 0.95、lv8 0.82。数值本身不单调，因为卡组每关在变强、波次在变——单调的是模拟器里的结果，以 `client/test/difficulty/baseline.json` 为准（已重钉）。
+- `enemyScale`（hp=damage，lv6 除外；**lv4/lv6–8 在 2026-10-16 下调，见 §17.9**）：lv1 0.6、lv2 0.714、lv3 0.72、lv4 0.95、lv5 0.88、lv6 1.15/1.08、lv7 0.95、lv8 0.82。数值本身不单调，因为卡组每关在变强、波次在变——单调的是模拟器里的结果，以 `client/test/difficulty/baseline.json` 为准（已重钉）。
 - 出战准备页：本关新卡在一行「NEW」面板里列出（与上一关 loadout 求差）。
 - 难度模拟（2026-10-15 复核，`client/test/difficulty`，与重钉的 `baseline.json` 一致）：零养成（fresh）下 lv1–5 胜率全部 100%（星数 2/2/3/1/2），lv6 60%、lv7 80%、lv8 80%；lv9 起零养成过不去（T2 才 80%）。注意 lv4 零养成只拿 1 星、比 lv5 难，lv6 是前 8 关里最难的一关——上线后看 `lv4/lv6_clear / start` 是否掉到 90% 以下再决定要不要回调。
 - 降低难度重试：`assistOnLoss: true` 的关（lv1–3，与 `ASSIST_LEVEL_IDS` 由客户端测试保持一致）输了，结算页多一个「降低难度重试」按钮 → `applyAssist`（敌人 ×0.7、开局墨水 +20）直接重开，不经出战准备页；客户端和服务端都把星数封顶为 `ASSIST_MAX_STARS = 1`；埋点 `game_start` / `level_attempt` 带 `assist: true`。
@@ -691,4 +693,52 @@ CG 新包上线后对比 10-12 版。所有数都能按版本拆（匿名计数�
 - `lvN_first_play`（原来只有 lv1）扩到 lv1–5：该关未通过时本局第一次出牌。`buildHintFor` 对没有建造提示的关也返回只带 `onFirstPlay` 的配置（`BuildHintConfig.atTick` 改为可选）。
 - **以后读 lv2+**：用 `lvN_clear / lvN_first_play`（真打了的人里有多少过关）和 `lvN_clear / lv(N−1)_clear`（链路保留率），不要用 `lvN_clear / lvN_start`。
 - 上线顺序同 ANALYTICS §3.6g：analyticsvc 先部署，再传 CG 新包。
+
+### 17.9 第二轮：英雄礼物提前、lv4–8 曲线抹平、教学两拍放宽（2026-10-16，分支 `feat/ch1-curve-gift`）
+
+起因：同一份 c741bef15 早期数据（§17.8）里还有三处能马上动的：
+
+- **英雄礼物几乎没人拿到**：lv5 只有 1 胜 6 负、4 个会话打到；D1 钩子挂在多数人到不了的地方。
+- **lv4 比 lv5 难**（零养成模拟 1 星，lv5 2 星），lv6 是前 8 关最难（零养成 60%）。
+- **教学建造拍、陨石拍错放仍高**：`tutorial_beat_done.wrong_drops > 0` 的占比建造拍 64%、陨石拍 59%，§15.7 把吸附放到两列之后没降下来。分不清是拖错了卡还是放错了地方。
+- 顺带查了「CG 会话 locale 全是 en」：CG SDK 和 `navigator.language` 都没给过 zh / de，**不是 bug**，不改。
+
+**A. 英雄礼物挪到 lv3**
+- `@nw/shared/onboarding` `HERO_GIFT_LEVEL_ID = 'ch1_lv5'` → `'ch1_lv3'`。服务端 `/pve/clear` 写礼物、客户端战斗内英雄文案、大厅贴纸都跟着这个常量走，不用另改。
+- `ch1_lv3.json` 加 `cardUnlocks: [{ atTick: 150, cardId: 'max_1' }]`（和 lv5 一样，开局不久英雄进手牌）；lv5 的 `max_1` 解锁保留——英雄在 lv5 再出一次没坏处，文案走通用「新卡」只在未通关时弹，而 lv3 已经弹过英雄文案。
+- lv3 首通走的是关间横幅（第 3 关不是 5 的倍数），原来的「明天来领 Max」只写在结算页上，到不了玩家眼前。现在 `ChainBannerSpec.giftLine`：横幅在新卡行下面多一行金色字（`heroGift.result`，超宽按比例缩），倒计时从 `CHAIN_AUTO_SEC = 1.5` s 延到 `CHAIN_GIFT_AUTO_SEC = 4` s，让人读得完。结算页那条路径照旧（非首通 / 0 星不会有这行）。
+- 已经在 lv5 之前、但通过 lv3 的老玩家：他们的 lv3 首通早过了，拿不到——接受，CG 上线才一天。
+
+**B. lv4–8 曲线**（关卡 JSON，`enemyScale` hp / damage）
+
+| 关 | 原 | 新 | 其它 |
+|---|---|---|---|
+| lv4 | 0.95 / 0.95 | 0.85 / 0.85 | |
+| lv6 | 1.15 / 1.08 | 0.9 / 0.85 | tick 1170 两侧 `lena` 2→1、tick 1440 两侧 `max` 2→1 |
+| lv7 | 0.95 | 0.88 | |
+| lv8 | 0.82 | 0.7 | |
+
+零养成（fresh）模拟，5 个种子：
+
+| 关 | 改前 | 改后 |
+|---|---|---|
+| lv1–2 | 2★ 100% | 2★ 100% |
+| lv3 | 3★ 100% | 2★ 100%（英雄进场后战斗变长，星数含时间分） |
+| lv4 | 1★ 100% | 2★ 100% |
+| lv5 | 2★ 100% | 2★ 100% |
+| lv6 | 60% | 1★ 80% |
+| lv7 | 80% | 1★ 100% |
+| lv8 | 80% | 1★ 80% |
+
+lv6 种子 65537 怎么调都输（tick ~1695 场上 ~30 个敌人，模拟 AI 出牌顺序的问题）；lv8 种子 65537 是僵持超时（`reachedGameOver: false`，基地满血），都算模拟器假象，不再往下压。`client/test/difficulty/baseline.json` 已重钉。
+
+内容版本：`CAMPAIGN_CONTENT_REV` 2 → 3，`ch1_lv3/4/6/7/8` 标 3（§17.2 机制：旧包 judge 不抽这几关，旧包提交跳过抽查）。
+
+**C. 教学两拍放宽 + 错放拆分**
+- 建造拍、陨石拍：引导的那张卡**放在哪都算**，吸到目标（塔吸到目标列，陨石吸到 `meteorAnchor`）；拖的不是那张卡照旧拒绝并放幽灵手。`BUILDING_SNAP_COLS` / `METEOR_SNAP_CELLS` 删除。
+- 出兵拍不变（`LANE_SNAP_COLS = 1`）：这一拍教的就是「放在哪条路就走哪条路」。
+- `tutorial_beat_done` 多两个字段：`wrong_card`（拖了别的卡）、`wrong_spot`（对的卡放错地方，改后只会出现在出兵拍）；`wrong_drops = wrong_card + wrong_spot` 保留，旧口径能接着比。事件属性不走白名单，analyticsvc 不用改。
+- 读法：改后建造 / 陨石拍的 `wrong_drops` 全是 `wrong_card`；若仍高，说明问题是「认不出要拖哪张」，下一步该在手牌上做文章（高亮 / 只留那一张可拖），而不是继续放宽落点。
+
+**没做**：结算页插屏广告的门控（§15 记过，Basic Launch 期间无害）留到 Full Launch 前。
 
