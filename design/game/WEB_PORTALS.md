@@ -50,6 +50,10 @@
 ## 4. 上传与发布
 
 - 构建：`npm run build:itch` / `npm run build:newgrounds`（`client/`），把 `dist/` 整个打 zip。
+  **zip 内路径必须是正斜杠**：Windows PowerShell 5.1 的 `Compress-Archive` 会写出 `static\xxx.png` 这种反斜杠路径，
+  itch 解压后 `index.html` 能打开，但 `static/` 下全部 404，页面只剩一张空白纸（2026-10-17 首传时踩到）。
+  用 Python `zipfile`（`arcname` 用 `/`）或 7-Zip 打包；上传前数一下包里的 `static\`，应为 0。
+- itch 嵌入页里点 Run game 后游戏真正跑起来，才算上传完成。
 - itch.io：Kind of project = HTML，勾 "This file will be played in the browser"，视口 1280×720，
   勾 Mobile friendly、Fullscreen button；定价 No payments。
 - Newgrounds：Games 投稿上传 zip，尺寸同上，勾 "Enable fullscreen"。
