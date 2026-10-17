@@ -67,3 +67,9 @@
 
 与 CG 同一套查询（`notebook_wars_analytics`）：`boots_daily` / `funnel_anon_daily` 按 `platform = itch | newgrounds` 过滤；
 留存报表按 `signupPlatform` 分群。每周对一次 §1 的自测线。
+
+- 生产只读查询：`ssh funny-vps`，`docker exec -w /app server-analyticsvc-1 node -e "<脚本>"`，脚本里用
+  `process.env.NW_ANALYTICS_MONGO_URI` 连库（不要把连接串打印出来）。
+- 2026-10-17 上线当天核对过：itch / newgrounds 两个渠道都正确落库（各 3 次 boot），另有 3 条 `unknown` 在 10:07–10:18 UTC，
+  是渠道打标上线前的测试。itch 漏斗 `open 9 / loaded 2`，差值来自反斜杠 zip 那几次打开（资源 404，加载不起来）。
+- **10-17 当天全部是自测流量**，对照自测线时从 2026-10-18 起算。
