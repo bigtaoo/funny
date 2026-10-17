@@ -2032,7 +2032,7 @@ export interface components {
             session_id?: string;
             device_id?: string;
             /** @enum {string} */
-            platform?: "web" | "wechat" | "crazygames";
+            platform?: "web" | "wechat" | "crazygames" | "itch" | "newgrounds";
             os?: string;
             game_version?: string;
             locale?: string;
@@ -5311,7 +5311,7 @@ export interface operations {
     bootstrap: {
         parameters: {
             query?: {
-                platform?: "web" | "wechat" | "crazygames";
+                platform?: "web" | "wechat" | "crazygames" | "itch" | "newgrounds";
                 /** @description Player-visible 9-digit publicId (for targeted evaluation); omitted = anonymous evaluation */
                 publicId?: string;
             };
@@ -5361,7 +5361,7 @@ export interface operations {
                     /** @description Reporter's 9-digit publicId (inline in Loki, for Grafana `| logfmt | publicId="..."` queries) */
                     publicId: string;
                     /** @enum {string} */
-                    platform?: "web" | "wechat" | "crazygames";
+                    platform?: "web" | "wechat" | "crazygames" | "itch" | "newgrounds";
                     /** @description A batch of log entries (from the ring buffer at or above the match threshold); server takes at most the first 1000 */
                     logs: {
                         /** @enum {string} */
@@ -5406,7 +5406,7 @@ export interface operations {
                     /** @description Reporter's 9-digit publicId (optional; anomalies before login are recorded as anon) */
                     publicId?: string;
                     /** @enum {string} */
-                    platform?: "web" | "wechat" | "crazygames";
+                    platform?: "web" | "wechat" | "crazygames" | "itch" | "newgrounds";
                     /** @description Client build version (__NW_BUILD_VERSION__, short commit hash; '0.0.0' if unbaked). Lets a recurring anomaly be attributed to a specific deploy, e.g. to rule out a long-open tab still running pre-fix code. */
                     buildVersion?: string;
                     /**
@@ -5463,7 +5463,7 @@ export interface operations {
         parameters: {
             query?: {
                 /** @description Build target, used only to keep a per-platform launch counter (ANALYTICS_DESIGN §3.6b). This request is the one thing every launch does before the age/consent gates, so it is the only possible denominator for players who answer neither and leave. Nothing identifying is sent or stored — no device id, no IP — and an unrecognised value is counted as `unknown`. */
-                p?: "web" | "wechat" | "crazygames";
+                p?: "web" | "wechat" | "crazygames" | "itch" | "newgrounds";
                 /** @description `1` marks this as a launch by a player who refused analytics ("essentials only", ANALYTICS_DESIGN §3.6c). The client sends it as a second, throwaway call of this same endpoint, which then bumps a refusal count on the (date, platform) row instead of the launch count — so the launch is still counted exactly once, and the launch funnel can tell "left at a gate" from "playing and reporting nothing". It is the only thing the refusal path ever sends: a refusal cannot be reported as an event, and this endpoint stores no one. */
                 d?: "1";
                 /** @description A first-session funnel step (the two load checkpoints `open_*` / `loaded_*` split by input class, `alive_60s` — the launch is still open 60 s after its first screen, the tutorial, its Skip, the first attempt / first clear of campaign levels 1–5, the first card played in level 1 and the idle-card hint there, the ink-full nudge, the first-session reward loop, and `return_launch` — a launch whose save had cleared ch1_lv1 before it started) reached by a launch, whatever its analytics answer (COMPLIANCE_GLOBAL §3.3b — the one funnel that also covers EEA players who never consented). Bumps a (date, platform, step) count in `funnel_anon_daily` instead of the launch counter — it is not a launch. Nothing identifying is sent or stored; a value outside the enum counts nothing. The response body is the ordinary config and is thrown away. */

@@ -649,7 +649,7 @@ schemas:
     properties:
       session_id:   { type: string }
       device_id:    { type: string }
-      platform:     { type: string, enum: [web, wechat, crazygames] }
+      platform:     { type: string, enum: [web, wechat, crazygames, itch, newgrounds] }
       os:           { type: string }
       game_version: { type: string }
       locale:       { type: string }

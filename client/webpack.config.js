@@ -32,10 +32,18 @@ module.exports = (env, argv) => {
   // null, and the game silently degrades to offline-only (no login, no cloud save, no PvP, no SLG).
   // So this target bakes absolute addresses too. See store-assets-checklist.md §4.3.
   const isCrazyGames = targetPlatform === 'crazygames';
+  // Self-test web portals (design/game/WEB_PORTALS.md): itch.io and Newgrounds host the uploaded zip
+  // on their own domains exactly like CrazyGames does, so they are off-origin for the same reasons.
+  // Both share one entry and one template (`portal`); TARGET stays the portal's own name so analytics
+  // and the server count each channel apart. Keep in sync with src/platform/clientPlatform.ts.
+  const isWebPortal = ['itch', 'newgrounds'].includes(targetPlatform);
+  const sourceTarget = isWebPortal ? 'portal' : targetPlatform;
+  // Builds uploaded by hand to a third-party portal.
+  const isPortalUpload = isCrazyGames || isWebPortal;
   // Targets whose shipped bundle does not run on our own origin: no service can use a relative
   // ('' = same-origin) base, and nothing that belongs to the web payment channel may travel with
   // the package. A property of the target, so it holds in either mode.
-  const isOffOrigin = isMobile || isCrazyGames;
+  const isOffOrigin = isMobile || isPortalUpload;
   // Build version baked into version.json and __NW_BUILD_VERSION__. CI sets NW_BUILD_VERSION for
   // web / iOS / OTA; the CrazyGames bundle is built and uploaded by hand, and the 2026-10-12 upload
   // shipped as '0.0.0' — which silences crashSentinel and tags every analytics event 0.0.0. So a
@@ -43,7 +51,7 @@ module.exports = (env, argv) => {
   // format client-deploy.yml uses). Never for mobile/OTA: those compare versions numerically.
   const buildVersion = (() => {
     if (process.env.NW_BUILD_VERSION) return process.env.NW_BUILD_VERSION;
-    if (!(isProd && isCrazyGames)) return '0.0.0';
+    if (!(isProd && isPortalUpload)) return '0.0.0';
     try {
       return require('child_process').execSync('git rev-parse --short HEAD', { cwd: __dirname }).toString().trim() || '0.0.0';
     } catch {
@@ -53,7 +61,7 @@ module.exports = (env, argv) => {
   // …but the *address baking* has one mode exception: `npm run start:crazygames` is
   // webpack-dev-server on localhost, exactly like `start:web`, and must keep the localhost dev
   // defaults below. Only the bundle actually uploaded to the portal needs absolute addresses.
-  const bakesRemoteBases = isMobile || (isCrazyGames && isProd);
+  const bakesRemoteBases = isMobile || (isPortalUpload && isProd);
   const REMOTE_ORIGIN = 'https://api.gamestao.com';
 
   // metaserver REST base URL / gateway control-plane WS: injected as globals at build time,
@@ -110,7 +118,7 @@ module.exports = (env, argv) => {
   return {
     target: 'web',
     mode: isProd ? 'production' : 'development',
-    entry: `./src/entries/${targetPlatform}.ts`,
+    entry: `./src/entries/${sourceTarget}.ts`,
     devtool: isWechat ? 'source-map' : (isProd ? false : 'source-map'),
     module: {
       rules: [
@@ -265,9 +273,10 @@ module.exports = (env, argv) => {
       // `analyticsBase` feeds the CrazyGames template's pre-bundle load tick (ANALYTICS_DESIGN §3.6f) —
       // the same origin analytics/index.ts derives from NW_API_BASE; empty (no tick) when unbaked.
       ...(isWechat ? [] : [new HtmlWebpackPlugin({
-        template: `./public/${targetPlatform}/index.html`,
+        template: `./public/${sourceTarget}/index.html`,
         analyticsBase: apiBase.replace(/\/api$/, ''),
         buildVersion,
+        platform: targetPlatform,
       })]),
       // <link rel="preload"> for the boot-tier assets, so the browser starts fetching them
       // during the bundle download instead of after startApp() runs (ASSET_PACKAGING §11).

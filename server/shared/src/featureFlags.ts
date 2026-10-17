@@ -6,6 +6,8 @@
 //   • backends without DB access (gateway/matchsvc/worldsvc…) poll admin for raw rules and call evaluateFlag locally.
 // Flags are fully decoupled from SaveData.flags (player state) / AccountDoc.flags (account state) — these are operator-controlled global switches.
 
+import { WEB_PORTAL_PLATFORMS, type WebPortalPlatform } from './webPortals';
+
 // ── Allowlist (registered in code; append new flags here) ───────────────────
 /**
  * Registry of all feature flags. The key is the flag identifier; both frontend and backend reference it via {@link FlagKey} — a typo will cause a compile-time error.
@@ -55,8 +57,8 @@ export function flagDefault(key: FlagKey): boolean {
 }
 
 // ── Platform / rule documents ────────────────────────────────────────────────
-export type FlagPlatform = 'web' | 'wechat' | 'crazygames';
-export const FLAG_PLATFORMS: readonly FlagPlatform[] = ['web', 'wechat', 'crazygames'];
+export type FlagPlatform = 'web' | 'wechat' | 'crazygames' | WebPortalPlatform;
+export const FLAG_PLATFORMS: readonly FlagPlatform[] = ['web', 'wechat', 'crazygames', ...WEB_PORTAL_PLATFORMS];
 
 /** Targeting rules (optional rollout sub-document in the admin featureFlags collection). */
 export interface FlagRollout {

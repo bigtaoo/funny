@@ -39,6 +39,7 @@ export * from './onboarding';
 export * from './retention';
 export * from './events';
 export * from './featureFlags';
+export * from './webPortals';
 export * from './pvpDeck';
 export * from './cards';
 export * from './rateLimiter';

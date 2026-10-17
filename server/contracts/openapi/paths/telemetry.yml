@@ -10,7 +10,7 @@
       - name: platform
         in: query
         required: false
-        schema: { type: string, enum: [web, wechat, crazygames] }
+        schema: { type: string, enum: [web, wechat, crazygames, itch, newgrounds] }
       - name: publicId
         in: query
         required: false
@@ -73,7 +73,7 @@
                 description: Reporter's 9-digit publicId (inline in Loki, for Grafana `| logfmt | publicId="..."` queries)
               platform:
                 type: string
-                enum: [web, wechat, crazygames]
+                enum: [web, wechat, crazygames, itch, newgrounds]
               logs:
                 type: array
                 description: A batch of log entries (from the ring buffer at or above the match threshold); server takes at most the first 1000
@@ -125,7 +125,7 @@
                 description: Reporter's 9-digit publicId (optional; anomalies before login are recorded as anon)
               platform:
                 type: string
-                enum: [web, wechat, crazygames]
+                enum: [web, wechat, crazygames, itch, newgrounds]
               buildVersion:
                 type: string
                 description: Client build version (__NW_BUILD_VERSION__, short commit hash; '0.0.0' if unbaked). Lets a recurring anomaly be attributed to a specific deploy, e.g. to rule out a long-open tab still running pre-fix code.
@@ -200,7 +200,7 @@
       - name: p
         in: query
         required: false
-        schema: { type: string, enum: [web, wechat, crazygames] }
+        schema: { type: string, enum: [web, wechat, crazygames, itch, newgrounds] }
         description: >
           Build target, used only to keep a per-platform launch counter (ANALYTICS_DESIGN §3.6b).
           This request is the one thing every launch does before the age/consent gates, so it is the

@@ -70,7 +70,7 @@ export function accountIdOf(req: FastifyRequest): string {
 }
 
 /**
- * Client-declared request platform (X-NW-Platform header: 'ios' | 'android' | 'web' | 'wechat' | 'crazygames'),
+ * Client-declared request platform (X-NW-Platform header: 'ios' | 'android' | 'web' | 'wechat' | 'crazygames' | 'itch' | 'newgrounds'),
  * forwarded verbatim to commercial as `clientPlatform` — determines which recharged-pool bucket (ADR-020,
  * server/commercial/src/spendChannel.ts) a wallet mutation may spend from / display alongside the free pool.
  * Absent/unrecognized header → undefined, which commercial defaults to the 'web' bucket (today's behavior for
