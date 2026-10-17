@@ -4,6 +4,7 @@
 import type { Collection } from 'mongodb';
 import type { SaveData } from '../types';
 import type { ChatRegion } from '../chatFilter';
+import { WEB_PORTAL_PLATFORMS } from '../webPortals';
 
 export interface SaveDoc {
   _id: string; // accountId
@@ -111,7 +112,7 @@ export interface AccountDoc {
 }
 
 /** Allow-list for AccountDoc.signupPlatform — the values clients send in `X-NW-Platform`. */
-export const SIGNUP_PLATFORMS = ['ios', 'android', 'web', 'wechat', 'crazygames'] as const;
+export const SIGNUP_PLATFORMS = ['ios', 'android', 'web', 'wechat', 'crazygames', ...WEB_PORTAL_PLATFORMS] as const;
 export type SignupPlatform = (typeof SIGNUP_PLATFORMS)[number];
 
 /** `raw` narrowed to a SignupPlatform, or undefined for anything not on the allow-list. */

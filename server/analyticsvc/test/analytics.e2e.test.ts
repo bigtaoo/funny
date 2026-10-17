@@ -125,11 +125,14 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
     await fetch(`${base}/analytics/config?p=web`);
     await fetch(`${base}/analytics/config?p=../../etc/passwd`);
     await fetch(`${base}/analytics/config`);
+    // The self-test web portals (WEB_PORTALS.md) are counted under their own names.
+    await fetch(`${base}/analytics/config?p=itch`);
+    await fetch(`${base}/analytics/config?p=newgrounds`);
 
     // The counter write is fire-and-forget (it must never delay the config body), so give it a tick.
     await new Promise((r) => setTimeout(r, 150));
     const docs = await mongo!.collections.boots_daily.find({}).toArray();
-    expect(docs.map((d) => [d.platform, d.count]).sort()).toEqual([['unknown', 2], ['web', 2]]);
+    expect(docs.map((d) => [d.platform, d.count]).sort()).toEqual([['itch', 1], ['newgrounds', 1], ['unknown', 2], ['web', 2]]);
   });
 
   /**

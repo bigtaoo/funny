@@ -1383,7 +1383,9 @@ const BODY_SCHEMAS: Record<string, unknown> = {
         "enum": [
           "web",
           "wechat",
-          "crazygames"
+          "crazygames",
+          "itch",
+          "newgrounds"
         ]
       },
       "logs": {
@@ -1436,7 +1438,9 @@ const BODY_SCHEMAS: Record<string, unknown> = {
         "enum": [
           "web",
           "wechat",
-          "crazygames"
+          "crazygames",
+          "itch",
+          "newgrounds"
         ]
       },
       "buildVersion": {
@@ -1525,7 +1529,9 @@ const BODY_SCHEMAS: Record<string, unknown> = {
         "enum": [
           "web",
           "wechat",
-          "crazygames"
+          "crazygames",
+          "itch",
+          "newgrounds"
         ]
       },
       "os": {
@@ -1615,7 +1621,9 @@ const QUERY_SCHEMAS: Record<string, unknown> = {
         "enum": [
           "web",
           "wechat",
-          "crazygames"
+          "crazygames",
+          "itch",
+          "newgrounds"
         ]
       },
       "publicId": {
@@ -1631,7 +1639,9 @@ const QUERY_SCHEMAS: Record<string, unknown> = {
         "enum": [
           "web",
           "wechat",
-          "crazygames"
+          "crazygames",
+          "itch",
+          "newgrounds"
         ]
       },
       "d": {

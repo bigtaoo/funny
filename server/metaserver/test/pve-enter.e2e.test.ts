@@ -125,4 +125,13 @@ describe.skipIf(!mongo)('pve stamina-at-entry e2e (A4)', () => {
     // Any other platform still pays.
     expect((await enter('ch1_lv1')).statusCode).toBe(402);
   });
+
+  it.each(['itch', 'newgrounds'])('%s web-portal build enters for free too (WEB_PORTALS.md)', async (platform) => {
+    await setStamina(0);
+    const r = await app.inject({
+      method: 'POST', url: '/pve/enter', headers: { ...auth(), 'x-nw-platform': platform }, payload: { levelId: 'ch1_lv1' },
+    });
+    expect(r.statusCode).toBe(200);
+    expect((await m.collections.pveStamina.findOne({ _id: accountId }))?.current).toBe(0);
+  });
 });

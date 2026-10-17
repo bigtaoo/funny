@@ -213,8 +213,8 @@ export interface IPlatform {
   readonly staminaRewardedAd?: boolean;
 
   /**
-   * Campaign levels cost no stamina (ONBOARDING_DESIGN §17.5). Only `CrazyGamesPlatform` sets it; the
-   * server skips the deduction for the same `x-nw-platform` (`PVE_STAMINA_FREE_CLIENT_PLATFORM`).
+   * Campaign levels cost no stamina (ONBOARDING_DESIGN §17.5). The web-portal platforms set it; the
+   * server skips the deduction for the same `x-nw-platform` (`PVE_STAMINA_FREE_CLIENT_PLATFORMS`).
    */
   readonly freePveStamina?: boolean;
 

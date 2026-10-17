@@ -108,10 +108,5 @@ export const NAME_LOCKED_KEY = 'nw_name_locked';
 /** Fallback season number used when worldsvc is unreachable (dev/offline). */
 export const FALLBACK_SEASON = 1;
 
-/** Platform name (the TARGET global injected at build time), evaluated at bootstrap. Mirrors analytics.getPlatformName. */
-export function clientPlatformName(): 'web' | 'wechat' | 'crazygames' {
-  const t = (globalThis as { TARGET?: string }).TARGET ?? '';
-  if (t === 'wechat') return 'wechat';
-  if (t === 'crazygames') return 'crazygames';
-  return 'web';
-}
+/** Platform name (the TARGET global injected at build time) — see platform/clientPlatform.ts. */
+export { clientPlatformName } from '../platform/clientPlatform';

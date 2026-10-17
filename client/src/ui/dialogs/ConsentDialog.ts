@@ -35,7 +35,7 @@ import { snapFont, fitFont } from '../../render/fontScale';
 import { t } from '../../i18n/index';
 import { tapHandler } from '../hits';
 import { isNativeShell } from '../../platform/nativeShell';
-import { clientPlatformName } from '../../app/appConstants';
+import { isPortalBuild } from '../../platform/clientPlatform';
 import { openExternalUrl } from '../../platform/externalLink';
 import { UI_FONT_FAMILY } from '../../render/theme';
 
@@ -66,7 +66,7 @@ const LEGAL_SITE = 'https://nivara.gamestao.com';
  * asserting on the value rather than on the shape of the source.
  */
 export function legalUrl(path: '/privacy' | '/terms'): string {
-  const ownOrigin = !isNativeShell() && clientPlatformName() !== 'crazygames';
+  const ownOrigin = !isNativeShell() && !isPortalBuild();
   return ownOrigin ? `${path}.html` : `${LEGAL_SITE}${path}`;
 }
 
