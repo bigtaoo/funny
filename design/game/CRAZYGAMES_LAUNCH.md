@@ -1,6 +1,7 @@
 # CrazyGames 上架：官方要求 ↔ 我们的实现
 
 > 状态：**2026-10-07 被拒**（理由只有一句「overall quality」，审核员轨迹见 §7）；2026-10-05 提交的构建是 `64c620eb`（来自提交 `b452aedf4`）；Basic Launch 代码侧 2026-09-27 完成 · 权威：本文（CrazyGames 专属要求的单一入口）
+> 2026-10-17：重投那条的 Basic Launch 以 5/15 被拒；重投 CG 之前先在 itch.io / Newgrounds 用同形态访客构建自测，见 [`WEB_PORTALS.md`](WEB_PORTALS.md)。
 > 来源：[docs.crazygames.com/requirements](https://docs.crazygames.com/requirements/intro/)（2026-09-27 逐页核过两轮：
 > 要求 8 页 + SDK intro/game + resources 的 CrazyGames App / Basic Launch 指标 / 加载 / 鼠标四页）；
 > SDK 行为以 `https://sdk.crazygames.com/crazygames-sdk-v3.js` 源码为准（文档页之外的细节都是在源码里查到的）。
