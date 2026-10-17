@@ -8,6 +8,7 @@ import { netTransport } from '../transport';
 import type { IStorage } from '../../platform/IPlatform';
 import { deviceClass, deviceMemoryGb, devicePixelRatio, momentContext, type MomentContext } from './deviceContext';
 import { telemetrySessionId } from '../../analytics/session';
+import { clientPlatformName } from '../../platform/clientPlatform';
 
 export const log = netLog('anomaly');
 
@@ -59,8 +60,7 @@ const COOLDOWN_MS: Record<AnomalyType, number> = {
 };
 
 function platformName(): string {
-  const t = (globalThis as { TARGET?: string }).TARGET ?? '';
-  return t === 'wechat' || t === 'crazygames' ? t : 'web';
+  return clientPlatformName();
 }
 
 // Injected once from app.ts (platform.storage) so this module works on WeChat mini-game, which has

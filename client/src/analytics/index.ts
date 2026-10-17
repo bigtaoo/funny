@@ -12,6 +12,7 @@ import { getLocale, getPlatformLanguage } from '../i18n';
 import { fetchAnalyticsConfig, pingAnonymousFunnelStep, pingDeclinedLaunch, shouldTrack } from './config';
 import { EventQueue, type AnalyticsEvent, type BatchMeta } from './queue';
 import { telemetrySessionId } from './session';
+import { clientPlatformName, type ClientPlatformName } from '../platform/clientPlatform';
 
 // NOTE: `bootTimeline.ts` and `idleWatch.ts` are NOT re-exported here, deliberately. Both import
 // `track` from this file, so re-exporting them would close an import cycle for the sake of a shorter
@@ -406,11 +407,8 @@ export function endSession(): void {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function getPlatformName(): 'web' | 'wechat' | 'crazygames' {
-  const t = (globalThis as { TARGET?: string }).TARGET ?? '';
-  if (t === 'wechat') return 'wechat';
-  if (t === 'crazygames') return 'crazygames';
-  return 'web';
+function getPlatformName(): ClientPlatformName {
+  return clientPlatformName();
 }
 
 function getPlatformOs(_platform: IPlatform): string {

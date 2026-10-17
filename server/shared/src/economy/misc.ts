@@ -2,6 +2,8 @@
 // 2026-08-11 split (independent function modules form, see ../economy.ts's header). Zero cross-file
 // dependency within economy/*.
 
+import { WEB_PORTAL_PLATFORMS } from '../webPortals';
+
 /** Rewarded ads (§2.1). 10 coins per ad (decided 2026-06-27, original 50 was too high; revisit after launch based on performance). */
 export const ADS_REWARD_COINS = 10;
 export const ADS_DAILY_CAP = 5;
@@ -16,11 +18,12 @@ export const STAMINA_AD_DAILY_CAP = 3;
 /** The only `x-nw-platform` the stamina-ad endpoint serves. */
 export const STAMINA_AD_CLIENT_PLATFORM = 'crazygames';
 /**
- * The `x-nw-platform` whose PvE entries cost no stamina (ONBOARDING_DESIGN §17.5, 2026-10-15): on a web
- * portal the stamina wall ends the very sessions that drive average playtime. Same trust model as the
- * stamina ad — the header is client-declared, and stamina is a soft gate, not a currency.
+ * The `x-nw-platform` values whose PvE entries cost no stamina (ONBOARDING_DESIGN §17.5, 2026-10-15): on a
+ * web portal the stamina wall ends the very sessions that drive average playtime. CrazyGames plus the
+ * self-test portals (WEB_PORTALS.md). Same trust model as the stamina ad — the header is client-declared,
+ * and stamina is a soft gate, not a currency.
  */
-export const PVE_STAMINA_FREE_CLIENT_PLATFORM = 'crazygames';
+export const PVE_STAMINA_FREE_CLIENT_PLATFORMS: readonly string[] = ['crazygames', ...WEB_PORTAL_PLATFORMS];
 
 /** Rename cost (coins). Deducted once per display-name change (commercial wallet deducts → meta renames). */
 export const RENAME_COST = 500;

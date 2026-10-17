@@ -4,6 +4,7 @@
 import type { components } from '../net/openapi';
 import { netTransport } from '../net/transport';
 import { onAppLifecycleChange } from '../platform/appLifecycle';
+import type { ClientPlatformName } from '../platform/clientPlatform';
 
 export type AnalyticsEvent = components['schemas']['AnalyticsEvent'];
 
@@ -16,7 +17,7 @@ export interface QueueOptions {
 export interface BatchMeta {
   session_id: string;
   device_id: string;
-  platform: 'web' | 'wechat' | 'crazygames';
+  platform: ClientPlatformName;
   os: string;
   game_version: string;
   locale: string;

@@ -1060,6 +1060,8 @@ components:
             - web
             - wechat
             - crazygames
+            - itch
+            - newgrounds
         os:
           type: string
         game_version:
@@ -5773,6 +5775,8 @@ paths:
               - web
               - wechat
               - crazygames
+              - itch
+              - newgrounds
         - name: publicId
           in: query
           required: false
@@ -5836,6 +5840,8 @@ paths:
                     - web
                     - wechat
                     - crazygames
+                    - itch
+                    - newgrounds
                 logs:
                   type: array
                   description: A batch of log entries (from the ring buffer at or above the match threshold); server takes at most the first 1000
@@ -5908,6 +5914,8 @@ paths:
                     - web
                     - wechat
                     - crazygames
+                    - itch
+                    - newgrounds
                 buildVersion:
                   type: string
                   description: Client build version (__NW_BUILD_VERSION__, short commit hash; '0.0.0' if unbaked). Lets a recurring anomaly be attributed to a specific deploy, e.g. to rule out a long-open tab still running pre-fix code.
@@ -5999,6 +6007,8 @@ paths:
               - web
               - wechat
               - crazygames
+              - itch
+              - newgrounds
           description: |
             Build target, used only to keep a per-platform launch counter (ANALYTICS_DESIGN §3.6b). This request is the one thing every launch does before the age/consent gates, so it is the only possible denominator for players who answer neither and leave. Nothing identifying is sent or stored — no device id, no IP — and an unrecognised value is counted as `unknown`.
         - name: d

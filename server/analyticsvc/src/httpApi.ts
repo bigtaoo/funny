@@ -16,6 +16,7 @@ import {
   ok,
   err,
   type InternalAuthVerifier,
+  WEB_PORTAL_PLATFORMS,
 } from '@nw/shared';
 import { RETENTION_BY_DIMENSIONS, anonFunnelDevice, anonFunnelVersion, type AnonFunnelDevice, isAnonFunnelStep, type AnalyticsService, type EventBatch, type ResolvedGeo, type RetentionByDimension } from './service';
 
@@ -41,7 +42,7 @@ function resolveGeo(ip: string | undefined): ResolvedGeo | undefined {
 const MAX_PURGE_DEVICE_IDS = 20;
 
 /** Build targets the launch counter accepts. Anything else is bucketed rather than stored verbatim. */
-const BOOT_PLATFORMS = new Set(['web', 'wechat', 'crazygames']);
+const BOOT_PLATFORMS = new Set<string>(['web', 'wechat', 'crazygames', ...WEB_PORTAL_PLATFORMS]);
 
 /**
  * What a config request contributes to the launch counter: the `?p=` build target, and whether `?d=1`
