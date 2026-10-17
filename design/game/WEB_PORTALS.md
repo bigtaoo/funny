@@ -56,7 +56,11 @@
 - itch 嵌入页里点 Run game 后游戏真正跑起来，才算上传完成。
 - itch.io：Kind of project = HTML，勾 "This file will be played in the browser"，视口 1280×720，
   勾 Mobile friendly、Fullscreen button；定价 No payments。
-- Newgrounds：Games 投稿上传 zip，尺寸同上，勾 "Enable fullscreen"。
+- Newgrounds：Games 投稿上传 zip，尺寸同上，勾 Touchscreen friendly。编辑页自动保存（没有 Save 按钮），改完刷新一遍核对——
+  宽度和 Commentary 第一次没存住，要真的在字段里打字再移走焦点才落盘；文件栏显示 "13B" 是显示问题，Preview 能跑就行。
+  投稿协议要求：**用到 AI 必须在 Commentary 里写明用在哪、怎么用**（2026-10-17 已加 AI disclosure 段）；
+  第三方追踪要开局告知并可退出（我们是自家分析，入口告知条 + 设置里可关）。发布后先进 "Under Judgment"，由玩家投票决定去留。
+  2026-10-17 已发布：`https://www.newgrounds.com/portal/view/1057164`。
 - 账号注册、上传、发帖由用户本人完成。上传包与商店页文案放在仓库根 `portal-uploads/`（`.git/info/exclude` 排除，不入库）。
 
 ## 5. 看数据
