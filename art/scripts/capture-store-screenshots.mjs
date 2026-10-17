@@ -28,6 +28,7 @@
 //
 // Coins: the account is topped up in-run through the dev IAP stub (`shopCb.recharge(<any code>)`
 // → iapVerify('dev', code), +1100 each) so the economy screens aren't shown at a 0 balance.
+// Best-effort: screens without a recharge hook are skipped and the seeded balance is shown.
 
 import pw from 'file:///D:/funny/client/node_modules/@playwright/test/index.js';
 import { mkdirSync } from 'node:fs';
@@ -66,19 +67,27 @@ for (const dev of DEVICES) {
     const st = window.__nwE2E.state; const cb = st[st.screen + 'Cb'];
     return cb && typeof cb[f] === 'function' ? cb[f](...args) : Promise.resolve('NO_FN:' + f);
   }, [fn, a]);
-  const backToLobby = async () => { for (let i = 0; i < 6; i++) { if (await screen() === 'lobby') return; await call('onBack'); await wait(1300); } };
+  // Lobby entry can chain first-time cards (firstRewardLoop: gacha gift → daily) that navigate on
+  // their own, so "on the lobby" only counts once no guide is pending and the screen stays put.
+  const guidePending = () => page.evaluate(() => typeof window.__nwE2E.state.showFeatureGuideCb === 'function');
+  const backToLobby = async () => {
+    for (let i = 0; i < 12; i++) {
+      if (await guidePending()) { await guide(); await wait(1500); continue; }
+      if (await screen() === 'lobby') { await wait(1500); if (await screen() === 'lobby' && !(await guidePending())) return; continue; }
+      await call('onBack'); await wait(1300);
+    }
+  };
   const shot = async (name) => { await page.screenshot({ path: `${OUT}/${name}__${dev.name}.png` }); console.log(`  shot ${name} (${await screen()})`); };
 
   console.log(`== ${dev.name} ${dev.width}x${dev.height}`);
-  // intro → consent → login → lobby. The boot sequence can navigate under us (a reload between
+  // entryGate → login → lobby. The boot sequence can navigate under us (a reload between
   // gates tears down the execution context mid-evaluate), which is transient — just start over.
   for (let attempt = 1; ; attempt++) {
     try {
       await page.goto('http://localhost:9096/', { waitUntil: 'load' });
-      await waitScreen('intro');
-      await page.evaluate(() => window.__nwE2E.state.introCb.onFinish(true));
-      await waitScreen('consent');
-      await page.evaluate(() => window.__nwE2E.state.consentCb.onAccept());
+      // Age + consent are one entry gate now (same step as client/test/browser/lib/nwE2E.ts bootToLogin).
+      await waitScreen('entryGate');
+      await page.evaluate(() => window.__nwE2E.state.entryGateCb.onAnswered({ birthYear: new Date().getFullYear() - 30, granted: true }));
       await waitScreen('login');
       await page.evaluate(([id]) => window.__nwE2E.state.loginCb.onLogin(id, 'password123'), [LOGIN]);
       break;
@@ -93,12 +102,18 @@ for (const dev of DEVICES) {
   // is a loop, not a single call.
   for (let i = 0; i < 8; i++) { const s = await screen(); if (s === 'lobby') break; if (s === 'game') await page.evaluate(() => window.__nwE2E.state.gameCb.onExitToLobby()); await wait(1500); }
   await wait(2500);
+  await backToLobby();
 
   // coins first, so every later screen shows a non-zero balance
   await page.evaluate(() => window.__nwE2E.state.lobbyCb.onOpenShop()); await wait(2500); await guide(); await wait(1200);
   await call('openCoins'); await wait(2000); await guide(); await wait(1200);
-  for (let i = 0; i < 6; i++) { await page.evaluate(() => { const st = window.__nwE2E.state; return st[st.screen + 'Cb'].recharge('dev-' + Math.random().toString(36).slice(2)); }); await wait(1200); }
-  console.log('  coins:', await call('getCoins'));
+  // Best-effort: a missing recharge hook only costs the balance shown, not the whole run.
+  const topUp = () => page.evaluate(() => {
+    const st = window.__nwE2E.state; const cb = st[st.screen + 'Cb'];
+    if (typeof cb?.recharge !== 'function') return false;
+    cb.recharge('dev-' + Math.random().toString(36).slice(2)); return true;
+  });
+  for (let i = 0; i < 6; i++) { if (!(await topUp())) { console.log('  coins: no recharge hook on', await screen()); break; } await wait(1200); }
   await backToLobby(); await wait(1500);
 
   await shot('lobby');

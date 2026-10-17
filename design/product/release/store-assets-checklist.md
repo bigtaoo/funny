@@ -144,7 +144,9 @@ tactics,pvp,multiplayer,card battle,lane,army,castle,sketch,doodle,paper,rts
 
 - 脚本：[`art/scripts/capture-store-screenshots.mjs`](../../../art/scripts/capture-store-screenshots.mjs)（Playwright 驱动 `TARGET=web-e2e` 的 `window.__nwE2E`，脚本头部写了完整前置条件）+ [`art/scripts/seed-screenshot-account.cjs`](../../../art/scripts/seed-screenshot-account.cjs)（给账号灌进度/皮肤/段位，让画面不是空存档）。
 - 后端：本地一套即可，**不需要 Docker**——`mongod --replSet rs0`（worldsvc 要事务，单节点副本集就够）+ metaserver + commercial + worldsvc，Redis 可缺省。
-- 金币走 dev IAP 桩（`shopCb.recharge()`）真实发放，不手改存档（metaserver 会按 commercial 账本对账，手改的余额下次登录即被清零）。
+- 金币走 dev IAP 桩（`shopCb.recharge()`）真实发放，不手改存档（metaserver 会按 commercial 账本对账，手改的余额下次登录即被清零）。**尽力而为**：当前界面没有 `recharge` 钩子时只打日志 `coins: no recharge hook on <screen>` 跳过，不再中断整轮（余额就显示种子账号原值）。
+- **2026-10-17 跟进启动流程改版**：开局已从 `intro` → `consent` 两道门改成一道 `entryGate`（年龄 + 同意一次答完，与 `client/test/browser/lib/nwE2E.ts` 的 `bootToLogin` 同一步）；进大厅会连环弹首日卡片（`firstRewardLoop`：抽卡赠礼 → 每日卡，后者会自己跳到 `daily` 屏），所以脚本的 `backToLobby()` 只在「没有待处理引导、且停在 `lobby` 不再跳走」时才算回到大厅。
+- 已知仍过时：战斗段拖卡的手牌槽位算法（`(i + 4.5) / 6 * width`）和当前手牌布局对不上（1280×720 下六张牌中心约 x≈293/432/570/709/848/986、y≈660），拖不出去也不报错，只是战斗截图兵少。itch / Newgrounds 那批（[`WEB_PORTALS.md`](../../game/WEB_PORTALS.md)）的战斗图是另挑的帧。
 - **图标 / 横幅（2026-08-18 同批打通，都不需要 AI 出图）**：
   - [`art/scripts/make-store-icons.mjs`](../../../art/scripts/make-store-icons.mjs) 从现有 `art/logo/logo-simple.png`（扁平简版，当年就是为小尺寸做的）派生 iOS 1024 + Play 512。**选简版不是随手**：把手绘版 `logo.png` 和简版一起缩到 60/120px 并排比过——手绘版的细墨线 + 横格纸纹在 60px 全塌，简版三支笔交叉仍清晰。深蓝底板 `#2E4055` + 压平去 alpha + 不带圆角（Apple 硬性要求，圆角由系统裁）。
   - [`art/scripts/render-store-banners.mjs`](../../../art/scripts/render-store-banners.mjs) 出 Play 特征图 1024×500 + 微信分享图 500×400。**在浏览器里用 HTML/CSS 渲染再截图**，因为这两个是唯一带文字的素材，而游戏 UI 本身就是 `monospace` + 纸面 + 横格/红边距（`sketchUi.ts`）——同一媒介出图才不会"外面做的图跟游戏不像一家"。刻意不用游戏截图：Play 官方口径是特征图放 logo + 极简文字（会被裁切并叠平台 UI），游戏画面的活由截图承担。
