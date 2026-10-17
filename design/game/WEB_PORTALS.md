@@ -50,12 +50,26 @@
 ## 4. 上传与发布
 
 - 构建：`npm run build:itch` / `npm run build:newgrounds`（`client/`），把 `dist/` 整个打 zip。
+  **zip 内路径必须是正斜杠**：Windows PowerShell 5.1 的 `Compress-Archive` 会写出 `static\xxx.png` 这种反斜杠路径，
+  itch 解压后 `index.html` 能打开，但 `static/` 下全部 404，页面只剩一张空白纸（2026-10-17 首传时踩到）。
+  用 Python `zipfile`（`arcname` 用 `/`）或 7-Zip 打包；上传前数一下包里的 `static\`，应为 0。
+- itch 嵌入页里点 Run game 后游戏真正跑起来，才算上传完成。
 - itch.io：Kind of project = HTML，勾 "This file will be played in the browser"，视口 1280×720，
   勾 Mobile friendly、Fullscreen button；定价 No payments。
-- Newgrounds：Games 投稿上传 zip，尺寸同上，勾 "Enable fullscreen"。
+- Newgrounds：Games 投稿上传 zip，尺寸同上，勾 Touchscreen friendly。编辑页自动保存（没有 Save 按钮），改完刷新一遍核对——
+  宽度和 Commentary 第一次没存住，要真的在字段里打字再移走焦点才落盘；文件栏显示 "13B" 是显示问题，Preview 能跑就行。
+  投稿协议要求：**用到 AI 必须在 Commentary 里写明用在哪、怎么用**（2026-10-17 已加 AI disclosure 段）；
+  第三方追踪要开局告知并可退出（我们是自家分析，入口告知条 + 设置里可关）。发布后先进 "Under Judgment"，由玩家投票决定去留。
+  2026-10-17 已发布：`https://www.newgrounds.com/portal/view/1057164`。
 - 账号注册、上传、发帖由用户本人完成。上传包与商店页文案放在仓库根 `portal-uploads/`（`.git/info/exclude` 排除，不入库）。
 
 ## 5. 看数据
 
 与 CG 同一套查询（`notebook_wars_analytics`）：`boots_daily` / `funnel_anon_daily` 按 `platform = itch | newgrounds` 过滤；
 留存报表按 `signupPlatform` 分群。每周对一次 §1 的自测线。
+
+- 生产只读查询：`ssh funny-vps`，`docker exec -w /app server-analyticsvc-1 node -e "<脚本>"`，脚本里用
+  `process.env.NW_ANALYTICS_MONGO_URI` 连库（不要把连接串打印出来）。
+- 2026-10-17 上线当天核对过：itch / newgrounds 两个渠道都正确落库（各 3 次 boot），另有 3 条 `unknown` 在 10:07–10:18 UTC，
+  是渠道打标上线前的测试。itch 漏斗 `open 9 / loaded 2`，差值来自反斜杠 zip 那几次打开（资源 404，加载不起来）。
+- **10-17 当天全部是自测流量**，对照自测线时从 2026-10-18 起算。
